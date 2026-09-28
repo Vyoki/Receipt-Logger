@@ -1,0 +1,16 @@
+ALIMENTARI DEL SUD S.R.L. Spett.le RISTORANTE ESEMPIO S.R.L.
+Via del Porto 8 - 80100 Napoli Via Immaginaria 1 - 00100 Roma
+P.IVA 01234560789
+Tipo documento Numero Data
+FATTURA 2025/0311 18/03/2025
+Codice Descrizione U.M. Quantità Prezzo Sconto Imponibile IVA
+A100 Olio extravergine di oliva lt 10 7,50 0,00 75,00 22%
+A200 Pasta di semola kg 20 1,60 10,00 28,80 10%
+A300 Pomodoro San Marzano DOP
+cf 6 3,20 19,20 10%
+Totale imponibile
+123,00
+Totale IVA
+21,30
+Totale documento
+144,30

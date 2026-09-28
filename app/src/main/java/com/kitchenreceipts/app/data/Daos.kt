@@ -159,6 +159,7 @@ interface DocumentDao {
           AND (:toDay IS NULL OR d.document_date <= :toDay)
           AND (:query = ''
                OR s.name LIKE '%' || :query || '%'
+               OR (:normQuery != '' AND s.normalized_name LIKE '%' || :normQuery || '%')
                OR IFNULL(d.document_number, '') LIKE '%' || :query || '%'
                OR EXISTS (SELECT 1 FROM line_items li WHERE li.document_id = d.id
                           AND (li.original_description LIKE '%' || :query || '%'
@@ -166,7 +167,7 @@ interface DocumentDao {
         ORDER BY (d.document_date IS NULL), d.document_date DESC, d.id DESC
         """,
     )
-    fun search(query: String, sellerId: Long?, fromDay: Long?, toDay: Long?): Flow<List<DocumentListRow>>
+    fun search(query: String, normQuery: String, sellerId: Long?, fromDay: Long?, toDay: Long?): Flow<List<DocumentListRow>>
 
     @Query("SELECT DISTINCT document_date FROM documents WHERE document_date IS NOT NULL")
     fun documentDates(): Flow<List<LocalDate>>

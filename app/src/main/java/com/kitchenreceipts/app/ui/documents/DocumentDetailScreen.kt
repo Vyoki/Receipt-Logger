@@ -55,6 +55,7 @@ import com.kitchenreceipts.app.ui.components.EmptyState
 import com.kitchenreceipts.app.ui.components.KeyValue
 import com.kitchenreceipts.app.ui.components.LoadingBox
 import com.kitchenreceipts.app.ui.components.MissingValue
+import com.kitchenreceipts.app.ui.components.RecognisedTextCard
 import com.kitchenreceipts.app.ui.components.SectionTitle
 import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.fmtDecimal
@@ -162,6 +163,7 @@ fun DocumentDetailScreen(
                     item { SectionTitle(stringResource(R.string.line_items_count, items.size)) }
                     if (items.isEmpty()) item { EmptyState(stringResource(R.string.no_line_items)) }
                     items(items, key = { it.item.id }) { row -> SavedItemCard(row, d.currency, onOpenProduct) }
+                    d.ocrText?.takeIf { it.isNotBlank() }?.let { t -> item("recognised") { RecognisedTextCard(t) } }
                 }
             }
         }

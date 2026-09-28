@@ -67,6 +67,7 @@ import com.kitchenreceipts.app.ui.components.DocumentPages
 import com.kitchenreceipts.app.ui.components.EmptyState
 import com.kitchenreceipts.app.ui.components.FieldKind
 import com.kitchenreceipts.app.ui.components.LoadingBox
+import com.kitchenreceipts.app.ui.components.RecognisedTextCard
 import com.kitchenreceipts.app.ui.components.ReviewField
 import com.kitchenreceipts.app.ui.components.SectionTitle
 import com.kitchenreceipts.app.ui.components.WarningCard
@@ -152,6 +153,7 @@ fun ReviewScreen(documentId: Long?, onBack: () -> Unit, onViewOriginal: () -> Un
                     }
                 }
                 item("status") { StatusBanner(state) }
+                state.recognisedText?.let { t -> item("recognised") { RecognisedTextCard(t) } }
                 if (state.errors.isNotEmpty()) {
                     item("errors") { WarningCard(listOf(stringResource(R.string.fix_errors, state.errors.size))) }
                 }

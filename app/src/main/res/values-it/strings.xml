@@ -120,7 +120,7 @@
     <string name="err_currency">Usa un codice di 3 lettere, es. EUR</string>
 
     <string name="document">Documento</string>
-    <string name="search_documents_hint">Fornitore, numero, prodotto, lotto…</string>
+    <string name="search_documents_hint">Fornitore, numero, prodotto, lotto, data (14/03/2025, 03/2025)…</string>
     <string name="all_sellers">Tutti i fornitori</string>
     <string name="all_months">Tutti i mesi</string>
     <string name="any_day">Qualsiasi giorno</string>
@@ -181,6 +181,11 @@
     <string name="export_failed">Impossibile salvare il CSV.</string>
     <string name="report_totals_note">I totali sono quelli stampati sui documenti (di solito IVA inclusa). I documenti senza totale sono contati ma non sommati.</string>
     <string name="no_date">Senza data</string>
+
+    <string name="recognised_text">Testo riconosciuto (cosa ha letto il telefono)</string>
+    <string name="share_recognised_text">Condividi il testo riconosciuto</string>
+    <string name="copy">Copia</string>
+    <string name="share">Condividi</string>
 
     <plurals name="item_count">
         <item quantity="one">%d riga</item>

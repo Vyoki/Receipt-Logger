@@ -38,4 +38,26 @@ class LayoutRowsTest {
         val item = ReceiptParser.parseItemLine(LayoutRows.toText(lines))!!
         assertEquals(1440L, item.lineTotalCents?.value)
     }
+
+    private fun tiltedTable(degrees: Double): List<OcrLine> {
+        val slope = kotlin.math.tan(Math.toRadians(degrees))
+        val rows = listOf("Mozzarella kg" to "2,500 8,90 22,25", "Ricotta kg" to "1,000 6,40 6,40", "Burro pz" to "4 2,35 9,40")
+        return rows.flatMapIndexed { i, (desc, nums) ->
+            val y = 100 + i * 45
+            listOf(
+                OcrLine(desc, 10, (y + 200 * slope).toInt(), 390, (y + 200 * slope).toInt() + 30),
+                OcrLine(nums, 700, (y + 800 * slope).toInt(), 900, (y + 800 * slope).toInt() + 30),
+            )
+        }
+    }
+
+    @Test fun tiltedPhotoRowsAreStillJoined() {
+        for (deg in listOf(2.0, -2.0, 3.5)) {
+            assertEquals(
+                "tilt $deg",
+                "Mozzarella kg 2,500 8,90 22,25\nRicotta kg 1,000 6,40 6,40\nBurro pz 4 2,35 9,40",
+                LayoutRows.toText(tiltedTable(deg)),
+            )
+        }
+    }
 }
