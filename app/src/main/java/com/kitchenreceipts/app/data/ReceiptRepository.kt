@@ -49,6 +49,12 @@ class ProductNameTakenException(val existing: ProductEntity) : Exception("Produc
 
 class ReceiptRepository(private val db: AppDatabase, private val files: FileStore) {
 
+    /**
+     * Called when one VAT number appears on documents of two different suppliers: it must be the
+     * operator's own (printed as the customer on every invoice), so it is never used to identify a supplier.
+     */
+    var onSharedVatNumber: (String) -> Unit = {}
+
     private val documents = db.documentDao()
     private val sellers = db.sellerDao()
     private val products = db.productDao()
@@ -151,14 +157,22 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
 
     /** Stores the supplier's VAT number, letterhead words and the OCR's spelling of their name. */
     private fun learnSeller(seller: SellerEntity, l: SellerLearning, countLayout: Boolean) {
-        val vat = SellerProfiles.supplierVatNumber(l.documentText, l.ownVatNumber)
-            ?.takeIf { v -> sellers.byVatNumber(v).let { it == null || it.id == seller.id } }
+        var vat = SellerProfiles.supplierVatNumber(l.documentText, l.ownVatNumber)
+        if (vat != null) {
+            val other = sellers.byVatNumber(vat)
+            if (other != null && other.id != seller.id) {
+                sellers.clearVat(vat)
+                onSharedVatNumber(vat)
+                vat = null
+            }
+        }
         val profile = if (countLayout) {
             SellerProfiles.mergeProfile(seller.headerProfile, SellerProfiles.headerTokens(l.documentText))
         } else {
             seller.headerProfile
         }
-        sellers.updateLearning(seller.id, seller.vatNumber ?: vat, profile)
+        val keep = seller.vatNumber?.takeIf { it != l.ownVatNumber }
+        sellers.updateLearning(seller.id, keep ?: vat, profile)
         val alias = DuplicateDetector.normalizeSeller(l.ocrSellerName)
         if (alias != null && alias != seller.normalizedName) {
             sellers.upsertAlias(SellerAliasEntity(aliasKey = alias, sellerId = seller.id))
