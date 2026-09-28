@@ -88,6 +88,7 @@ object ReceiptParser {
     private val VAT_RATE_CODE = Regex("^(0?0|0?4|0?5|10|22|20|21)$")
     /** Item code (5+ digits), optionally marked with one letter, then colli ("1x1", "2x3", "1"). */
     private val ITEM_CODE = Regex("^\\d{5,}$")
+    private val GLUED_UNIT = Regex("^(?i)(gr|kg|lt|ml|cl|pz|g|l)(\\d+(?:[.,]\\d+)?)$")
     /** Code and colli glued by the OCR: "10000032x3" = code 1000003 + colli 2x3. */
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
     private val COLLI = Regex("^(\\d{1,3}[xX×]\\d{1,3}|\\d{1,2})$")
@@ -549,7 +550,7 @@ object ReceiptParser {
     /** Parses one item line such as "Mozzarella fiordilatte kg 2,500 8,90 22,25 10%". */
     fun parseItemLine(line: String): ParsedLineItem? {
         val (codeFree, itemCode) = stripItemCode(line.split(' ').filter { it.isNotBlank() })
-        var tokens = codeFree
+        var tokens = splitGluedUnit(codeFree)
         // Drop a VAT class letter after the price: "PANE 2,50 B" -> "PANE 2,50".
         while (tokens.size > 2 && VAT_CODE_TOKEN.matches(tokens.last()) && classify(tokens[tokens.size - 2]) != null) {
             tokens = tokens.dropLast(1)
@@ -699,6 +700,21 @@ object ReceiptParser {
     }
 
     private fun isWholeNumber(v: BigDecimal) = v.stripTrailingZeros().scale() <= 0
+
+    /** "CF GR1500 2 4,850 9,70": unit and pack size read without a space, right before the quantity. */
+    private fun splitGluedUnit(tokens: List<String>): List<String> {
+        val out = mutableListOf<String>()
+        tokens.forEachIndexed { i, t ->
+            val m = GLUED_UNIT.find(t)
+            val next = tokens.getOrNull(i + 1)
+            if (m != null && next != null && next.first().isDigit() && Units.normalizeKnown(m.groupValues[1]) != null) {
+                out += m.groupValues[1]; out += m.groupValues[2]
+            } else {
+                out += t
+            }
+        }
+        return out
+    }
 
     /** Removes "O 2046225 1x1" (marker, item code, colli) from the start of an item line. */
     private fun stripItemCode(tokens: List<String>): Pair<List<String>, String?> {
