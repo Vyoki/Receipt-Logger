@@ -141,6 +141,9 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             for (item in doc.items) {
                 val pid = item.productId ?: continue
                 products.upsertAlias(ProductAliasEntity(sellerId = seller.id, aliasKey = ProductMatching.aliasKey(item.description), productId = pid))
+                item.itemCode?.let { code ->
+                    products.upsertAlias(ProductAliasEntity(sellerId = seller.id, aliasKey = ProductMatching.codeKey(code), productId = pid))
+                }
             }
             sellers.deleteUnused()
             id
@@ -202,8 +205,10 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     }
 
     /** Pre-fills products the user already assigned for this seller + description. */
-    suspend fun rememberedProduct(sellerName: String, description: String): Long? {
+    suspend fun rememberedProduct(sellerName: String, description: String, itemCode: String? = null): Long? {
         val seller = sellers.findByNormalizedSuspend(normalizeSeller(sellerName)) ?: return null
+        // The supplier's article code first: it survives small misreadings of the description.
+        itemCode?.let { code -> products.findAlias(seller.id, ProductMatching.codeKey(code))?.let { return it } }
         return products.findAlias(seller.id, ProductMatching.aliasKey(description))
     }
 

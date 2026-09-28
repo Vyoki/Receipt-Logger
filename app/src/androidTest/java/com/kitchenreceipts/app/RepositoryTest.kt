@@ -111,4 +111,11 @@ class RepositoryTest {
         val r = repo.identifySeller("ALTRO FORNITORE\nSpett.le RISTORANTE P.IVA $own", "ALTRO FORNITORE", null)
         assertTrue(r == null || r.match.reason != SellerMatchReason.VAT_NUMBER)
     }
+
+    @Test fun productRememberedByArticleCodeEvenIfDescriptionIsMisread() = runBlocking {
+        val galletti = repo.createProduct("Biscotti Galletti")
+        val line = ValidLineItem("BISCOTTI M.BIANCO GALLETTI 800", galletti.id, BigDecimal.ONE, "pz", null, 345, null, null, null, "2046225")
+        repo.saveDocument(doc("Cash and Carry Esempio", "7", listOf(line)), StoredFile("documents/c.jpg", "image/jpeg", 1, "sha-c"), null, null)
+        assertEquals(galletti.id, repo.rememberedProduct("Cash and Carry Esempio", "BISC0TTI M.BIANC0 GALLETT1 800", "2046225"))
+    }
 }

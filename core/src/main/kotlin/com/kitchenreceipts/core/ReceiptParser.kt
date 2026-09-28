@@ -55,9 +55,10 @@ object ReceiptParser {
         "(?i)\\b(totale\\s+(?:documento|fattura|da\\s+pagare|complessivo|euro|eur|generale|a\\s+pagare|dovuto)|" +
             "netto\\s+a\\s+pagare|importo\\s+(?:totale|da\\s+pagare|pagato)|totale\\s+€|da\\s+pagare)\\b",
     )
+    private val NOT_A_TOTAL = Regex("(?i)\\b(sconto|offerta|offerte|punti|risparmi\\w*|premi|colli)\\b")
     private val TOTAL_WEAK = Regex("(?i)^\\s*(totale|tot\\.?|total)\\b")
     private val SUBTOTAL = Regex(
-        "(?i)\\b(imponibile|sub\\s?-?totale|totale\\s+imponibile|totale\\s+merce|totale\\s+netto|tot\\.?\\s+imponibile)\\b",
+        "(?i)\\b(imponibil[ei]|sub\\s?-?totale|totale\\s+imponibil[ei]|totale\\s+merce|totale\\s+netto|tot\\.?\\s+imponibil[ei])\\b",
     )
     private val VAT_TOTAL = Regex("(?i)\\b(totale\\s+(?:iva|i\\.v\\.a\\.?|imposta|imposte)|tot\\.?\\s+iva|di\\s+cui\\s+iva)\\b")
     private val VAT_LINE = Regex("(?i)^\\s*(iva|i\\.v\\.a\\.?|imposta)\\b")
@@ -142,6 +143,8 @@ object ReceiptParser {
                 return@forEachIndexed
             }
             if (i == headerIdx || isTableHeader(line)) return@forEachIndexed
+            // "ACQUISTI IN OFFERTA € 144,86 TOTALE IMPONIBILE SCONTO € 13,23", loyalty points: not document totals.
+            if (NOT_A_TOTAL.containsMatchIn(line)) return@forEachIndexed
             if (VAT_ID.containsMatchIn(line) && !VAT_TOTAL.containsMatchIn(line) && !SUBTOTAL.containsMatchIn(line)) return@forEachIndexed
             val kind = when {
                 SUBTOTAL.containsMatchIn(line) -> 1
@@ -168,7 +171,8 @@ object ReceiptParser {
         }
         // On multi-page documents only the last page with totals holds the document totals;
         // totals on earlier pages are page subtotals.
-        val totalsPage = found.maxOfOrNull { pageOf[it.index] }
+        // The page that states the document total ("Totale documento") wins; otherwise the last page with totals.
+        val totalsPage = found.filter { it.kind == 3 }.maxOfOrNull { pageOf[it.index] } ?: found.maxOfOrNull { pageOf[it.index] }
         for (t in found.filter { pageOf[it.index] == totalsPage }) {
             firstTotalsLine = minOf(firstTotalsLine, t.index)
             when (t.kind) {
@@ -542,7 +546,8 @@ object ReceiptParser {
 
     /** Parses one item line such as "Mozzarella fiordilatte kg 2,500 8,90 22,25 10%". */
     fun parseItemLine(line: String): ParsedLineItem? {
-        var tokens = stripItemCode(line.split(' ').filter { it.isNotBlank() })
+        val (codeFree, itemCode) = stripItemCode(line.split(' ').filter { it.isNotBlank() })
+        var tokens = codeFree
         // Drop a VAT class letter after the price: "PANE 2,50 B" -> "PANE 2,50".
         while (tokens.size > 2 && VAT_CODE_TOKEN.matches(tokens.last()) && classify(tokens[tokens.size - 2]) != null) {
             tokens = tokens.dropLast(1)
@@ -670,21 +675,23 @@ object ReceiptParser {
             lotNumber = null,
             expiryDate = null,
             warnings = warnings,
+            itemCode = itemCode,
         )
     }
 
     private fun isWholeNumber(v: BigDecimal) = v.stripTrailingZeros().scale() <= 0
 
     /** Removes "O 2046225 1x1" (marker, item code, colli) from the start of an item line. */
-    private fun stripItemCode(tokens: List<String>): List<String> {
+    private fun stripItemCode(tokens: List<String>): Pair<List<String>, String?> {
         var i = 0
         if (tokens.size > 3 && tokens[0].length == 1 && tokens[0][0].isLetter() && ITEM_CODE.matches(tokens[1])) i = 1
         if (tokens.size > i + 2 && ITEM_CODE.matches(tokens[i])) {
+            val code = tokens[i]
             i++
             if (tokens.size > i + 2 && COLLI.matches(tokens[i])) i++
-            return tokens.drop(i)
+            return tokens.drop(i) to code
         }
-        return tokens
+        return tokens to null
     }
 
     /** Trims separators and a trailing packaging code ("... MULINO BIANC SK" -> "... MULINO BIANC"). */
@@ -695,7 +702,7 @@ object ReceiptParser {
         // At most one packaging code, and only right before the numbers ("SUINO SV - . NC" keeps "SV").
         if (t.size > 1 && PACKAGING_CODE.matches(t.last()) && t.last() !in SHORT_WORDS) t = t.dropLast(1)
         dropSeparators()
-        return t.joinToString(" ").trim().trimEnd(':', '-', '.', ',', ' ').trim()
+        return t.joinToString(" ").trim().trimEnd(':', '-', '.', ',', ' ').trimStart('-', '.', '*', ' ').trim()
     }
 
     /** qty x price equals total within one cent (after rounding half-up to cents). */
