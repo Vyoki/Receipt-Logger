@@ -63,7 +63,7 @@ The first time you take a photo, the **camera app** may ask for its own camera p
 
 In Android Studio you can also right-click `core/src/test/kotlin` and choose **Run 'Tests in kotlin'**. The report is written to `core/build/reports/tests/test/index.html`.
 
-**Instrumented tests** (Room migration 1→2 and the repository; they run on a phone or emulator):
+**Instrumented tests** (Room migrations 1/2/3→4, the repository and on-device OCR; they run on a phone or emulator):
 
 ```bash
 ./gradlew :app:connectedDebugAndroidTest
@@ -280,11 +280,11 @@ Built and tested in an environment **without** access to Google's Maven reposito
 | Check | Status |
 |---|---|
 | `:core` compiles (Kotlin 2.0.21) | ✅ verified |
-| `:core` unit tests: 109 tests, including 6 synthetic Italian fixtures (2 imitate messy phone OCR) | ✅ all passing |
+| `:core` unit tests: 132 tests on synthetic Italian fixtures (invoices, receipts, delivery notes, messy phone OCR) | ✅ all passing |
 | All 34 Room `@Query` statements and the v1→v2 migration SQL run in SQLite against a schema matching the entities | ✅ verified |
 | String resources: every referenced key exists in English and Italian, with matching format arguments | ✅ verified |
-| `:app` Android build (Room/KSP code generation, Compose compilation, APK) | ⚠️ **not run**: no Android SDK was available. Check with `./gradlew :app:assembleDebug`. |
-| Instrumented tests (`MigrationTest`, `RepositoryTest`) | ⚠️ **not run**: they need a device or emulator |
+| `:app` Android build (Room/KSP code generation, Compose compilation, APK) | ✅ built by GitHub Actions on every push |
+| Instrumented tests (`MigrationTest`, `RepositoryTest`, `OcrEndToEndTest`) | ✅ run on an Android 11 emulator in GitHub Actions |
 | On-device OCR quality on real photos | ⚠️ not measured |
 
 If the first Android build reports a compile error, it will most likely be a small API mismatch in the Compose UI code. That code was written against the pinned library versions but could not be compiled here.
