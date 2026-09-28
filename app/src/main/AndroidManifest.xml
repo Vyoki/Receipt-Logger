@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools">
 
     <!--
       No runtime permissions are requested:
@@ -11,6 +12,15 @@
     -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
+    <!--
+      Security: what is on this phone stays on this phone.
+      Libraries (e.g. ML Kit usage statistics) may ask for network access through manifest merging;
+      these lines strip it, so Android itself blocks every network connection from this app.
+    -->
+    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" tools:node="remove" />
+
     <!-- Lets us check whether a camera app is installed (package visibility, Android 11+). -->
     <queries>
         <intent>
@@ -20,7 +30,10 @@
 
     <application
         android:name=".KitchenReceiptsApp"
-        android:allowBackup="true"
+        android:allowBackup="false"
+        android:fullBackupContent="false"
+        android:dataExtractionRules="@xml/data_extraction_rules"
+        tools:targetApi="31"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher"
         android:label="@string/app_name"

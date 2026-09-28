@@ -13,6 +13,10 @@ import com.kitchenreceipts.core.PurchaseExportRow
 import com.kitchenreceipts.core.PurchaseRecord
 import com.kitchenreceipts.core.ReportDocument
 import com.kitchenreceipts.core.SearchQuery
+import com.kitchenreceipts.core.SellerCandidate
+import com.kitchenreceipts.core.SellerMatch
+import com.kitchenreceipts.core.SellerProfiles
+import com.kitchenreceipts.core.VatBasis
 import com.kitchenreceipts.core.UnitConversion
 import com.kitchenreceipts.core.ValidDocument
 import kotlinx.coroutines.Dispatchers
@@ -34,6 +38,12 @@ data class UnassignedGroup(
     val aliasKey: String,
     val lineItemIds: List<Long>,
 )
+
+/** What a saved document teaches the app about its supplier. */
+data class SellerLearning(val documentText: String, val ocrSellerName: String?, val ownVatNumber: String?)
+
+/** A supplier recognised on a new scan, with what the app learned about them. */
+data class SellerRecognition(val match: SellerMatch, val usualVatBasis: VatBasis?, val documentCount: Int)
 
 class ProductNameTakenException(val existing: ProductEntity) : Exception("Product name already exists")
 
@@ -78,9 +88,16 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
      * [existingId] = null creates a new document from [file]; otherwise the document is updated
      * and its line items are replaced (the original file is kept).
      */
-    suspend fun saveDocument(doc: ValidDocument, file: StoredFile?, ocrText: String?, existingId: Long?): Long =
+    suspend fun saveDocument(
+        doc: ValidDocument,
+        file: StoredFile?,
+        ocrText: String?,
+        existingId: Long?,
+        learning: SellerLearning? = null,
+    ): Long =
         db.withTransaction {
             val seller = findOrCreateSeller(doc.sellerName)
+            if (learning != null) learnSeller(seller, learning, countLayout = existingId == null)
             val now = System.currentTimeMillis()
             val id = if (existingId == null) {
                 requireNotNull(file) { "A new document needs its original file" }
@@ -130,6 +147,36 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             sellers.deleteUnused()
         }
         files.delete(doc.filePath)
+    }
+
+    /** Stores the supplier's VAT number, letterhead words and the OCR's spelling of their name. */
+    private fun learnSeller(seller: SellerEntity, l: SellerLearning, countLayout: Boolean) {
+        val vat = SellerProfiles.supplierVatNumber(l.documentText, l.ownVatNumber)
+            ?.takeIf { v -> sellers.byVatNumber(v).let { it == null || it.id == seller.id } }
+        val profile = if (countLayout) {
+            SellerProfiles.mergeProfile(seller.headerProfile, SellerProfiles.headerTokens(l.documentText))
+        } else {
+            seller.headerProfile
+        }
+        sellers.updateLearning(seller.id, seller.vatNumber ?: vat, profile)
+        val alias = DuplicateDetector.normalizeSeller(l.ocrSellerName)
+        if (alias != null && alias != seller.normalizedName) {
+            sellers.upsertAlias(SellerAliasEntity(aliasKey = alias, sellerId = seller.id))
+        }
+    }
+
+    /** Recognises the supplier of a new scan from what was learned on earlier documents. */
+    suspend fun identifySeller(documentText: String, ocrSellerName: String?, ownVatNumber: String?): SellerRecognition? {
+        val all = sellers.allOnce()
+        if (all.isEmpty()) return null
+        val aliases = sellers.allAliases().groupBy({ it.sellerId }, { it.aliasKey })
+        val candidates = all.map {
+            SellerCandidate(it.id, it.name, it.vatNumber, SellerProfiles.parseProfile(it.headerProfile), aliases[it.id].orEmpty().toSet())
+        }
+        val match = SellerProfiles.identify(candidates, documentText, ocrSellerName, ownVatNumber) ?: return null
+        val bases = sellers.recentVatBases(match.sellerId)
+        val usual = bases.distinct().singleOrNull()?.takeIf { it != VatBasis.UNKNOWN && bases.size >= 2 }
+        return SellerRecognition(match, usual, sellers.documentCount(match.sellerId))
     }
 
     private fun findOrCreateSeller(name: String): SellerEntity {

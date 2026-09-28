@@ -66,14 +66,21 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class DocumentDetailViewModel(private val repo: ReceiptRepository, private val id: Long) : ViewModel() {
+class DocumentDetailViewModel(
+    private val repo: ReceiptRepository,
+    private val id: Long,
+    private val log: com.kitchenreceipts.app.diagnostics.AppLog,
+) : ViewModel() {
     /** null = loading; Result with null value = deleted / not found. */
     val document: StateFlow<Result<DocumentWithSeller?>?> =
         kotlinx.coroutines.flow.flow { repo.observeDocument(id).collect { emit(Result.success(it)) } }
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val items: StateFlow<List<LineItemRow>> = repo.observeItems(id).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
-    suspend fun delete() = repo.deleteDocument(id)
+    suspend fun delete() {
+        repo.deleteDocument(id)
+        log.event("DELETED", "doc" to id)
+    }
 }
 
 @Composable
@@ -84,7 +91,7 @@ fun DocumentDetailScreen(
     onViewOriginal: () -> Unit,
     onOpenProduct: (Long) -> Unit,
 ) {
-    val vm = appViewModel(key = "doc-$documentId") { DocumentDetailViewModel(it.repository, documentId) }
+    val vm = appViewModel(key = "doc-$documentId") { DocumentDetailViewModel(it.repository, documentId, it.log) }
     val docResult by vm.document.collectAsStateWithLifecycle()
     val items by vm.items.collectAsStateWithLifecycle()
     val files = appContainer().fileStore

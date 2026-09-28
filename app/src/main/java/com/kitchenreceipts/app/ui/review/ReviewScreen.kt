@@ -84,6 +84,7 @@ import com.kitchenreceipts.core.ItalianDates
 import com.kitchenreceipts.core.ItalianNumbers
 import com.kitchenreceipts.core.LineItemDraft
 import com.kitchenreceipts.core.ReceiptParser
+import com.kitchenreceipts.core.SellerMatchReason
 import com.kitchenreceipts.core.Units
 import com.kitchenreceipts.core.VatBasis
 import kotlinx.coroutines.launch
@@ -292,6 +293,23 @@ private fun StatusBanner(state: ReviewState) {
         }
     }
     if (lines.isNotEmpty()) WarningCard(lines)
+    state.recognition?.let { r ->
+        val how = stringResource(
+            when (r.match.reason) {
+                SellerMatchReason.VAT_NUMBER -> R.string.recognised_by_vat
+                SellerMatchReason.NAME_ALIAS -> R.string.recognised_by_alias
+                SellerMatchReason.LAYOUT -> R.string.recognised_by_layout
+            },
+        )
+        Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = MaterialTheme.shapes.medium) {
+            Text(
+                stringResource(R.string.recognised_supplier, r.match.name, how, r.documentCount) +
+                    (if (r.usualVatBasis != null) " " + stringResource(R.string.usual_vat_basis, vatBasisLabel(r.usualVatBasis)) else ""),
+                modifier = Modifier.fillMaxWidth().padding(12.dp),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
     val uncertain = state.draft.uncertainCount
     if (uncertain > 0) {
         val status = LocalStatusColors.current

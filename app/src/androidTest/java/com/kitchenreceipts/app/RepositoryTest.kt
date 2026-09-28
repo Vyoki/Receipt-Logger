@@ -6,9 +6,11 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kitchenreceipts.app.data.AppDatabase
 import com.kitchenreceipts.app.data.ReceiptRepository
+import com.kitchenreceipts.app.data.SellerLearning
 import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.core.DuplicateReason
+import com.kitchenreceipts.core.SellerMatchReason
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidLineItem
 import com.kitchenreceipts.core.VatBasis
@@ -76,5 +78,22 @@ class RepositoryTest {
         repo.deleteDocument(id)
         assertTrue(repo.itemsOnce(id).isEmpty())
         assertTrue(repo.sellerStats().first().isEmpty())
+    }
+
+    @Test fun learnsSupplierAndRecognisesItNextTime() = runBlocking {
+        val text = "CASEIFICIO VALVERDE S.R.L.\nLatticini freschi\nP.IVA IT01234567897\nSpett.le RISTORANTE P.IVA 09876543217\nFattura n. 1"
+        val file = StoredFile("documents/l.jpg", "image/jpeg", 1, "sha-l")
+        repo.saveDocument(
+            doc("Caseificio Valverde S.r.l.", "1", emptyList()), file, text, null,
+            SellerLearning(text, "CASEIFICI0 VALVERDE", "09876543217"),
+        )
+        // Same supplier, name misread differently, own VAT number also printed: recognised by the supplier's VAT number.
+        val next = text.replace("CASEIFICIO", "CA5EIFIC10")
+        val r = repo.identifySeller(next, "CA5EIFIC10 VALVERDE", "09876543217")!!
+        assertEquals("Caseificio Valverde S.r.l.", r.match.name)
+        assertEquals(SellerMatchReason.VAT_NUMBER, r.match.reason)
+        // The misreading the operator corrected is remembered too.
+        val byAlias = repo.identifySeller("CASEIFICI0 VALVERDE\nFattura n. 2", "CASEIFICI0 VALVERDE", null)!!
+        assertEquals(SellerMatchReason.NAME_ALIAS, byAlias.match.reason)
     }
 }

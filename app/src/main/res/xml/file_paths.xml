@@ -4,4 +4,6 @@
     <files-path name="documents" path="documents/" />
     <!-- Temporary photos written by the camera app before they are imported. -->
     <cache-path name="captures" path="captures/" />
+    <!-- Files the operator explicitly shares (operation log). -->
+    <cache-path name="shared" path="shared/" />
 </paths>

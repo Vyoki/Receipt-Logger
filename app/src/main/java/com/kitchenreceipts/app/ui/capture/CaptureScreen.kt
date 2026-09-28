@@ -86,16 +86,18 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
     val state: StateFlow<CaptureState> = _state.asStateFlow()
     private var job: Job? = null
 
-    fun importUri(uri: Uri) = startImport { c.fileStore.importUri(uri) }
+    fun importUri(uri: Uri) = startImport("file") { c.fileStore.importUri(uri) }
 
-    fun usePhotos(paths: List<String>) = startImport {
+    fun usePhotos(paths: List<String>) = startImport("camera:${paths.size}") {
         val files = paths.map(::File).filter { it.exists() && it.length() > 0 }
         if (files.isEmpty()) throw UnsupportedFileException("No photo to import")
         c.fileStore.storePhotos(files) { c.pageRenderer.decodeImage(it, 3000) }
     }
 
-    private fun startImport(store: suspend () -> StoredFile) {
+    private fun startImport(source: String, store: suspend () -> StoredFile) {
         if (_state.value.busy) return
+        c.log.event("IMPORT_START", "source" to source)
+        val t0 = System.currentTimeMillis()
         job = viewModelScope.launch {
             _state.value = CaptureState(busy = true, step = CaptureState.Step.STORING)
             var stored: StoredFile? = null
@@ -103,17 +105,26 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
                 val s = store()
                 stored = s
                 _state.update { it.copy(step = CaptureState.Step.READING) }
-                val pending = c.importProcessor.process(s, c.ocrEngine) { page, of ->
+                val storeMs = System.currentTimeMillis() - t0
+                val pending = c.importProcessor.process(s, c.ocrEngine, { page, of ->
                     _state.update { it.copy(page = page, pages = of) }
-                }
+                }, c.settings.parseOptions())
+                c.log.event(
+                    "IMPORT_DONE",
+                    "type" to s.mimeType, "pages" to s.pageCount, "pagesRead" to pending.pagesRead,
+                    "storeMs" to storeMs, "ocrMs" to pending.ocrMillis,
+                    "ocrLines" to pending.rawLines.sumOf { it.size }, "ocrError" to pending.ocrError,
+                )
                 c.pendingImport = pending
                 withContext(Dispatchers.IO) { c.fileStore.deleteCaptures() }
                 _state.value = CaptureState(ready = true)
             } catch (e: CancellationException) {
+                c.log.event("IMPORT_CANCELLED")
                 stored?.let { c.fileStore.delete(it.relativePath) }
                 _state.value = CaptureState()
                 throw e
             } catch (e: Exception) {
+                c.log.error("import", e)
                 stored?.let { c.fileStore.delete(it.relativePath) }
                 _state.value = CaptureState(error = e.message ?: e.javaClass.simpleName)
             }
