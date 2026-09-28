@@ -70,6 +70,7 @@ data class PurchaseRow(
     val vatBasis: VatBasis,
     val lotNumber: String?,
     val currency: String?,
+    val productCategory: String? = null,
 )
 
 data class SellerStatsRow(
@@ -89,6 +90,8 @@ data class UnassignedRow(
     val sellerName: String,
     val originalDescription: String,
 )
+
+data class ProductAliasKeyRow(val productId: Long, val aliasKey: String)
 
 data class AliasRow(
     val id: Long,
@@ -110,7 +113,7 @@ private const val PURCHASE_SELECT = """
            d.document_date AS documentDate, s.name AS sellerName, d.document_number AS documentNumber,
            li.original_description AS originalDescription, li.quantity AS quantity, li.unit AS unit,
            li.unit_price AS unitPrice, li.line_total_cents AS lineTotalCents, d.vat_basis AS vatBasis,
-           li.lot_number AS lotNumber, d.currency AS currency
+           li.lot_number AS lotNumber, d.currency AS currency, p.category AS productCategory
     FROM line_items li
     JOIN documents d ON d.id = li.document_id
     JOIN sellers s ON s.id = d.seller_id
@@ -320,4 +323,27 @@ interface ProductDao {
 
     @Query("UPDATE line_items SET product_id = :productId WHERE id IN (:lineItemIds)")
     suspend fun assign(lineItemIds: List<Long>, productId: Long?)
+
+    @Query("SELECT * FROM products WHERE normalized_name = :normalized LIMIT 1")
+    fun findByNormalizedBlocking(normalized: String): ProductEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    fun insertBlocking(product: ProductEntity): Long
+
+    /** Every description (and "#code") already linked to a product, for recognising products in new scans. */
+    @Query("SELECT product_id AS productId, alias_key AS aliasKey FROM product_aliases")
+    suspend fun allAliasKeys(): List<ProductAliasKeyRow>
+
+    @Query("UPDATE products SET category = :category WHERE id = :id")
+    suspend fun setCategory(id: Long, category: String?)
+
+    // ---- merging two products (operator's choice): everything of [from] moves to [into]
+    @Query("UPDATE line_items SET product_id = :into WHERE product_id = :from")
+    suspend fun moveLineItems(from: Long, into: Long)
+
+    @Query("UPDATE OR REPLACE product_aliases SET product_id = :into WHERE product_id = :from")
+    suspend fun moveAliases(from: Long, into: Long)
+
+    @Query("UPDATE OR IGNORE unit_conversions SET product_id = :into WHERE product_id = :from")
+    suspend fun moveConversions(from: Long, into: Long)
 }

@@ -71,6 +71,11 @@ import com.kitchenreceipts.app.ui.components.RecognisedTextCard
 import com.kitchenreceipts.app.ui.components.ReviewField
 import com.kitchenreceipts.app.ui.components.SectionTitle
 import com.kitchenreceipts.app.ui.components.WarningCard
+import com.kitchenreceipts.app.ui.components.PriceChangesCard
+import com.kitchenreceipts.app.ui.categoryLabel
+import com.kitchenreceipts.app.ui.reviewReasonText
+import com.kitchenreceipts.core.Categories
+import com.kitchenreceipts.core.ProductSource
 import com.kitchenreceipts.app.ui.duplicateReasonText
 import com.kitchenreceipts.app.ui.errorText
 import com.kitchenreceipts.app.ui.fmtDate
@@ -92,7 +97,7 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 @Composable
-fun ReviewScreen(documentId: Long?, onBack: () -> Unit, onViewOriginal: () -> Unit, onSaved: (Long) -> Unit) {
+fun ReviewScreen(documentId: Long?, onBack: () -> Unit, onViewOriginal: () -> Unit, onSaved: (Long, Boolean) -> Unit) {
     val vm = appViewModel(key = "review-${documentId ?: "new"}") { ReviewViewModel(it, documentId) }
     val state by vm.state.collectAsStateWithLifecycle()
     val products by vm.products.collectAsStateWithLifecycle()
@@ -104,7 +109,7 @@ fun ReviewScreen(documentId: Long?, onBack: () -> Unit, onViewOriginal: () -> Un
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(state.savedId) { state.savedId?.let(onSaved) }
+    LaunchedEffect(state.savedId) { state.savedId?.let { onSaved(it, state.autoSaved) } }
 
     val leave: () -> Unit = { if (state.isNew && state.fatal == null) askDiscard = true else onBack() }
     BackHandler(enabled = !state.loading) { leave() }
@@ -154,6 +159,12 @@ fun ReviewScreen(documentId: Long?, onBack: () -> Unit, onViewOriginal: () -> Un
                     }
                 }
                 item("status") { StatusBanner(state) }
+                if (state.isNew && state.reviewReasons.isNotEmpty()) {
+                    item("reasons") { ReasonsCard(state) }
+                }
+                if (state.priceChanges.isNotEmpty()) {
+                    item("prices") { PriceChangesCard(state.priceChanges) }
+                }
                 state.recognisedText?.let { t -> item("recognised") { RecognisedTextCard(t) } }
                 if (state.errors.isNotEmpty()) {
                     item("errors") { WarningCard(listOf(stringResource(R.string.fix_errors, state.errors.size))) }
@@ -274,6 +285,17 @@ fun ReviewScreen(documentId: Long?, onBack: () -> Unit, onViewOriginal: () -> Un
                 onClear = { vm.assignProduct(key, null); pickerFor = null },
                 onDismiss = { pickerFor = null },
             )
+        }
+    }
+}
+
+@Composable
+private fun ReasonsCard(state: ReviewState) {
+    val status = LocalStatusColors.current
+    Surface(color = status.uncertainContainer, contentColor = status.onUncertain, shape = MaterialTheme.shapes.medium) {
+        Column(Modifier.fillMaxWidth().padding(12.dp)) {
+            Text(stringResource(R.string.reasons_title), fontWeight = FontWeight.SemiBold)
+            state.reviewReasons.forEach { Text("• " + reviewReasonText(it), style = MaterialTheme.typography.bodyMedium) }
         }
     }
 }
@@ -429,13 +451,33 @@ private fun ItemCard(
                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.remove_item))
                 }
             }
-            // Product assignment: explicit, never automatic from similar names.
+            // Product link: chosen by the app only when safe (remembered / recognised / new), always shown and changeable.
+            val linkedName = item.productName
+            val newName = item.newProductName
+            val productLabel = when {
+                linkedName != null -> stringResource(R.string.product_is, linkedName)
+                newName != null -> stringResource(R.string.new_product_is, newName)
+                else -> stringResource(R.string.assign_product)
+            }
             AssistChip(
                 onClick = onPickProduct,
-                label = { Text(item.productName?.let { stringResource(R.string.product_is, it) } ?: stringResource(R.string.assign_product), maxLines = 1) },
+                label = { Text(productLabel, maxLines = 1) },
                 leadingIcon = { Icon(Icons.Filled.Inventory2, contentDescription = null) },
                 modifier = Modifier.heightIn(min = 48.dp),
             )
+            item.productSource?.let { src ->
+                Text(
+                    stringResource(
+                        when (src) {
+                            ProductSource.REMEMBERED -> R.string.product_remembered
+                            ProductSource.RECOGNISED -> R.string.product_recognised
+                            ProductSource.NEW -> R.string.product_new
+                        },
+                    ) + ((linkedName ?: newName)?.let { " · " + categoryLabel(Categories.guess(it)) } ?: ""),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ItemInput(item, errors, onChange, onConfirm, ItemField.QUANTITY, R.string.quantity, Modifier.weight(1f), FieldKind.DECIMAL)
                 ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT, R.string.unit, Modifier.weight(1f))

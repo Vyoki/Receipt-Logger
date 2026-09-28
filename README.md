@@ -163,9 +163,19 @@ OCR is behind the `OcrEngine` interface (`app/.../ocr/OcrEngine.kt`). To change 
 
 ### Products and duplicates
 
-- Products are **never merged automatically**:
-  - The picker only *suggests* similar names; you tap to assign, or create a new product.
-  - When you assign a description, the app remembers it for **that seller and exactly that description** (case, accents and spacing ignored), and pre-fills it next time. You can remove remembered descriptions on the product screen.
+- **Linking lines to products** happens without asking only when it is safe (Settings ▸ *Less typing* can turn it off):
+  - what you linked before for that supplier, first by article code and then by exact description;
+  - a product recognised despite a typo, misreading or abbreviation: `SALE MARINO GROSOS` → *Sale marino grosso*, `POM. PELATI` → *Pomodori pelati*, plurals such as `MOZZARELLE` → *Mozzarella*;
+  - otherwise a **new product** named after the description, created when the document is saved.
+
+  Every automatic link is shown on the review screen ("Recognised despite a different spelling", "First purchase") and can be changed with one tap.
+- **Similar but different products are never merged**:
+  - typos are tolerated only in words of 6+ letters with the same first letter;
+  - two different food words are never treated as a typo of each other (`pollo`/`polpo`, `bovina`/`ovina`, `pane`/`panettone`);
+  - different pack sizes (500 g vs 1 kg) are different products;
+  - when two products are almost equally close, the app does not choose.
+
+  If duplicates were created earlier, the Inventory screen lists pairs that look alike. You merge them only if you agree (Merge / Different); the product screen also has *Merge into another product*.
 - **Duplicate warning** before saving. It triggers on:
   - the same file bytes (SHA-256);
   - the same seller and document number (`FT 0145/2025` = `ft-145-2025`);
@@ -177,15 +187,17 @@ OCR is behind the `OcrEngine` interface (`app/.../ocr/OcrEngine.kt`). To change 
 
 ### Database and migrations
 
-- Room database `kitchen_receipts.db`, currently **schema version 2**:
+- Room database `kitchen_receipts.db`, currently **schema version 4**:
   - v1 had sellers, documents, products, line_items and product_aliases.
-  - v2 added `unit_conversions` (`Migrations.MIGRATION_1_2`).
+  - v2 added `unit_conversions` (`MIGRATION_1_2`).
+  - v3 added supplier learning: `sellers.vat_number`, `sellers.header_profile` and `seller_aliases` (`MIGRATION_2_3`).
+  - v4 added `products.category` for the inventory (`MIGRATION_3_4`).
 - There is no destructive fallback: a missing migration fails loudly in testing instead of wiping data.
-- `MigrationTest` builds a real v1 file with data, migrates it, and lets Room validate the resulting schema against the entities.
+- `MigrationTest` builds real v1, v2 and v3 files with data, migrates each to v4, and lets Room validate the resulting schema against the entities.
 - Room exports schema JSON to `app/schemas/` on build. Commit that folder, and add a migration plus a test for every future schema change.
 - Every line item has a non-null `document_id` foreign key to its source document (`ON DELETE CASCADE`).
 - Originals are copied into app-private storage (`files/documents/`), so a saved record always shows its original, even if the source file is deleted from the phone.
-- Android Auto Backup is enabled. It copies at most 25 MB per app to the user's Google account, so large document collections should also be exported.
+- Android backup and device transfer are disabled (see 7b): data stays on the phone unless you export or share it.
 
 ---
 
@@ -227,6 +239,29 @@ Open **Settings** with the gear icon on the Home screen.
 - Data is stored in the app's private storage, which Android encrypts on modern phones.
 
 Database schema is now **version 3** (supplier VAT number, letterhead profile, remembered name spellings). Migrations 1→2→3 keep all existing data. They are tested on an Android emulator in GitHub Actions (`instrumented-tests` job).
+
+## 7c. Less typing, price changes and inventory
+
+- **Automatic save.** After a scan the app checks:
+  - supplier, date and total were found;
+  - nothing was read with low confidence;
+  - every line has quantity, unit and amount;
+  - the lines add up to the printed taxable amount or total (this also settles whether prices include VAT);
+  - the document is not a possible duplicate.
+
+  If all of this holds, the document is saved straight away and opens with a green "Saved automatically" note. Otherwise the review screen lists exactly what to check. Turn it off in Settings ▸ *Less typing*.
+- **Price changes.** Each line is compared with the previous purchase of the same product:
+  - the price per kg or l for weights and volumes, otherwise per printed unit;
+  - the line total ÷ quantity, so discounts count;
+  - VAT-inclusive and VAT-exclusive prices are never compared;
+  - the same supplier's last price is preferred.
+
+  Changes of 1% or more appear on the review screen, on the saved document, on the product screen and in *Inventory ▸ Price changes*.
+- **Inventory.** Home ▸ *Inventory* lists everything bought in a week, month, quarter or year (◀ ▶ to move between periods):
+  - grouped by category (fruit & veg, meat, fish, cured meats, dairy & eggs, bakery, dry goods, frozen, drinks, cleaning, packaging, other);
+  - with the quantity bought (kg and l added together, other units kept apart unless you defined a conversion), the spend (kept apart by VAT basis), the number of purchases, and the **usual amount per period** (average of up to 6 earlier periods).
+
+  Categories are guessed from an Italian keyword dictionary; change one on the product screen.
 
 ## 8. MVP assumptions and limits
 

@@ -11,6 +11,7 @@ import com.kitchenreceipts.app.ui.capture.CaptureScreen
 import com.kitchenreceipts.app.ui.documents.DocumentDetailScreen
 import com.kitchenreceipts.app.ui.documents.DocumentsScreen
 import com.kitchenreceipts.app.ui.home.HomeScreen
+import com.kitchenreceipts.app.ui.inventory.InventoryScreen
 import com.kitchenreceipts.app.ui.products.ProductDetailScreen
 import com.kitchenreceipts.app.ui.products.ProductsScreen
 import com.kitchenreceipts.app.ui.reports.ReportsScreen
@@ -25,7 +26,8 @@ object Routes {
     const val REVIEW_NEW = "review"
     const val EDIT = "edit/{id}"
     const val DOCUMENTS = "documents?sellerId={sellerId}"
-    const val DOCUMENT = "document/{id}"
+    const val DOCUMENT = "document/{id}?auto={auto}"
+    const val INVENTORY = "inventory"
     const val VIEWER = "viewer/{id}" // id = -1: the pending (not yet saved) import
     const val PRODUCTS = "products"
     const val PRODUCT = "product/{id}"
@@ -35,7 +37,7 @@ object Routes {
 
     fun edit(id: Long) = "edit/$id"
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
-    fun document(id: Long) = "document/$id"
+    fun document(id: Long, auto: Boolean = false) = if (auto) "document/$id?auto=true" else "document/$id"
     fun viewer(id: Long) = "viewer/$id"
     fun product(id: Long) = "product/$id"
 }
@@ -53,6 +55,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onReports = { nav.navigate(Routes.REPORTS) },
                 onOpenDocument = { nav.navigate(Routes.document(it)) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
+                onInventory = { nav.navigate(Routes.INVENTORY) },
             )
         }
         composable(Routes.SETTINGS) {
@@ -69,7 +72,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 documentId = null,
                 onBack = back,
                 onViewOriginal = { nav.navigate(Routes.viewer(-1)) },
-                onSaved = { id -> nav.navigate(Routes.document(id)) { popUpTo(Routes.HOME) } },
+                onSaved = { id, auto -> nav.navigate(Routes.document(id, auto)) { popUpTo(Routes.HOME) } },
             )
         }
         composable(Routes.EDIT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
@@ -78,7 +81,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 documentId = id,
                 onBack = back,
                 onViewOriginal = { nav.navigate(Routes.viewer(id)) },
-                onSaved = { nav.popBackStack() },
+                onSaved = { _, _ -> nav.popBackStack() },
             )
         }
         composable(
@@ -88,10 +91,17 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             val sellerId = entry.arguments!!.getLong("sellerId").takeIf { it > 0 }
             DocumentsScreen(initialSellerId = sellerId, onBack = back, onOpen = { nav.navigate(Routes.document(it)) })
         }
-        composable(Routes.DOCUMENT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+        composable(
+            Routes.DOCUMENT,
+            arguments = listOf(
+                navArgument("id") { type = NavType.LongType },
+                navArgument("auto") { type = NavType.BoolType; defaultValue = false },
+            ),
+        ) { entry ->
             val id = entry.arguments!!.getLong("id")
             DocumentDetailScreen(
                 documentId = id,
+                autoSaved = entry.arguments!!.getBoolean("auto"),
                 onBack = back,
                 onEdit = { nav.navigate(Routes.edit(id)) },
                 onViewOriginal = { nav.navigate(Routes.viewer(id)) },
@@ -113,6 +123,9 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
         }
         composable(Routes.SELLERS) {
             SellersScreen(onBack = back, onOpenSeller = { nav.navigate(Routes.documents(it)) })
+        }
+        composable(Routes.INVENTORY) {
+            InventoryScreen(onBack = back, onOpenProduct = { nav.navigate(Routes.product(it)) })
         }
         composable(Routes.REPORTS) {
             ReportsScreen(onBack = back)

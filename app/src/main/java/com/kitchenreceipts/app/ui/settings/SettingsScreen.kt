@@ -63,6 +63,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var logText by remember { mutableStateOf(s.logIncludeText) }
     var appLock by remember { mutableStateOf(s.appLock) }
     var secure by remember { mutableStateOf(s.blockScreenshots) }
+    var autoSave by remember { mutableStateOf(s.autoSave) }
+    var autoLink by remember { mutableStateOf(s.autoLinkProducts) }
     var logSize by remember { mutableLongStateOf(c.log.sizeBytes()) }
     var askClear by remember { mutableStateOf(false) }
     val lockUnavailable = stringResource(R.string.app_lock_unavailable)
@@ -127,6 +129,19 @@ fun SettingsScreen(onBack: () -> Unit) {
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
                 modifier = Modifier.fillMaxWidth(),
             )
+
+            // ---------------------------------------------------------------- automation
+            SectionTitle(stringResource(R.string.automation))
+            SwitchRow(stringResource(R.string.auto_save), stringResource(R.string.auto_save_hint), autoSave) { on ->
+                autoSave = on
+                s.autoSave = on
+                c.log.event("SETTINGS", "autoSave" to on)
+            }
+            SwitchRow(stringResource(R.string.auto_link), stringResource(R.string.auto_link_hint), autoLink) { on ->
+                autoLink = on
+                s.autoLinkProducts = on
+                c.log.event("SETTINGS", "autoLink" to on)
+            }
 
             // ---------------------------------------------------------------- privacy & security
             SectionTitle(stringResource(R.string.privacy_security))

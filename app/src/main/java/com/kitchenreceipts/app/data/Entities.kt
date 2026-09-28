@@ -82,6 +82,8 @@ data class ProductEntity(
     val name: String,
     @ColumnInfo(name = "normalized_name") val normalizedName: String,
     @ColumnInfo(name = "created_at") val createdAt: Long,
+    /** v4: inventory category key (see core Category); null = guessed from the name. */
+    val category: String? = null,
 )
 
 @Entity(

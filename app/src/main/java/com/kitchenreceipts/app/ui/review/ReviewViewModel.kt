@@ -10,7 +10,10 @@ import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.data.SellerLearning
 import com.kitchenreceipts.app.data.SellerRecognition
 import com.kitchenreceipts.app.ocr.PendingImport
+import com.kitchenreceipts.core.AutoAccept
 import com.kitchenreceipts.core.Confidence
+import com.kitchenreceipts.core.PriceChange
+import com.kitchenreceipts.core.ReviewReason
 import com.kitchenreceipts.core.Corrections
 import com.kitchenreceipts.core.DocumentDraft
 import com.kitchenreceipts.core.Extracted
@@ -24,6 +27,8 @@ import com.kitchenreceipts.core.LineItemDraft
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidationResult
 import com.kitchenreceipts.core.VatBasis
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -67,6 +72,12 @@ data class ReviewState(
     val saving: Boolean = false,
     val saveError: String? = null,
     val savedId: Long? = null,
+    /** Saved without review because everything was read with confidence and added up. */
+    val autoSaved: Boolean = false,
+    /** What still needs the operator's eyes (empty = everything checks out). */
+    val reviewReasons: List<ReviewReason> = emptyList(),
+    /** Prices that differ from the last purchase of the same product. */
+    val priceChanges: List<PriceChange> = emptyList(),
 )
 
 data class SaveConfirmation(val duplicates: List<DuplicateInfo>, val uncertainCount: Int, val valid: ValidDocument)
@@ -123,25 +134,67 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             }
         }
 
+        // The line amounts prove whether prices include VAT: no need to ask.
+        if (draft.vatBasis == VatBasis.UNKNOWN || draft.vatBasisUncertain) {
+            AutoAccept.inferVatBasis(draft)?.let { draft = draft.copy(vatBasis = it, vatBasisUncertain = false) }
+        }
+
         initialDraft = draft
 
-        // Pre-fill products the user previously assigned for the same seller + exact description.
-        val seller = draft.seller.text
-        if (seller.isNotBlank()) {
-            val names = repo.productsOnce().associate { it.id to it.name }
-            draft = draft.copy(items = draft.items.map { item ->
-                val pid = repo.rememberedProduct(seller, item.description.text, item.itemCode)
-                if (pid != null && names.containsKey(pid)) item.copy(productId = pid, productName = names[pid]) else item
-            })
-        }
+        // Link each line to a product: remembered for this supplier, recognised despite typos, or new.
+        draft = draft.copy(
+            items = runCatching { repo.autoAssign(draft.seller.text, draft.items, c.settings.autoLinkProducts) }
+                .onFailure { c.log.error("autoAssign", it) }.getOrDefault(draft.items),
+        )
+        val reasons = AutoAccept.reasons(draft)
+        val changes = priceChanges(draft)
         _state.value = ReviewState(
-            loading = false, isNew = true, draft = draft,
+            loading = true,
+            isNew = true, draft = draft,
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
             engineName = pending.engineName, ocrError = pending.ocrError, pagesRead = pending.pagesRead,
             recognisedText = pending.debugReport(),
             recognition = recognition,
+            reviewReasons = reasons,
+            priceChanges = changes,
         )
         logParsed(pending, draft, recognition)
+        c.log.event(
+            "AUTO_CHECK",
+            "reasons" to reasons.joinToString(",").ifEmpty { "none" },
+            "linked" to draft.items.count { it.productId != null }, "newProducts" to draft.items.count { it.newProductName != null },
+            "priceChanges" to changes.size,
+        )
+        if (reasons.isEmpty() && c.settings.autoSave) {
+            // Everything was read with confidence and adds up: save without asking, unless it may be a duplicate.
+            when (val r = DraftValidator.validate(draft)) {
+                is ValidationResult.Valid -> {
+                    val dups = repo.findDuplicates(r.document, storedFile?.sha256, null)
+                    if (dups.isEmpty()) {
+                        save(r.document, auto = true)
+                        if (_state.value.savedId != null) return
+                    }
+                }
+                is ValidationResult.Invalid -> Unit
+            }
+        }
+        _state.update { it.copy(loading = false) }
+    }
+
+    private suspend fun priceChanges(d: DocumentDraft): List<PriceChange> = runCatching {
+        repo.priceChangesForDraft(d.seller.text, ItalianDates.parse(d.date.text), d.vatBasis, d.items, documentId)
+    }.getOrDefault(emptyList())
+
+    private var priceJob: Job? = null
+
+    /** Re-checks prices shortly after the operator stops typing. */
+    private fun refreshPrices() {
+        priceJob?.cancel()
+        priceJob = viewModelScope.launch {
+            delay(400)
+            val changes = priceChanges(_state.value.draft)
+            _state.update { it.copy(priceChanges = changes) }
+        }
     }
 
     private fun logParsed(pending: PendingImport, draft: DocumentDraft, recognition: SellerRecognition?) {
@@ -198,13 +251,21 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             loading = false, isNew = false, draft = draft,
             filePath = doc.filePath, mimeType = doc.mimeType, pageCount = doc.pageCount,
             recognisedText = doc.ocrText?.takeIf { it.isNotBlank() },
+            reviewReasons = AutoAccept.reasons(draft),
+            priceChanges = priceChanges(draft),
         )
         initialDraft = draft
     }
 
     // ------------------------------------------------------------ editing
 
-    private fun editDraft(f: (DocumentDraft) -> DocumentDraft) = _state.update { it.copy(draft = f(it.draft), saveError = null) }
+    private fun editDraft(f: (DocumentDraft) -> DocumentDraft) {
+        _state.update {
+            val d = f(it.draft)
+            it.copy(draft = d, saveError = null, reviewReasons = AutoAccept.reasons(d))
+        }
+        refreshPrices()
+    }
 
     fun setHeader(field: HeaderField, text: String) = editDraft { d -> d.withHeader(field) { it.confirmed(text) } }
     fun confirmHeader(field: HeaderField) = editDraft { d -> d.withHeader(field) { it.confirmed() } }
@@ -226,7 +287,10 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun removeItem(key: Long) = editDraft { d -> d.copy(items = d.items.filterNot { it.key == key }) }
 
     fun assignProduct(key: Long, product: ProductEntity?) =
-        editItem(key) { it.copy(productId = product?.id, productName = product?.name) }
+        editItem(key) { it.copy(productId = product?.id, productName = product?.name, productSource = null, newProductName = null) }
+
+    /** Keeps the name proposed for a new product, or renames it before it is created. */
+    fun renameNewProduct(key: Long, name: String) = editItem(key) { it.copy(newProductName = name.ifBlank { null }) }
 
     fun createProductAndAssign(key: Long, name: String) {
         viewModelScope.launch {
@@ -277,7 +341,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         viewModelScope.launch { save(doc) }
     }
 
-    private suspend fun save(doc: ValidDocument) {
+    private suspend fun save(doc: ValidDocument, auto: Boolean = false) {
         _state.update { it.copy(saving = true, saveError = null) }
         try {
             val own = c.settings.ownVatNumber.ifBlank { null }
@@ -294,9 +358,10 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 "SAVED",
                 "doc" to id, "new" to (documentId == null), "seconds" to (System.currentTimeMillis() - openedAt) / 1000,
                 "items" to doc.items.size, "uncertainLeft" to finalDraft.uncertainCount, "corrections" to corrections.size,
+                "auto" to auto, "priceChanges" to _state.value.priceChanges.size,
             )
             c.log.block("corrections", corrections)
-            _state.update { it.copy(saving = false, savedId = id) }
+            _state.update { it.copy(saving = false, savedId = id, autoSaved = auto) }
         } catch (e: Exception) {
             c.log.error("save", e)
             _state.update { it.copy(saving = false, saveError = e.message ?: e.javaClass.simpleName) }
