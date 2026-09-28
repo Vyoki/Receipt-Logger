@@ -83,7 +83,27 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest --stacktrace
+          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest --stacktrace > inst.log 2>&1
+      - name: Report instrumented test failures
+        if: failure()
+        shell: bash
+        run: |
+          # Failing tests from the JUnit XML reports, then Gradle/emulator errors from the log.
+          msg=$(python3 - <<'PY'
+          import glob, xml.etree.ElementTree as ET
+          out = []
+          for f in glob.glob('app/build/outputs/androidTest-results/connected/**/*.xml', recursive=True):
+              for tc in ET.parse(f).getroot().iter('testcase'):
+                  for fail in list(tc.findall('failure')) + list(tc.findall('error')):
+                      out.append(f"{tc.get('classname')}.{tc.get('name')}: " + (fail.text or fail.get('message') or '')[:1500])
+          print('\n'.join(out) if out else 'no JUnit results found')
+          PY
+          )
+          log=$(grep -E 'FAILED|Exception|What went wrong|^> |error:|INSTRUMENTATION' inst.log 2>/dev/null | grep -v '^> Task' | head -40)
+          all="$msg"$'\n'"--- log ---"$'\n'"$log"
+          all="${all//'%'/'%25'}"
+          all="${all//$'\n'/'%0A'}"
+          echo "::error title=Instrumented tests::${all}"
       - uses: actions/upload-artifact@v5
         if: always()
         with:
