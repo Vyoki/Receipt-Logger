@@ -102,6 +102,16 @@ object PriceWatch {
         )
     }
 
+    /**
+     * Quantity and price read the wrong way round? quantity x price is the same either way, so only history
+     * can tell: true when the "quantity" is close to what this product usually costs and the "price" is not.
+     */
+    fun looksSwapped(qty: BigDecimal, price: BigDecimal, usualPrice: BigDecimal): Boolean {
+        if (usualPrice.signum() <= 0 || qty.signum() <= 0 || price.signum() <= 0 || qty.compareTo(price) == 0) return false
+        fun off(v: BigDecimal) = v.subtract(usualPrice).abs().divide(usualPrice, MC)
+        return off(qty) < BigDecimal("0.25") && off(price) > BigDecimal("0.6")
+    }
+
     /** Every price change in a purchase history, most recent first. */
     fun history(points: List<PricePoint>, threshold: BigDecimal = DEFAULT_THRESHOLD): List<PriceChange> {
         val byProduct = points.groupBy { it.productId }

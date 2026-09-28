@@ -384,6 +384,26 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         }
     }
 
+    /**
+     * Swaps quantity and price on linked lines where the product's purchase history shows they were read the
+     * wrong way round (the "quantity" is what it usually costs). The amount does not change.
+     */
+    suspend fun fixSwappedQuantities(items: List<LineItemDraft>): List<LineItemDraft> {
+        val ids = items.mapNotNull { it.productId }.toSet()
+        if (ids.isEmpty()) return items
+        val last = documents.allPurchasesOnce().filter { it.productId in ids }
+            .groupBy { it.productId!! }
+            .mapValues { (_, rows) -> rows.mapNotNull { r -> PriceWatch.unitCost(r.toPricePoint())?.let { r.unit to it.second } } }
+        return items.map { item ->
+            val pid = item.productId ?: return@map item
+            val q = com.kitchenreceipts.core.ItalianNumbers.parse(item.quantity.text) ?: return@map item
+            val p = com.kitchenreceipts.core.ItalianNumbers.parse(item.unitPrice.text) ?: return@map item
+            val unit = com.kitchenreceipts.core.Units.normalize(item.unit.text)
+            val usual = last[pid].orEmpty().firstOrNull { com.kitchenreceipts.core.Units.normalize(it.first) == unit }?.second ?: return@map item
+            if (PriceWatch.looksSwapped(q, p, usual)) item.copy(quantity = item.unitPrice, unitPrice = item.quantity) else item
+        }
+    }
+
     // ------------------------------------------------------------ price changes
 
     private fun PurchaseRow.toPricePoint() = PricePoint(
