@@ -1,0 +1,20 @@
+CASEIFICIO VALVERDE S.R.L.
+Via dei Pascoli 14 - 00100 Roma (RM)
+P.IVA IT01234567890 - Tel. 06 0000000
+Spett.le
+TRATTORIA ESEMPIO S.R.L.
+Via Immaginaria 1
+00100 Roma
+FATTURA N. 0145/2025 del 14/03/2025
+Codice Descrizione U.M. Q.tà Prezzo Importo IVA
+MZ01 Mozzarella fior di latte kg 2,500 8,90 22,25 10%
+Lotto: L24-118 Scad. 20/03/2025
+RC02 Ricotta vaccina kg 1,000 6,40 6,40 10%
+Lot. 240312
+PR03 Parmigiano Reggiano 24 mesi kg 1,235 21,50 26,55 10%
+Lotto 12/03/2025
+BU04 Burro panna pz 4 2,35 9,40 10%
+Imponibile 64,60
+IVA 10% 6,46
+Totale documento EUR 71,06
+Prezzi IVA esclusa

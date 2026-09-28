@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?>
+<paths>
+    <!-- Saved originals, shared read-only with viewer apps via "Open original". -->
+    <files-path name="documents" path="documents/" />
+    <!-- Temporary photos written by the camera app before they are imported. -->
+    <cache-path name="captures" path="captures/" />
+</paths>

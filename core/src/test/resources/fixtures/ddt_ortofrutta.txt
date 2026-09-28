@@ -1,0 +1,15 @@
+Ortofrutta Collina Verde s.n.c.
+di Rossi e Verdi
+Loc. Campagna 7, 00000 Paese (XX)
+Documento di trasporto
+DDT n. 88 del 3 aprile 2025
+Destinatario: Trattoria Esempio S.r.l.
+Articolo UM Quantità Prezzo Totale
+Pomodori San Marzano KG 12,5 2,10 26,25
+Lotto: PSM-0325
+Zucchine kg 8 1,80 14,40
+Basilico fresco mazzo 5 0,90 4,50
+Scadenza 10/04/2025
+Patate cassa 2 11,00 22,00
+Insalata iceberg pz 6 1,20 7,50
+Totale merce 74,65
