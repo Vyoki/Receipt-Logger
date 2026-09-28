@@ -109,11 +109,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 productId = entry.arguments!!.getLong("id"),
                 onBack = back,
                 onOpenDocument = { nav.navigate(Routes.document(it)) },
-                onSettings = { nav.navigate(Routes.SETTINGS) },
             )
-        }
-        composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = back)
         }
         composable(Routes.SELLERS) {
             SellersScreen(onBack = back, onOpenSeller = { nav.navigate(Routes.documents(it)) })
