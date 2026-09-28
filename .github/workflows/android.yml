@@ -88,15 +88,18 @@ jobs:
         if: always()
         shell: bash
         run: |
-          if [ -s ocr-e2e.txt ]; then
-            out=$(head -c 60000 ocr-e2e.txt)
-            out="${out//'%'/'%25'}"
-            out="${out//$'\r'/}"
-            out="${out//$'\n'/'%0A'}"
-            echo "::notice title=OCR end-to-end output::${out}"
-          else
-            echo "::notice title=OCR end-to-end output::no output file"
-          fi
+          # Annotations are cut at 4 KB: publish the file in up to 10 chunks.
+          python3 - <<'PY'
+          import os
+          if not os.path.exists('ocr-e2e.txt') or os.path.getsize('ocr-e2e.txt') == 0:
+              print('::notice title=OCR end-to-end output::no output file')
+          else:
+              text = open('ocr-e2e.txt', encoding='utf-8', errors='replace').read()
+              chunks = [text[i:i + 3800] for i in range(0, len(text), 3800)][:10]
+              for n, c in enumerate(chunks, 1):
+                  c = c.replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+                  print(f'::notice title=OCR end-to-end output {n}/{len(chunks)}::{c}')
+          PY
       - name: Report instrumented test failures
         if: failure()
         shell: bash

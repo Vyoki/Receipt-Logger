@@ -88,6 +88,8 @@ object ReceiptParser {
     private val VAT_RATE_CODE = Regex("^(0?0|0?4|0?5|10|22|20|21)$")
     /** Item code (5+ digits), optionally marked with one letter, then colli ("1x1", "2x3", "1"). */
     private val ITEM_CODE = Regex("^\\d{5,}$")
+    /** Code and colli glued by the OCR: "10000032x3" = code 1000003 + colli 2x3. */
+    private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
     private val COLLI = Regex("^(\\d{1,3}[xX×]\\d{1,3}|\\d{1,2})$")
     /** Two-letter packaging codes printed before the unit ("SK GR 800", "NC KG"); never part of a product name. */
     private val PACKAGING_CODE = Regex("^[A-Z]{2}$")
@@ -640,6 +642,22 @@ object ReceiptParser {
             }
         }
         if (qty != null && price != null && totalCents != null) consistent = matches(qty, price, totalCents)
+        // The OCR often drops a lone small number: "SK GR 800 · (1) · 3,450 · 3,45". The first number is then
+        // the pack size; the quantity is worked out as total / price, and marked for the operator to check.
+        var qtyWorkedOut = false
+        if (!consistent && unitTok != null && unit != "pz" && values.size == 3 && tail.none { it is Tok.QtyUnit }) {
+            val p = values[1]
+            val t = values[2]
+            if (p.signum() > 0 && t.signum() > 0) {
+                val q = t.divide(p, 3, RoundingMode.HALF_UP)
+                if (isWholeNumber(q) && q >= BigDecimal.ONE && q <= BigDecimal(500) && matches(q, p, ItalianNumbers.toCents(t))) {
+                    description = "$description ${unitTok.raw.uppercase()} ${nums[0].raw}"
+                    unit = "pz"
+                    qty = q.stripTrailingZeros(); price = p; totalCents = ItalianNumbers.toCents(t)
+                    qtyWorkedOut = true
+                }
+            }
+        }
         // "GR 0,48" on a weighed item means kilograms: nobody buys 0,48 grams.
         val q0 = qty
         if (q0 != null && !isWholeNumber(q0) && q0 < BigDecimal(100)) {
@@ -659,6 +677,7 @@ object ReceiptParser {
         }
 
         val conf = if (consistent) Confidence.HIGH else Confidence.LOW
+        val qtyConf = if (qtyWorkedOut) Confidence.LOW else conf
         val warnings = if (qty != null && price != null && totalCents != null && !consistent) {
             setOf(ParseWarning.LINE_TOTAL_MISMATCH)
         } else {
@@ -667,7 +686,7 @@ object ReceiptParser {
         val totalConf = if (consistent || (qty == null && price == null)) Confidence.HIGH else conf
         return ParsedLineItem(
             originalDescription = description,
-            quantity = qty?.let { Extracted(it, conf, line) },
+            quantity = qty?.let { Extracted(it, qtyConf, line) },
             unit = unit?.let { Extracted(it, if (consistent) Confidence.HIGH else Confidence.LOW, line) },
             unitPrice = price?.let { Extracted(it, conf, line) },
             lineTotalCents = totalCents?.let { Extracted(it, totalConf, line) },
@@ -684,7 +703,13 @@ object ReceiptParser {
     /** Removes "O 2046225 1x1" (marker, item code, colli) from the start of an item line. */
     private fun stripItemCode(tokens: List<String>): Pair<List<String>, String?> {
         var i = 0
-        if (tokens.size > 3 && tokens[0].length == 1 && tokens[0][0].isLetter() && ITEM_CODE.matches(tokens[1])) i = 1
+        // Line marker ("O" offer, "S" discount); the OCR may read the letter O as a zero.
+        if (tokens.size > 3 && tokens[0].length == 1 && (tokens[0][0].isLetter() || tokens[0] == "0") &&
+            (ITEM_CODE.matches(tokens[1]) || CODE_WITH_COLLI.matches(tokens[1]))
+        ) i = 1
+        CODE_WITH_COLLI.find(tokens.getOrElse(i) { "" })?.let { m ->
+            if (tokens.size > i + 2) return tokens.drop(i + 1) to m.groupValues[1]
+        }
         if (tokens.size > i + 2 && ITEM_CODE.matches(tokens[i])) {
             val code = tokens[i]
             i++
