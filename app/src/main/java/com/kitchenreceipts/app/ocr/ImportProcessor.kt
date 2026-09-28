@@ -64,7 +64,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 break
             }
         }
-        val text = texts.joinToString("\n")
+        val text = texts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n") // pages stay distinguishable for the parser
         val parsed = withContext(Dispatchers.Default) {
             if (text.isBlank()) ParsedDocument.EMPTY else ReceiptParser.parse(text)
         }
