@@ -19,12 +19,29 @@ object OcrCleanup {
     fun cleanLine(line: String): String {
         var s = line.replace(' ', ' ').replace('\t', ' ')
         s = EURO_GLUED.replace(s) { m -> if (m.range.first > 0 && s[m.range.first - 1].isDigit()) " €" else "€ " }
-        s = s.split(' ').joinToString(" ") { fixNumericToken(it) }
+        s = s.split(' ').joinToString(" ") { fixWordToken(fixNumericToken(it)) }
         s = SPLIT_DECIMAL.replace(s) { m ->
             val g = m.groupValues
             if (g[1].isNotEmpty()) "${g[1]},${g[2]}" else "${g[3]},${g[4]}"
         }
         return s.replace(Regex(" {2,}"), " ").trim()
+    }
+
+    /**
+     * "D0CUMENTO" -> "DOCUMENTO": a zero between letters in a word that has no other digits is a letter O.
+     * Codes such as "KG1X16" or "38B/43056" have other digits and are left alone.
+     */
+    fun fixWordToken(token: String): String {
+        if (token.count { it.isLetter() } < 3) return token
+        val digits = token.filter { it.isDigit() }
+        if (digits.isEmpty() || digits.any { it != '0' }) return token
+        val sb = StringBuilder(token)
+        for (i in 1 until token.length - 1) {
+            if (token[i] == '0' && token[i - 1].isLetter() && token[i + 1].isLetter()) {
+                sb.setCharAt(i, if (token[i - 1].isUpperCase()) 'O' else 'o')
+            }
+        }
+        return sb.toString()
     }
 
     /** Replaces O/o with 0 and l/I/| with 1 inside a token that is otherwise numeric. */

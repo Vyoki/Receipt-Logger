@@ -67,7 +67,7 @@ class OcrEndToEndTest {
     }
 
     /** Places the page on a grey background as a trapezoid: taken from slightly above and to the side. */
-    private fun photograph(page: Bitmap, keystone: Boolean): Bitmap {
+    private fun photograph(page: Bitmap, keystone: Boolean, rotateDeg: Float = 0f): Bitmap {
         val out = Bitmap.createBitmap(1560, 820, Bitmap.Config.ARGB_8888)
         val c = Canvas(out)
         c.drawColor(Color.rgb(80, 80, 80))
@@ -75,12 +75,13 @@ class OcrEndToEndTest {
         val w = page.width.toFloat(); val h = page.height.toFloat()
         val dst = if (keystone) floatArrayOf(90f, 70f, 1480f, 30f, 1530f, 790f, 20f, 760f) else floatArrayOf(60f, 60f, 1500f, 60f, 1500f, 760f, 60f, 760f)
         m.setPolyToPoly(floatArrayOf(0f, 0f, w, 0f, w, h, 0f, h), 0, dst, 0, 4)
+        if (rotateDeg != 0f) m.postRotate(rotateDeg, out.width / 2f, out.height / 2f)
         c.drawBitmap(page, m, Paint(Paint.FILTER_BITMAP_FLAG))
         return out
     }
 
-    private fun runCase(name: String, keystone: Boolean): Int = runBlocking {
-        val lines = MlKitOcrEngine().recognize(photograph(renderPage(), keystone))
+    private fun runCase(name: String, keystone: Boolean, rotateDeg: Float = 0f): Int = runBlocking {
+        val lines = MlKitOcrEngine().recognize(photograph(renderPage(), keystone, rotateDeg))
         val text = LayoutRows.toText(lines)
         val d = ReceiptParser.parse(text)
         val found = d.lineItems.mapNotNull { it.lineTotalCents?.value }
@@ -104,6 +105,11 @@ class OcrEndToEndTest {
 
     @Test fun angledPhoto() {
         val matched = runCase("angled", keystone = true)
+        assertTrue("only $matched of ${expectedTotals.size} lines read correctly (see ocr-e2e.txt)", matched >= 10)
+    }
+
+    @Test fun angledAndRotatedPhoto() {
+        val matched = runCase("angled + rotated 3°", keystone = true, rotateDeg = 3f)
         assertTrue("only $matched of ${expectedTotals.size} lines read correctly (see ocr-e2e.txt)", matched >= 10)
     }
 }
