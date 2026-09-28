@@ -1,6 +1,7 @@
 package com.kitchenreceipts.app.ui.components
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -101,6 +102,7 @@ fun DocumentPages(
     }
 }
 
+@OptIn(ExperimentalFoundationApi::class) // transformable(canPan = …) is still experimental
 @Composable
 private fun ZoomableImage(bitmap: Bitmap) {
     var scale by remember { mutableFloatStateOf(1f) }
