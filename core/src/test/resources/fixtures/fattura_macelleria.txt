@@ -1,0 +1,17 @@
+Spett.le Trattoria Esempio S.r.l.
+Via Immaginaria 1 - 00100 Roma
+MACELLERIA F.LLI BIANCHI S.A.S.
+Via delle Carni 22 - 00000 Borgo (XX)
+P.IVA IT09999999999
+Fattura n. FT/2025/310
+Data: 31/03/2025
+Filetto di manzo kg 10,000 42,00 420,00
+Salsiccia fresca kg 15,500 12,80 198,40
+Guanciale stagionato kg 6,2 16,50 102,30
+Lotto n. GU-7781 Scad. 30/06/2025
+Fondo bruno conf 12 8,75 105,00 22%
+Vitello girello kg 25,000 23,80 595,00
+Totale imponibile 1.420,70
+IVA 10% su 1.315,70 131,57
+IVA 22% su 105,00 23,10
+Totale fattura € 1.575,37

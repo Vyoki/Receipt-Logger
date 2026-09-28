@@ -1,0 +1,244 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Kitchen Receipts</string>
+
+    <!-- General -->
+    <string name="back">Back</string>
+    <string name="cancel">Cancel</string>
+    <string name="ok">OK</string>
+    <string name="save">Save</string>
+    <string name="edit">Edit</string>
+    <string name="delete">Delete</string>
+    <string name="rename">Rename</string>
+    <string name="clear">Clear</string>
+    <string name="name">Name</string>
+    <string name="forget">Forget</string>
+
+    <!-- Home -->
+    <string name="scan_document">Scan receipt or invoice</string>
+    <string name="documents">Documents</string>
+    <string name="sellers">Sellers</string>
+    <string name="products">Products</string>
+    <string name="monthly_reports">Monthly reports</string>
+    <string name="recent_documents">Recent documents</string>
+    <string name="no_documents_yet">No documents yet. Tap “Scan receipt or invoice” to add the first one.</string>
+
+    <!-- Capture -->
+    <string name="take_photo">Take a photo</string>
+    <string name="import_file">Import image or PDF</string>
+    <string name="capture_tips">Tips: lay the document flat, fill the frame, avoid shadows and glare. For a long receipt or a multi-page invoice, take one photo per part: they are saved together as one document.</string>
+    <string name="photos_taken">%1$d photo(s) taken</string>
+    <string name="use_photos">Read these photos</string>
+    <string name="add_page">Add another page</string>
+    <string name="multi_photo_hint">Several photos are combined into one PDF, in this order.</string>
+    <string name="remove_photo">Remove photo</string>
+    <string name="no_camera_app">No camera app is available on this phone. Use “Import image or PDF” instead.</string>
+    <string name="saving_original">Saving the original…</string>
+    <string name="reading_text">Reading the text on the device…</string>
+    <string name="reading_page">Reading page %1$d of %2$d…</string>
+
+    <!-- Review -->
+    <string name="review_title">Check and save</string>
+    <string name="edit_title">Edit document</string>
+    <string name="nothing_to_review">There is nothing to review. The app may have been closed before saving: scan the document again.</string>
+    <string name="view_original_full">View original full screen</string>
+    <string name="original_document">Original document</string>
+    <string name="original_page">Page %1$d of the original</string>
+    <string name="page_render_failed">This page cannot be shown: %1$s</string>
+    <string name="ocr_failed">The text could not be read automatically (%1$s). Fill in the fields by hand while looking at the original.</string>
+    <string name="ocr_nothing_found">No text was recognised. Check the photo, or fill in the fields by hand.</string>
+    <string name="ocr_pages_limited">Only the first %1$d of %2$d pages were read automatically.</string>
+    <string name="read_by">Read by: %1$s. Always compare with the original.</string>
+    <string name="fix_errors">Fix the %1$d highlighted field(s) before saving.</string>
+    <string name="save_failed">Saving failed: %1$s</string>
+    <string name="field_missing">Missing – type it if it is printed</string>
+    <string name="field_uncertain">Check this value · read from: “%1$s”. Tap ✓ if correct.</string>
+    <string name="confirm_value">Correct</string>
+    <string name="document_section">Document</string>
+    <string name="seller">Seller</string>
+    <string name="date">Date</string>
+    <string name="pick_date">Pick date</string>
+    <string name="document_number">Document number</string>
+    <string name="currency">Currency</string>
+    <string name="set_eur">Set EUR</string>
+    <string name="subtotal">Subtotal (taxable)</string>
+    <string name="vat_amount">VAT</string>
+    <string name="total">Total</string>
+    <string name="prices_are">Line prices are</string>
+    <string name="vat_exclusive">VAT excluded</string>
+    <string name="vat_inclusive">VAT included</string>
+    <string name="vat_unknown">VAT not stated</string>
+    <string name="vat_basis_guessed">Guessed from the totals: please confirm.</string>
+    <string name="lines_sum">Sum of line totals: %1$s</string>
+    <string name="lines_sum_mismatch">Sum of line totals: %1$s – does not match subtotal or total. Check the amounts.</string>
+    <string name="no_items_hint">No line items. Add them with the button below, or save the document with totals only.</string>
+    <string name="add_item">Add line item</string>
+    <string name="remove_item">Remove line item</string>
+    <string name="description_on_document">Description (as printed)</string>
+    <string name="assign_product">Assign product</string>
+    <string name="product_is">Product: %1$s</string>
+    <string name="quantity">Quantity</string>
+    <string name="unit">Unit</string>
+    <string name="unit_price">Unit price</string>
+    <string name="line_total">Line total</string>
+    <string name="use_computed_total">Use qty × price = %1$s</string>
+    <string name="line_mismatch">qty × price = %1$s, different from the line total. Check both.</string>
+    <string name="lot">Lot</string>
+    <string name="lot_missing_hint">No lot read – type it only if printed</string>
+    <string name="vat_rate" formatted="false">VAT %</string>
+    <string name="expiry">Expiry (not a lot)</string>
+    <string name="all_checked">All values checked</string>
+    <string name="discard_title">Discard this document?</string>
+    <string name="discard_text">Nothing has been saved yet. The photo or file and the values read will be deleted.</string>
+    <string name="discard">Discard</string>
+    <string name="keep_editing">Keep editing</string>
+    <string name="possible_duplicate_title">Possible duplicate</string>
+    <string name="unchecked_title">Some values are not checked</string>
+    <string name="save_anyway">Save anyway</string>
+    <string name="go_back_and_check">Go back and check</string>
+    <string name="dup_same_file">The same file was already imported.</string>
+    <string name="dup_same_number">Same seller and same document number.</string>
+    <string name="dup_same_seller_date_total">Same seller, date and total.</string>
+    <string name="dup_same_date_total">Same date and total (different seller).</string>
+
+    <!-- Product picker -->
+    <string name="on_document">On the document: “%1$s”</string>
+    <string name="search_or_new_product">Search, or type a new product name</string>
+    <string name="create_product">Create new product “%1$s”</string>
+    <string name="similar_products">Similar products (tap to choose – nothing is merged automatically)</string>
+    <string name="remove_assignment">Remove assignment</string>
+
+    <!-- Parse warnings -->
+    <string name="warn_no_items">No line items were recognised.</string>
+    <string name="warn_line_total_mismatch">On some lines quantity × price does not match the line total.</string>
+    <string name="warn_items_sum_mismatch">The line totals do not add up to the subtotal or the total.</string>
+    <string name="warn_totals_inconsistent">Subtotal + VAT does not equal the total.</string>
+    <string name="warn_lot_looks_like_date">A “lot” value looked like a date, so it was not used. Check the lot numbers.</string>
+    <string name="warn_multiple_totals">Several different totals were found. Check the total.</string>
+
+    <!-- Validation -->
+    <string name="err_required">Required</string>
+    <string name="err_invalid_number">Not a valid number (use 12,50)</string>
+    <string name="err_invalid_date">Not a valid date (use dd/mm/yyyy)</string>
+    <string name="err_not_zero">Must not be zero</string>
+    <string name="err_positive">Must not be negative</string>
+    <string name="err_out_of_range">Value out of range</string>
+    <string name="err_too_long">Too long</string>
+    <string name="err_currency">Use a 3-letter code, e.g. EUR</string>
+
+    <!-- Documents -->
+    <string name="document">Document</string>
+    <string name="search_documents_hint">Seller, number, product, lot…</string>
+    <string name="all_sellers">All sellers</string>
+    <string name="all_months">All months</string>
+    <string name="any_day">Any day</string>
+    <string name="clear_filters">Clear filters</string>
+    <string name="no_matching_documents">No documents match these filters.</string>
+    <string name="document_not_found">This document no longer exists.</string>
+    <string name="full_screen">Full screen</string>
+    <string name="open_pdf">Open PDF</string>
+    <string name="open_image">Open image</string>
+    <string name="no_viewer_app">No app on this phone can open this file.</string>
+    <string name="line_items_count">Line items (%1$d)</string>
+    <string name="no_line_items">This document has no line items.</string>
+    <string name="no_product_assigned">No product assigned</string>
+    <string name="lot_value">Lot %1$s</string>
+    <string name="lot_not_recorded">Lot not recorded</string>
+    <string name="expiry_value">Exp. %1$s</string>
+    <string name="delete_document_title">Delete this document?</string>
+    <string name="delete_document_text">The document, its line items and the saved original will be deleted. This cannot be undone.</string>
+
+    <!-- Sellers -->
+    <string name="no_sellers">No sellers yet. They are created when you save a document.</string>
+    <string name="last_document">last %1$s</string>
+
+    <!-- Products -->
+    <string name="product">Product</string>
+    <string name="new_product">New product</string>
+    <string name="no_products">No products yet. Assign line items to products while reviewing a document.</string>
+    <string name="unassigned_hint">Tap a description to assign it to a product. The choice is remembered for the same seller and description.</string>
+    <string name="show_all">Show all (%1$d)</string>
+    <string name="product_exists">A product called “%1$s” already exists.</string>
+    <string name="product_not_found">This product no longer exists.</string>
+    <string name="no_purchases">No purchases recorded yet.</string>
+    <string name="no_average_yet">No average yet: purchases are missing quantity, unit or line total.</string>
+    <string name="average_line">%1$s €/%2$s · %3$s · %4$s</string>
+    <string name="average_cost">Weighted average cost</string>
+    <string name="based_on">Based on</string>
+    <string name="total_quantity">Total quantity</string>
+    <string name="total_spent">Total spent</string>
+    <string name="converted_from">Includes purchases in: %1$s (converted)</string>
+    <string name="separate_averages_note">Averages are kept separate for different units and for VAT-included / VAT-excluded prices. Add a unit conversion to combine units.</string>
+    <string name="unit_conversions">Unit conversions</string>
+    <string name="conversions_hint">g→kg and ml→l are converted automatically. Pieces, packs, cartons… are only combined if you define a conversion here.</string>
+    <string name="add_conversion">Add conversion</string>
+    <string name="conversion_example">Example: 1 conf = 6 pz</string>
+    <string name="remembered_descriptions">Remembered descriptions</string>
+    <string name="price_history">Price history</string>
+    <string name="calculated">(calc.)</string>
+    <string name="delete_product_title">Delete this product?</string>
+    <string name="delete_product_text">Line items stay saved but become unassigned. Remembered descriptions and conversions for this product are deleted.</string>
+    <string name="excl_missing_qty">missing quantity</string>
+    <string name="excl_missing_total">missing line total</string>
+    <string name="excl_missing_unit">missing unit</string>
+    <string name="excl_zero_qty">quantity is zero</string>
+
+    <!-- Reports -->
+    <string name="csv_italian">Excel Italia (;)</string>
+    <string name="csv_standard">Standard CSV (,)</string>
+    <string name="export_monthly">Export monthly totals (CSV)</string>
+    <string name="export_purchases">Export all purchases (CSV)</string>
+    <string name="export_done">CSV saved.</string>
+    <string name="export_failed">The CSV could not be saved.</string>
+    <string name="report_totals_note">Totals are the document totals as printed (normally VAT included). Documents without a total are counted but not added.</string>
+    <string name="no_date">No date</string>
+
+    <plurals name="item_count">
+        <item quantity="one">%d line</item>
+        <item quantity="other">%d lines</item>
+    </plurals>
+    <plurals name="items_title">
+        <item quantity="one">Line items (%d)</item>
+        <item quantity="other">Line items (%d)</item>
+    </plurals>
+    <plurals name="documents_count">
+        <item quantity="one">%d document</item>
+        <item quantity="other">%d documents</item>
+    </plurals>
+    <plurals name="errors_count">
+        <item quantity="one">%d error</item>
+        <item quantity="other">%d errors</item>
+    </plurals>
+    <plurals name="excluded_purchases">
+        <item quantity="one">%d purchase not included in the average:</item>
+        <item quantity="other">%d purchases not included in the averages:</item>
+    </plurals>
+    <plurals name="lines_count">
+        <item quantity="one">%d line</item>
+        <item quantity="other">%d lines</item>
+    </plurals>
+    <plurals name="missing_totals">
+        <item quantity="one">%d document without total (not added)</item>
+        <item quantity="other">%d documents without total (not added)</item>
+    </plurals>
+    <plurals name="purchases_count">
+        <item quantity="one">%d purchase</item>
+        <item quantity="other">%d purchases</item>
+    </plurals>
+    <plurals name="unassigned_title">
+        <item quantity="one">%d description without product</item>
+        <item quantity="other">%d descriptions without product</item>
+    </plurals>
+    <plurals name="unchecked_values">
+        <item quantity="one">%d value is still marked as uncertain.</item>
+        <item quantity="other">%d values are still marked as uncertain.</item>
+    </plurals>
+    <plurals name="values_to_check">
+        <item quantity="one">%d value to check (orange). Compare it with the original, correct it or tap ✓.</item>
+        <item quantity="other">%d values to check (orange). Compare them with the original, correct them or tap ✓.</item>
+    </plurals>
+    <plurals name="values_to_check_short">
+        <item quantity="one">%d to check</item>
+        <item quantity="other">%d to check</item>
+    </plurals>
+</resources>
