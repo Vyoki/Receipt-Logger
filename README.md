@@ -245,7 +245,7 @@ Built and tested in an environment **without** access to Google's Maven reposito
 | Check | Status |
 |---|---|
 | `:core` compiles (Kotlin 2.0.21) | ✅ verified |
-| `:core` unit tests: 88 tests, including 6 synthetic Italian fixtures (2 imitate messy phone OCR) | ✅ all passing |
+| `:core` unit tests: 93 tests, including 6 synthetic Italian fixtures (2 imitate messy phone OCR) | ✅ all passing |
 | All 34 Room `@Query` statements and the v1→v2 migration SQL run in SQLite against a schema matching the entities | ✅ verified |
 | String resources: every referenced key exists in English and Italian, with matching format arguments | ✅ verified |
 | `:app` Android build (Room/KSP code generation, Compose compilation, APK) | ⚠️ **not run**: no Android SDK was available. Check with `./gradlew :app:assembleDebug`. |

@@ -27,6 +27,9 @@ object ProductMatching {
     private fun tokens(s: String): Set<String> =
         aliasKey(s).split(' ').filter { it.length > 1 && it !in STOPWORDS && !it.all(Char::isDigit) }.toSet()
 
+    /** Alias key for a supplier's article code: stable even when the description is misread. */
+    fun codeKey(itemCode: String): String = "#" + itemCode.trim()
+
     /** Candidates ranked by token overlap. Score 0..1. Only for display, never auto-applied. */
     fun suggest(description: String, products: List<ProductRef>, limit: Int = 5): List<ProductSuggestion> {
         val a = tokens(description)

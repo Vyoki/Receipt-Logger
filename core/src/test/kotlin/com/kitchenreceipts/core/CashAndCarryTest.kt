@@ -84,4 +84,14 @@ class CashAndCarryTest {
         assertEquals("01234567897", SellerProfiles.supplierVatNumber(text, null))
         assertEquals("01234567897", SellerProfiles.supplierVatNumber(text, "09876543217"))
     }
+
+    @Test fun articleCodeKeptForRememberingProducts() {
+        assertEquals("1000001", item("BISCOTTI FROLLINI").itemCode)
+        assertEquals("1000003", item("CANDEGGINA").itemCode) // "O 1000003" offer marker
+        assertEquals("#1000001", ProductMatching.codeKey("1000001"))
+        val draft = DocumentDraft.fromParsed(d)
+        assertEquals("1000001", draft.items.first().itemCode)
+        val valid = (DraftValidator.validate(draft.copy(seller = DraftField("ABC"))) as ValidationResult.Valid).document
+        assertEquals("1000001", valid.items.first().itemCode)
+    }
 }

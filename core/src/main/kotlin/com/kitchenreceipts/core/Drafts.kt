@@ -27,6 +27,8 @@ data class LineItemDraft(
     val vatRate: DraftField = DraftField(),
     val lot: DraftField = DraftField(),
     val expiry: DraftField = DraftField(),
+    /** Supplier's article code read from the line; used to remember product assignments. */
+    val itemCode: String? = null,
 ) {
     val uncertainCount: Int
         get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry).count { it.uncertain }
@@ -83,6 +85,7 @@ data class DocumentDraft(
                         vatRate = f(it.vatRatePercent, dec),
                         lot = f(it.lotNumber) { l -> l },
                         expiry = f(it.expiryDate) { d -> ItalianDates.format(d) },
+                        itemCode = it.itemCode,
                     )
                 },
                 warnings = p.warnings,
@@ -106,6 +109,7 @@ data class ValidLineItem(
     val vatRatePercent: BigDecimal?,
     val lotNumber: String?,
     val expiryDate: LocalDate?,
+    val itemCode: String? = null,
 )
 
 data class ValidDocument(
@@ -162,7 +166,7 @@ object DraftValidator {
             val lot = it.lot.text.trim().ifEmpty { null }
             if ((lot?.length ?: 0) > 40) errors += FieldError("$p.lot", ErrorCode.TOO_LONG)
             val expiry = optionalDate(it.expiry.text, "$p.expiry", errors)
-            ValidLineItem(desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry)
+            ValidLineItem(desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry, it.itemCode)
         }
 
         return if (errors.isEmpty()) {

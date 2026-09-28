@@ -127,7 +127,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         if (seller.isNotBlank()) {
             val names = repo.productsOnce().associate { it.id to it.name }
             draft = draft.copy(items = draft.items.map { item ->
-                val pid = repo.rememberedProduct(seller, item.description.text)
+                val pid = repo.rememberedProduct(seller, item.description.text, item.itemCode)
                 if (pid != null && names.containsKey(pid)) item.copy(productId = pid, productName = names[pid]) else item
             })
         }

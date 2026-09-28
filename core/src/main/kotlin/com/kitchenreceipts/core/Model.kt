@@ -47,6 +47,8 @@ data class ParsedLineItem(
     /** Kept separately so an expiry date is never stored as a lot number. */
     val expiryDate: Extracted<LocalDate>?,
     val warnings: Set<ParseWarning> = emptySet(),
+    /** Supplier's article code printed at the start of the line ("2046225"), if any. */
+    val itemCode: String? = null,
 )
 
 data class ParsedDocument(
