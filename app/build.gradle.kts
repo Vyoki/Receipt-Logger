@@ -65,6 +65,8 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.exifinterface)
+    implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment.ktx)
     implementation(libs.kotlinx.coroutines.android)
     // Bundled on-device model: works offline from first launch, no Google Play download, no API key.
     implementation(libs.mlkit.text.recognition)

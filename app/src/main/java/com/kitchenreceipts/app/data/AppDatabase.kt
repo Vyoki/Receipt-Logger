@@ -33,6 +33,7 @@ class Converters {
         LineItemEntity::class,
         ProductAliasEntity::class,
         UnitConversionEntity::class,
+        SellerAliasEntity::class,
     ],
     version = AppDatabase.VERSION,
     exportSchema = true,
@@ -44,7 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
 
     companion object {
-        const val VERSION = 2
+        const val VERSION = 3
         const val NAME = "kitchen_receipts.db"
 
         fun build(context: Context): AppDatabase =
@@ -62,6 +63,7 @@ abstract class AppDatabase : RoomDatabase() {
  *
  * v1: sellers, documents, products, line_items, product_aliases
  * v2: + unit_conversions (user-defined unit conversions per product)
+ * v3: + sellers.vat_number, sellers.header_profile, seller_aliases (supplier recognition)
  */
 object Migrations {
 
@@ -83,5 +85,22 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2)
+    val MIGRATION_2_3 = object : Migration(2, 3) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `sellers` ADD COLUMN `vat_number` TEXT")
+            db.execSQL("ALTER TABLE `sellers` ADD COLUMN `header_profile` TEXT")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_sellers_vat_number` ON `sellers` (`vat_number`)")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `seller_aliases` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`alias_key` TEXT NOT NULL, " +
+                    "`seller_id` INTEGER NOT NULL, " +
+                    "FOREIGN KEY(`seller_id`) REFERENCES `sellers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_seller_aliases_alias_key` ON `seller_aliases` (`alias_key`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_seller_aliases_seller_id` ON `seller_aliases` (`seller_id`)")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3)
 }

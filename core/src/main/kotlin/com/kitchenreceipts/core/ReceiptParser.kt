@@ -16,6 +16,9 @@ import java.time.LocalDate
  *   VAT codes after prices, quantities on their own line, rows split in two, and totals whose
  *   amount is printed on the line below the label.
  */
+/** What the parser should know about the operator's own business. */
+data class ParseOptions(val ownBusinessName: String? = null, val ownVatNumber: String? = null)
+
 object ReceiptParser {
 
     private val COMPANY_SUFFIX = Regex(
@@ -89,7 +92,7 @@ object ReceiptParser {
     /** Page-bottom running totals of multi-page invoices: neither items nor the document total. */
     private val CARRY_OVER = Regex("(?i)\\b(a\\s+riportare|riporto|totale\\s+pagina|totale\\s+parziale\\s+pagina|segue|continua\\s+a\\s+pagina)\\b")
 
-    fun parse(rawText: String): ParsedDocument {
+    fun parse(rawText: String, options: ParseOptions = ParseOptions()): ParsedDocument {
         val pages = rawText.split(PAGE_BREAK).map { page ->
             OcrCleanup.clean(page).lines().map { it.replace(Regex(" {2,}"), " ").trim() }.filter { it.isNotEmpty() }
         }.filter { it.isNotEmpty() }
@@ -109,7 +112,7 @@ object ReceiptParser {
 
         val docNumber = findDocumentNumber(lines, consumed)
         val date = findDocumentDate(lines, consumed)
-        val seller = findSeller(lines)
+        val seller = findSeller(lines, options)
         val currency = CURRENCY.find(text)?.let { Extracted("EUR", Confidence.HIGH, it.value) }
 
         // ------------------------------------------------------------ totals
@@ -398,7 +401,15 @@ object ReceiptParser {
     private fun isInsideExpiry(line: String, d: DateMatch): Boolean =
         LotExtractor.scan(line).consumed.any { d.range.first >= it.first && d.range.last <= it.last }
 
-    private fun findSeller(lines: List<String>): Extracted<String>? {
+    private fun findSeller(lines: List<String>, options: ParseOptions): Extracted<String>? {
+        val ownName = DuplicateDetector.normalizeSeller(options.ownBusinessName)
+        val ownVat = options.ownVatNumber?.filter(Char::isDigit)?.takeIf { it.length >= 8 }
+        // The operator's own business (the customer on supplier invoices) is never the seller.
+        fun isOwn(line: String): Boolean {
+            if (ownVat != null && line.filter(Char::isDigit).contains(ownVat)) return true
+            val n = DuplicateDetector.normalizeSeller(line) ?: return false
+            return ownName != null && ownName.length >= 4 && n.contains(ownName)
+        }
         val head = lines.take(15)
         var skipUntil = -1
         var firstPlausible: String? = null
@@ -423,6 +434,7 @@ object ReceiptParser {
                 return@forEachIndexed
             }
             if (line.count { it.isLetter() } < 3) return@forEachIndexed
+            if (isOwn(line)) return@forEachIndexed
 
             val suffix = COMPANY_SUFFIX.find(line)
             if (suffix != null) {

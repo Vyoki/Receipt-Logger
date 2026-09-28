@@ -16,6 +16,7 @@ import com.kitchenreceipts.app.ui.products.ProductsScreen
 import com.kitchenreceipts.app.ui.reports.ReportsScreen
 import com.kitchenreceipts.app.ui.review.ReviewScreen
 import com.kitchenreceipts.app.ui.sellers.SellersScreen
+import com.kitchenreceipts.app.ui.settings.SettingsScreen
 import com.kitchenreceipts.app.ui.viewer.ViewerScreen
 
 object Routes {
@@ -30,6 +31,7 @@ object Routes {
     const val PRODUCT = "product/{id}"
     const val SELLERS = "sellers"
     const val REPORTS = "reports"
+    const val SETTINGS = "settings"
 
     fun edit(id: Long) = "edit/$id"
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
@@ -50,7 +52,11 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onProducts = { nav.navigate(Routes.PRODUCTS) },
                 onReports = { nav.navigate(Routes.REPORTS) },
                 onOpenDocument = { nav.navigate(Routes.document(it)) },
+                onSettings = { nav.navigate(Routes.SETTINGS) },
             )
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = back)
         }
         composable(Routes.CAPTURE) {
             CaptureScreen(
@@ -103,7 +109,11 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 productId = entry.arguments!!.getLong("id"),
                 onBack = back,
                 onOpenDocument = { nav.navigate(Routes.document(it)) },
+                onSettings = { nav.navigate(Routes.SETTINGS) },
             )
+        }
+        composable(Routes.SETTINGS) {
+            SettingsScreen(onBack = back)
         }
         composable(Routes.SELLERS) {
             SellersScreen(onBack = back, onOpenSeller = { nav.navigate(Routes.documents(it)) })

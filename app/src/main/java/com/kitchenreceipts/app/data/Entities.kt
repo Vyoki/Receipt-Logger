@@ -16,12 +16,28 @@ import java.time.LocalDate
 
 @Entity(
     tableName = "sellers",
-    indices = [Index(value = ["normalized_name"], unique = true)],
+    indices = [Index(value = ["normalized_name"], unique = true), Index("vat_number")],
 )
 data class SellerEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
     val name: String,
     @ColumnInfo(name = "normalized_name") val normalizedName: String,
+    /** v3: supplier's Partita IVA, learned from saved documents. */
+    @ColumnInfo(name = "vat_number") val vatNumber: String? = null,
+    /** v3: words usually printed in this supplier's letterhead, "word:count;..." (see SellerProfiles). */
+    @ColumnInfo(name = "header_profile") val headerProfile: String? = null,
+)
+
+/** v3: how the OCR spelled a supplier's name before the operator corrected it. */
+@Entity(
+    tableName = "seller_aliases",
+    foreignKeys = [ForeignKey(SellerEntity::class, ["id"], ["seller_id"], onDelete = ForeignKey.CASCADE)],
+    indices = [Index(value = ["alias_key"], unique = true), Index("seller_id")],
+)
+data class SellerAliasEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "alias_key") val aliasKey: String,
+    @ColumnInfo(name = "seller_id") val sellerId: Long,
 )
 
 @Entity(

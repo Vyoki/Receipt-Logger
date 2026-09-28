@@ -189,6 +189,45 @@ OCR is behind the `OcrEngine` interface (`app/.../ocr/OcrEngine.kt`). To change 
 
 ---
 
+## 7b. Settings, supplier learning, operation log, security
+
+Open **Settings** with the gear icon on the Home screen.
+
+**Language.** Choose *Same as the phone*, *English* or *Italiano*. The app restarts its screen in the new language immediately.
+
+**Your business.** Enter your restaurant's name and VAT number (P.IVA). They appear on every supplier invoice, and the reader will never take them for the supplier.
+
+**Supplier learning (on the phone, from what you save).**
+- Each time you save a document, the app learns three things about that supplier:
+  - its **VAT number**, checked with the Partita IVA checksum so misread digits are rejected;
+  - the **words in its letterhead**;
+  - **how the OCR misspelled its name**, if you corrected it.
+- On the next scan the supplier is recognised in that order (VAT number, then a corrected spelling, then the letterhead), even if its name is misread. The check screen shows *"Recognised supplier: … (by VAT number)"*. A match made only on the letterhead is marked orange for you to confirm.
+- If the supplier's last documents always had the same VAT basis (included/excluded), it is pre-selected and marked to confirm.
+- Product assignments are still remembered per supplier and description, as before.
+
+**Operation log.**
+- What it records, one line per event, on a low-priority background thread:
+  - app start (version, Android version, phone model);
+  - each scan (pages, time taken, how many text lines were read, OCR errors);
+  - what was found or missing and uncertain;
+  - the recognised text (can be switched off);
+  - duplicate warnings;
+  - on save, **every correction you made** (for example `seller: 'CASEIFICI0' -> 'Caseificio Valverde'`);
+  - discards, deletions, exports, and errors including crashes.
+- Size is capped at about 1 MB (it rotates).
+- **Settings ▸ Share log** sends it through any app you choose. **Clear log** deletes it.
+
+**Privacy and security: what is on this phone stays on this phone.**
+- **No network at all**: the manifest removes `INTERNET` and network-state permissions (including any that libraries try to add), so Android itself blocks every connection from the app.
+- **No cloud backup and no device-to-device copy** (`allowBackup=false` plus data-extraction rules). Keep your own copy with Reports ▸ Export CSV if you need one.
+- Data leaves the phone only when you tap **Share** (recognised text, log, original document) or **Export** (CSV).
+- **App lock** (optional): asks for fingerprint, face or the screen-lock PIN on opening and after 3 minutes away. It needs a screen lock set up on the phone.
+- **Block screenshots** (optional): also hides the app's content in the recent-apps view.
+- Data is stored in the app's private storage, which Android encrypts on modern phones.
+
+Database schema is now **version 3** (supplier VAT number, letterhead profile, remembered name spellings). Migrations 1→2→3 keep all existing data. They are tested on an Android emulator in GitHub Actions (`instrumented-tests` job).
+
 ## 8. MVP assumptions and limits
 
 - Main target: Italian supplier documents in EUR. Other currencies can be typed as a 3-letter code, but no conversion is done.
@@ -206,7 +245,7 @@ Built and tested in an environment **without** access to Google's Maven reposito
 | Check | Status |
 |---|---|
 | `:core` compiles (Kotlin 2.0.21) | ✅ verified |
-| `:core` unit tests: 71 tests, including 6 synthetic Italian fixtures (2 imitate messy phone OCR) | ✅ all passing |
+| `:core` unit tests: 81 tests, including 6 synthetic Italian fixtures (2 imitate messy phone OCR) | ✅ all passing |
 | All 34 Room `@Query` statements and the v1→v2 migration SQL run in SQLite against a schema matching the entities | ✅ verified |
 | String resources: every referenced key exists in English and Italian, with matching format arguments | ✅ verified |
 | `:app` Android build (Room/KSP code generation, Compose compilation, APK) | ⚠️ **not run**: no Android SDK was available. Check with `./gradlew :app:assembleDebug`. |

@@ -59,7 +59,7 @@ import java.time.LocalDate
 
 enum class ExportKind { MONTHLY, PURCHASES }
 
-class ReportsViewModel(private val repo: ReceiptRepository) : ViewModel() {
+class ReportsViewModel(private val repo: ReceiptRepository, private val log: com.kitchenreceipts.app.diagnostics.AppLog) : ViewModel() {
     val rows: StateFlow<List<MonthlySellerRow>?> = repo.reportDocuments().map { Reports.monthlyBySeller(it) }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
@@ -75,8 +75,10 @@ class ReportsViewModel(private val repo: ReceiptRepository) : ViewModel() {
             withContext(Dispatchers.IO) {
                 resolver.openOutputStream(uri, "wt")?.use { it.write(csv.toByteArray(Charsets.UTF_8)) } ?: error("Cannot write")
             }
+            log.event("EXPORT", "kind" to kind, "format" to format)
             true
         } catch (e: Exception) {
+            log.error("export", e)
             false
         }
         exportResult.value = ok
@@ -85,7 +87,7 @@ class ReportsViewModel(private val repo: ReceiptRepository) : ViewModel() {
 
 @Composable
 fun ReportsScreen(onBack: () -> Unit) {
-    val vm = appViewModel { ReportsViewModel(it.repository) }
+    val vm = appViewModel { ReportsViewModel(it.repository, it.log) }
     val rows by vm.rows.collectAsStateWithLifecycle()
     val exportResult by vm.exportResult.collectAsStateWithLifecycle()
     val resolver = LocalContext.current.contentResolver

@@ -70,4 +70,11 @@ class RealOcrTest {
         assertTrue(d.lineItems.none { it.originalDescription.contains("Totale", ignoreCase = true) })
         assertNull(d.currency)
     }
+
+    @Test fun ownBusinessIsNeverTheSeller() {
+        val text = "RISTORANTE ESEMPIO S.R.L.\nVia Immaginaria 1\nMACELLERIA BIANCHI S.A.S.\nFattura n. 12\nFiletto kg 1 40,00 40,00\nTotale 40,00"
+        assertEquals("RISTORANTE ESEMPIO S.R.L.", ReceiptParser.parse(text).sellerName?.value)
+        val d = ReceiptParser.parse(text, ParseOptions(ownBusinessName = "Ristorante Esempio srl"))
+        assertEquals("MACELLERIA BIANCHI S.A.S.", d.sellerName?.value)
+    }
 }

@@ -4,6 +4,7 @@ import com.kitchenreceipts.app.files.PageRenderer
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.core.LayoutRows
 import com.kitchenreceipts.core.OcrLine
+import com.kitchenreceipts.core.ParseOptions
 import com.kitchenreceipts.core.ParsedDocument
 import com.kitchenreceipts.core.ReceiptParser
 import kotlinx.coroutines.Dispatchers
@@ -21,6 +22,8 @@ data class PendingImport(
     val ocrError: String?,
     /** What the engine returned, page by page, before regrouping into rows (for troubleshooting). */
     val rawLines: List<List<OcrLine>> = emptyList(),
+    /** Time spent rendering pages and running OCR. */
+    val ocrMillis: Long = 0,
 ) {
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
@@ -41,7 +44,9 @@ class ImportProcessor(private val renderer: PageRenderer) {
         file: StoredFile,
         engine: OcrEngine,
         onProgress: (page: Int, of: Int) -> Unit = { _, _ -> },
+        options: ParseOptions = ParseOptions(),
     ): PendingImport {
+        val started = System.currentTimeMillis()
         val pages = minOf(file.pageCount, MAX_OCR_PAGES)
         val texts = mutableListOf<String>()
         val raw = mutableListOf<List<OcrLine>>()
@@ -66,9 +71,9 @@ class ImportProcessor(private val renderer: PageRenderer) {
         }
         val text = texts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n") // pages stay distinguishable for the parser
         val parsed = withContext(Dispatchers.Default) {
-            if (text.isBlank()) ParsedDocument.EMPTY else ReceiptParser.parse(text)
+            if (text.isBlank()) ParsedDocument.EMPTY else ReceiptParser.parse(text, options)
         }
-        return PendingImport(file, text, parsed, engine.displayName, texts.size, error, raw)
+        return PendingImport(file, text, parsed, engine.displayName, texts.size, error, raw, System.currentTimeMillis() - started)
     }
 
     companion object {

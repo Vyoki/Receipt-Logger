@@ -10,14 +10,15 @@ import com.kitchenreceipts.app.data.Migrations
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 
 /**
- * Builds a real version-1 database file, fills it, then opens it with the current code.
- * Room runs MIGRATION_1_2 and then validates every table against the entities, so a wrong
- * migration fails here instead of on a user's phone.
+ * Builds real old-version database files, fills them, then opens them with the current code.
+ * Room runs the migrations and then validates every table against the entities, so a wrong
+ * migration fails here instead of on the operator's phone.
  */
 @RunWith(AndroidJUnit4::class)
 class MigrationTest {
@@ -28,15 +29,23 @@ class MigrationTest {
     @Before fun setUp() { context.deleteDatabase(name) }
     @After fun tearDown() { context.deleteDatabase(name) }
 
-    @Test
-    fun migrate1To2_keepsDataAndProducesCurrentSchema() {
-        // Version 1 = the current schema without the unit_conversions table.
+    /** Creates the current schema with Room, then rewrites it back to [version]. */
+    private fun createOldDatabase(version: Int) {
         Room.databaseBuilder(context, AppDatabase::class.java, name).build().apply {
             openHelper.writableDatabase
             close()
         }
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
-            db.execSQL("DROP TABLE unit_conversions")
+            db.execSQL("PRAGMA foreign_keys=OFF")
+            // v3 -> v2: no seller_aliases, sellers without vat_number / header_profile
+            db.execSQL("DROP TABLE seller_aliases")
+            db.execSQL("CREATE TABLE `sellers_v2` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `normalized_name` TEXT NOT NULL)")
+            db.execSQL("DROP TABLE sellers")
+            db.execSQL("ALTER TABLE sellers_v2 RENAME TO sellers")
+            db.execSQL("CREATE UNIQUE INDEX `index_sellers_normalized_name` ON `sellers` (`normalized_name`)")
+            // v2 -> v1: no unit_conversions
+            if (version == 1) db.execSQL("DROP TABLE unit_conversions")
+
             db.execSQL("INSERT INTO sellers (id, name, normalized_name) VALUES (1, 'Caseificio Valverde S.r.l.', 'caseificio valverde')")
             db.execSQL(
                 "INSERT INTO documents (id, seller_id, document_date, document_number, currency, subtotal_cents, vat_cents, " +
@@ -47,17 +56,21 @@ class MigrationTest {
                 "INSERT INTO line_items (id, document_id, position, original_description, product_id, quantity, unit, unit_price, " +
                     "line_total_cents, vat_rate, lot_number, expiry_date) VALUES (1, 1, 0, 'Mozzarella', NULL, '2.500', 'kg', '8.90', 2225, '10', 'L24-118', NULL)",
             )
-            db.version = 1
+            db.version = version
         }
+    }
 
+    private fun openAndCheck() {
         val migrated = Room.databaseBuilder(context, AppDatabase::class.java, name).addMigrations(*Migrations.ALL).build()
         try {
             runBlocking {
-                val fp = migrated.documentDao().fingerprints().single()
-                assertEquals(7106L, fp.totalCents)
+                assertEquals(7106L, migrated.documentDao().fingerprints().single().totalCents)
                 val item = migrated.documentDao().itemsOnce(1).single().item
                 assertEquals(0, java.math.BigDecimal("2.5").compareTo(item.quantity))
                 assertEquals("L24-118", item.lotNumber)
+                val seller = migrated.sellerDao().allOnce().single()
+                assertNull(seller.vatNumber)
+                assertEquals(0, migrated.sellerDao().allAliases().size)
             }
             migrated.openHelper.readableDatabase.query("SELECT COUNT(*) FROM unit_conversions").use { c ->
                 c.moveToFirst()
@@ -67,5 +80,15 @@ class MigrationTest {
         } finally {
             migrated.close()
         }
+    }
+
+    @Test fun migrate1To3() {
+        createOldDatabase(1)
+        openAndCheck()
+    }
+
+    @Test fun migrate2To3() {
+        createOldDatabase(2)
+        openAndCheck()
     }
 }

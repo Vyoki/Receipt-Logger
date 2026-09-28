@@ -80,6 +80,8 @@ data class SellerStatsRow(
     val lastDate: LocalDate?,
 )
 
+data class SellerAliasRow(val aliasKey: String, val sellerId: Long)
+
 data class UnassignedRow(
     val lineItemId: Long,
     val documentId: Long,
@@ -224,6 +226,31 @@ interface SellerDao {
 
     @Query("DELETE FROM sellers WHERE id NOT IN (SELECT seller_id FROM documents)")
     fun deleteUnused()
+
+    @Query("SELECT * FROM sellers")
+    suspend fun allOnce(): List<SellerEntity>
+
+    @Query("SELECT * FROM sellers WHERE id = :id")
+    fun byId(id: Long): SellerEntity?
+
+    @Query("SELECT * FROM sellers WHERE vat_number = :vat LIMIT 1")
+    fun byVatNumber(vat: String): SellerEntity?
+
+    @Query("UPDATE sellers SET vat_number = :vat, header_profile = :profile WHERE id = :id")
+    fun updateLearning(id: Long, vat: String?, profile: String?)
+
+    @Query("SELECT alias_key AS aliasKey, seller_id AS sellerId FROM seller_aliases")
+    suspend fun allAliases(): List<SellerAliasRow>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    fun upsertAlias(alias: SellerAliasEntity)
+
+    /** VAT basis of this supplier's most recent documents (most recent first). */
+    @Query("SELECT vat_basis FROM documents WHERE seller_id = :sellerId ORDER BY created_at DESC LIMIT 5")
+    suspend fun recentVatBases(sellerId: Long): List<VatBasis>
+
+    @Query("SELECT COUNT(*) FROM documents WHERE seller_id = :sellerId")
+    suspend fun documentCount(sellerId: Long): Int
 }
 
 @Dao

@@ -7,7 +7,14 @@ import com.kitchenreceipts.app.data.DuplicateInfo
 import com.kitchenreceipts.app.data.ProductEntity
 import com.kitchenreceipts.app.data.ProductNameTakenException
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.app.data.SellerLearning
+import com.kitchenreceipts.app.data.SellerRecognition
+import com.kitchenreceipts.app.ocr.PendingImport
+import com.kitchenreceipts.core.Confidence
+import com.kitchenreceipts.core.Corrections
 import com.kitchenreceipts.core.DocumentDraft
+import com.kitchenreceipts.core.Extracted
+import com.kitchenreceipts.core.SellerMatchReason
 import com.kitchenreceipts.core.DraftField
 import com.kitchenreceipts.core.DraftValidator
 import com.kitchenreceipts.core.ErrorCode
@@ -52,6 +59,8 @@ data class ReviewState(
     val pagesRead: Int = 0,
     /** Recognised text (and raw OCR lines for a new import), for checking or sharing. */
     val recognisedText: String? = null,
+    /** Supplier recognised from what was learned on earlier documents. */
+    val recognition: SellerRecognition? = null,
     /** "seller", "item:12.quantity" -> error */
     val errors: Map<String, ErrorCode> = emptyMap(),
     val confirm: SaveConfirmation? = null,
@@ -69,8 +78,13 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     val state: StateFlow<ReviewState> = _state.asStateFlow()
 
     private var storedFile: StoredFile? = null
+    private var docOcrText: String? = null
     private var ocrText: String? = null
     private var nextKey = 10_000L
+    /** What the OCR proposed, to log the operator's corrections on save. */
+    private var initialDraft: DocumentDraft? = null
+    private var ocrSellerRaw: String? = null
+    private var openedAt = System.currentTimeMillis()
 
     val products: StateFlow<List<ProductEntity>> = repo.products().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val sellerNames: StateFlow<List<String>> =
@@ -89,6 +103,25 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         storedFile = pending.file
         ocrText = pending.ocrText
         var draft = DocumentDraft.fromParsed(pending.parsed)
+        ocrSellerRaw = pending.parsed.sellerName?.value
+
+        // Recognise the supplier from earlier documents (VAT number, past corrections, letterhead).
+        val recognition = runCatching {
+            repo.identifySeller(pending.ocrText, ocrSellerRaw, c.settings.ownVatNumber.ifBlank { null })
+        }.getOrNull()
+        if (recognition != null) {
+            val m = recognition.match
+            draft = draft.copy(
+                seller = DraftField(m.name, uncertain = m.reason == SellerMatchReason.LAYOUT, source = draft.seller.source ?: draft.seller.text),
+            )
+            val usual = recognition.usualVatBasis
+            if (usual != null && draft.vatBasis == VatBasis.UNKNOWN) {
+                draft = draft.copy(vatBasis = usual, vatBasisUncertain = true)
+            }
+        }
+
+        initialDraft = draft
+
         // Pre-fill products the user previously assigned for the same seller + exact description.
         val seller = draft.seller.text
         if (seller.isNotBlank()) {
@@ -103,7 +136,23 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
             engineName = pending.engineName, ocrError = pending.ocrError, pagesRead = pending.pagesRead,
             recognisedText = pending.debugReport(),
+            recognition = recognition,
         )
+        logParsed(pending, draft, recognition)
+    }
+
+    private fun logParsed(pending: PendingImport, draft: DocumentDraft, recognition: SellerRecognition?) {
+        val p = pending.parsed
+        fun <T> f(e: Extracted<T>?) = if (e == null) "missing" else if (e.confidence == Confidence.HIGH) "ok" else "uncertain"
+        c.log.event(
+            "PARSED",
+            "seller" to f(p.sellerName), "supplierMatch" to recognition?.match?.reason,
+            "date" to f(p.documentDate), "number" to f(p.documentNumber), "total" to f(p.totalCents),
+            "subtotal" to f(p.subtotalCents), "vat" to f(p.vatCents), "vatBasis" to (p.vatBasis?.value ?: "missing"),
+            "items" to p.lineItems.size, "itemsUncertain" to draft.items.count { it.uncertainCount > 0 },
+            "warnings" to p.warnings.joinToString(",").ifEmpty { null },
+        )
+        c.log.block("recognised text", pending.ocrText.lines().filter { it.isNotBlank() })
     }
 
     private suspend fun loadExisting(id: Long) {
@@ -113,6 +162,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             return
         }
         val sellerName = repo.observeDocument(id).first()?.sellerName ?: ""
+        docOcrText = doc.ocrText
         val items = repo.itemsOnce(id)
         val cents = { v: Long? -> DraftField(ItalianNumbers.centsToEditText(v)) }
         val draft = DocumentDraft(
@@ -146,6 +196,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             filePath = doc.filePath, mimeType = doc.mimeType, pageCount = doc.pageCount,
             recognisedText = doc.ocrText?.takeIf { it.isNotBlank() },
         )
+        initialDraft = draft
     }
 
     // ------------------------------------------------------------ editing
@@ -205,6 +256,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 viewModelScope.launch {
                     val dups = repo.findDuplicates(r.document, storedFile?.sha256, documentId)
                     val uncertain = s.draft.uncertainCount
+                    if (dups.isNotEmpty()) {
+                        c.log.event("DUPLICATE_WARNING", "matches" to dups.size, "reasons" to dups.flatMap { it.match.reasons }.distinct().joinToString(","))
+                    }
                     if (dups.isEmpty() && uncertain == 0) save(r.document)
                     else _state.update { it.copy(confirm = SaveConfirmation(dups, uncertain, r.document)) }
                 }
@@ -223,16 +277,32 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     private suspend fun save(doc: ValidDocument) {
         _state.update { it.copy(saving = true, saveError = null) }
         try {
-            val id = repo.saveDocument(doc, storedFile, ocrText, documentId)
+            val own = c.settings.ownVatNumber.ifBlank { null }
+            val learning = if (documentId == null) {
+                ocrText?.let { SellerLearning(it, ocrSellerRaw, own) }
+            } else {
+                docOcrText?.let { SellerLearning(it, null, own) }
+            }
+            val id = repo.saveDocument(doc, storedFile, ocrText, documentId, learning)
             if (documentId == null) c.pendingImport = null
+            val finalDraft = _state.value.draft
+            val corrections = initialDraft?.let { Corrections.diff(it, finalDraft) }.orEmpty()
+            c.log.event(
+                "SAVED",
+                "doc" to id, "new" to (documentId == null), "seconds" to (System.currentTimeMillis() - openedAt) / 1000,
+                "items" to doc.items.size, "uncertainLeft" to finalDraft.uncertainCount, "corrections" to corrections.size,
+            )
+            c.log.block("corrections", corrections)
             _state.update { it.copy(saving = false, savedId = id) }
         } catch (e: Exception) {
+            c.log.error("save", e)
             _state.update { it.copy(saving = false, saveError = e.message ?: e.javaClass.simpleName) }
         }
     }
 
     /** Throws away an unsaved import, including its stored file. */
     fun discard() {
+        c.log.event("DISCARDED", "new" to (documentId == null), "seconds" to (System.currentTimeMillis() - openedAt) / 1000)
         if (documentId == null) {
             storedFile?.let { c.fileStore.delete(it.relativePath) }
             c.pendingImport = null

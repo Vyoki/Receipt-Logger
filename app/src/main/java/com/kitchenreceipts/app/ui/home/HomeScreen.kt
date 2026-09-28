@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PictureAsPdf
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
@@ -62,11 +63,20 @@ fun HomeScreen(
     onProducts: () -> Unit,
     onReports: () -> Unit,
     onOpenDocument: (Long) -> Unit,
+    onSettings: () -> Unit,
 ) {
     val vm = appViewModel { HomeViewModel(it.repository) }
     val recent by vm.recent.collectAsStateWithLifecycle()
 
-    AppScaffold(title = stringResource(R.string.app_name), onBack = null) { padding ->
+    AppScaffold(
+        title = stringResource(R.string.app_name),
+        onBack = null,
+        actions = {
+            androidx.compose.material3.IconButton(onClick = onSettings, modifier = Modifier.size(56.dp)) {
+                Icon(Icons.Filled.Settings, contentDescription = stringResource(R.string.settings))
+            }
+        },
+    ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding),
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),

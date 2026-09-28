@@ -198,6 +198,39 @@
     <string name="copy">Copy</string>
     <string name="share">Share</string>
 
+    <!-- Settings -->
+    <string name="settings">Settings</string>
+    <string name="language">Language</string>
+    <string name="language_system">Same as the phone</string>
+    <string name="your_business">Your business</string>
+    <string name="your_business_hint">Your restaurant\'s name and VAT number also appear on supplier invoices. Enter them so they are never mistaken for the supplier.</string>
+    <string name="your_business_name">Business name</string>
+    <string name="your_vat_number">Your VAT number (P.IVA, 11 digits)</string>
+    <string name="privacy_security">Privacy and security</string>
+    <string name="privacy_statement">Everything stays on this phone. The app has no internet access (Android blocks it), keeps no cloud backup and never sends anything by itself. Data leaves the phone only when you tap Share or Export.</string>
+    <string name="app_lock">App lock</string>
+    <string name="app_lock_hint">Ask for fingerprint, face or screen-lock PIN when the app is opened, and after 3 minutes away.</string>
+    <string name="app_lock_unavailable">Set up a screen lock (PIN, fingerprint or face) in the phone\'s settings first.</string>
+    <string name="block_screenshots">Block screenshots</string>
+    <string name="block_screenshots_hint">Also hides the app\'s content in the recent-apps screen.</string>
+    <string name="operation_log">Operation log</string>
+    <string name="operation_log_hint">A small file on this phone that records each scan, what was read, what you corrected and any errors. Share it to help improve the reading. It is never sent automatically.</string>
+    <string name="log_enabled">Keep the operation log</string>
+    <string name="log_include_text">Include what was read from receipts</string>
+    <string name="log_include_text_hint">Recognised text, names and amounts. Most useful for improving the reading.</string>
+    <string name="log_size">Current size: %1$s (max about 1 MB)</string>
+    <string name="share_log">Share log</string>
+    <string name="clear_log">Clear log</string>
+    <string name="clear_log_text">The operation log will be deleted from this phone.</string>
+    <string name="unlock_title">Unlock Kitchen Receipts</string>
+    <string name="unlock">Unlock</string>
+    <string name="app_locked">Kitchen Receipts is locked</string>
+    <string name="recognised_supplier">Recognised supplier: %1$s (%2$s, %3$d previous documents).</string>
+    <string name="recognised_by_vat">by VAT number</string>
+    <string name="recognised_by_alias">by a name you corrected before</string>
+    <string name="recognised_by_layout">by the look of the letterhead – please confirm</string>
+    <string name="usual_vat_basis">Their prices are usually: %1$s.</string>
+
     <plurals name="item_count">
         <item quantity="one">%d line</item>
         <item quantity="other">%d lines</item>
