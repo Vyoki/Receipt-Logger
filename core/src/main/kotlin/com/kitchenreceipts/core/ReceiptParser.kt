@@ -83,10 +83,25 @@ object ReceiptParser {
         "(?i)^\\s*(\\d+(?:[.,]\\d{1,3})?)\\s*([a-z]{1,4}\\.?)?\\s*[x×*]\\s*(?:€\\s*)?(\\d+[.,]\\d{2,4})\\s*(?:€?/?\\s*[a-z]{0,4})?(?:\\s+(?:€\\s*)?(\\d+[.,]\\d{2}))?\\s*$",
     )
 
+    /** Separates pages / photos in the OCR text of a multi-page document. */
+    const val PAGE_BREAK = '\u000C'
+
+    /** Page-bottom running totals of multi-page invoices: neither items nor the document total. */
+    private val CARRY_OVER = Regex("(?i)\\b(a\\s+riportare|riporto|totale\\s+pagina|totale\\s+parziale\\s+pagina|segue|continua\\s+a\\s+pagina)\\b")
+
     fun parse(rawText: String): ParsedDocument {
-        val text = OcrCleanup.clean(rawText)
-        val lines = text.lines().map { it.replace(Regex(" {2,}"), " ").trim() }.filter { it.isNotEmpty() }
+        val pages = rawText.split(PAGE_BREAK).map { page ->
+            OcrCleanup.clean(page).lines().map { it.replace(Regex(" {2,}"), " ").trim() }.filter { it.isNotEmpty() }
+        }.filter { it.isNotEmpty() }
+        val lines = mutableListOf<String>()
+        val pageOf = mutableListOf<Int>()
+        pages.forEachIndexed { p, pageLines ->
+            // Photos of a long receipt usually overlap a little: drop lines repeated from the previous photo.
+            val skip = if (p > 0) overlap(pages[p - 1], pageLines) else 0
+            pageLines.drop(skip).forEach { lines += it; pageOf += p }
+        }
         if (lines.isEmpty()) return ParsedDocument.EMPTY
+        val text = lines.joinToString("\n")
 
         val consumed = mutableSetOf<Int>()
         val warnings = mutableSetOf<ParseWarning>()
@@ -105,7 +120,14 @@ object ReceiptParser {
         val weakTotals = mutableListOf<Pair<Long, String>>()
         var firstTotalsLine = lines.size
 
+        data class TotalsLine(val index: Int, val kind: Int, val amount: Long, val source: String)
+        val found = mutableListOf<TotalsLine>()
         lines.forEachIndexed { i, line ->
+            if (CARRY_OVER.containsMatchIn(line)) {
+                consumed += i
+                if (lastAmountCents(line) == null && lines.getOrNull(i + 1)?.count { it.isLetter() } == 0) consumed += i + 1
+                return@forEachIndexed
+            }
             if (i == headerIdx || isTableHeader(line)) return@forEachIndexed
             if (VAT_ID.containsMatchIn(line) && !VAT_TOTAL.containsMatchIn(line) && !SUBTOTAL.containsMatchIn(line)) return@forEachIndexed
             val kind = when {
@@ -129,14 +151,20 @@ object ReceiptParser {
             }
             if (amount == null) return@forEachIndexed
             consumed += i
-            firstTotalsLine = minOf(firstTotalsLine, i)
-            when (kind) {
-                1 -> if (subtotal == null) subtotal = Extracted(amount, Confidence.HIGH, source)
-                2 -> if (vat == null) vat = Extracted(amount, Confidence.HIGH, source)
-                3 -> if (total == null) total = Extracted(amount, Confidence.HIGH, source)
-                    else if (total!!.value != amount) warnings += ParseWarning.MULTIPLE_TOTALS
-                4 -> weakTotals += amount to source
-                5 -> vatLines += amount to source
+            found += TotalsLine(i, kind, amount, source)
+        }
+        // On multi-page documents only the last page with totals holds the document totals;
+        // totals on earlier pages are page subtotals.
+        val totalsPage = found.maxOfOrNull { pageOf[it.index] }
+        for (t in found.filter { pageOf[it.index] == totalsPage }) {
+            firstTotalsLine = minOf(firstTotalsLine, t.index)
+            when (t.kind) {
+                1 -> if (subtotal == null) subtotal = Extracted(t.amount, Confidence.HIGH, t.source)
+                2 -> if (vat == null) vat = Extracted(t.amount, Confidence.HIGH, t.source)
+                3 -> if (total == null) total = Extracted(t.amount, Confidence.HIGH, t.source)
+                    else if (total!!.value != t.amount) warnings += ParseWarning.MULTIPLE_TOTALS
+                4 -> weakTotals += t.amount to t.source
+                5 -> vatLines += t.amount to t.source
             }
         }
         if (vat == null && vatLines.isNotEmpty()) {
@@ -260,6 +288,15 @@ object ReceiptParser {
             lineItems = items,
             warnings = warnings,
         )
+    }
+
+    /** Number of leading lines of [next] that repeat the last lines of [prev] (at least 2 to count). */
+    private fun overlap(prev: List<String>, next: List<String>): Int {
+        fun norm(l: String) = l.lowercase().replace(Regex("\\s+"), " ").trim()
+        for (k in minOf(8, prev.size, next.size) downTo 2) {
+            if (prev.takeLast(k).map(::norm) == next.take(k).map(::norm)) return k
+        }
+        return 0
     }
 
     /** A column-header row: several header words (one of them an item column) and no amount. */
