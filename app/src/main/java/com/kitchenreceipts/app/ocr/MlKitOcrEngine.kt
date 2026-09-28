@@ -26,7 +26,7 @@ class MlKitOcrEngine : OcrEngine {
             .addOnSuccessListener { text ->
                 val lines = text.textBlocks.flatMap { it.lines }.mapNotNull { line ->
                     val box = line.boundingBox ?: return@mapNotNull null
-                    OcrLine(line.text, box.left, box.top, box.right, box.bottom)
+                    OcrLine(line.text, box.left, box.top, box.right, box.bottom, line.angle)
                 }
                 if (cont.isActive) cont.resume(lines)
             }

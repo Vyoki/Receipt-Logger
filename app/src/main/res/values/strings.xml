@@ -128,7 +128,7 @@
 
     <!-- Documents -->
     <string name="document">Document</string>
-    <string name="search_documents_hint">Seller, number, product, lot…</string>
+    <string name="search_documents_hint">Seller, number, product, lot, date (14/03/2025, 03/2025)…</string>
     <string name="all_sellers">All sellers</string>
     <string name="all_months">All months</string>
     <string name="any_day">Any day</string>
@@ -192,6 +192,11 @@
     <string name="export_failed">The CSV could not be saved.</string>
     <string name="report_totals_note">Totals are the document totals as printed (normally VAT included). Documents without a total are counted but not added.</string>
     <string name="no_date">No date</string>
+
+    <string name="recognised_text">Recognised text (what the phone read)</string>
+    <string name="share_recognised_text">Share recognised text</string>
+    <string name="copy">Copy</string>
+    <string name="share">Share</string>
 
     <plurals name="item_count">
         <item quantity="one">%d line</item>

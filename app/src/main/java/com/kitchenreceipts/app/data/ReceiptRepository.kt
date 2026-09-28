@@ -12,6 +12,7 @@ import com.kitchenreceipts.core.ProductMatching
 import com.kitchenreceipts.core.PurchaseExportRow
 import com.kitchenreceipts.core.PurchaseRecord
 import com.kitchenreceipts.core.ReportDocument
+import com.kitchenreceipts.core.SearchQuery
 import com.kitchenreceipts.core.UnitConversion
 import com.kitchenreceipts.core.ValidDocument
 import kotlinx.coroutines.Dispatchers
@@ -45,8 +46,19 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     // ------------------------------------------------------------ documents
 
     fun recentDocuments(limit: Int = 8) = documents.recent(limit)
-    fun searchDocuments(query: String, sellerId: Long?, from: LocalDate?, to: LocalDate?) =
-        documents.search(query.trim(), sellerId, from?.toEpochDay(), to?.toEpochDay())
+    /**
+     * Free-text search over seller, number, line descriptions and lots. Dates typed in the query
+     * ("14/03/2025", "03/2025", "marzo 2025") become a date filter unless one is already set.
+     * Seller names also match ignoring punctuation and legal form ("rossi srl" finds "Rossi S.r.l.").
+     */
+    fun searchDocuments(query: String, sellerId: Long?, from: LocalDate?, to: LocalDate?): Flow<List<DocumentListRow>> {
+        val q = SearchQuery.parse(query)
+        val useQueryDates = from == null && to == null
+        val f = if (useQueryDates) q.from else from
+        val t = if (useQueryDates) q.to else to
+        val norm = DuplicateDetector.normalizeSeller(q.text) ?: ""
+        return documents.search(q.text, norm, sellerId, f?.toEpochDay(), t?.toEpochDay())
+    }
     fun documentDates() = documents.documentDates()
     fun observeDocument(id: Long) = documents.observeDocument(id)
     fun observeItems(id: Long) = documents.observeItems(id)

@@ -50,6 +50,8 @@ data class ReviewState(
     val engineName: String? = null,
     val ocrError: String? = null,
     val pagesRead: Int = 0,
+    /** Recognised text (and raw OCR lines for a new import), for checking or sharing. */
+    val recognisedText: String? = null,
     /** "seller", "item:12.quantity" -> error */
     val errors: Map<String, ErrorCode> = emptyMap(),
     val confirm: SaveConfirmation? = null,
@@ -100,6 +102,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             loading = false, isNew = true, draft = draft,
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
             engineName = pending.engineName, ocrError = pending.ocrError, pagesRead = pending.pagesRead,
+            recognisedText = pending.debugReport(),
         )
     }
 
@@ -141,6 +144,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         _state.value = ReviewState(
             loading = false, isNew = false, draft = draft,
             filePath = doc.filePath, mimeType = doc.mimeType, pageCount = doc.pageCount,
+            recognisedText = doc.ocrText?.takeIf { it.isNotBlank() },
         )
     }
 

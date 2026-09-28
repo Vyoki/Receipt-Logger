@@ -3,6 +3,7 @@ package com.kitchenreceipts.app.ocr
 import com.kitchenreceipts.app.files.PageRenderer
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.core.LayoutRows
+import com.kitchenreceipts.core.OcrLine
 import com.kitchenreceipts.core.ParsedDocument
 import com.kitchenreceipts.core.ReceiptParser
 import kotlinx.coroutines.Dispatchers
@@ -18,7 +19,21 @@ data class PendingImport(
     val pagesRead: Int,
     /** Set when OCR failed or was skipped; the user fills the fields by hand. */
     val ocrError: String?,
-)
+    /** What the engine returned, page by page, before regrouping into rows (for troubleshooting). */
+    val rawLines: List<List<OcrLine>> = emptyList(),
+) {
+    /** Plain-text report the user can share when a document is read badly. */
+    fun debugReport(): String = buildString {
+        append("Kitchen Receipts – recognised text\n")
+        append("Engine: ").append(engineName).append(" · pages read: ").append(pagesRead).append('/').append(file.pageCount).append('\n')
+        ocrError?.let { append("Error: ").append(it).append('\n') }
+        append("\n=== Rows ===\n").append(ocrText).append('\n')
+        rawLines.forEachIndexed { p, lines ->
+            append("\n=== Raw lines, page ").append(p + 1).append(" (left,top,right,bottom,angle) ===\n")
+            lines.forEach { l -> append("${l.left},${l.top},${l.right},${l.bottom},${"%.1f".format(java.util.Locale.ROOT, l.angle)} | ${l.text}\n") }
+        }
+    }
+}
 
 class ImportProcessor(private val renderer: PageRenderer) {
 
@@ -29,13 +44,16 @@ class ImportProcessor(private val renderer: PageRenderer) {
     ): PendingImport {
         val pages = minOf(file.pageCount, MAX_OCR_PAGES)
         val texts = mutableListOf<String>()
+        val raw = mutableListOf<List<OcrLine>>()
         var error: String? = null
         for (i in 0 until pages) {
             onProgress(i + 1, pages)
             try {
                 val bmp = renderer.renderPage(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
                 try {
-                    texts += LayoutRows.toText(engine.recognize(bmp))
+                    val lines = engine.recognize(bmp)
+                    raw += lines
+                    texts += LayoutRows.toText(lines)
                 } finally {
                     bmp.recycle()
                 }
@@ -50,7 +68,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val parsed = withContext(Dispatchers.Default) {
             if (text.isBlank()) ParsedDocument.EMPTY else ReceiptParser.parse(text)
         }
-        return PendingImport(file, text, parsed, engine.displayName, texts.size, error)
+        return PendingImport(file, text, parsed, engine.displayName, texts.size, error, raw)
     }
 
     companion object {
