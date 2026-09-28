@@ -29,6 +29,10 @@ data class LineItemDraft(
     val expiry: DraftField = DraftField(),
     /** Supplier's article code read from the line; used to remember product assignments. */
     val itemCode: String? = null,
+    /** How the product was chosen, when the app chose it (shown so the operator can see and undo it). */
+    val productSource: ProductSource? = null,
+    /** No product matched: a new product with this name is created when the document is saved. */
+    val newProductName: String? = null,
 ) {
     val uncertainCount: Int
         get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry).count { it.uncertain }
@@ -39,6 +43,16 @@ data class LineItemDraft(
         val p = ItalianNumbers.parse(unitPrice.text) ?: return null
         return ItalianNumbers.toCents(q.multiply(p))
     }
+}
+
+/** How the app linked a line to a product without asking. */
+enum class ProductSource {
+    /** The operator linked this supplier's description or article code before. */
+    REMEMBERED,
+    /** Recognised despite a different spelling, abbreviation or misreading. */
+    RECOGNISED,
+    /** Not bought before: a new product will be created. */
+    NEW,
 }
 
 data class DocumentDraft(
@@ -110,6 +124,8 @@ data class ValidLineItem(
     val lotNumber: String?,
     val expiryDate: LocalDate?,
     val itemCode: String? = null,
+    /** Create this product on save and link the line to it (only when [productId] is null). */
+    val newProductName: String? = null,
 )
 
 data class ValidDocument(
@@ -166,7 +182,10 @@ object DraftValidator {
             val lot = it.lot.text.trim().ifEmpty { null }
             if ((lot?.length ?: 0) > 40) errors += FieldError("$p.lot", ErrorCode.TOO_LONG)
             val expiry = optionalDate(it.expiry.text, "$p.expiry", errors)
-            ValidLineItem(desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry, it.itemCode)
+            ValidLineItem(
+                desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry, it.itemCode,
+                newProductName = it.newProductName?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null },
+            )
         }
 
         return if (errors.isEmpty()) {
