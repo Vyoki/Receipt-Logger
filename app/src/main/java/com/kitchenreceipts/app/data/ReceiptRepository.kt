@@ -183,17 +183,34 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     }
 
     /** Recognises the supplier of a new scan from what was learned on earlier documents. */
-    suspend fun identifySeller(documentText: String, ocrSellerName: String?, ownVatNumber: String?): SellerRecognition? {
+    suspend fun identifySeller(
+        documentText: String,
+        ocrSellerName: String?,
+        ownVatNumber: String?,
+        ocrSellerReliable: Boolean = false,
+    ): SellerRecognition? {
         val all = sellers.allOnce()
         if (all.isEmpty()) return null
         val aliases = sellers.allAliases().groupBy({ it.sellerId }, { it.aliasKey })
         val candidates = all.map {
             SellerCandidate(it.id, it.name, it.vatNumber, SellerProfiles.parseProfile(it.headerProfile), aliases[it.id].orEmpty().toSet())
         }
-        val match = SellerProfiles.identify(candidates, documentText, ocrSellerName, ownVatNumber) ?: return null
+        val result = SellerProfiles.identifyDetailed(candidates, documentText, ocrSellerName, ownVatNumber, ocrSellerReliable)
+        result.suspectVatNumber?.let { vat ->
+            // A clearly printed company name contradicts the VAT match: that number was learned by mistake
+            // (it is the operator's, printed as the customer). Forget it for every supplier.
+            forgetVatNumber(vat)
+            onSharedVatNumber(vat)
+        }
+        val match = result.match ?: return null
         val bases = sellers.recentVatBases(match.sellerId)
         val usual = bases.distinct().singleOrNull()?.takeIf { it != VatBasis.UNKNOWN && bases.size >= 2 }
         return SellerRecognition(match, usual, sellers.documentCount(match.sellerId))
+    }
+
+    /** Removes a VAT number from all suppliers (used when it turns out to be the operator's own). */
+    suspend fun forgetVatNumber(vat: String) = withContext(Dispatchers.IO) {
+        if (vat.isNotBlank()) sellers.clearVat(vat.filter(Char::isDigit))
     }
 
     private fun findOrCreateSeller(name: String): SellerEntity {

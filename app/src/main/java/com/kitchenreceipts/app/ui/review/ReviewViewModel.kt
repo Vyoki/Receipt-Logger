@@ -107,7 +107,10 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
 
         // Recognise the supplier from earlier documents (VAT number, past corrections, letterhead).
         val recognition = runCatching {
-            repo.identifySeller(pending.ocrText, ocrSellerRaw, c.settings.ownVatNumber.ifBlank { null })
+            repo.identifySeller(
+                pending.ocrText, ocrSellerRaw, c.settings.ownVatNumber.ifBlank { null },
+                ocrSellerReliable = pending.parsed.sellerName?.confidence == Confidence.HIGH,
+            )
         }.getOrNull()
         if (recognition != null) {
             val m = recognition.match

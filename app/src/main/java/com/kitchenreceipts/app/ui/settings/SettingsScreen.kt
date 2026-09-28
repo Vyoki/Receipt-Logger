@@ -116,7 +116,12 @@ fun SettingsScreen(onBack: () -> Unit) {
             )
             OutlinedTextField(
                 value = ownVat,
-                onValueChange = { v -> ownVat = v.filter(Char::isDigit).take(11); s.ownVatNumber = ownVat },
+                onValueChange = { v ->
+                    ownVat = v.filter(Char::isDigit).take(11)
+                    s.ownVatNumber = ownVat
+                    // Your own number must never identify a supplier: forget it wherever it was learned.
+                    if (ownVat.length == 11) scope.launch { c.repository.forgetVatNumber(ownVat) }
+                },
                 label = { Text(stringResource(R.string.your_vat_number)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
