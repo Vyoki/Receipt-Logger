@@ -83,7 +83,20 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          script: chmod +x gradlew && ./gradlew :app:connectedDebugAndroidTest --stacktrace > inst.log 2>&1
+          script: chmod +x gradlew && (./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > inst.log 2>&1; rc=$?; adb shell run-as com.kitchenreceipts.app cat files/ocr-e2e.txt > ocr-e2e.txt 2>/dev/null; exit $rc)
+      - name: Publish OCR end-to-end output
+        if: always()
+        shell: bash
+        run: |
+          if [ -s ocr-e2e.txt ]; then
+            out=$(head -c 60000 ocr-e2e.txt)
+            out="${out//'%'/'%25'}"
+            out="${out//$'\r'/}"
+            out="${out//$'\n'/'%0A'}"
+            echo "::notice title=OCR end-to-end output::${out}"
+          else
+            echo "::notice title=OCR end-to-end output::no output file"
+          fi
       - name: Report instrumented test failures
         if: failure()
         shell: bash
