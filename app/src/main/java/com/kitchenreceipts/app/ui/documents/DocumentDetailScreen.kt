@@ -247,6 +247,7 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
                 if (it.lotNumber != null) Text(stringResource(R.string.lot_value, it.lotNumber)) else MissingValue(stringResource(R.string.lot_not_recorded))
                 it.expiryDate?.let { e -> Text(stringResource(R.string.expiry_value, fmtDate(e))) }
                 it.vatRate?.let { v -> Text("IVA ${fmtDecimal(v)}%") }
+                it.packages?.let { p -> Text(stringResource(R.string.packages_value, p)) }
             }
         }
     }

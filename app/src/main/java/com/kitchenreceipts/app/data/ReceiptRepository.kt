@@ -153,6 +153,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                         documentId = id, position = i, originalDescription = it.description, productId = it.productId ?: createdProducts[i],
                         quantity = it.quantity, unit = it.unit, unitPrice = it.unitPrice, lineTotalCents = it.lineTotalCents,
                         vatRate = it.vatRatePercent, lotNumber = it.lotNumber, expiryDate = it.expiryDate,
+                        packages = it.packages,
                     )
                 },
             )

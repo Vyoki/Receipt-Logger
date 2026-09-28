@@ -354,4 +354,7 @@
         <item quantity="one">%d purchase without quantity (not counted)</item>
         <item quantity="other">%d purchases without quantity (not counted)</item>
     </plurals>
+    <string name="reading_second_pass">Taking a closer look to get every number right…</string>
+    <string name="packages">Colli</string>
+    <string name="packages_value">Colli (packages): %s</string>
 </resources>

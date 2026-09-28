@@ -24,41 +24,92 @@ data class PendingImport(
     val rawLines: List<List<OcrLine>> = emptyList(),
     /** Time spent rendering pages and running OCR. */
     val ocrMillis: Long = 0,
+    /** Which reading was kept ("pass 2 of 2 (enhanced image), items read by columns"). */
+    val readingNote: String = "",
 ) {
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
         append("Kitchen Receipts – recognised text\n")
         append("Engine: ").append(engineName).append(" · pages read: ").append(pagesRead).append('/').append(file.pageCount).append('\n')
+        if (readingNote.isNotEmpty()) append("Reading: ").append(readingNote).append('\n')
         ocrError?.let { append("Error: ").append(it).append('\n') }
         append("\n=== Rows ===\n").append(ocrText).append('\n')
         rawLines.forEachIndexed { p, lines ->
             append("\n=== Raw lines, page ").append(p + 1).append(" (left,top,right,bottom,angle) ===\n")
-            lines.forEach { l -> append("${l.left},${l.top},${l.right},${l.bottom},${"%.1f".format(java.util.Locale.ROOT, l.angle)} | ${l.text}\n") }
+            lines.forEach { l ->
+                append("${l.left},${l.top},${l.right},${l.bottom},${"%.1f".format(java.util.Locale.ROOT, l.angle)} | ${l.text}")
+                // Word positions, so a column-reading problem can be reproduced exactly.
+                if (l.words.size > 1) append("  [").append(l.words.joinToString(" ") { w -> "${w.left}-${w.right}:${w.text}" }).append(']')
+                append('\n')
+            }
         }
     }
 }
 
 class ImportProcessor(private val renderer: PageRenderer) {
 
+    /**
+     * Reads a stored document. Pass 1 reads each page as photographed. If the result does not fully check out
+     * (a line where quantity x price differs from the amount, lines not adding up to the total, a missing date...),
+     * pass 2 reads the pages again after [ImageEnhancer] has removed shadows and boosted faint print, and the
+     * better of the two readings is kept. Both passes run on the phone.
+     */
     suspend fun process(
         file: StoredFile,
         engine: OcrEngine,
-        onProgress: (page: Int, of: Int) -> Unit = { _, _ -> },
+        onProgress: (page: Int, of: Int, pass: Int) -> Unit = { _, _, _ -> },
         options: ParseOptions = ParseOptions(),
     ): PendingImport {
         val started = System.currentTimeMillis()
         val pages = minOf(file.pageCount, MAX_OCR_PAGES)
-        val texts = mutableListOf<String>()
+        val first = readAll(file, engine, pages, 1, onProgress)
+        var best = first
+        var passes = 1
+        if (first.error == null && first.lines.isNotEmpty() && !ReceiptParser.isConfident(first.parsed(options)) && engine.worksOffline && engine !== NoOcrEngine) {
+            val second = runCatching { readAll(file, engine, first.lines.size, 2, onProgress) }.getOrNull()
+            passes = 2
+            if (second != null && second.error == null &&
+                ReceiptParser.quality(second.parsed(options)) > ReceiptParser.quality(first.parsed(options))
+            ) {
+                best = second
+            }
+        }
+        val parsed = best.parsed(options)
+        return PendingImport(
+            file, best.text, parsed, engine.displayName, best.lines.size, best.error, best.lines,
+            System.currentTimeMillis() - started,
+            readingNote = "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else "") + ", items read by ${parsed.itemsReadBy}",
+        )
+    }
+
+    private inner class Reading(val lines: List<List<OcrLine>>, val error: String?, val pass: Int) {
+        private var cache: ParsedDocument? = null
+        val text: String get() = lines.joinToString("\n${ReceiptParser.PAGE_BREAK}\n") { LayoutRows.toText(it) }
+        suspend fun parsed(options: ParseOptions): ParsedDocument = cache ?: withContext(Dispatchers.Default) {
+            if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options)
+        }.also { cache = it }
+    }
+
+    private suspend fun readAll(
+        file: StoredFile,
+        engine: OcrEngine,
+        pages: Int,
+        pass: Int,
+        onProgress: (Int, Int, Int) -> Unit,
+    ): Reading {
         val raw = mutableListOf<List<OcrLine>>()
         var error: String? = null
         for (i in 0 until pages) {
-            onProgress(i + 1, pages)
+            onProgress(i + 1, pages, pass)
             try {
                 val bmp = renderer.renderPage(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
                 try {
-                    val lines = engine.recognize(bmp)
-                    raw += lines
-                    texts += LayoutRows.toText(lines)
+                    if (pass == 1) {
+                        raw += engine.recognize(bmp)
+                    } else {
+                        val enhanced = withContext(Dispatchers.Default) { ImageEnhancer.enhance(bmp) }
+                        try { raw += engine.recognize(enhanced) } finally { enhanced.recycle() }
+                    }
                 } finally {
                     bmp.recycle()
                 }
@@ -69,11 +120,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 break
             }
         }
-        val text = texts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n") // pages stay distinguishable for the parser
-        val parsed = withContext(Dispatchers.Default) {
-            if (text.isBlank()) ParsedDocument.EMPTY else ReceiptParser.parse(text, options)
-        }
-        return PendingImport(file, text, parsed, engine.displayName, texts.size, error, raw, System.currentTimeMillis() - started)
+        return Reading(raw, error, pass)
     }
 
     companion object {

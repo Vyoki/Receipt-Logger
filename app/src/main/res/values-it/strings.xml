@@ -342,4 +342,7 @@
         <item quantity="one">%d acquisto senza quantità (non conteggiato)</item>
         <item quantity="other">%d acquisti senza quantità (non conteggiati)</item>
     </plurals>
+    <string name="reading_second_pass">Seconda lettura più accurata per avere tutti i numeri giusti…</string>
+    <string name="packages">Colli</string>
+    <string name="packages_value">Colli: %s</string>
 </resources>

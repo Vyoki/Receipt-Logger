@@ -38,6 +38,7 @@ object Corrections {
             c("price", a.unitPrice, b.unitPrice)
             c("total", a.lineTotal, b.lineTotal)
             c("vat%", a.vatRate, b.vatRate)
+            c("colli", a.packages, b.packages)
             c("lot", a.lot, b.lot)
             c("expiry", a.expiry, b.expiry)
         }
