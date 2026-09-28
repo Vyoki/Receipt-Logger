@@ -118,6 +118,8 @@ data class LineItemEntity(
     @ColumnInfo(name = "vat_rate") val vatRate: BigDecimal?,
     @ColumnInfo(name = "lot_number") val lotNumber: String?,
     @ColumnInfo(name = "expiry_date") val expiryDate: LocalDate?,
+    /** v5: "colli" as printed ("5", "1x6"). */
+    val packages: String? = null,
 )
 
 /**

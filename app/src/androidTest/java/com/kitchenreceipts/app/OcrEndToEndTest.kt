@@ -80,16 +80,20 @@ class OcrEndToEndTest {
         return out
     }
 
-    private fun runCase(name: String, keystone: Boolean, rotateDeg: Float = 0f): Int = runBlocking {
-        val lines = MlKitOcrEngine().recognize(photograph(renderPage(), keystone, rotateDeg))
+    private fun runCase(name: String, keystone: Boolean, rotateDeg: Float = 0f, enhanced: Boolean = false): Int = runBlocking {
+        val photo = photograph(renderPage(), keystone, rotateDeg)
+        val lines = MlKitOcrEngine().recognize(if (enhanced) com.kitchenreceipts.app.ocr.ImageEnhancer.enhance(photo) else photo)
         val text = LayoutRows.toText(lines)
-        val d = ReceiptParser.parse(text)
+        val d = ReceiptParser.parsePages(listOf(lines))
+        val table = com.kitchenreceipts.core.TableReader.read(listOf(LayoutRows.layout(lines))).orEmpty()
         val found = d.lineItems.mapNotNull { it.lineTotalCents?.value }
         val matched = expectedTotals.count { it in found }
         File(context.filesDir, "ocr-e2e.txt").appendText(buildString {
-            append("===== $name: ${d.lineItems.size} items, $matched/${expectedTotals.size} expected totals found\n")
+            append("===== $name: ${d.lineItems.size} items (read by ${d.itemsReadBy}), $matched/${expectedTotals.size} expected totals found\n")
+            append("columns alone: ${table.size} items, ${table.count { it.quantity?.confidence == com.kitchenreceipts.core.Confidence.HIGH }} with qty x price = amount\n")
+            table.forEach { append("COL ${it.itemCode}|${it.packages?.value}|${it.originalDescription} | q=${it.quantity?.value} ${it.unit?.value} p=${it.unitPrice?.value} t=${it.lineTotalCents?.value}\n") }
             append("seller=${d.sellerName?.value} number=${d.documentNumber?.value} date=${d.documentDate?.value}\n")
-            d.lineItems.forEach { append("ITEM ${it.originalDescription} | q=${it.quantity?.value} ${it.unit?.value} p=${it.unitPrice?.value} t=${it.lineTotalCents?.value} vat=${it.vatRatePercent?.value}\n") }
+            d.lineItems.forEach { append("ITEM ${it.packages?.value}|${it.originalDescription} | q=${it.quantity?.value} ${it.unit?.value} p=${it.unitPrice?.value} t=${it.lineTotalCents?.value} vat=${it.vatRatePercent?.value}\n") }
             append("--- rows\n").append(text).append('\n')
             append("--- raw OCR lines (left,top,right,bottom,angle)\n")
             lines.forEach { append("${it.left},${it.top},${it.right},${it.bottom},${it.angle} | ${it.text}\n") }
@@ -110,6 +114,11 @@ class OcrEndToEndTest {
 
     @Test fun angledAndRotatedPhoto() {
         val matched = runCase("angled + rotated 3°", keystone = true, rotateDeg = 3f)
+        assertTrue("only $matched of ${expectedTotals.size} lines read correctly (see ocr-e2e.txt)", matched >= 10)
+    }
+
+    @Test fun enhancedImageOfAnAngledPhoto() {
+        val matched = runCase("angled, enhanced image", keystone = true, rotateDeg = 2f, enhanced = true)
         assertTrue("only $matched of ${expectedTotals.size} lines read correctly (see ocr-e2e.txt)", matched >= 10)
     }
 }

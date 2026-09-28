@@ -75,6 +75,8 @@ data class CaptureState(
     val step: Step = Step.IDLE,
     val page: Int = 0,
     val pages: Int = 0,
+    /** 2 = second, closer reading of an enhanced image (the first did not fully check out). */
+    val pass: Int = 1,
     val error: String? = null,
     val ready: Boolean = false,
 ) {
@@ -106,14 +108,15 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
                 stored = s
                 _state.update { it.copy(step = CaptureState.Step.READING) }
                 val storeMs = System.currentTimeMillis() - t0
-                val pending = c.importProcessor.process(s, c.ocrEngine, { page, of ->
-                    _state.update { it.copy(page = page, pages = of) }
+                val pending = c.importProcessor.process(s, c.ocrEngine, { page, of, pass ->
+                    _state.update { it.copy(page = page, pages = of, pass = pass) }
                 }, c.settings.parseOptions())
                 c.log.event(
                     "IMPORT_DONE",
                     "type" to s.mimeType, "pages" to s.pageCount, "pagesRead" to pending.pagesRead,
                     "storeMs" to storeMs, "ocrMs" to pending.ocrMillis,
                     "ocrLines" to pending.rawLines.sumOf { it.size }, "ocrError" to pending.ocrError,
+                    "reading" to pending.readingNote,
                 )
                 c.pendingImport = pending
                 withContext(Dispatchers.IO) { c.fileStore.deleteCaptures() }
@@ -193,8 +196,9 @@ fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
                 Text(
                     when (state.step) {
                         CaptureState.Step.READING ->
-                            if (state.pages > 1) stringResource(R.string.reading_page, state.page, state.pages)
-                            else stringResource(R.string.reading_text)
+                            (if (state.pages > 1) stringResource(R.string.reading_page, state.page, state.pages)
+                            else stringResource(R.string.reading_text)) +
+                                (if (state.pass > 1) "\n" + stringResource(R.string.reading_second_pass) else "")
                         else -> stringResource(R.string.saving_original)
                     },
                     style = MaterialTheme.typography.titleMedium,

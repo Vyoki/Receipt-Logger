@@ -511,7 +511,10 @@ private fun ItemCard(
                 ItemInput(item, errors, onChange, onConfirm, ItemField.LOT, R.string.lot, Modifier.weight(1f), FieldKind.CODE, missingHint = stringResource(R.string.lot_missing_hint))
                 ItemInput(item, errors, onChange, onConfirm, ItemField.VAT_RATE, R.string.vat_rate, Modifier.weight(0.6f), FieldKind.DECIMAL, optional = true)
             }
-            ItemInput(item, errors, onChange, onConfirm, ItemField.EXPIRY, R.string.expiry, kind = FieldKind.DATE, optional = true)
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                ItemInput(item, errors, onChange, onConfirm, ItemField.PACKAGES, R.string.packages, Modifier.weight(0.6f), FieldKind.CODE, optional = true)
+                ItemInput(item, errors, onChange, onConfirm, ItemField.EXPIRY, R.string.expiry, Modifier.weight(1f), kind = FieldKind.DATE, optional = true)
+            }
         }
     }
 }

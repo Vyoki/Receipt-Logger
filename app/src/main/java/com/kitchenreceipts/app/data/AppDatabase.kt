@@ -45,7 +45,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
 
     companion object {
-        const val VERSION = 4
+        const val VERSION = 5
         const val NAME = "kitchen_receipts.db"
 
         fun build(context: Context): AppDatabase =
@@ -65,6 +65,7 @@ abstract class AppDatabase : RoomDatabase() {
  * v2: + unit_conversions (user-defined unit conversions per product)
  * v3: + sellers.vat_number, sellers.header_profile, seller_aliases (supplier recognition)
  * v4: + products.category (inventory)
+ * v5: + line_items.packages (colli)
  */
 object Migrations {
 
@@ -109,5 +110,11 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+    val MIGRATION_4_5 = object : Migration(4, 5) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `line_items` ADD COLUMN `packages` TEXT")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
 }

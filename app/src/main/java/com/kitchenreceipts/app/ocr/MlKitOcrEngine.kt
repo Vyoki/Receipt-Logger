@@ -26,7 +26,12 @@ class MlKitOcrEngine : OcrEngine {
             .addOnSuccessListener { text ->
                 val lines = text.textBlocks.flatMap { it.lines }.mapNotNull { line ->
                     val box = line.boundingBox ?: return@mapNotNull null
-                    OcrLine(line.text, box.left, box.top, box.right, box.bottom, line.angle)
+                    // Word boxes let the parser read table columns by position.
+                    val words = line.elements.mapNotNull { e ->
+                        val b = e.boundingBox ?: return@mapNotNull null
+                        OcrLine(e.text, b.left, b.top, b.right, b.bottom, e.angle)
+                    }
+                    OcrLine(line.text, box.left, box.top, box.right, box.bottom, line.angle, words)
                 }
                 if (cont.isActive) cont.resume(lines)
             }

@@ -12,6 +12,8 @@ data class OcrLine(
     val bottom: Int,
     /** Rotation reported by the OCR engine in degrees, if any (sign convention may vary). */
     val angle: Float = 0f,
+    /** The single words of the line with their own boxes, when the engine provides them (used to read table columns). */
+    val words: List<OcrLine> = emptyList(),
 ) {
     val width: Int get() = (right - left).coerceAtLeast(1)
     val height: Int get() = (bottom - top).coerceAtLeast(1)
@@ -37,9 +39,16 @@ object LayoutRows {
 
     fun toText(lines: List<OcrLine>): String = rows(lines).joinToString("\n") { row -> row.joinToString(" ") { it.text.trim() } }
 
-    fun rows(lines: List<OcrLine>): List<List<OcrLine>> {
+    /** Rows of a page and the slope used to rebuild them (dy/dx of the text lines). */
+    data class Layout(val rows: List<List<OcrLine>>, val slope: Double) {
+        val text: String get() = rows.joinToString("\n") { row -> row.joinToString(" ") { it.text.trim() } }
+    }
+
+    fun rows(lines: List<OcrLine>): List<List<OcrLine>> = layout(lines).rows
+
+    fun layout(lines: List<OcrLine>): Layout {
         val clean = lines.filter { it.text.isNotBlank() }
-        if (clean.isEmpty()) return emptyList()
+        if (clean.isEmpty()) return Layout(emptyList(), 0.0)
         val (k, textHeight) = tiltFit(clean)
         val candidates = linkedSetOf(0.0, k, -k)
         val reported = clean.filter { it.width > 3 * it.height }.map { it.angle.toDouble() }.sorted()
@@ -47,10 +56,10 @@ object LayoutRows {
             val median = tan(Math.toRadians(reported[reported.size / 2]))
             if (abs(median) in 0.001..0.3) { candidates += median; candidates += -median }
         }
-        return candidates
+        val best = candidates
             .map { slope -> slope to chain(clean, slope, textHeight) }
             .minWith(compareBy<Pair<Double, List<List<OcrLine>>>> { it.second.size }.thenBy { abs(it.first) })
-            .second
+        return Layout(best.second, best.first)
     }
 
     /**

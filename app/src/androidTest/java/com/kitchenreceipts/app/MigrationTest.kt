@@ -37,6 +37,24 @@ class MigrationTest {
         }
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
             db.execSQL("PRAGMA foreign_keys=OFF")
+            // v5 -> v4: line_items without packages
+            db.execSQL(
+                "CREATE TABLE `line_items_v4` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `document_id` INTEGER NOT NULL, " +
+                    "`position` INTEGER NOT NULL, `original_description` TEXT NOT NULL, `product_id` INTEGER, `quantity` TEXT, " +
+                    "`unit` TEXT, `unit_price` TEXT, `line_total_cents` INTEGER, `vat_rate` TEXT, `lot_number` TEXT, `expiry_date` INTEGER, " +
+                    "FOREIGN KEY(`document_id`) REFERENCES `documents`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                    "FOREIGN KEY(`product_id`) REFERENCES `products`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+            )
+            db.execSQL("DROP TABLE line_items")
+            db.execSQL("ALTER TABLE line_items_v4 RENAME TO line_items")
+            db.execSQL("CREATE INDEX `index_line_items_document_id` ON `line_items` (`document_id`)")
+            db.execSQL("CREATE INDEX `index_line_items_product_id` ON `line_items` (`product_id`)")
+            if (version == 4) {
+                insertRows(db)
+                db.execSQL("INSERT INTO products (id, name, normalized_name, created_at, category) VALUES (1, 'Mozzarella', 'mozzarella', 0, NULL)")
+                db.version = 4
+                return@use
+            }
             // v4 -> v3: products without category
             db.execSQL(
                 "CREATE TABLE `products_v3` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
@@ -86,6 +104,7 @@ class MigrationTest {
                 val item = migrated.documentDao().itemsOnce(1).single().item
                 assertEquals(0, java.math.BigDecimal("2.5").compareTo(item.quantity))
                 assertEquals("L24-118", item.lotNumber)
+                assertNull(item.packages)
                 val seller = migrated.sellerDao().allOnce().single()
                 assertNull(seller.vatNumber)
                 assertEquals(0, migrated.sellerDao().allAliases().size)
@@ -103,17 +122,22 @@ class MigrationTest {
         }
     }
 
-    @Test fun migrate3To4() {
+    @Test fun migrate4To5() {
+        createOldDatabase(4)
+        openAndCheck()
+    }
+
+    @Test fun migrate3To5() {
         createOldDatabase(3)
         openAndCheck()
     }
 
-    @Test fun migrate1To4() {
+    @Test fun migrate1To5() {
         createOldDatabase(1)
         openAndCheck()
     }
 
-    @Test fun migrate2To4() {
+    @Test fun migrate2To5() {
         createOldDatabase(2)
         openAndCheck()
     }

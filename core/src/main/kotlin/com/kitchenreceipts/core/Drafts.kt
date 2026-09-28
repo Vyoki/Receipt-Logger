@@ -27,6 +27,8 @@ data class LineItemDraft(
     val vatRate: DraftField = DraftField(),
     val lot: DraftField = DraftField(),
     val expiry: DraftField = DraftField(),
+    /** "Colli": packages/cartons as printed ("5", "1x6"); kept apart from the name and the quantity. */
+    val packages: DraftField = DraftField(),
     /** Supplier's article code read from the line; used to remember product assignments. */
     val itemCode: String? = null,
     /** How the product was chosen, when the app chose it (shown so the operator can see and undo it). */
@@ -35,7 +37,7 @@ data class LineItemDraft(
     val newProductName: String? = null,
 ) {
     val uncertainCount: Int
-        get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry).count { it.uncertain }
+        get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry, packages).count { it.uncertain }
 
     /** qty x price, offered as a one-tap suggestion when the line total is missing. Never auto-applied. */
     fun computedTotalCents(): Long? {
@@ -99,6 +101,7 @@ data class DocumentDraft(
                         vatRate = f(it.vatRatePercent, dec),
                         lot = f(it.lotNumber) { l -> l },
                         expiry = f(it.expiryDate) { d -> ItalianDates.format(d) },
+                        packages = f(it.packages) { p -> p },
                         itemCode = it.itemCode,
                     )
                 },
@@ -126,6 +129,7 @@ data class ValidLineItem(
     val itemCode: String? = null,
     /** Create this product on save and link the line to it (only when [productId] is null). */
     val newProductName: String? = null,
+    val packages: String? = null,
 )
 
 data class ValidDocument(
@@ -182,9 +186,12 @@ object DraftValidator {
             val lot = it.lot.text.trim().ifEmpty { null }
             if ((lot?.length ?: 0) > 40) errors += FieldError("$p.lot", ErrorCode.TOO_LONG)
             val expiry = optionalDate(it.expiry.text, "$p.expiry", errors)
+            val packages = it.packages.text.trim().ifEmpty { null }
+            if ((packages?.length ?: 0) > 20) errors += FieldError("$p.packages", ErrorCode.TOO_LONG)
             ValidLineItem(
                 desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry, it.itemCode,
                 newProductName = it.newProductName?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null },
+                packages = packages,
             )
         }
 

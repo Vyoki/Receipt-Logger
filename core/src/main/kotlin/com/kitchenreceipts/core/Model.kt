@@ -49,6 +49,8 @@ data class ParsedLineItem(
     val warnings: Set<ParseWarning> = emptySet(),
     /** Supplier's article code printed at the start of the line ("2046225"), if any. */
     val itemCode: String? = null,
+    /** "Colli": number of packages/cartons as printed ("5", "1x6"). Never part of the description or the quantity. */
+    val packages: Extracted<String>? = null,
 )
 
 data class ParsedDocument(
@@ -62,6 +64,8 @@ data class ParsedDocument(
     val vatBasis: Extracted<VatBasis>?,
     val lineItems: List<ParsedLineItem>,
     val warnings: Set<ParseWarning>,
+    /** How the line items were read: "columns" (table layout from word positions) or "text". */
+    val itemsReadBy: String = "text",
 ) {
     companion object {
         val EMPTY = ParsedDocument(

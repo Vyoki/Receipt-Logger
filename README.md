@@ -63,7 +63,7 @@ The first time you take a photo, the **camera app** may ask for its own camera p
 
 In Android Studio you can also right-click `core/src/test/kotlin` and choose **Run 'Tests in kotlin'**. The report is written to `core/build/reports/tests/test/index.html`.
 
-**Instrumented tests** (Room migrations 1/2/3→4, the repository and on-device OCR; they run on a phone or emulator):
+**Instrumented tests** (Room migrations 1/2/3/4→5, the repository and on-device OCR; they run on a phone or emulator):
 
 ```bash
 ./gradlew :app:connectedDebugAndroidTest

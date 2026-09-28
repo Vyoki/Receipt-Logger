@@ -50,6 +50,9 @@ object ReceiptParser {
             "u\\.?\\s?m\\.?|codice|sconto|aliquota|iva|totale|valore)\\b",
     )
 
+    private val COLLI_HEADING = Regex("(?i)\\b(colli|n\\.?\\s?colli|cartoni)\\b")
+    private val PRICE_HEADING = Regex("(?i)\\b(prezzo|prz\\.?|p\\.\\s?unit|pr\\.\\s?unit)")
+    private val QTY_HEADING = Regex("(?i)(\\bq\\.?\\s?t[àa']?\\.?(?=\\W|$)|\\bquantit[àa]|\\btot\\.(?!\\w))")
     private val ITEM_COLUMN = Regex("(?i)\\b(descrizione|articolo|prodotto|q\\.?\\s?t[àa']?\\.?|quantit[àa]|prezzo|u\\.?\\s?m\\.?)(?=\\W|$)")
     private val TOTAL_STRONG = Regex(
         "(?i)\\b(totale\\s+(?:documento|fattura|da\\s+pagare|complessivo|euro|eur|generale|a\\s+pagare|dovuto)|" +
@@ -97,7 +100,9 @@ object ReceiptParser {
     private val GLUED_UNIT = Regex("^(?i)(gr|kg|lt|ml|cl|pz|g|l)(\\d+(?:[.,]\\d+)?)$")
     /** Code and colli glued by the OCR: "10000032x3" = code 1000003 + colli 2x3. */
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
-    private val COLLI = Regex("^(\\d{1,3}[xX×]\\d{1,3}|\\d{1,2})$")
+    private val COLLI = Regex("^(\\d{1,3}[xX×*]\\d{1,3}|\\d{1,2})$")
+    /** "1x6", "2X1", "lx4" (OCR reads 1 as l): packages x pieces. Unambiguous even without a code before it. */
+    internal val COLLI_PATTERN = Regex("^[\\dlIO]{1,3}[xX×*][\\dlIO]{1,3}$")
     /** Two-letter packaging codes printed before the unit ("SK GR 800", "NC KG"); never part of a product name. */
     private val PACKAGING_CODE = Regex("^[A-Z]{2}$")
     private val SHORT_WORDS = setOf("DI", "DA", "AL", "IN", "LA", "IL", "UN", "DE", "EL", "LE", "LO", "SU", "ED", "OR", "NO", "BY")
@@ -112,7 +117,60 @@ object ReceiptParser {
     /** Page-bottom running totals of multi-page invoices: neither items nor the document total. */
     private val CARRY_OVER = Regex("(?i)\\b(a\\s+riportare|riporto|totale\\s+pagina|totale\\s+parziale\\s+pagina|segue|continua\\s+a\\s+pagina)\\b")
 
-    fun parse(rawText: String, options: ParseOptions = ParseOptions()): ParsedDocument {
+    /**
+     * Parses the OCR result of a document page by page, with word positions: rows are rebuilt from the boxes,
+     * and the item table is also read by columns ([TableReader]). The column reading is used when it explains
+     * the document better (more lines where quantity x price = amount, lines adding up to the total).
+     */
+    fun parsePages(pages: List<List<OcrLine>>, options: ParseOptions = ParseOptions()): ParsedDocument {
+        val layouts = pages.map { LayoutRows.layout(it) }
+        val text = layouts.joinToString("\n$PAGE_BREAK\n") { it.text }
+        if (text.isBlank()) return ParsedDocument.EMPTY
+        val table = runCatching { TableReader.read(layouts) }.getOrNull()
+        return parse(text, options, table)
+    }
+
+    /** A row that ends the item table: totals, VAT summary, carry-over to the next page. */
+    internal fun isFooterRow(line: String): Boolean =
+        CARRY_OVER.containsMatchIn(line) || TOTALS_ROW.containsMatchIn(line) || TOTAL_STRONG.containsMatchIn(line) ||
+            SUBTOTAL.containsMatchIn(line) || VAT_TOTAL.containsMatchIn(line) || TOTAL_WEAK.containsMatchIn(line) ||
+            VAT_SUMMARY_WORD.findAll(line).count() >= 3
+
+    /** Payment, address, VAT-number rows inside the table area. */
+    internal fun isNotAnItemRow(line: String): Boolean =
+        NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line)
+
+    /**
+     * How well a list of items explains the document: lines where quantity x price = amount count most,
+     * and lines that add up to the printed taxable amount or total make it clearly the better reading.
+     */
+    fun itemScore(items: List<ParsedLineItem>, subtotal: Long?, total: Long?): Int {
+        val consistent = items.count { it.quantity?.confidence == Confidence.HIGH && it.unitPrice?.confidence == Confidence.HIGH && it.lineTotalCents != null }
+        val mismatched = items.count { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings }
+        val sums = items.mapNotNull { it.lineTotalCents?.value }
+        val tolerance = maxOf(2L, items.size.toLong())
+        val sumMatches = sums.size == items.size && items.isNotEmpty() &&
+            listOfNotNull(subtotal, total).any { kotlin.math.abs(sums.sum() - it) <= tolerance }
+        val named = items.count { it.originalDescription.count(Char::isLetter) >= 3 }
+        return consistent * 3 + named - mismatched * 2 + (if (sumMatches) 12 else 0)
+    }
+
+    /** Overall quality of a reading, to choose between readings of the same document (higher is better). */
+    fun quality(d: ParsedDocument): Int {
+        fun <T> pts(e: Extracted<T>?, high: Int) = when { e == null -> 0; e.confidence == Confidence.HIGH -> high; else -> 1 }
+        return itemScore(d.lineItems, d.subtotalCents?.value, d.totalCents?.value) +
+            pts(d.documentDate, 3) + pts(d.totalCents, 3) + pts(d.sellerName, 2) + pts(d.documentNumber, 1)
+    }
+
+    /** Nothing left to improve by reading again: every line checks out and the lines add up to the total. */
+    fun isConfident(d: ParsedDocument): Boolean {
+        if (d.lineItems.isEmpty() || d.documentDate == null || d.totalCents == null) return false
+        if (d.lineItems.any { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings || it.lineTotalCents == null }) return false
+        if (d.lineItems.any { it.quantity != null && it.quantity.confidence != Confidence.HIGH }) return false
+        return ParseWarning.ITEMS_SUM_MISMATCH !in d.warnings
+    }
+
+    fun parse(rawText: String, options: ParseOptions = ParseOptions(), tableItems: List<ParsedLineItem>? = null): ParsedDocument {
         val pages = rawText.split(PAGE_BREAK).map { page ->
             OcrCleanup.clean(page).lines().map { it.replace(Regex(" {2,}"), " ").trim() }.filter { it.isNotEmpty() }
         }.filter { it.isNotEmpty() }
@@ -129,6 +187,13 @@ object ReceiptParser {
         val consumed = mutableSetOf<Int>()
         val warnings = mutableSetOf<ParseWarning>()
         val headerIdx = lines.indexOfFirst { isTableHeader(it) }
+        val headerText = if (headerIdx >= 0) lines[headerIdx] else ""
+        val colliColumn = COLLI_HEADING.containsMatchIn(headerText)
+        val priceFirst = run {
+            val p = PRICE_HEADING.find(headerText)?.range?.first
+            val q = QTY_HEADING.find(headerText)?.range?.first
+            p != null && q != null && p < q
+        }
 
         val docNumber = findDocumentNumber(lines, consumed)
         val date = findDocumentDate(lines, consumed)
@@ -255,7 +320,7 @@ object ReceiptParser {
             if (scan.lotRejectedAsDate) lotRejected = true
             var rest = LotExtractor.strip(line, scan.consumed)
             val isInfoOnly = (scan.lot != null || scan.expiry != null || scan.lotRejectedAsDate) &&
-                (rest.isBlank() || !rest.any { it.isLetter() } || parseItemLine(rest) == null)
+                (rest.isBlank() || !rest.any { it.isLetter() } || parseItemLine(rest, colliColumn, priceFirst) == null)
             if (isInfoOnly) {
                 // A "Lotto ... / Scad. ..." line belongs to the item right above it.
                 val prev = items.lastOrNull()
@@ -294,13 +359,13 @@ object ReceiptParser {
                 continue
             }
 
-            var item = parseItemLine(rest)
+            var item = parseItemLine(rest, colliColumn, priceFirst)
             // Description and amounts split over two rows: "Mozzarella fior di latte" / "kg 2,500 8,90 22,25".
             if (item == null && rest.count { it.isLetter() } >= 3) {
                 val nextIdx = idx + 1
                 val next = lines.getOrNull(nextIdx)
                 if (next != null && nextIdx < firstTotalsLine && nextIdx !in consumed && lettersOutsideUnits(next) <= 2) {
-                    val merged = parseItemLine("$rest $next")
+                    val merged = parseItemLine("$rest $next", colliColumn, priceFirst)
                     if (merged != null) {
                         item = merged
                         rest = "$rest $next"
@@ -313,6 +378,14 @@ object ReceiptParser {
             if (pq != null && item.quantity == null && pq.fits(item)) item = pq.applyTo(item)
             pendingQty = null
             items += item.copy(lotNumber = scan.lot, expiryDate = scan.expiry)
+        }
+        var itemsReadBy = "text"
+        if (!tableItems.isNullOrEmpty() &&
+            itemScore(tableItems, subtotal?.value, total?.value) > itemScore(items, subtotal?.value, total?.value)
+        ) {
+            items.clear()
+            items += tableItems
+            itemsReadBy = "columns"
         }
         if (lotRejected) warnings += ParseWarning.LOT_LOOKS_LIKE_DATE
         if (items.isEmpty()) warnings += ParseWarning.NO_ITEMS_FOUND
@@ -360,6 +433,7 @@ object ReceiptParser {
             vatBasis = vatBasis,
             lineItems = items,
             warnings = warnings,
+            itemsReadBy = itemsReadBy,
         )
     }
 
@@ -637,8 +711,15 @@ object ReceiptParser {
     }
 
     /** Parses one item line such as "Mozzarella fiordilatte kg 2,500 8,90 22,25 10%". */
-    fun parseItemLine(line: String): ParsedLineItem? {
-        val (codeFree, itemCode) = stripItemCode(line.split(' ').filter { it.isNotBlank() })
+    /**
+     * [colliColumn]: the table has a COLLI column, so a small number right after the article code (or at the
+     * start of the line) is the number of packages. [priceFirst]: the header prints the price column before
+     * the quantity column, so of two numbers the first is the price.
+     */
+    fun parseItemLine(line: String, colliColumn: Boolean = false, priceFirst: Boolean = false): ParsedLineItem? {
+        val stripped = stripItemCode(line.split(' ').filter { it.isNotBlank() }, colliColumn)
+        val codeFree = stripped.tokens
+        val itemCode = stripped.code
         var tokens = splitGluedUnit(codeFree)
         // Drop a VAT class letter after the price: "PANE 2,50 B" -> "PANE 2,50".
         while (tokens.size > 2 && VAT_CODE_TOKEN.matches(tokens.last()) && classify(tokens[tokens.size - 2]) != null) {
@@ -725,12 +806,22 @@ object ReceiptParser {
             else -> {
                 val last3 = values.takeLast(3)
                 qty = last3[0]; price = last3[1]; totalCents = ItalianNumbers.toCents(last3[2])
-                // Some layouts print price before quantity: try the swap if it is the only consistent reading.
-                if (!matches(qty, price, totalCents) && matches(price, qty, totalCents) && isWholeNumber(last3[1]) && !isWholeNumber(last3[0])) {
+                if (priceFirst) { qty = last3[1]; price = last3[0] }
+                // quantity x price = amount decides which numbers they are, wherever they sit on the line
+                // (a pack size, colli or discount column may stand between them).
+                findPair(values)?.let { (qi, pi) ->
+                    val a = values[qi]; val b = values[pi]
+                    val (q, p) = if (priceFirst) b to a else a to b
+                    qty = q; price = p; totalCents = ItalianNumbers.toCents(values.last())
+                }
+                // Some layouts print price before quantity (no header to tell): a whole number after a price with decimals is the quantity.
+                if (!priceFirst && isWholeNumber(last3[1]) && !isWholeNumber(last3[0]) && last3[0].scale() >= 2 &&
+                    matches(last3[0], last3[1], ItalianNumbers.toCents(last3[2])) && qty!!.compareTo(last3[0]) == 0
+                ) {
                     val tmp = qty; qty = price; price = tmp
                 }
                 // Invoices often print a discount column: qty, price, discount, total.
-                if (!matches(qty!!, price!!, totalCents!!) && values.size >= 4) {
+                if (!matches(qty!!, price!!, totalCents!!) && values.size >= 4 && findPair(values) == null) {
                     val q4 = values[values.size - 4]
                     val p4 = values[values.size - 3]
                     val gross = q4.multiply(p4)
@@ -794,10 +885,39 @@ object ReceiptParser {
             expiryDate = null,
             warnings = warnings,
             itemCode = itemCode,
+            packages = stripped.packages?.let { Extracted(normalizeColli(it), Confidence.HIGH, line) },
         )
     }
 
+    private fun normalizeColli(raw: String): String =
+        raw.map { c -> when (c) { 'l', 'I' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString("")
+
     private fun isWholeNumber(v: BigDecimal) = v.stripTrailingZeros().scale() <= 0
+
+    /**
+     * Indices (i < j) of two numbers before the last one whose product is the last one (the amount).
+     * The pair closest to the amount wins; a pair with a discount percentage between price and amount
+     * ("2 x 10,00 - 10% = 18,00") counts too.
+     */
+    private fun findPair(values: List<BigDecimal>): Pair<Int, Int>? {
+        val n = values.size
+        if (n < 3) return null
+        val total = ItalianNumbers.toCents(values[n - 1])
+        val pairs = mutableListOf<Triple<Int, Int, Int>>() // i, j, cost
+        for (j in n - 2 downTo 1) for (i in j - 1 downTo 0) pairs += Triple(i, j, 2 * (n - 2 - j) + (j - i - 1))
+        for ((i, j, _) in pairs.sortedBy { it.third }) {
+            val between = values.subList(j + 1, n - 1)
+            if (between.isEmpty() && matches(values[i], values[j], total)) return i to j
+            if (between.size == 1) {
+                val d = between[0]
+                if (d.signum() > 0 && d < BigDecimal(100)) {
+                    val net = values[i].multiply(values[j]).multiply(BigDecimal(100).subtract(d)).divide(BigDecimal(100))
+                    if (kotlin.math.abs(ItalianNumbers.toCents(net) - total) <= 2) return i to j
+                }
+            }
+        }
+        return null
+    }
 
     /** "CF GR1500 2 4,850 9,70": unit and pack size read without a space, right before the quantity. */
     private fun splitGluedUnit(tokens: List<String>): List<String> {
@@ -814,23 +934,38 @@ object ReceiptParser {
         return out
     }
 
-    /** Removes "O 2046225 1x1" (marker, item code, colli) from the start of an item line. */
-    private fun stripItemCode(tokens: List<String>): Pair<List<String>, String?> {
+    private class Stripped(val tokens: List<String>, val code: String?, val packages: String?)
+
+    /** Removes "O 2046225 1x1" (marker, article code, colli) from the start of an item line; the colli are kept apart. */
+    private fun stripItemCode(tokens: List<String>, colliColumn: Boolean = false): Stripped {
         var i = 0
         // Line marker ("O" offer, "S" discount); the OCR may read the letter O as a zero.
         if (tokens.size > 3 && tokens[0].length == 1 && (tokens[0][0].isLetter() || tokens[0] == "0") &&
             (ITEM_CODE.matches(tokens[1]) || CODE_WITH_COLLI.matches(tokens[1]))
         ) i = 1
         CODE_WITH_COLLI.find(tokens.getOrElse(i) { "" })?.let { m ->
-            if (tokens.size > i + 2) return tokens.drop(i + 1) to m.groupValues[1]
+            if (tokens.size > i + 2) return Stripped(tokens.drop(i + 1), m.groupValues[1], m.groupValues[2])
         }
+        var code: String? = null
         if (tokens.size > i + 2 && ITEM_CODE.matches(tokens[i])) {
-            val code = tokens[i]
+            code = tokens[i]
             i++
-            if (tokens.size > i + 2 && COLLI.matches(tokens[i])) i++
-            return tokens.drop(i) to code
         }
-        return tokens to null
+        // Colli right after the code (or first on the line): "1x6", "1 x 6", or a bare number when the table has a COLLI column.
+        var packages: String? = null
+        val t0 = tokens.getOrNull(i)
+        val t1 = tokens.getOrNull(i + 1)
+        val t2 = tokens.getOrNull(i + 2)
+        if (t0 != null && tokens.size > i + 2) {
+            when {
+                COLLI_PATTERN.matches(t0) -> { packages = t0; i++ }
+                t1 != null && t2 != null && t1 in setOf("x", "X", "×", "*") && t0.all(Char::isDigit) && t0.length <= 3 &&
+                    t2.all(Char::isDigit) && t2.length <= 3 && tokens.size > i + 4 -> { packages = "${t0}x$t2"; i += 3 }
+                (code != null || colliColumn) && t0.all(Char::isDigit) && t0.length <= 3 && t1 != null && t1.any(Char::isLetter) &&
+                    (code == null || COLLI.matches(t0)) -> { packages = t0; i++ }
+            }
+        }
+        return Stripped(tokens.drop(i), code, packages)
     }
 
     /** Trims separators and a trailing packaging code ("... MULINO BIANC SK" -> "... MULINO BIANC"). */
