@@ -236,6 +236,9 @@ interface SellerDao {
     @Query("SELECT * FROM sellers WHERE vat_number = :vat LIMIT 1")
     fun byVatNumber(vat: String): SellerEntity?
 
+    @Query("UPDATE sellers SET vat_number = NULL WHERE vat_number = :vat")
+    fun clearVat(vat: String)
+
     @Query("UPDATE sellers SET vat_number = :vat, header_profile = :profile WHERE id = :id")
     fun updateLearning(id: Long, vat: String?, profile: String?)
 

@@ -40,6 +40,7 @@ object ReceiptParser {
             "(?:n(?:r|um)?\\.?|n°|nº|numero|#)\\s*[:.]?\\s*([A-Za-z0-9][A-Za-z0-9\\-/]*)",
     )
     private val DOC_NUMBER_BARE = Regex("(?i)^(?:n\\.|n°|nº|numero|num\\.)\\s*(?:doc\\.?|documento)?\\s*[:.]?\\s*([A-Za-z0-9][A-Za-z0-9\\-/]*)")
+    private val NUMBER_LABEL = Regex("(?i)(\\bn\\.?\\s?ro\\b|\\bnumero\\b|\\bn\\.\\s*doc|\\bnum\\.)")
     /** "FATTURA 2025/0311 18/03/2025" (number without "n."), used only as a low-confidence fallback. */
     private val DOC_NUMBER_LOOSE = Regex("(?i)^\\s*(?:fattura|ft\\.?|ddt|d\\.d\\.t\\.?|bolla|ricevuta)\\s+([A-Za-z0-9][A-Za-z0-9\\-/]*)")
     private val DATE_LABEL = Regex("(?i)\\b(data(?:\\s+(?:documento|fattura|doc\\.?|emissione|ddt))?|del|emessa\\s+il)\\b(?!\\s+(?:scadenza|consegna|nascita|pagamento))")
@@ -60,7 +61,8 @@ object ReceiptParser {
     )
     private val VAT_TOTAL = Regex("(?i)\\b(totale\\s+(?:iva|i\\.v\\.a\\.?|imposta|imposte)|tot\\.?\\s+iva|di\\s+cui\\s+iva)\\b")
     private val VAT_LINE = Regex("(?i)^\\s*(iva|i\\.v\\.a\\.?|imposta)\\b")
-    private val VAT_ID = Regex("(?i)(p\\.?\\s?iva|partita\\s+iva|c\\.?\\s?f\\.?\\b|cod(?:ice)?\\.?\\s+fisc)")
+    // "C.F." needs its dots: a bare "CF" is a packaging code (confezione) on item lines.
+    private val VAT_ID = Regex("(?i)(p\\.?\\s?iva|partita\\s+iva|\\bc\\.\\s?f\\.|cod(?:ice)?\\.?\\s+fisc)")
     private val NON_ITEM = Regex(
         "(?i)\\b(resto|contanti|contante|pagamento|pagato|bancomat|carta|pos|ricevuto|documento\\s+commerciale|" +
             "vendita|rt\\b|matricola|arrotondamento|sconto\\s+totale|scadenza\\s+pagamento|iban|abi|cab|banca|" +
@@ -80,7 +82,15 @@ object ReceiptParser {
     )
     private val DECIMAL_AMOUNT = Regex("[.,]\\d{2,4}-?$")
     /** VAT class printed after the price on Italian receipts: "2,50 B", "(A)", "*". */
-    private val VAT_CODE_TOKEN = Regex("^\\(?([A-HJ-WYZa-hj-wyz]|\\*|#|[A-H]\\d)\\)?$")
+    private val VAT_CODE_TOKEN = Regex("^\\(?([A-HJ-WYZa-hj-wyz]|\\*|#|[A-Z]\\d{1,2})\\)?$")
+    /** Numeric VAT column after the amount: "3,45 10", "1,09 04", "10,74 22". */
+    private val VAT_RATE_CODE = Regex("^(0?0|0?4|0?5|10|22|20|21)$")
+    /** Item code (5+ digits), optionally marked with one letter, then colli ("1x1", "2x3", "1"). */
+    private val ITEM_CODE = Regex("^\\d{5,}$")
+    private val COLLI = Regex("^(\\d{1,3}[xX×]\\d{1,3}|\\d{1,2})$")
+    /** Two-letter packaging codes printed before the unit ("SK GR 800", "NC KG"); never part of a product name. */
+    private val PACKAGING_CODE = Regex("^[A-Z]{2}$")
+    private val SHORT_WORDS = setOf("DI", "DA", "AL", "IN", "LA", "IL", "UN", "DE", "EL", "LE", "LO", "SU", "ED", "OR", "NO", "BY")
     /** A quantity line on its own: "2 x 1,25", "2 X 1,25 2,50", "0,540 kg x 12,90 €/kg". */
     private val QTY_ONLY_LINE = Regex(
         "(?i)^\\s*(\\d+(?:[.,]\\d{1,3})?)\\s*([a-z]{1,4}\\.?)?\\s*[x×*]\\s*(?:€\\s*)?(\\d+[.,]\\d{2,4})\\s*(?:€?/?\\s*[a-z]{0,4})?(?:\\s+(?:€\\s*)?(\\d+[.,]\\d{2}))?\\s*$",
@@ -352,6 +362,16 @@ object ReceiptParser {
                 }
             }
         }
+        // Column layout: "TIPO DOCUMENTO  N.RO DOCUMENTO  DATA" with the values on the row below.
+        lines.forEachIndexed { i, line ->
+            if (!NUMBER_LABEL.containsMatchIn(line) || line.any { it.isDigit() }) return@forEachIndexed
+            val next = lines.getOrNull(i + 1) ?: return@forEachIndexed
+            val value = next.split(' ').firstOrNull { tok ->
+                tok.any(Char::isDigit) && tok.length >= 3 && ItalianDates.findDates(tok).isEmpty() &&
+                    !DECIMAL_AMOUNT.containsMatchIn(tok) && !Regex("^\\d{1,2}/\\d{1,2}$").matches(tok) // not "1/5" (page)
+            }?.trim(',', ';', ':')
+            if (value != null) return Extracted(value, Confidence.LOW, "$line / $next")
+        }
         lines.forEachIndexed { i, line ->
             val m = DOC_NUMBER_LOOSE.find(line) ?: return@forEachIndexed
             val value = m.groupValues[1].trimEnd('/', '-')
@@ -377,7 +397,9 @@ object ReceiptParser {
         }
         // 2. Column layout: the label row ("Numero  Data") with the values on the row below.
         lines.forEachIndexed { i, line ->
-            if (!DATE_LABEL.containsMatchIn(line) || ItalianDates.findDates(line).isNotEmpty() || NOT_DOC_DATE.containsMatchIn(line)) return@forEachIndexed
+            val strongLabel = Regex("(?i)data\\s+(documento|fattura|doc\\.?|emissione)").containsMatchIn(line)
+            if (!DATE_LABEL.containsMatchIn(line) || ItalianDates.findDates(line).isNotEmpty()) return@forEachIndexed
+            if (!strongLabel && NOT_DOC_DATE.containsMatchIn(line)) return@forEachIndexed
             val next = lines.getOrNull(i + 1) ?: return@forEachIndexed
             val d = ItalianDates.findDates(next).firstOrNull() ?: return@forEachIndexed
             if (!isInsideExpiry(next, d)) {
@@ -485,7 +507,7 @@ object ReceiptParser {
     private sealed interface Tok {
         data class Num(val raw: String, val value: BigDecimal) : Tok
         data class QtyUnit(val value: BigDecimal, val unit: String, val raw: String) : Tok
-        data class UnitTok(val unit: String) : Tok
+        data class UnitTok(val unit: String, val raw: String) : Tok
         data class Rate(val value: BigDecimal) : Tok
         data object Times : Tok
         data object Currency : Tok
@@ -499,7 +521,7 @@ object ReceiptParser {
         if (t.endsWith("%")) {
             return ItalianNumbers.parse(t.dropLast(1))?.let { Tok.Rate(it) }
         }
-        Units.normalizeKnown(t)?.let { return Tok.UnitTok(it) }
+        Units.normalizeKnown(t)?.let { return Tok.UnitTok(it, t) }
         val stripped = t.removePrefix("€").removeSuffix("€")
         if (stripped.any { it.isDigit() } && stripped.all { it.isDigit() || it in ".,-" }) {
             if (ItalianDates.findDates(stripped).isNotEmpty()) return null
@@ -520,9 +542,15 @@ object ReceiptParser {
 
     /** Parses one item line such as "Mozzarella fiordilatte kg 2,500 8,90 22,25 10%". */
     fun parseItemLine(line: String): ParsedLineItem? {
-        var tokens = line.split(' ').filter { it.isNotBlank() }
+        var tokens = stripItemCode(line.split(' ').filter { it.isNotBlank() })
         // Drop a VAT class letter after the price: "PANE 2,50 B" -> "PANE 2,50".
         while (tokens.size > 2 && VAT_CODE_TOKEN.matches(tokens.last()) && classify(tokens[tokens.size - 2]) != null) {
+            tokens = tokens.dropLast(1)
+        }
+        // VAT code column: "... 3,450 3,45 10" -> rate 10, not an amount.
+        var vatCode: BigDecimal? = null
+        if (tokens.size > 2 && VAT_RATE_CODE.matches(tokens.last()) && Regex("[.,]\\d{2}$").containsMatchIn(tokens[tokens.size - 2])) {
+            vatCode = BigDecimal(tokens.last())
             tokens = tokens.dropLast(1)
         }
         if (tokens.size < 2) return null
@@ -535,25 +563,40 @@ object ReceiptParser {
         }
         // "Farina 00 sacco 2 18,50 37,00": when qty, price and total follow the unit,
         // numbers before the unit are part of the description.
-        val unitIdx = tail.indexOfFirst { it is Tok.UnitTok }
+        // The unit that applies is the one right before the numbers ("CF GR 0,48": CF is the packaging).
+        val unitIdx = tail.indexOfLast { it is Tok.UnitTok }
         if (unitIdx > 0 && tail.drop(unitIdx + 1).count { it is Tok.Num } >= 3) {
             repeat(unitIdx) { tail.removeFirst() }
             cut += unitIdx
         }
         // Description must remain and contain letters.
-        var description = tokens.subList(0, cut).joinToString(" ").trim().trimEnd(':', '-', '.').trim()
+        var description = cleanDescription(tokens.subList(0, cut))
         if (description.count { it.isLetter() } < 2) return null
-        val nums = tail.filterIsInstance<Tok.Num>()
+        var nums = tail.filterIsInstance<Tok.Num>()
         // An item line must end in something that looks like money ("8,90"), not "Via Roma 12".
         if (nums.isEmpty() || !DECIMAL_AMOUNT.containsMatchIn(nums.last().raw)) return null
 
-        var unit: String? = tail.filterIsInstance<Tok.UnitTok>().firstOrNull()?.unit
+        val unitTok = tail.filterIsInstance<Tok.UnitTok>().lastOrNull()
+        var unit: String? = unitTok?.unit
+        // Pack size between the unit and the quantity: "GR 800 · 1 · 3,450 · 3,45", "LT 5 · 6 · 1,790 · 10,74".
+        // Recognised only when quantity x price = total, so a discount column is never mistaken for it.
+        if (unitTok != null && tail.none { it is Tok.QtyUnit }) {
+            val after = tail.drop(tail.indexOf(unitTok) + 1).filterIsInstance<Tok.Num>()
+            if (after.size >= 4) {
+                val (pack, q, pr, t) = after.takeLast(4)
+                if (matches(q.value, pr.value, ItalianNumbers.toCents(t.value))) {
+                    description = "$description ${unitTok.raw.uppercase()} ${pack.raw}"
+                    unit = "pz"
+                    nums = listOf(q, pr, t)
+                }
+            }
+        }
         var qtyFromUnitTok: BigDecimal? = null
         tail.filterIsInstance<Tok.QtyUnit>().firstOrNull()?.let {
             qtyFromUnitTok = it.value
             if (it.unit.isNotEmpty()) unit = it.unit
         }
-        val rate = tail.filterIsInstance<Tok.Rate>().lastOrNull()?.value
+        val rate = tail.filterIsInstance<Tok.Rate>().lastOrNull()?.value ?: vatCode
         val hasTimes = tail.any { it is Tok.Times } || tail.any { it is Tok.QtyUnit && (it as Tok.QtyUnit).unit.isEmpty() }
 
         var qty: BigDecimal? = qtyFromUnitTok
@@ -592,6 +635,12 @@ object ReceiptParser {
             }
         }
         if (qty != null && price != null && totalCents != null) consistent = matches(qty, price, totalCents)
+        // "GR 0,48" on a weighed item means kilograms: nobody buys 0,48 grams.
+        val q0 = qty
+        if (q0 != null && !isWholeNumber(q0) && q0 < BigDecimal(100)) {
+            if (unit == "g") unit = "kg"
+            if (unit == "ml") unit = "l"
+        }
 
         // A unit may appear at the end of the description ("Farina 00 sacco").
         if (unit == null) {
@@ -625,6 +674,29 @@ object ReceiptParser {
     }
 
     private fun isWholeNumber(v: BigDecimal) = v.stripTrailingZeros().scale() <= 0
+
+    /** Removes "O 2046225 1x1" (marker, item code, colli) from the start of an item line. */
+    private fun stripItemCode(tokens: List<String>): List<String> {
+        var i = 0
+        if (tokens.size > 3 && tokens[0].length == 1 && tokens[0][0].isLetter() && ITEM_CODE.matches(tokens[1])) i = 1
+        if (tokens.size > i + 2 && ITEM_CODE.matches(tokens[i])) {
+            i++
+            if (tokens.size > i + 2 && COLLI.matches(tokens[i])) i++
+            return tokens.drop(i)
+        }
+        return tokens
+    }
+
+    /** Trims separators and a trailing packaging code ("... MULINO BIANC SK" -> "... MULINO BIANC"). */
+    private fun cleanDescription(tokens: List<String>): String {
+        var t = tokens
+        fun dropSeparators() { while (t.isNotEmpty() && t.last().all { it in "-.,:;/" }) t = t.dropLast(1) }
+        dropSeparators()
+        // At most one packaging code, and only right before the numbers ("SUINO SV - . NC" keeps "SV").
+        if (t.size > 1 && PACKAGING_CODE.matches(t.last()) && t.last() !in SHORT_WORDS) t = t.dropLast(1)
+        dropSeparators()
+        return t.joinToString(" ").trim().trimEnd(':', '-', '.', ',', ' ').trim()
+    }
 
     /** qty x price equals total within one cent (after rounding half-up to cents). */
     fun matches(qty: BigDecimal, price: BigDecimal, totalCents: Long): Boolean {

@@ -96,4 +96,19 @@ class RepositoryTest {
         val byAlias = repo.identifySeller("CASEIFICI0 VALVERDE\nFattura n. 2", "CASEIFICI0 VALVERDE", null)!!
         assertEquals(SellerMatchReason.NAME_ALIAS, byAlias.match.reason)
     }
+
+    @Test fun operatorsOwnVatNumberIsNeverLearnedAsASuppliers() = runBlocking {
+        var detected: String? = null
+        repo.onSharedVatNumber = { detected = it }
+        // Two different suppliers whose documents only show the customer's (operator's) VAT number.
+        val own = "09876543217"
+        val a = "FORNITORE UNO S.R.L.\nSpett.le RISTORANTE P.IVA $own"
+        val b = "FORNITORE DUE S.R.L.\nSpett.le RISTORANTE P.IVA $own"
+        repo.saveDocument(doc("Fornitore Uno", "1", emptyList()), StoredFile("documents/a.jpg", "image/jpeg", 1, "sha-a"), a, null, SellerLearning(a, null, null))
+        repo.saveDocument(doc("Fornitore Due", "2", emptyList()), StoredFile("documents/b.jpg", "image/jpeg", 1, "sha-b"), b, null, SellerLearning(b, null, null))
+        assertEquals(own, detected)
+        // Neither supplier is identified by the operator's number any more.
+        val r = repo.identifySeller("ALTRO FORNITORE\nSpett.le RISTORANTE P.IVA $own", "ALTRO FORNITORE", null)
+        assertTrue(r == null || r.match.reason != SellerMatchReason.VAT_NUMBER)
+    }
 }

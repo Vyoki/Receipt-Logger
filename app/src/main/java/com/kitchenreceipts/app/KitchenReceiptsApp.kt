@@ -26,6 +26,13 @@ class AppContainer(context: Context) {
     val repository = ReceiptRepository(database, fileStore)
     val importProcessor = ImportProcessor(pageRenderer)
 
+    init {
+        repository.onSharedVatNumber = { vat ->
+            log.event("OWN_VAT_DETECTED", "vat" to vat)
+            if (settings.ownVatNumber.isBlank()) settings.ownVatNumber = vat
+        }
+    }
+
     /** Swap this line to change OCR engine. */
     val ocrEngine: OcrEngine = MlKitOcrEngine()
 
