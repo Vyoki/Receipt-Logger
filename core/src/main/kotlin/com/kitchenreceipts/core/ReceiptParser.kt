@@ -191,6 +191,20 @@ object ReceiptParser {
                     if (amount != null) { consumed += i + 1; source = "$line $next" }
                 }
             }
+            if (amount == null && kind == 3) {
+                // "TOTALE DOCUMENTO DI / CONSEGNA VALORIZZATO / CHE NON COSTITUISCE FATTURA / 231,27": a long label
+                // wrapped over several lines, with the amount alone below it.
+                for (j in i + 1..minOf(i + 5, lines.lastIndex)) {
+                    val next = lines[j]
+                    val nextAmount = lastAmountCents(next)
+                    if (nextAmount != null && next.count { it.isLetter() } <= 3) {
+                        amount = nextAmount; consumed += j; source = "$line … $next"; break
+                    }
+                    if (nextAmount != null || SUBTOTAL.containsMatchIn(next) || VAT_TOTAL.containsMatchIn(next) ||
+                        TOTALS_ROW.containsMatchIn(next) || TOTAL_WEAK.containsMatchIn(next)
+                    ) break
+                }
+            }
             if (amount == null) return@forEachIndexed
             consumed += i
             found += TotalsLine(i, kind, amount, source)
@@ -219,6 +233,10 @@ object ReceiptParser {
             val best = weakTotals.maxBy { it.first }
             if (weakTotals.map { it.first }.distinct().size > 1) warnings += ParseWarning.MULTIPLE_TOTALS
             total = Extracted(best.first, Confidence.LOW, best.second)
+        }
+        if (total == null && subtotal != null && vat != null) {
+            // Only the VAT summary was readable: the total is its taxable amount plus VAT (flagged for checking).
+            total = Extracted(subtotal!!.value + vat!!.value, Confidence.LOW, "${subtotal!!.source} + ${vat!!.source}")
         }
 
         // ------------------------------------------------------------ line items
@@ -452,9 +470,11 @@ object ReceiptParser {
             if (!DATE_LABEL.containsMatchIn(line) || ItalianDates.findDates(line).isNotEmpty()) return@forEachIndexed
             // "MODALITA' DI PAGAMENTO  NUMERO  DATA" is a row of headings: only the word right after "data" matters.
             if (!strongLabel && Regex("(?i)\\bdata\\s+(di\\s+)?(scadenza|consegna|pagamento|nascita)").containsMatchIn(line)) return@forEachIndexed
-            val next = lines.getOrNull(i + 1) ?: return@forEachIndexed
-            val d = ItalianDates.findDates(next).firstOrNull() ?: return@forEachIndexed
-            if (!isInsideExpiry(next, d)) {
+            // The values row is usually right below, but the photo may put a line or two in between.
+            for (j in i + 1..minOf(i + 3, lines.lastIndex)) {
+                val next = lines[j]
+                if (DATE_LABEL.containsMatchIn(next) && ItalianDates.findDates(next).isEmpty()) break // another label row
+                val d = ItalianDates.findDates(next).firstOrNull { !isInsideExpiry(next, it) && !afterNotDocWord(next, it) } ?: continue
                 return Extracted(d.date, Confidence.LOW, "$line / $next")
             }
         }
@@ -462,14 +482,28 @@ object ReceiptParser {
         lines.forEachIndexed { i, line ->
             val scan = LotExtractor.scan(line)
             if (scan.expiry != null || scan.lot != null || scan.lotRejectedAsDate) return@forEachIndexed
-            if (NOT_DOC_DATE.containsMatchIn(line)) return@forEachIndexed
-            val d = ItalianDates.findDates(line).firstOrNull()
+            // "RIMESSA DIRETTA ENTRO 60 GG.D.F. B26 111945 15/09/2026": only a date right after "entro",
+            // "scadenza", "consegna"... is about something else.
+            val d = ItalianDates.findDates(line).firstOrNull { !afterNotDocWord(line, it) }
             if (d != null) {
                 consumed += i
                 return Extracted(d.date, Confidence.LOW, line)
             }
         }
+        // 4. Last resort (delivery notes often print only "Data consegna"/"Data trasporto"): any date that is not an expiry.
+        lines.forEach { line ->
+            val scan = LotExtractor.scan(line)
+            if (scan.expiry != null || scan.lotRejectedAsDate) return@forEach
+            val d = ItalianDates.findDates(line).firstOrNull { !isInsideExpiry(line, it) }
+            if (d != null && !Regex("(?i)\\b(nascita|valuta)").containsMatchIn(line)) return Extracted(d.date, Confidence.LOW, line)
+        }
         return null
+    }
+
+    /** True when a word such as "scadenza", "entro", "consegna" is printed just before the date. */
+    private fun afterNotDocWord(line: String, d: DateMatch): Boolean {
+        val before = line.substring(maxOf(0, d.range.first - 16), d.range.first)
+        return NOT_DOC_DATE.containsMatchIn(before)
     }
 
     private fun isInsideExpiry(line: String, d: DateMatch): Boolean =

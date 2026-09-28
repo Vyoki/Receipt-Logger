@@ -49,4 +49,34 @@ class DdtSurgelatiTest {
         assertTrue(ParseWarning.ITEMS_SUM_MISMATCH !in d.warnings)
         assertEquals(VatBasis.EXCLUSIVE, d.vatBasis?.value)
     }
+
+    /** Phone photos rebuild rows differently: the same note with the label/value rows apart and the total label wrapped. */
+    @Test fun dateAndTotalSurviveARoughPhoto() {
+        val rough = text
+            .replace(
+                "09876543217 09876543217 RIMESSA DIRETTA ENTRO 60 GG.D.F. B26 111945 15/09/2026 1/1",
+                "09876543217 09876543217\nRIMESSA DIRETTA\nENTRO 60 GG.D.F. 15/09/2026 1/1",
+            )
+            .replace(
+                "22 28,90 6,36 Durata: presente consegna TOTALE DOCUMENTO DI CONSEGNA VALORIZZATO CHE NON COSTITUISCE FATTURA\n231,27",
+                "22 28,90 6,36\nTOTALE DOCUMENTO DI\nCONSEGNA VALORIZZATO\nCHE NON COSTITUISCE FATTURA\n231,27",
+            )
+        val r = ReceiptParser.parse(rough, ParseOptions(ownVatNumber = "09876543217"))
+        assertEquals(LocalDate.of(2026, 9, 15), r.documentDate?.value)
+        assertEquals(23127L, r.totalCents?.value)
+    }
+
+    @Test fun totalFromTheVatSummaryWhenTheTotalIsUnreadable() {
+        val noTotal = text.replace("231,27\n", "").replace("TOTALE DOCUMENTO DI CONSEGNA VALORIZZATO CHE NON COSTITUISCE FATTURA", "")
+        val r = ReceiptParser.parse(noTotal, ParseOptions(ownVatNumber = "09876543217"))
+        assertEquals(23127L, r.totalCents?.value)
+        // imponibile + IVA; confirmed because the line items add up to the taxable amount
+        assertTrue(r.totalCents!!.source!!.contains("TOTALI"))
+    }
+
+    @Test fun dateOnlyAsDeliveryDateIsStillProposed() {
+        val r = ReceiptParser.parse("MAGAZZINO ESEMPIO S.R.L.\nDATA CONSEGNA 16/09/2026\nPATATE KG 10,000 0,90 9,00", ParseOptions())
+        assertEquals(LocalDate.of(2026, 9, 16), r.documentDate?.value)
+        assertEquals(Confidence.LOW, r.documentDate?.confidence)
+    }
 }
