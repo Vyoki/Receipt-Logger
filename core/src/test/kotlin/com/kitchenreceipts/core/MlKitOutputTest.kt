@@ -37,4 +37,13 @@ class MlKitOutputTest {
         assertEquals(Confidence.LOW, a.quantity?.confidence)
         assertDec("0.420", a.unitPrice?.value)
     }
+
+    @Test fun unitGluedToPackSize() {
+        val r = ReceiptParser.parseItemLine("1000013 1x2 RICOTTA KG.1,5 - MARCA F CF GR1500 2 4,850 9,70 04")!!
+        assertEquals("pz", r.unit?.value)
+        assertDec("2", r.quantity?.value)
+        assertEquals("RICOTTA KG.1,5 - MARCA F GR 1500", r.originalDescription)
+        // A glued unit inside the description is left as printed.
+        assertTrue(ReceiptParser.parseItemLine("1000011 1x1 CIPOLLA DORATA KG10 PZ CRT KG 10 1 11,900 11,90 04")!!.originalDescription.contains("KG10"))
+    }
 }
