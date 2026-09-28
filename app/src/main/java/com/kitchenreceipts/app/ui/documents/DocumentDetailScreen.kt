@@ -57,6 +57,11 @@ import com.kitchenreceipts.app.ui.components.LoadingBox
 import com.kitchenreceipts.app.ui.components.MissingValue
 import com.kitchenreceipts.app.ui.components.RecognisedTextCard
 import com.kitchenreceipts.app.ui.components.SectionTitle
+import com.kitchenreceipts.app.ui.components.PriceChangesCard
+import com.kitchenreceipts.core.PriceChange
+import kotlinx.coroutines.flow.map
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.filled.CheckCircle
 import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.fmtDecimal
 import com.kitchenreceipts.app.ui.fmtMoney
@@ -77,6 +82,11 @@ class DocumentDetailViewModel(
             .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val items: StateFlow<List<LineItemRow>> = repo.observeItems(id).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** Prices on this document that differ from the previous purchase of the same product. */
+    val priceChanges: StateFlow<List<PriceChange>> = repo.observeItems(id)
+        .map { runCatching { repo.priceChangesForDocument(id) }.getOrDefault(emptyList()) }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
     suspend fun delete() {
         repo.deleteDocument(id)
         log.event("DELETED", "doc" to id)
@@ -86,6 +96,7 @@ class DocumentDetailViewModel(
 @Composable
 fun DocumentDetailScreen(
     documentId: Long,
+    autoSaved: Boolean = false,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onViewOriginal: () -> Unit,
@@ -94,6 +105,7 @@ fun DocumentDetailScreen(
     val vm = appViewModel(key = "doc-$documentId") { DocumentDetailViewModel(it.repository, documentId, it.log) }
     val docResult by vm.document.collectAsStateWithLifecycle()
     val items by vm.items.collectAsStateWithLifecycle()
+    val priceChanges by vm.priceChanges.collectAsStateWithLifecycle()
     val files = appContainer().fileStore
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
@@ -125,6 +137,24 @@ fun DocumentDetailScreen(
                     contentPadding = PaddingValues(16.dp),
                     verticalArrangement = Arrangement.spacedBy(10.dp),
                 ) {
+                    if (autoSaved) {
+                        item("auto") {
+                            Surface(
+                                color = MaterialTheme.colorScheme.primaryContainer,
+                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                shape = MaterialTheme.shapes.medium,
+                            ) {
+                                Row(Modifier.fillMaxWidth().padding(12.dp)) {
+                                    Icon(Icons.Filled.CheckCircle, contentDescription = null)
+                                    Spacer(Modifier.width(10.dp))
+                                    Text(stringResource(R.string.auto_saved_banner), style = MaterialTheme.typography.bodyMedium)
+                                }
+                            }
+                        }
+                    }
+                    if (priceChanges.isNotEmpty()) {
+                        item("prices") { PriceChangesCard(priceChanges, onOpenProduct = onOpenProduct) }
+                    }
                     item {
                         Card {
                             DocumentPages(d.filePath, d.mimeType, d.pageCount, Modifier.fillMaxWidth().height(300.dp), onClick = onViewOriginal)

@@ -44,6 +44,16 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("secure_screen", false)
         set(v) = prefs.edit().putBoolean("secure_screen", v).apply()
 
+    /** Save a scan straight away when everything was read with confidence and the amounts add up. */
+    var autoSave: Boolean
+        get() = prefs.getBoolean("auto_save", true)
+        set(v) = prefs.edit().putBoolean("auto_save", v).apply()
+
+    /** Link lines to products automatically (remembered, recognised despite typos, or new). */
+    var autoLinkProducts: Boolean
+        get() = prefs.getBoolean("auto_link", true)
+        set(v) = prefs.edit().putBoolean("auto_link", v).apply()
+
     fun parseOptions() = ParseOptions(ownBusinessName.ifBlank { null }, ownVatNumber.ifBlank { null })
 
     companion object {

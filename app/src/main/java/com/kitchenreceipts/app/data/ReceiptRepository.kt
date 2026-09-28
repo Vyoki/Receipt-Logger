@@ -3,7 +3,20 @@ package com.kitchenreceipts.app.data
 import androidx.room.withTransaction
 import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.core.Categories
+import com.kitchenreceipts.core.Category
 import com.kitchenreceipts.core.CostCalculator
+import com.kitchenreceipts.core.Inventory
+import com.kitchenreceipts.core.InventoryPurchase
+import com.kitchenreceipts.core.InventoryReport
+import com.kitchenreceipts.core.LineItemDraft
+import com.kitchenreceipts.core.Period
+import com.kitchenreceipts.core.PriceChange
+import com.kitchenreceipts.core.PricePoint
+import com.kitchenreceipts.core.PriceWatch
+import com.kitchenreceipts.core.ProductCandidate
+import com.kitchenreceipts.core.ProductSource
+import com.kitchenreceipts.core.SmartMatcher
 import com.kitchenreceipts.core.CostSummary
 import com.kitchenreceipts.core.DocumentFingerprint
 import com.kitchenreceipts.core.DuplicateDetector
@@ -22,6 +35,7 @@ import com.kitchenreceipts.core.ValidDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
@@ -128,18 +142,23 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                 documents.deleteItemsForDocument(existingId)
                 existingId
             }
+            // Lines the app could not link to an existing product become new products (one per name).
+            val createdProducts = doc.items.withIndex().mapNotNull { (i, it) ->
+                val name = it.newProductName?.takeIf { _ -> it.productId == null } ?: return@mapNotNull null
+                i to findOrCreateProduct(name)
+            }.toMap()
             documents.insertItems(
                 doc.items.mapIndexed { i, it ->
                     LineItemEntity(
-                        documentId = id, position = i, originalDescription = it.description, productId = it.productId,
+                        documentId = id, position = i, originalDescription = it.description, productId = it.productId ?: createdProducts[i],
                         quantity = it.quantity, unit = it.unit, unitPrice = it.unitPrice, lineTotalCents = it.lineTotalCents,
                         vatRate = it.vatRatePercent, lotNumber = it.lotNumber, expiryDate = it.expiryDate,
                     )
                 },
             )
-            // Remember the user's own assignments for this seller (exact description match only).
-            for (item in doc.items) {
-                val pid = item.productId ?: continue
+            // Remember the assignments for this seller (description and article code).
+            for ((index, item) in doc.items.withIndex()) {
+                val pid = item.productId ?: createdProducts[index] ?: continue
                 products.upsertAlias(ProductAliasEntity(sellerId = seller.id, aliasKey = ProductMatching.aliasKey(item.description), productId = pid))
                 item.itemCode?.let { code ->
                     products.upsertAlias(ProductAliasEntity(sellerId = seller.id, aliasKey = ProductMatching.codeKey(code), productId = pid))
@@ -213,6 +232,15 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         if (vat.isNotBlank()) sellers.clearVat(vat.filter(Char::isDigit))
     }
 
+    private fun findOrCreateProduct(name: String): Long {
+        val clean = name.trim()
+        val normalized = ProductMatching.aliasKey(clean)
+        products.findByNormalizedBlocking(normalized)?.let { return it.id }
+        return products.insertBlocking(
+            ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis(), category = Categories.guess(clean).key),
+        )
+    }
+
     private fun findOrCreateSeller(name: String): SellerEntity {
         val normalized = normalizeSeller(name)
         return sellers.findByNormalized(normalized) ?: run {
@@ -252,7 +280,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         require(clean.isNotEmpty())
         val normalized = ProductMatching.aliasKey(clean)
         products.findByNormalized(normalized)?.let { throw ProductNameTakenException(it) }
-        val entity = ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis())
+        val entity = ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis(), category = Categories.guess(clean).key)
         return entity.copy(id = products.insert(entity))
     }
 
@@ -304,6 +332,125 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             },
             conversions.mapNotNull { c -> runCatching { UnitConversion(c.fromUnit, c.toUnit, c.factor) }.getOrNull() },
         )
+
+    suspend fun setCategory(productId: Long, category: Category) = products.setCategory(productId, category.key)
+
+    /**
+     * Merges [from] into [into] (the operator's choice): its purchases, remembered descriptions and unit
+     * conversions move over, then [from] is deleted. Nothing is merged automatically.
+     */
+    suspend fun mergeProducts(from: Long, into: Long) {
+        require(from != into)
+        db.withTransaction {
+            products.moveLineItems(from, into)
+            products.moveAliases(from, into)
+            products.moveConversions(from, into)
+            products.delete(from)
+        }
+    }
+
+    /** Existing products with their already-linked descriptions (from any supplier). */
+    suspend fun productCandidates(): List<ProductCandidate> {
+        val aliases = products.allAliasKeys().filterNot { it.aliasKey.startsWith("#") }.groupBy({ it.productId }, { it.aliasKey })
+        return products.allOnce().map { ProductCandidate(it.id, it.name, aliases[it.id].orEmpty()) }
+    }
+
+    /**
+     * Links every line of a new scan to a product without asking, where that is safe:
+     * 1. what the operator linked before for this supplier (article code, then description);
+     * 2. a product recognised despite spelling differences, abbreviations or misreadings;
+     * 3. otherwise (if [createNew]) a new product named after the description, created on save.
+     * Lines already linked are left alone.
+     */
+    suspend fun autoAssign(sellerName: String, items: List<LineItemDraft>, createNew: Boolean): List<LineItemDraft> {
+        val candidates = productCandidates()
+        val names = candidates.associate { it.id to it.name }
+        return items.map { item ->
+            if (item.productId != null || item.description.text.isBlank()) return@map item
+            val remembered = if (sellerName.isNotBlank()) rememberedProduct(sellerName, item.description.text, item.itemCode) else null
+            if (remembered != null && names.containsKey(remembered)) {
+                return@map item.copy(productId = remembered, productName = names[remembered], productSource = ProductSource.REMEMBERED, newProductName = null)
+            }
+            val match = SmartMatcher.bestMatch(item.description.text, candidates)
+            if (match != null && match.automatic) {
+                return@map item.copy(productId = match.productId, productName = match.name, productSource = ProductSource.RECOGNISED, newProductName = null)
+            }
+            if (createNew) {
+                item.copy(newProductName = ProductMatching.proposeName(item.description.text), productSource = ProductSource.NEW)
+            } else {
+                item
+            }
+        }
+    }
+
+    // ------------------------------------------------------------ price changes
+
+    private fun PurchaseRow.toPricePoint() = PricePoint(
+        productId!!, productName ?: originalDescription, documentId, lineItemId, documentDate, sellerName,
+        quantity, unit, unitPrice, lineTotalCents, vatBasis,
+    )
+
+    /** Price changes of a document not saved yet, against everything bought before. */
+    suspend fun priceChangesForDraft(
+        sellerName: String,
+        date: LocalDate?,
+        vatBasis: VatBasis,
+        items: List<LineItemDraft>,
+        excludeDocumentId: Long?,
+    ): List<PriceChange> {
+        val linked = items.filter { it.productId != null }
+        if (linked.isEmpty()) return emptyList()
+        val ids = linked.mapNotNull { it.productId }.toSet()
+        val history = documents.allPurchasesOnce()
+            .filter { it.productId in ids && it.documentId != excludeDocumentId }
+            .map { it.toPricePoint() }
+        return linked.mapIndexedNotNull { i, item ->
+            val point = PricePoint(
+                item.productId!!, item.productName ?: item.description.text, Long.MAX_VALUE, Long.MAX_VALUE - i,
+                date, sellerName, com.kitchenreceipts.core.ItalianNumbers.parse(item.quantity.text), item.unit.text.ifBlank { null },
+                com.kitchenreceipts.core.ItalianNumbers.parse(item.unitPrice.text),
+                com.kitchenreceipts.core.ItalianNumbers.parse(item.lineTotal.text)?.let { com.kitchenreceipts.core.ItalianNumbers.toCents(it) },
+                vatBasis,
+            )
+            PriceWatch.compare(point, history)
+        }
+    }
+
+    /** Price changes on a saved document. */
+    suspend fun priceChangesForDocument(documentId: Long): List<PriceChange> {
+        val all = documents.allPurchasesOnce().filter { it.productId != null }
+        val ids = all.filter { it.documentId == documentId }.mapNotNull { it.productId }.toSet()
+        val history = all.filter { it.productId in ids }.map { it.toPricePoint() }
+        return history.filter { it.documentId == documentId }.mapNotNull { PriceWatch.compare(it, history) }
+    }
+
+    /** Every price change in the purchase history, most recent first. */
+    fun priceHistory(): Flow<List<PriceChange>> = documents.allPurchases().map { rows ->
+        PriceWatch.history(rows.filter { it.productId != null }.map { it.toPricePoint() })
+    }.flowOn(Dispatchers.Default)
+
+    // ------------------------------------------------------------ inventory
+
+    fun inventory(period: Period): Flow<InventoryReport> =
+        combine(documents.allPurchases(), products.allConversions()) { rows, conversions ->
+            val conv = conversions.groupBy { it.productId }.mapValues { (_, list) ->
+                list.mapNotNull { c -> runCatching { UnitConversion(c.fromUnit, c.toUnit, c.factor) }.getOrNull() }
+            }
+            val purchases = rows.map {
+                val name = it.productName ?: it.originalDescription
+                InventoryPurchase(
+                    it.productId, name, Category.fromKey(it.productCategory) ?: Categories.guess(name),
+                    it.documentDate, it.quantity, it.unit, it.lineTotalCents, it.vatBasis,
+                )
+            }
+            Inventory.report(purchases, period, conv)
+        }.flowOn(Dispatchers.Default)
+
+    /** Products that look like the same thing, for the operator to merge if they agree. */
+    suspend fun possibleDuplicateProducts(): List<Pair<ProductCandidate, ProductCandidate>> {
+        val all = products.allOnce().map { ProductCandidate(it.id, it.name) }
+        return withContext(Dispatchers.Default) { SmartMatcher.possibleDuplicates(all) }
+    }
 
     // ------------------------------------------------------------ reports
 

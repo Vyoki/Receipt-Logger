@@ -9,7 +9,13 @@ import com.kitchenreceipts.app.data.ReceiptRepository
 import com.kitchenreceipts.app.data.SellerLearning
 import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.core.Category
+import com.kitchenreceipts.core.DraftField
 import com.kitchenreceipts.core.DuplicateReason
+import com.kitchenreceipts.core.LineItemDraft
+import com.kitchenreceipts.core.Period
+import com.kitchenreceipts.core.PeriodKind
+import com.kitchenreceipts.core.ProductSource
 import com.kitchenreceipts.core.SellerMatchReason
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidLineItem
@@ -117,5 +123,42 @@ class RepositoryTest {
         val line = ValidLineItem("BISCOTTI M.BIANCO GALLETTI 800", galletti.id, BigDecimal.ONE, "pz", null, 345, null, null, null, "2046225")
         repo.saveDocument(doc("Cash and Carry Esempio", "7", listOf(line)), StoredFile("documents/c.jpg", "image/jpeg", 1, "sha-c"), null, null)
         assertEquals(galletti.id, repo.rememberedProduct("Cash and Carry Esempio", "BISC0TTI M.BIANC0 GALLETT1 800", "2046225"))
+    }
+
+    @Test fun newProductsAreCreatedOnSaveAndTyposFindThemAgain() = runBlocking {
+        val first = ValidLineItem("SALE MARINO GROSSO GR.1000", null, BigDecimal("10"), "pz", null, 422, null, null, null, newProductName = "Sale marino grosso gr.1000")
+        repo.saveDocument(doc("Grossista Uno", "1", listOf(first)), StoredFile("documents/n1.jpg", "image/jpeg", 1, "sha-n1"), null, null)
+        val created = repo.productsOnce().single()
+        assertEquals(Category.DRY_GOODS.key, created.category)
+        assertEquals(created.id, repo.itemsOnce(1).single().item.productId)
+
+        // Another supplier, a misreading: the same product, not a new one.
+        val draft = LineItemDraft(1, DraftField("SALE MARINO GROSOS GR 1000"), quantity = DraftField("20"), unit = DraftField("pz"), lineTotal = DraftField("9,20"))
+        val linked = repo.autoAssign("Grossista Due", listOf(draft), createNew = true).single()
+        assertEquals(created.id, linked.productId)
+        assertEquals(ProductSource.RECOGNISED, linked.productSource)
+
+        // 0,46 instead of 0,422 per piece: a price change against the other supplier's purchase.
+        val changes = repo.priceChangesForDraft("Grossista Due", LocalDate.of(2025, 3, 20), VatBasis.EXCLUSIVE, listOf(linked), null)
+        assertEquals(1, changes.size)
+        assertTrue(changes.single().isIncrease)
+
+        // Something different becomes a new product.
+        val other = repo.autoAssign("Grossista Due", listOf(draft.copy(description = DraftField("ACETO DI VINO BIANCO LT. 1"))), createNew = true).single()
+        assertEquals(null, other.productId)
+        assertEquals(ProductSource.NEW, other.productSource)
+    }
+
+    @Test fun mergeMovesPurchasesAndDeletesTheDuplicate() = runBlocking {
+        val a = repo.createProduct("Mozzarella")
+        val b = repo.createProduct("Mozarella")
+        repo.saveDocument(doc("Caseificio", "1", listOf(item("Mozzarella", a.id, "1", "kg", 900))), StoredFile("documents/m1.jpg", "image/jpeg", 1, "sha-m1"), null, null)
+        repo.saveDocument(doc("Caseificio", "2", listOf(item("Mozarella", b.id, "2", "kg", 1800))), StoredFile("documents/m2.jpg", "image/jpeg", 1, "sha-m2"), null, null)
+        assertEquals(1, repo.possibleDuplicateProducts().size)
+        repo.mergeProducts(b.id, a.id)
+        assertEquals(listOf(a.id), repo.productsOnce().map { it.id })
+        assertEquals(2, repo.productSummaries().first().single().purchaseCount)
+        val inv = repo.inventory(Period.of(LocalDate.of(2025, 3, 14), PeriodKind.MONTH)).first()
+        assertEquals(0, BigDecimal("3").compareTo(inv.lines.single().quantities.single().amount))
     }
 }

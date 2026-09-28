@@ -62,6 +62,14 @@ import com.kitchenreceipts.app.ui.fmtDecimal
 import com.kitchenreceipts.app.ui.fmtMoney
 import com.kitchenreceipts.app.ui.vatBasisLabel
 import com.kitchenreceipts.core.CostSummary
+import com.kitchenreceipts.core.Categories
+import com.kitchenreceipts.core.Category
+import com.kitchenreceipts.core.PriceChange
+import com.kitchenreceipts.core.ProductCandidate
+import com.kitchenreceipts.core.SmartMatcher
+import com.kitchenreceipts.app.ui.categoryLabel
+import com.kitchenreceipts.app.ui.components.PriceChangesCard
+import androidx.compose.material.icons.filled.MergeType
 import com.kitchenreceipts.core.ItalianNumbers
 import com.kitchenreceipts.core.Units
 import kotlinx.coroutines.flow.SharingStarted
@@ -97,12 +105,24 @@ class ProductDetailViewModel(private val repo: ReceiptRepository, private val id
     fun addConversion(from: String, to: String, factor: BigDecimal) = viewModelScope.launch { repo.addConversion(id, from, to, factor) }
     fun deleteConversion(cid: Long) = viewModelScope.launch { repo.deleteConversion(cid) }
     fun deleteAlias(aid: Long) = viewModelScope.launch { repo.deleteAlias(aid) }
+    fun setCategory(c: Category) = viewModelScope.launch { repo.setCategory(id, c) }
+    fun mergeInto(target: Long, done: () -> Unit) = viewModelScope.launch { repo.mergeProducts(id, target); done() }
+
+    val otherProducts: StateFlow<List<ProductEntity>> = repo.products().map { list -> list.filter { it.id != id } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val priceChanges: StateFlow<List<PriceChange>> = repo.priceHistory().map { list -> list.filter { it.productId == id } }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
 
 @Composable
 fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Long) -> Unit) {
     val vm = appViewModel(key = "product-$productId") { ProductDetailViewModel(it.repository, productId) }
     val detail by vm.detail.collectAsStateWithLifecycle()
+    val others by vm.otherProducts.collectAsStateWithLifecycle()
+    val changes by vm.priceChanges.collectAsStateWithLifecycle()
+    var choosingCategory by remember { mutableStateOf(false) }
+    var merging by remember { mutableStateOf(false) }
+    var mergeTarget by remember { mutableStateOf<ProductEntity?>(null) }
     var renaming by remember { mutableStateOf(false) }
     var deleting by remember { mutableStateOf(false) }
     var addingConversion by remember { mutableStateOf(false) }
@@ -118,6 +138,7 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
         actions = {
             if (d?.product != null) {
                 IconButton(onClick = { renaming = true }) { Icon(Icons.Filled.Edit, stringResource(R.string.rename)) }
+                IconButton(onClick = { merging = true }) { Icon(Icons.Filled.MergeType, stringResource(R.string.merge_into)) }
                 IconButton(onClick = { deleting = true }) { Icon(Icons.Filled.Delete, stringResource(R.string.delete)) }
             }
         },
@@ -126,6 +147,21 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
             d == null -> LoadingBox(Modifier.padding(padding))
             d.product == null -> EmptyState(stringResource(R.string.product_not_found), Modifier.padding(padding))
             else -> LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                item("category") {
+                    val category = Category.fromKey(d.product.category) ?: Categories.guess(d.product.name)
+                    ClickCard(onClick = { choosingCategory = true }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.category), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(categoryLabel(category), style = MaterialTheme.typography.titleMedium)
+                            }
+                            Text(stringResource(R.string.change), color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+                if (changes.isNotEmpty()) {
+                    item("changes") { PriceChangesCard(changes.take(10)) }
+                }
                 item { SectionTitle(stringResource(R.string.average_cost)) }
                 if (d.summary.averages.isEmpty()) {
                     item { EmptyState(stringResource(if (d.purchases.isEmpty()) R.string.no_purchases else R.string.no_average_yet)) }
@@ -205,6 +241,60 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
             renaming = false
             vm.rename(name) { scope.launch { snackbar.showSnackbar(takenMsg.format(name)) } }
         }
+    }
+    if (choosingCategory) {
+        AlertDialog(
+            onDismissRequest = { choosingCategory = false },
+            title = { Text(stringResource(R.string.category)) },
+            text = {
+                LazyColumn {
+                    items(Category.entries) { c ->
+                        TextButton(onClick = { vm.setCategory(c); choosingCategory = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            Text(categoryLabel(c), modifier = Modifier.fillMaxWidth())
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { choosingCategory = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    if (merging && d?.product != null) {
+        var query by remember { mutableStateOf("") }
+        val ranked = remember(query, others) {
+            val base = if (query.isBlank()) d.product.name else query
+            val scored = SmartMatcher.rank(base, others.map { ProductCandidate(it.id, it.name) }, 50).map { it.productId }
+            val byId = others.associateBy { it.id }
+            (scored.mapNotNull { byId[it] } + others.filter { query.isBlank() || it.name.contains(query, ignoreCase = true) }).distinct().take(30)
+        }
+        AlertDialog(
+            onDismissRequest = { merging = false },
+            title = { Text(stringResource(R.string.merge_into)) },
+            text = {
+                Column {
+                    Text(stringResource(R.string.merge_hint, d.product.name), style = MaterialTheme.typography.bodyMedium)
+                    OutlinedTextField(query, { query = it }, Modifier.fillMaxWidth(), singleLine = true, label = { Text(stringResource(R.string.search)) })
+                    LazyColumn(Modifier.heightIn(max = 320.dp)) {
+                        items(ranked, key = { it.id }) { p ->
+                            TextButton(onClick = { mergeTarget = p; merging = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                                Text(p.name, modifier = Modifier.fillMaxWidth())
+                            }
+                        }
+                    }
+                }
+            },
+            confirmButton = {},
+            dismissButton = { TextButton(onClick = { merging = false }) { Text(stringResource(R.string.cancel)) } },
+        )
+    }
+    mergeTarget?.let { target ->
+        ConfirmDialog(
+            title = stringResource(R.string.merge_confirm_title),
+            text = stringResource(R.string.merge_confirm_text, d?.product?.name ?: "", target.name),
+            confirmLabel = stringResource(R.string.merge),
+            onConfirm = { mergeTarget = null; vm.mergeInto(target.id, onBack) },
+            onDismiss = { mergeTarget = null },
+        )
     }
     if (deleting) {
         ConfirmDialog(

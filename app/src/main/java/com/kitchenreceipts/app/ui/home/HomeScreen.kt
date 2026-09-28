@@ -18,6 +18,8 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
+import androidx.compose.material.icons.filled.Warehouse
+import androidx.compose.material.icons.automirrored.filled.TrendingUp
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -64,6 +66,7 @@ fun HomeScreen(
     onReports: () -> Unit,
     onOpenDocument: (Long) -> Unit,
     onSettings: () -> Unit,
+    onInventory: () -> Unit,
 ) {
     val vm = appViewModel { HomeViewModel(it.repository) }
     val recent by vm.recent.collectAsStateWithLifecycle()
@@ -89,6 +92,12 @@ fun HomeScreen(
                     onClick = onScan,
                     modifier = Modifier.heightIn(min = 80.dp),
                 )
+            }
+            item {
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Tile(stringResource(R.string.inventory), Icons.Filled.Warehouse, onInventory, Modifier.weight(1f))
+                    Tile(stringResource(R.string.price_changes), Icons.AutoMirrored.Filled.TrendingUp, onInventory, Modifier.weight(1f))
+                }
             }
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
