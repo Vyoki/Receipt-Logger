@@ -55,6 +55,8 @@ object ReceiptParser {
         "(?i)\\b(totale\\s+(?:documento|fattura|da\\s+pagare|complessivo|euro|eur|generale|a\\s+pagare|dovuto)|" +
             "netto\\s+a\\s+pagare|importo\\s+(?:totale|da\\s+pagare|pagato)|totale\\s+€|da\\s+pagare)\\b",
     )
+    private val VAT_SUMMARY_WORD = Regex("(?i)\\b(imponibil[ei]|importo|iva|aliquota|imposta)\\b")
+    private val TOTALS_ROW = Regex("(?i)^\\s*totali\\b")
     private val NOT_A_TOTAL = Regex("(?i)\\b(sconto|offerta|offerte|punti|risparmi\\w*|premi|colli)\\b")
     private val TOTAL_WEAK = Regex("(?i)^\\s*(totale|tot\\.?|total)\\b")
     private val SUBTOTAL = Regex(
@@ -65,7 +67,7 @@ object ReceiptParser {
     // "C.F." needs its dots: a bare "CF" is a packaging code (confezione) on item lines.
     private val VAT_ID = Regex("(?i)(p\\.?\\s?iva|partita\\s+iva|\\bc\\.\\s?f\\.|cod(?:ice)?\\.?\\s+fisc)")
     private val NON_ITEM = Regex(
-        "(?i)\\b(resto|contanti|contante|pagamento|pagato|bancomat|carta|pos|ricevuto|documento\\s+commerciale|" +
+        "(?i)\\b(resto|contanti|contante|pagamento|pagato|bancomat|carta\\s+di\\s+(?:credito|debito)|pos|ricevuto|documento\\s+commerciale|" +
             "vendita|rt\\b|matricola|arrotondamento|sconto\\s+totale|scadenza\\s+pagamento|iban|abi|cab|banca|" +
             "trasporto\\s+a\\s+cura|peso\\s+lordo|colli|vettore|causale|aliquota|riepilogo|cassiere|grazie|" +
             "elettronico|non\\s+riscosso|operatore|transazione)\\b",
@@ -88,6 +90,10 @@ object ReceiptParser {
     private val VAT_RATE_CODE = Regex("^(0?0|0?4|0?5|10|22|20|21)$")
     /** Item code (5+ digits), optionally marked with one letter, then colli ("1x1", "2x3", "1"). */
     private val ITEM_CODE = Regex("^\\d{5,}$")
+    private val CONSERVATION = Regex("^(C|F|S|ST|CN|SG|FR|CG)$")
+    /** Header of a table with a lot column ("ID LOTTO", "LOTTO"): bare codes under an item are its lot. */
+    private val LOT_COLUMN = Regex("(?i)\\blott[oi]\\b")
+    private val CODE_ONLY_LINE = Regex("^[A-Z0-9][A-Z0-9\\-/.]{3,}( [A-Z0-9][A-Z0-9\\-/.]{3,})?$")
     private val GLUED_UNIT = Regex("^(?i)(gr|kg|lt|ml|cl|pz|g|l)(\\d+(?:[.,]\\d+)?)$")
     /** Code and colli glued by the OCR: "10000032x3" = code 1000003 + colli 2x3. */
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
@@ -149,6 +155,19 @@ object ReceiptParser {
             // "ACQUISTI IN OFFERTA € 144,86 TOTALE IMPONIBILE SCONTO € 13,23", loyalty points: not document totals.
             if (NOT_A_TOTAL.containsMatchIn(line)) return@forEachIndexed
             if (VAT_ID.containsMatchIn(line) && !VAT_TOTAL.containsMatchIn(line) && !SUBTOTAL.containsMatchIn(line)) return@forEachIndexed
+            // Column headings of a VAT summary ("% IVA  IMPONIBILE  IMPORTO IVA"): no amounts belong to them.
+            if (VAT_SUMMARY_WORD.findAll(line).count() >= 3 && lastAmountCents(line) == null) return@forEachIndexed
+            // "TOTALI 209,76 21,51": taxable amount and VAT side by side at the foot of a VAT summary.
+            TOTALS_ROW.find(line)?.let { m ->
+                val amounts = amountsIn(line.substring(m.range.last + 1))
+                if (amounts.size >= 2) {
+                    consumed += i
+                    found += TotalsLine(i, 1, amounts[0], line)
+                    found += TotalsLine(i, 2, amounts[1], line)
+                    if (amounts.size >= 3) found += TotalsLine(i, 3, amounts[2], line)
+                    return@forEachIndexed
+                }
+            }
             val kind = when {
                 SUBTOTAL.containsMatchIn(line) -> 1
                 VAT_TOTAL.containsMatchIn(line) -> 2
@@ -158,8 +177,12 @@ object ReceiptParser {
                 else -> 0
             }
             if (kind == 0) return@forEachIndexed
-            // The amount may be on the same line, or alone on the next line (two-column layouts).
-            var amount = lastAmountCents(line)
+            // The amount follows the label on the same line, or is alone on the next line (two-column layouts).
+            // Amounts *before* the label belong to something else on the same visual row.
+            val labelEnd = when (kind) {
+                1 -> SUBTOTAL; 2 -> VAT_TOTAL; 3 -> TOTAL_STRONG; 4 -> TOTAL_WEAK; else -> VAT_LINE
+            }.find(line)!!.range.last + 1
+            var amount = lastAmountCents(line.substring(labelEnd))
             var source = line
             if (amount == null) {
                 val next = lines.getOrNull(i + 1)
@@ -200,6 +223,7 @@ object ReceiptParser {
 
         // ------------------------------------------------------------ line items
         val start = if (headerIdx >= 0 && headerIdx < firstTotalsLine) headerIdx + 1 else 0
+        val lotColumn = headerIdx >= 0 && (LOT_COLUMN.containsMatchIn(lines[headerIdx]) || LOT_COLUMN.containsMatchIn(lines.getOrElse(headerIdx + 1) { "" }))
         val items = mutableListOf<ParsedLineItem>()
         var lotRejected = false
         var pendingQty: QtyLine? = null
@@ -225,9 +249,20 @@ object ReceiptParser {
                 }
                 continue
             }
+            // Lot column: "788058" or "B269-27519 C26-543486" alone on the row under an item.
+            if (lotColumn && CODE_ONLY_LINE.matches(line.trim()) && line.any(Char::isDigit) && ItalianDates.findDates(line).isEmpty()) {
+                val prev = items.lastOrNull()
+                if (prev != null && prev.lotNumber == null) {
+                    val code = line.trim().substringBefore(' ')
+                    items[items.lastIndex] = prev.copy(lotNumber = Extracted(code, Confidence.LOW, line))
+                }
+                continue
+            }
             if (NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line)) continue
             if (seller != null && seller.source == line) continue
             if (isTableHeader(line)) continue
+            // VAT summary headings ("% IVA  IMPONIBILE  IMPORTO IVA"): never an item, never merged with the rates below.
+            if (VAT_SUMMARY_WORD.findAll(line).count() >= 3) continue
 
             // "2 x 1,25" on its own line: belongs to the item above or below.
             val qtyLine = parseQtyLine(rest)
@@ -373,9 +408,18 @@ object ReceiptParser {
         lines.forEachIndexed { i, line ->
             if (!NUMBER_LABEL.containsMatchIn(line) || line.any { it.isDigit() }) return@forEachIndexed
             val next = lines.getOrNull(i + 1) ?: return@forEachIndexed
-            val value = next.split(' ').firstOrNull { tok ->
-                tok.any(Char::isDigit) && tok.length >= 3 && ItalianDates.findDates(tok).isEmpty() &&
-                    !DECIMAL_AMOUNT.containsMatchIn(tok) && !Regex("^\\d{1,2}/\\d{1,2}$").matches(tok) // not "1/5" (page)
+            val toks = next.split(' ').filter { it.isNotBlank() }
+            fun isNumberToken(tok: String) = tok.any(Char::isDigit) && tok.length >= 2 && ItalianDates.findDates(tok).isEmpty() &&
+                !DECIMAL_AMOUNT.containsMatchIn(tok) && !Regex("^\\d{1,2}/\\d{1,2}$").matches(tok) && // not "1/5" (page)
+                !SellerProfiles.isValidPartitaIva(tok) // not a VAT number on the same row
+            // The number is printed just before the date: "... GG.D.F. B26 111945 15/09/2026 1/1".
+            val dateIdx = toks.indexOfFirst { ItalianDates.findDates(it).isNotEmpty() }
+            val value = if (dateIdx > 0) {
+                val before = toks.subList(maxOf(0, dateIdx - 2), dateIdx)
+                val picked = before.takeLastWhile { t -> isNumberToken(t) || (t.length <= 4 && t.any(Char::isDigit)) }
+                picked.joinToString(" ").ifEmpty { null }
+            } else {
+                toks.firstOrNull { isNumberToken(it) }
             }?.trim(',', ';', ':')
             if (value != null) return Extracted(value, Confidence.LOW, "$line / $next")
         }
@@ -406,7 +450,8 @@ object ReceiptParser {
         lines.forEachIndexed { i, line ->
             val strongLabel = Regex("(?i)data\\s+(documento|fattura|doc\\.?|emissione)").containsMatchIn(line)
             if (!DATE_LABEL.containsMatchIn(line) || ItalianDates.findDates(line).isNotEmpty()) return@forEachIndexed
-            if (!strongLabel && NOT_DOC_DATE.containsMatchIn(line)) return@forEachIndexed
+            // "MODALITA' DI PAGAMENTO  NUMERO  DATA" is a row of headings: only the word right after "data" matters.
+            if (!strongLabel && Regex("(?i)\\bdata\\s+(di\\s+)?(scadenza|consegna|pagamento|nascita)").containsMatchIn(line)) return@forEachIndexed
             val next = lines.getOrNull(i + 1) ?: return@forEachIndexed
             val d = ItalianDates.findDates(next).firstOrNull() ?: return@forEachIndexed
             if (!isInsideExpiry(next, d)) {
@@ -497,6 +542,16 @@ object ReceiptParser {
 
     // ---------------------------------------------------------------- amounts
 
+    /** All monetary amounts with decimals on a line, in order, in cents. */
+    private fun amountsIn(text: String): List<Long> {
+        var cleaned = text
+        for (d in ItalianDates.findDates(cleaned).reversed()) cleaned = cleaned.replaceRange(d.range, " ")
+        cleaned = PERCENT.replace(cleaned, " ")
+        return AMOUNT_IN_TEXT.findAll(cleaned).map { it.value }
+            .filter { it.contains(',') || Regex("\\.\\d{2}$").containsMatchIn(it) }
+            .mapNotNull { ItalianNumbers.parseCents(it) }.toList()
+    }
+
     /** The last monetary amount on a line (ignoring percentages and dates), in cents. */
     fun lastAmountCents(line: String): Long? {
         var cleaned = line
@@ -565,7 +620,16 @@ object ReceiptParser {
         val tail = ArrayDeque<Tok>()
         var cut = tokens.size
         for (idx in tokens.indices.reversed()) {
-            val tok = classify(tokens[idx]) ?: break
+            val tok = classify(tokens[idx])
+            if (tok == null) {
+                // Conservation letter between quantity and price: "40,000 C 2,384" (C frozen, F fresh, CN canned...).
+                val left = tokens.getOrNull(idx - 1)
+                if (CONSERVATION.matches(tokens[idx]) && tail.firstOrNull() is Tok.Num && left != null && classify(left) is Tok.Num) {
+                    cut = idx
+                    continue
+                }
+                break
+            }
             tail.addFirst(tok)
             cut = idx
         }

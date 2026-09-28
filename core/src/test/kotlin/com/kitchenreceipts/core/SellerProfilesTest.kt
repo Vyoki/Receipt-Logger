@@ -70,4 +70,30 @@ class SellerProfilesTest {
         assertEquals(3, p["ortofrutta"])
         assertEquals(1, p["verde"])
     }
+
+    @Test fun wronglyLearnedOperatorVatDoesNotHijackAnotherSupplier() {
+        // What happened on the phone: "GMF S.r.l." was saved with the operator's own VAT number
+        // (the only one readable on that invoice). A delivery note from another company arrives,
+        // with its own name clearly printed and the operator's VAT number in the customer box.
+        val learnedWrong = listOf(SellerCandidate(1, "GMF S.r.l.", ownVat, emptyMap(), emptySet()))
+        val ddt = "VERDE FRESCO S.p.A.\nN.Iscr.Reg.Impr.RM, C.F. e P.IVA $supplierVat\nPARTITA IVA CODICE FISCALE\n$ownVat $ownVat RIMESSA DIRETTA"
+        val r = SellerProfiles.identifyDetailed(learnedWrong, ddt, "VERDE FRESCO S.p.A.", null, ocrSellerReliable = true)
+        assertNull(r.match)
+        assertEquals(ownVat, r.suspectVatNumber)
+        // Without a clearly printed name the VAT match still works.
+        assertEquals(1L, SellerProfiles.identifyDetailed(learnedWrong, ddt, null, null).match?.sellerId)
+    }
+
+    @Test fun supplierVatComesFromTheLetterheadNotTheCustomerBox() {
+        val ddt = "VERDE FRESCO S.p.A.\nN.Iscr.Reg.Impr.RM, C.F. e P.IVA $supplierVat\nPARTITA IVA CODICE FISCALE\n$ownVat $ownVat RIMESSA DIRETTA"
+        assertEquals(supplierVat, SellerProfiles.supplierVatNumber(ddt, null))
+        // Letterhead unreadable: only the customer's number (printed twice) is left -> nothing is learned.
+        val unreadable = "GMF S.r.l.\nSPETTABILE\nRISTORANTE PROVA SAS\nCODICE 975137 PARTITA IVA $ownVat\nRIF.AMM. CODICE FISCALE $ownVat"
+        assertNull(SellerProfiles.supplierVatNumber(unreadable, null))
+    }
+
+    @Test fun sameCompanyComparison() {
+        assertTrue(SellerProfiles.sameCompany("Caseificio Valverde S.r.l.", "CASEIFICIO VALVERDE SRL"))
+        assertFalse(SellerProfiles.sameCompany("GMF S.r.l.", "PRONTO VERDE S.p.A."))
+    }
 }

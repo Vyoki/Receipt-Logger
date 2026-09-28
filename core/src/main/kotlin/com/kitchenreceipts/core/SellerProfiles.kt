@@ -86,45 +86,105 @@ object SellerProfiles {
         return profile.filterKeys { it in tokens }.values.sum().toDouble() / total
     }
 
+    /** Result of recognising a supplier; [suspectVatNumber] is a VAT number that was wrongly learned (probably the operator's). */
+    data class Identification(val match: SellerMatch?, val suspectVatNumber: String? = null)
+
     /**
      * Recognises the supplier of a new document.
      * [ownVatNumber] is the operator's own business VAT number, which also appears on invoices and is ignored.
+     * [ocrSellerReliable]: the parser read a company name with a legal form (S.r.l., S.p.A...). A VAT match that
+     * points to a clearly different supplier is then not trusted: that VAT number is printed on documents of
+     * two different companies, so it is the customer's (the operator's) and is reported as suspect.
      */
     fun identify(
         candidates: List<SellerCandidate>,
         documentText: String,
         ocrSellerName: String?,
         ownVatNumber: String? = null,
-    ): SellerMatch? {
-        if (candidates.isEmpty()) return null
+        ocrSellerReliable: Boolean = false,
+    ): SellerMatch? = identifyDetailed(candidates, documentText, ocrSellerName, ownVatNumber, ocrSellerReliable).match
+
+    fun identifyDetailed(
+        candidates: List<SellerCandidate>,
+        documentText: String,
+        ocrSellerName: String?,
+        ownVatNumber: String? = null,
+        ocrSellerReliable: Boolean = false,
+    ): Identification {
+        if (candidates.isEmpty()) return Identification(null)
         val own = ownVatNumber?.filter(Char::isDigit)
-        val vats = vatNumbers(documentText).filter { it != own }
-        for (v in vats) {
-            candidates.firstOrNull { it.vatNumber == v }?.let { return SellerMatch(it.id, it.name, SellerMatchReason.VAT_NUMBER, 1.0) }
+        var suspect: String? = null
+        for (v in vatNumbers(documentText).filter { it != own }) {
+            val c = candidates.firstOrNull { it.vatNumber == v } ?: continue
+            if (ocrSellerReliable && ocrSellerName != null && !sameCompany(c.name, ocrSellerName) &&
+                DuplicateDetector.normalizeSeller(ocrSellerName) !in c.aliasKeys
+            ) {
+                suspect = v // "PRONTO GREEN S.p.A." clearly printed, but the VAT number was learned for GMF
+                continue
+            }
+            return Identification(SellerMatch(c.id, c.name, SellerMatchReason.VAT_NUMBER, 1.0))
         }
         val key = DuplicateDetector.normalizeSeller(ocrSellerName)
         if (key != null) {
-            candidates.firstOrNull { key in it.aliasKeys }?.let { return SellerMatch(it.id, it.name, SellerMatchReason.NAME_ALIAS, 0.9) }
+            candidates.firstOrNull { key in it.aliasKeys }?.let {
+                return Identification(SellerMatch(it.id, it.name, SellerMatchReason.NAME_ALIAS, 0.9), suspect)
+            }
         }
         val tokens = headerTokens(documentText)
         val scored = candidates
             .filter { c -> c.profile.values.sum() > 0 }
             .map { it to similarity(it.profile, tokens) }
             .sortedByDescending { it.second }
-        val best = scored.firstOrNull() ?: return null
+        val best = scored.firstOrNull() ?: return Identification(null, suspect)
         val second = scored.getOrNull(1)?.second ?: 0.0
         val matchedWords = best.first.profile.keys.count { it in tokens }
-        return if (best.second >= 0.6 && matchedWords >= 3 && best.second - second >= 0.15) {
-            SellerMatch(best.first.id, best.first.name, SellerMatchReason.LAYOUT, best.second)
-        } else {
-            null
-        }
+        val layoutOk = best.second >= 0.6 && matchedWords >= 3 && best.second - second >= 0.15 &&
+            !(ocrSellerReliable && ocrSellerName != null && !sameCompany(best.first.name, ocrSellerName))
+        return Identification(
+            if (layoutOk) SellerMatch(best.first.id, best.first.name, SellerMatchReason.LAYOUT, best.second) else null,
+            suspect,
+        )
     }
 
-    /** The first VAT number on the document that is not the operator's own: the supplier's. */
+    /** "Caseificio Valverde S.r.l." and "CASEIFICIO VALVERDE SRL" are the same; "GMF S.r.l." and "Pronto Green S.p.A." are not. */
+    fun sameCompany(a: String, b: String): Boolean {
+        val x = DuplicateDetector.normalizeSeller(a) ?: return false
+        val y = DuplicateDetector.normalizeSeller(b) ?: return false
+        if (x == y || x.contains(y) || y.contains(x)) return true
+        val tx = x.split(' ').filter { it.length > 2 }.toSet()
+        val ty = y.split(' ').filter { it.length > 2 }.toSet()
+        if (tx.isEmpty() || ty.isEmpty()) return false
+        return tx.intersect(ty).size.toDouble() / minOf(tx.size, ty.size) >= 0.5
+    }
+
+    private val LETTERHEAD_HINT = Regex("(?i)(reg\\.?\\s*imp|iscr|\\brea\\b|cap\\.?\\s*soc|capitale|sede|c\\.\\s?f\\.\\s*(e|-|/)\\s*p\\.?\\s?iva|codice fiscale e partita)")
+    private val CUSTOMER_HINT = Regex("(?i)(spett|destinatario|cliente|intestatario|codice\\s+fiscale\\s*$)")
+
+    /**
+     * The supplier's VAT number, chosen among the valid ones printed on the document:
+     * - letterhead wording on the same line (Reg. Imp., REA, Cap. Soc., "C.F. e P.IVA") counts in favour;
+     * - a number printed twice (the customer box shows it as both PARTITA IVA and CODICE FISCALE) counts against;
+     * - the operator's own number is never chosen.
+     * Returns null rather than guess when only customer-like numbers are found.
+     */
     fun supplierVatNumber(documentText: String, ownVatNumber: String?): String? {
         val own = ownVatNumber?.filter(Char::isDigit)
-        return vatNumbers(documentText).firstOrNull { it != own }
+        val lines = documentText.lines()
+        val candidates = vatNumbers(documentText).filter { it != own }
+        if (candidates.isEmpty()) return null
+        val scored = candidates.mapIndexed { order, v ->
+            val occurrences = lines.sumOf { l -> Regex(v).findAll(l.replace(" ", "")).count() }
+            val onLetterhead = lines.any { l -> l.replace(" ", "").contains(v) && LETTERHEAD_HINT.containsMatchIn(l) }
+            val onCustomerLine = lines.any { l -> l.replace(" ", "").contains(v) && CUSTOMER_HINT.containsMatchIn(l) }
+            var score = 0
+            if (onLetterhead) score += 3
+            if (occurrences >= 2) score -= 3
+            if (onCustomerLine) score -= 2
+            score -= order // earlier on the page is slightly better
+            v to score
+        }
+        val best = scored.maxBy { it.second }
+        return if (best.second >= -1) best.first else null
     }
 
     private fun normalize(s: String): String =
