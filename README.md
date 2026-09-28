@@ -240,6 +240,19 @@ Open **Settings** with the gear icon on the Home screen.
 
 Database schema is now **version 3** (supplier VAT number, letterhead profile, remembered name spellings). Migrations 1→2→3 keep all existing data. They are tested on an Android emulator in GitHub Actions (`instrumented-tests` job).
 
+## 7b-2. How a scan is read
+
+1. **Pass 1.** The page is read on the phone (ML Kit), with a box for every word.
+2. **Rows and columns.**
+   - Rows are rebuilt from the boxes, correcting tilt.
+   - The **item table is read by columns**: the app finds the heading row (CODICE, COLLI, DESCRIZIONE, U.M., QUANTITÀ, PREZZO, SCONTO, IMPORTO, IVA…) and puts each word under the heading it stands beneath.
+   - Each row is lined up on its amount, to correct photos taken at an angle.
+   - So colli are stored as **colli** (never in the name), and quantity and price come from their own columns, whatever order the supplier prints them in.
+3. **Cross-check.** On every line, quantity × price (less any discount) must equal the amount. The column reading and the plain-text reading are compared, and the one where more lines add up (and add up to the total) is kept.
+   - A decimal comma the OCR lost (`3450` for `3,450`) is repaired only when the arithmetic proves it, and is highlighted.
+4. **Pass 2 (only if needed).** If something still does not add up (a line, the total, a missing date), the photo is read again after removing shadows and boosting faint print, and the better reading is kept. This takes a few extra seconds.
+5. **History.** If a product's price history shows that quantity and price were read the wrong way round (the "quantity" is what it usually costs), they are swapped back.
+
 ## 7c. Less typing, price changes and inventory
 
 - **Automatic save.** After a scan the app checks:
@@ -280,7 +293,7 @@ Built and tested in an environment **without** access to Google's Maven reposito
 | Check | Status |
 |---|---|
 | `:core` compiles (Kotlin 2.0.21) | ✅ verified |
-| `:core` unit tests: 132 tests on synthetic Italian fixtures (invoices, receipts, delivery notes, messy phone OCR) | ✅ all passing |
+| `:core` unit tests: 142 tests on synthetic Italian fixtures (invoices, receipts, delivery notes, messy phone OCR) | ✅ all passing |
 | All 34 Room `@Query` statements and the v1→v2 migration SQL run in SQLite against a schema matching the entities | ✅ verified |
 | String resources: every referenced key exists in English and Italian, with matching format arguments | ✅ verified |
 | `:app` Android build (Room/KSP code generation, Compose compilation, APK) | ✅ built by GitHub Actions on every push |

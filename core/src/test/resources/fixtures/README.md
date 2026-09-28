@@ -16,3 +16,7 @@ They imitate the OCR text of typical Italian supplier documents:
 | fattura_cash_and_carry_5_pagine.txt | The same invoice, all 5 pages (pages separated by form feed) | a genuine repeated line across the page break, "TOTALE IMPONIBILI" (plural), VAT summary by rate, payment lines, a loyalty-points page with "TOTALE IMPONIBILE SCONTO € 13,23" that must not replace the real totals, a card-payment slip page |
 | ocr_mlkit_cash_and_carry.txt | Rows exactly as ML Kit read a rendered copy of the cash & carry page on the Android emulator | real OCR quirks: missing small numbers (quantity "1", VAT code), "D0CUMENTO" with a zero, "0" for the offer marker "O", item code glued to colli ("10000032x3") |
 | ddt_surgelati.txt | Delivery note (DDT) of a frozen/fresh food wholesaler | seller and "DESTINATARIO" on one row, number "B26 111945" and date under "NUMERO / DATA" headings next to payment terms, conservation letter between quantity and price ("40,000 C 2,384"), lot numbers on the row under each item ("ID LOTTO" column), category rows ("Merce non deperibile - Congelato"), VAT summary table, "TOTALE DOCUMENTO" on the same row as a VAT line, "TOTALI 209,76 21,51" |
+
+- `ocr_mlkit_lines_4_photos.txt`: the raw line boxes ML Kit returned on an Android emulator for the invented
+  "ABC S.r.l." cash & carry page, photographed four ways (straight, angled, angled + enhanced image,
+  angled + rotated 3°). Format per case: `# name`, then `left,top,right,bottom,angle | text`.

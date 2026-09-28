@@ -34,7 +34,8 @@ object TableReader {
     private enum class H { CODE, ARTICOLO, PACKAGES, DESCRIPTION, UNIT, PACK_TYPE, PACK_SIZE, QUANTITY, TOT, PRICE, DISCOUNT, AMOUNT, VAT, LOT, EXPIRY, CONT, PERCENT }
 
     private fun heading(word: String): H? {
-        val w = norm(word).trim('.', ':', ',', '\'', '’')
+        // "PREZZ0", "IMP0RTO": a zero in a heading word is the letter O.
+        val w = norm(word).trim('.', ':', ',', '\'', '’').let { if (it.count(Char::isLetter) >= 3) it.replace('0', 'o') else it }
         return when (w) {
             "codice", "cod", "cod.art", "codart", "cod.articolo", "art", "cod. art", "codice articolo", "rif" -> H.CODE
             "articolo" -> H.ARTICOLO
@@ -119,8 +120,20 @@ object TableReader {
         return Header(columns.sortedBy { it.left }, hasLotColumn = columns.any { it.kind == Kind.LOT })
     }
 
-    /** Words of an OCR line with deskewed x positions; estimated from the line box when the engine gave no words. */
-    private fun words(line: OcrLine, slope: Double): List<Word> {
+    /** Words of an OCR line with deskewed x positions, OCR slips repaired ("PREZZ0", "l4,50"), glued code+colli split. */
+    private fun words(line: OcrLine, slope: Double): List<Word> = rawWords(line, slope).flatMap { w ->
+        val text = OcrCleanup.fixWordToken(OcrCleanup.fixNumericToken(w.text))
+        val m = CODE_WITH_COLLI.find(text)
+        if (m != null) {
+            // "10000032x3": article code 1000003 and colli 2x3 printed without a space.
+            val cut = w.left + (w.right - w.left) * m.groupValues[1].length / text.length
+            listOf(Word(m.groupValues[1], w.left, cut), Word(m.groupValues[2], cut, w.right))
+        } else {
+            listOf(w.copy(text = text))
+        }
+    }
+
+    private fun rawWords(line: OcrLine, slope: Double): List<Word> {
         val y = line.centerY
         if (line.words.isNotEmpty()) {
             return line.words.filter { it.text.isNotBlank() }.map { Word(it.text.trim(), it.left + slope * it.centerY, it.right + slope * it.centerY) }
@@ -241,10 +254,42 @@ object TableReader {
                 !numeric && kind == Kind.CODE && letters >= 3 && !t.any(Char::isDigit) -> Kind.DESCRIPTION
                 else -> kind
             }
+            // An article code is unmistakable (5+ digits at the start of the row), wherever the photo shifted it.
+            if (LONG_CODE.matches(t) && t.length >= 5 && lastKind == null || (LONG_CODE.matches(t) && t.length >= 5 && kind == Kind.PACKAGES && out[Kind.CODE].isNullOrEmpty())) {
+                if (cols.any { it.kind == Kind.CODE }) kind = Kind.CODE
+            }
+            // "KG" / "GR" / "LT" printed before the pack size, drifting into the TIPO column.
+            if (!numeric && kind == Kind.PACK_TYPE && cols.any { it.kind == Kind.PACK_SIZE }) {
+                val u = Units.normalizeKnown(t.trimEnd('.'))
+                if (u != null && Units.dimension(u) != null) kind = Kind.PACK_SIZE
+            }
+            // Single-letter marker before the code ("O" offer, read as "0").
+            if (lastKind == null && t.length == 1 && (t == "0" || t == "O")) continue
             out.getOrPut(kind) { mutableListOf() } += w
             lastKind = kind
         }
+        overflowLeft(out, cols)
         return out
+    }
+
+    /**
+     * One number per number column: when the photo shifts a number into the next column, that column ends up
+     * with two. The left one then belongs to the column on its left ("GR 1500 | 2" read as TOT = "1500 2").
+     */
+    private fun overflowLeft(cells: MutableMap<Kind, MutableList<Word>>, cols: List<Column>) {
+        val order = cols.map { it.kind }.distinct()
+        for (k in listOf(Kind.AMOUNT, Kind.PRICE, Kind.DISCOUNT, Kind.QUANTITY)) {
+            val list = cells[k] ?: continue
+            val idx = order.indexOf(k)
+            if (idx <= 0) continue
+            val left = order[idx - 1]
+            while (list.count { isNumeric(it.text) } > 1) {
+                val first = list.first { isNumeric(it.text) }
+                list.remove(first)
+                cells.getOrPut(left) { mutableListOf() } += first
+            }
+        }
+        for ((_, list) in cells) list.sortBy { it.left }
     }
 
     /**
@@ -293,7 +338,10 @@ object TableReader {
         val amountWord = cell(Kind.AMOUNT).lastOrNull { isMoney(it.text) }
         val amount = amountWord?.let { ItalianNumbers.parseCents(it.text.trim('€')) }
         var qty = cell(Kind.QUANTITY).mapNotNull { numberIn(it.text) }.lastOrNull()
-        var unit: String? = cell(Kind.UNIT).firstNotNullOfOrNull { Units.normalizeKnown(it.text) }
+        // Without a U.M. column, unit words come from neighbouring columns ("CF GR 0,48"): kg/g/l beat packaging codes.
+        val units = cell(Kind.UNIT).mapNotNull { Units.normalizeKnown(it.text.trimEnd('.')) }
+        var unit: String? = if (header.columns.any { it.kind == Kind.UNIT }) units.firstOrNull()
+        else units.firstOrNull { Units.dimension(it) != null } ?: units.firstOrNull()
         // "4,45KG" in the quantity column
         if (unit == null) cell(Kind.QUANTITY).firstNotNullOfOrNull { Regex("^[\\d.,]+([A-Za-z]{1,3})\\.?$").find(it.text)?.groupValues?.get(1)?.let(Units::normalizeKnown) }?.let { unit = it }
         var price = cell(Kind.PRICE).mapNotNull { numberIn(it.text) }.lastOrNull()
@@ -320,10 +368,13 @@ object TableReader {
         }
         // Pack size column ("GR 800", "KG 0.8", "LT 5"): part of what the product is, not the quantity.
         val packWords = cell(Kind.PACK_SIZE).map { it.text }
-        val packUnit = packWords.firstNotNullOfOrNull { Units.normalizeKnown(it.trimEnd('.')) }
+        val packUnits = packWords.mapNotNull { Units.normalizeKnown(it.trimEnd('.')) }
+        val packUnit = packUnits.firstOrNull { Units.dimension(it) != null } ?: packUnits.firstOrNull()
         val packHasNumber = packWords.any { it.any(Char::isDigit) }
         if (packWords.isNotEmpty() && packHasNumber) descWords = descWords + packWords.map { it.uppercase() }
-        if (unit == null && packUnit != null) {
+        val unitColumn = header.columns.any { it.kind == Kind.UNIT }
+        if (packUnit != null && (unit == null || !unitColumn)) {
+            // "GR 800" + TOT 1 = one 800 g pack; "KG" + TOT 4,45 = 4,45 kg weighed.
             unit = if (packHasNumber) "pz" else packUnit
         }
         var description = cleanDescription(descWords)
@@ -333,6 +384,19 @@ object TableReader {
         var total = amount
         var consistent = false
         var qtyWorkedOut = false
+        var priceRepaired = false
+        // The decimal comma is the easiest mark for the OCR to lose: "3450" under PREZZO with an amount of 3,45.
+        val priceWord = cell(Kind.PRICE).lastOrNull { numberIn(it.text) != null }?.text
+        // ... or read as a thousands dot: "3.450".
+        val commaLost = priceWord != null && ((priceWord.all(Char::isDigit) && priceWord.length >= 3) || Regex("^\\d{1,3}\\.\\d{3}$").matches(priceWord))
+        if (total != null && price != null && commaLost) {
+            val q = qty ?: BigDecimal.ONE
+            if (!ReceiptParser.matches(q, price, total)) {
+                listOf(2, 3, 4).map { price.movePointLeft(it) }.firstOrNull { ReceiptParser.matches(q, it, total) }?.let {
+                    price = it; if (qty == null) { qty = BigDecimal.ONE; qtyWorkedOut = true }; priceRepaired = true; consistent = true
+                }
+            }
+        }
         if (qty != null && price != null && total != null) {
             consistent = ReceiptParser.matches(qty, price, total) || discountMatches(qty, price, discount, total)
         }
@@ -366,7 +430,8 @@ object TableReader {
             originalDescription = description,
             quantity = qty?.let { Extracted(it, if (qtyWorkedOut) Confidence.LOW else conf, source) },
             unit = unit?.let { Extracted(it, conf, source) },
-            unitPrice = price?.let { Extracted(it, conf, source) },
+            // A repaired decimal comma adds up, but is shown for a look.
+            unitPrice = price?.let { Extracted(it, if (priceRepaired) Confidence.LOW else conf, source) },
             lineTotalCents = total?.let { Extracted(it, if (consistent || (qty == null && price == null)) Confidence.HIGH else Confidence.LOW, source) },
             vatRatePercent = vat?.let { Extracted(it.stripTrailingZeros(), Confidence.HIGH, source) },
             lotNumber = lotWord?.let { Extracted(it.text, Confidence.LOW, source) },

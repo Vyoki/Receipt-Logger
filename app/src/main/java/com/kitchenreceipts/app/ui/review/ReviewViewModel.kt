@@ -146,6 +146,12 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             items = runCatching { repo.autoAssign(draft.seller.text, draft.items, c.settings.autoLinkProducts) }
                 .onFailure { c.log.error("autoAssign", it) }.getOrDefault(draft.items),
         )
+        // Quantity and price the wrong way round? The product's own price history tells.
+        runCatching { repo.fixSwappedQuantities(draft.items) }.getOrNull()?.let { fixed ->
+            val swapped = fixed.zip(draft.items).count { (a, b) -> a.quantity.text != b.quantity.text }
+            if (swapped > 0) c.log.event("QTY_PRICE_SWAPPED", "lines" to swapped)
+            draft = draft.copy(items = fixed)
+        }
         val reasons = AutoAccept.reasons(draft)
         val changes = priceChanges(draft)
         _state.value = ReviewState(

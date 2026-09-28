@@ -38,6 +38,12 @@ class PriceWatchTest {
         assertNull(PriceWatch.compare(p(2, 10, "A", "1", "kg", 1005), listOf(p(1, 1, "A", "1", "kg", 1000))))
     }
 
+    @Test fun swappedQuantityAndPriceAreSpottedFromHistory() {
+        assertTrue(PriceWatch.looksSwapped(BigDecimal("8.90"), BigDecimal("2.5"), BigDecimal("8.70")))
+        assertTrue(!PriceWatch.looksSwapped(BigDecimal("2.5"), BigDecimal("8.90"), BigDecimal("8.70")))
+        assertTrue(!PriceWatch.looksSwapped(BigDecimal("9"), BigDecimal("8.90"), BigDecimal("8.70")))
+    }
+
     @Test fun historyListsEveryChange() {
         val all = listOf(p(1, 1, "A", "1", "kg", 1000), p(2, 5, "A", "1", "kg", 1100), p(3, 9, "A", "1", "kg", 1000))
         val h = PriceWatch.history(all)
