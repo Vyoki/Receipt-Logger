@@ -11,14 +11,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-java@v4
+      - uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
 
-      - uses: gradle/actions/setup-gradle@v4
+      - uses: gradle/actions/setup-gradle@v5
 
       - name: Make gradlew executable
         run: chmod +x gradlew
@@ -27,15 +27,28 @@ jobs:
         run: ./gradlew :core:test --stacktrace
 
       - name: Build debug APK
-        run: ./gradlew :app:assembleDebug --stacktrace
+        shell: bash
+        run: |
+          set -o pipefail
+          ./gradlew :app:assembleDebug --stacktrace 2>&1 | tee build.log
 
-      - uses: actions/upload-artifact@v4
+      - name: Report build errors
+        if: failure()
+        shell: bash
+        run: |
+          # Surface compiler / Gradle errors as annotations so they are visible without the raw log.
+          errs=$(grep -E '^e: |error:|^\* What went wrong|^> |Could not |FAILED' build.log | grep -v '^> Task' | head -60)
+          errs="${errs//'%'/'%25'}"
+          errs="${errs//$'\n'/'%0A'}"
+          echo "::error title=Build errors::${errs}"
+
+      - uses: actions/upload-artifact@v5
         with:
           name: app-debug
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v5
         if: failure()
         with:
           name: test-reports
