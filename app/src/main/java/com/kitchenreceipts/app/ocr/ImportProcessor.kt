@@ -143,7 +143,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             return "not started: ${e.message}"
         }
         val notes = mutableListOf("checks ${targets.size} (" + targets.joinToString(",") { t ->
-            when (t) { is AiTarget.Row -> if (t.itemIndex != null) "line${t.itemIndex + 1}" else "missed"; is AiTarget.Header -> "header"; is AiTarget.Totals -> "totals" }
+            when (t) { is AiTarget.Row -> t.itemIndex?.let { "line${it + 1}" } ?: "missed"; is AiTarget.Header -> "header"; is AiTarget.Totals -> "totals" }
         } + ") " + reader.systemInfo)
         val started = System.currentTimeMillis()
         val pageCache = mutableMapOf<Int, android.graphics.Bitmap>()
