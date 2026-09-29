@@ -57,6 +57,13 @@ object PriceWatch {
     /** Minimum change reported, in percent (smaller differences are rounding or scale noise). */
     val DEFAULT_THRESHOLD: BigDecimal = BigDecimal("1.0")
 
+    /** Changes worth a phone notification (the operator's choice: 5% or more, up or down). */
+    val ALERT_THRESHOLD: BigDecimal = BigDecimal("5.0")
+
+    /** The changes worth a notification, biggest first. */
+    fun alerts(changes: List<PriceChange>, threshold: BigDecimal = ALERT_THRESHOLD): List<PriceChange> =
+        changes.filter { it.percent.abs() >= threshold }.sortedByDescending { it.percent.abs() }
+
     /** (unit, price per that unit) or null when the purchase has no usable price. */
     fun unitCost(p: PricePoint): Pair<String, BigDecimal>? {
         val unit = Units.normalize(p.unit) ?: return null

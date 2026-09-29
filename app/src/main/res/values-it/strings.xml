@@ -484,4 +484,47 @@
         <item quantity="other">Lettura di %d documenti</item>
     </plurals>
     <string name="ai_checking">L\'IA controlla la parte dubbia %1$d di %2$d</string>
+    <!-- notifiche prezzi -->
+    <string name="notif_channel_prices">Variazioni di prezzo</string>
+    <string name="notif_price_line">%1$s %2$s (%3$s → %4$s €/%5$s)</string>
+    <plurals name="notif_price_title">
+        <item quantity="one">%d prezzo cambiato del 5%% o più</item>
+        <item quantity="other">%d prezzi cambiati del 5%% o più</item>
+    </plurals>
+    <string name="notif_price_not_saved">non ancora salvato, tocca per controllare</string>
+    <string name="price_alerts">Notifiche variazioni di prezzo</string>
+    <string name="price_alerts_hint" formatted="false">Dopo la lettura in background di un documento, avvisa quando un prezzo è più alto o più basso del 5% o più rispetto all\'ultimo acquisto.</string>
+
+    <!-- gruppi di prodotti -->
+    <string name="families">Gruppi</string>
+    <string name="family">Gruppo</string>
+    <string name="family_none">Nessun gruppo</string>
+    <string name="family_value">Gruppo: %1$s</string>
+    <string name="family_name">Nome del gruppo</string>
+    <string name="family_hint">I prodotti dello stesso tipo (es. passata di marche diverse) vanno in un gruppo per confrontarne i prezzi. Ogni prodotto resta separato.</string>
+    <string name="family_suggested">Suggerito: %1$s</string>
+    <string name="family_remove">Togli dal gruppo</string>
+    <string name="family_suggestions">Gruppi suggeriti</string>
+    <string name="family_suggestions_hint">Prodotti che sembrano dello stesso tipo. Nulla viene raggruppato finché non tocchi “Raggruppa”.</string>
+    <string name="family_new_suggested">Nuovo gruppo “%1$s”</string>
+    <string name="family_add_to">Aggiungi a “%1$s”</string>
+    <string name="family_accept">Raggruppa</string>
+    <string name="family_refuse">No</string>
+    <string name="family_compare">Confronta i prezzi in “%1$s”</string>
+    <string name="family_prices">Ultimi prezzi</string>
+    <string name="family_prices_hint">Ultimo prezzo di ogni prodotto da ogni fornitore, al kg o al litro quando il formato è noto. I prezzi con e senza IVA non vengono mai confrontati.</string>
+    <string name="family_cheapest">Il più conveniente</string>
+    <string name="family_paid">Pagato %1$s €/%2$s</string>
+    <string name="family_size_unknown">Formato sconosciuto: non confrontato al kg/l. Aggiungi una conversione di unità sul prodotto per confrontarlo.</string>
+    <string name="family_add_hint">Per aggiungere un prodotto, aprilo e scegli il suo gruppo.</string>
+    <string name="family_name_taken">Esiste già un gruppo con questo nome.</string>
+    <string name="family_delete_title">Eliminare questo gruppo?</string>
+    <string name="family_delete_text">Viene eliminato solo il gruppo. I suoi prodotti e i loro acquisti restano come sono.</string>
+    <plurals name="family_products">
+        <item quantity="one">%d prodotto</item>
+        <item quantity="other">%d prodotti</item>
+    </plurals>
+    <string name="brand">Marca</string>
+    <string name="brand_none">Non indicata</string>
+    <string name="brand_value">Marca: %1$s</string>
 </resources>

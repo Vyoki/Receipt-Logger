@@ -65,6 +65,7 @@ fun SettingsScreen(onBack: () -> Unit) {
     var secure by remember { mutableStateOf(s.blockScreenshots) }
     var autoSave by remember { mutableStateOf(s.autoSave) }
     var autoLink by remember { mutableStateOf(s.autoLinkProducts) }
+    var priceAlerts by remember { mutableStateOf(s.priceAlerts) }
     var logSize by remember { mutableLongStateOf(c.log.sizeBytes()) }
     var askClear by remember { mutableStateOf(false) }
     val lockUnavailable = stringResource(R.string.app_lock_unavailable)
@@ -141,6 +142,11 @@ fun SettingsScreen(onBack: () -> Unit) {
                 autoLink = on
                 s.autoLinkProducts = on
                 c.log.event("SETTINGS", "autoLink" to on)
+            }
+            SwitchRow(stringResource(R.string.price_alerts), stringResource(R.string.price_alerts_hint), priceAlerts) { on ->
+                priceAlerts = on
+                s.priceAlerts = on
+                c.log.event("SETTINGS", "priceAlerts" to on)
             }
 
             // ---------------------------------------------------------------- AI reader

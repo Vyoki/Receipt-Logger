@@ -15,6 +15,7 @@ import com.kitchenreceipts.app.ui.documents.DocumentDetailScreen
 import com.kitchenreceipts.app.ui.documents.DocumentsScreen
 import com.kitchenreceipts.app.ui.home.HomeScreen
 import com.kitchenreceipts.app.ui.inventory.InventoryScreen
+import com.kitchenreceipts.app.ui.products.FamilyScreen
 import com.kitchenreceipts.app.ui.products.ProductDetailScreen
 import com.kitchenreceipts.app.ui.products.ProductsScreen
 import com.kitchenreceipts.app.ui.reports.ReportsScreen
@@ -34,6 +35,7 @@ object Routes {
     const val VIEWER = "viewer/{id}?job={job}" // id = -1: a document being read ([job]), not saved yet
     const val PRODUCTS = "products"
     const val PRODUCT = "product/{id}"
+    const val FAMILY = "family/{id}"
     const val SELLERS = "sellers"
     const val REPORTS = "reports"
     const val SETTINGS = "settings"
@@ -45,6 +47,7 @@ object Routes {
     fun viewerForJob(jobId: String) = "viewer/-1?job=$jobId"
     fun review(jobId: String) = "review/$jobId"
     fun product(id: Long) = "product/$id"
+    fun family(id: Long) = "family/$id"
 }
 
 @Composable
@@ -136,14 +139,18 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             ViewerScreen(documentId = entry.arguments!!.getLong("id").takeIf { it > 0 }, jobId = entry.arguments!!.getString("job"), onBack = back)
         }
         composable(Routes.PRODUCTS) {
-            ProductsScreen(onBack = back, onOpen = { nav.navigate(Routes.product(it)) })
+            ProductsScreen(onBack = back, onOpen = { nav.navigate(Routes.product(it)) }, onOpenFamily = { nav.navigate(Routes.family(it)) })
         }
         composable(Routes.PRODUCT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
             ProductDetailScreen(
                 productId = entry.arguments!!.getLong("id"),
                 onBack = back,
                 onOpenDocument = { nav.navigate(Routes.document(it)) },
+                onOpenFamily = { nav.navigate(Routes.family(it)) },
             )
+        }
+        composable(Routes.FAMILY, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+            FamilyScreen(familyId = entry.arguments!!.getLong("id"), onBack = back, onOpenProduct = { nav.navigate(Routes.product(it)) })
         }
         composable(Routes.SELLERS) {
             SellersScreen(onBack = back, onOpenSeller = { nav.navigate(Routes.documents(it)) })

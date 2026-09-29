@@ -15,6 +15,7 @@ import com.kitchenreceipts.core.PriceChange
 import com.kitchenreceipts.core.PricePoint
 import com.kitchenreceipts.core.PriceWatch
 import com.kitchenreceipts.core.ProductCandidate
+import com.kitchenreceipts.core.ProductFamilies
 import com.kitchenreceipts.core.ProductSource
 import com.kitchenreceipts.core.SmartMatcher
 import com.kitchenreceipts.core.CostSummary
@@ -297,6 +298,68 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     }
 
     suspend fun deleteProduct(id: Long) = products.delete(id) // line items keep their data, product_id -> NULL
+
+    // ------------------------------------------------------------ product groups
+
+    fun families() = products.families()
+    fun observeFamily(id: Long) = products.observeFamily(id)
+    fun productsInFamily(id: Long) = products.productsInFamily(id)
+
+    /** Groups the app proposes (the operator confirms each one; nothing is grouped by itself). */
+    fun familySuggestions(): Flow<List<ProductFamilies.Suggestion>> =
+        combine(products.all(), products.families()) { prods, fams ->
+            ProductFamilies.suggestions(
+                prods.map { ProductFamilies.Member(it.id, it.name, it.familyId, it.familyDismissed) },
+                fams.map { ProductFamilies.Family(it.id, it.name) },
+            )
+        }.flowOn(Dispatchers.Default)
+
+    /** Puts [productIds] in the group called [name] (created if needed); returns the group's id. */
+    suspend fun addToFamily(name: String, productIds: List<Long>): Long = db.withTransaction {
+        val clean = name.trim()
+        require(clean.isNotEmpty())
+        val key = ProductFamilies.key(clean)
+        val id = products.findFamilyByNormalized(key)?.id
+            ?: products.insertFamily(ProductFamilyEntity(name = clean, normalizedName = key, createdAt = System.currentTimeMillis()))
+        if (productIds.isNotEmpty()) products.setFamily(productIds, id)
+        id
+    }
+
+    suspend fun setProductFamily(productId: Long, familyId: Long?) = products.setFamily(listOf(productId), familyId)
+
+    /** The operator said no: these products are not suggested for a group again (they can still be added by hand). */
+    suspend fun dismissFamilySuggestion(productIds: List<Long>) = products.dismissFamily(productIds)
+
+    suspend fun renameFamily(id: Long, name: String) {
+        val clean = name.trim()
+        require(clean.isNotEmpty())
+        val key = ProductFamilies.key(clean)
+        val other = products.findFamilyByNormalized(key)
+        require(other == null || other.id == id) { "A group with this name already exists" }
+        products.renameFamily(id, clean, key)
+    }
+
+    /** Deletes the group only; its products stay as they are. */
+    suspend fun deleteFamily(id: Long) = db.withTransaction {
+        products.clearFamily(id)
+        products.deleteFamily(id)
+    }
+
+    suspend fun setBrand(productId: Long, brand: String?) = products.setBrand(productId, brand?.trim()?.ifEmpty { null })
+
+    /** The latest price of each product of a group from each supplier, per kg or l where the size is known. */
+    fun familyComparison(familyId: Long): Flow<List<ProductFamilies.VariantPrice>> =
+        combine(products.productsInFamily(familyId), documents.allPurchases(), products.allConversions()) { members, rows, conversions ->
+            val ids = members.map { it.id }.toSet()
+            val conv = conversions.filter { it.productId in ids }.groupBy { it.productId }.mapValues { (_, list) ->
+                list.mapNotNull { c -> runCatching { UnitConversion(c.fromUnit, c.toUnit, c.factor) }.getOrNull() }
+            }
+            ProductFamilies.compare(
+                members.map { ProductFamilies.Variant(it.id, it.name, it.brand) },
+                rows.filter { it.productId in ids }.map { it.toPricePoint() },
+                conv,
+            )
+        }.flowOn(Dispatchers.Default)
 
     suspend fun deleteAlias(id: Long) = products.deleteAlias(id)
 
