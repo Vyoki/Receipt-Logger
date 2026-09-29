@@ -192,14 +192,35 @@ object TableReader {
     private fun readRows(rows: List<List<Word>>, header: Header): List<ParsedLineItem> {
         val items = mutableListOf<ParsedLineItem>()
         var pendingDescription: String? = null
+        // Numbers that landed on a section title ("Merce non alimentare"): they belong to the product on the next row.
+        var headingNumbers: ParsedLineItem? = null
         for (row in rows) {
             if (row.isEmpty()) continue
             val text = row.joinToString(" ") { it.text }
             if (ReceiptParser.isFooterRow(text)) break
-            if (ReceiptParser.isNotAnItemRow(text)) { pendingDescription = null; continue }
+            if (ReceiptParser.isNotAnItemRow(text)) { pendingDescription = null; headingNumbers = null; continue }
             val cells = assign(row, header)
             val item = buildItem(cells, text, header)
             val scan = LotExtractor.scan(text)
+            val waiting = headingNumbers
+            if (waiting != null) {
+                headingNumbers = null
+                val desc = cells[Kind.DESCRIPTION].orEmpty().joinToString(" ") { it.text }
+                if (item == null && desc.count(Char::isLetter) >= 3 && !ReceiptParser.isSectionHeading(desc)) {
+                    val code = cells[Kind.CODE].orEmpty().firstOrNull { it.text.count(Char::isDigit) >= 4 }?.text
+                    val colli = cells[Kind.PACKAGES].orEmpty().joinToString("") { it.text }.ifEmpty { null }
+                    items += waiting.copy(
+                        originalDescription = cleanDescription(desc.split(' ')),
+                        itemCode = code ?: waiting.itemCode,
+                        packages = colli?.let { Extracted(it, Confidence.HIGH, text) } ?: waiting.packages,
+                    )
+                    continue
+                }
+            }
+            if (item != null && ReceiptParser.isSectionHeading(item.originalDescription)) {
+                headingNumbers = item
+                continue
+            }
             when {
                 item == null -> {
                     val prev = items.lastOrNull()

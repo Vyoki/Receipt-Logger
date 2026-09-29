@@ -166,4 +166,22 @@ class TableReaderTest {
         assertEquals(0, BigDecimal("1.5").compareTo(pom.quantity!!.value))
         assertEquals(0, BigDecimal("2").compareTo(pom.unitPrice!!.value))
     }
+
+    @Test fun numbersOnASectionTitleGoToTheProductBelow() {
+        val page = page(listOf(
+            listOf(Cell("ESEMPIO INGROSSO S.R.L.", 40)),
+            header,
+            row("1000001", "1x1", "BISCOTTI FROLLINI 800", "SK", "GR 800", "1", "3,450", "3,45", "04"),
+            listOf(Cell("MERCE NON ALIMENTARE", 200), Cell("6", 725, true), Cell("1,790", 810, true), Cell("10,74", 915, true), Cell("22", 950)),
+            listOf(Cell("1000003", 40), Cell("2x3", 130), Cell("CANDEGGINA LT.5 - MARCA C", 200), Cell("FL", 540), Cell("LT 5", 600)),
+            listOf(Cell("TOTALE IMPONIBILE", 600), Cell("14,19", 915, true)),
+        ))
+        val items = TableReader.read(listOf(LayoutRows.layout(page)))!!
+        assertEquals(2, items.size)
+        val c = items[1]
+        assertTrue(c.originalDescription, c.originalDescription.startsWith("CANDEGGINA"))
+        assertEquals("1000003", c.itemCode)
+        assertEquals("2x3", c.packages?.value)
+        assertEquals(1074L, c.lineTotalCents?.value)
+    }
 }

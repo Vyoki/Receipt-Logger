@@ -79,4 +79,38 @@ class DdtSurgelatiTest {
         assertEquals(LocalDate.of(2026, 9, 16), r.documentDate?.value)
         assertEquals(Confidence.LOW, r.documentDate?.confidence)
     }
+
+    /**
+     * A tilted photo puts the numbers of "CARTA FORNO" between its line and the section title above it,
+     * and the rows are rebuilt with the title: the product is still CARTA FORNO.
+     */
+    @Test fun sectionTitleNeverBecomesAProduct() {
+        val tilted = text.replace(
+            "Merce non alimentare\n24195 CARTA FORNO 40CM X 50M C/ASTUCCIO NR 3,000 F 5,412 16,24 22",
+            "Merce non alimentare NR 3,000 F 5,412 16,24 22\n24195 CARTA FORNO 40CM X 50M C/ASTUCCIO",
+        )
+        assertTrue(tilted != text)
+        val r = ReceiptParser.parse(tilted, ParseOptions(ownVatNumber = "09876543217"))
+        val carta = r.lineItems.last()
+        assertTrue(carta.originalDescription, carta.originalDescription.startsWith("CARTA FORNO"))
+        assertEquals("24195", carta.itemCode)
+        assertEquals(1624L, carta.lineTotalCents?.value)
+        assertEquals("B269-27522", carta.lotNumber?.value)
+        assertTrue(r.lineItems.none { ReceiptParser.isSectionHeading(it.originalDescription) })
+        assertEquals(8, r.lineItems.size)
+    }
+
+    @Test fun aiAnswerNamingASectionTitleIsRepaired() {
+        val tilted = text.replace(
+            "Merce non alimentare\n24195 CARTA FORNO 40CM X 50M C/ASTUCCIO NR 3,000 F 5,412 16,24 22",
+            "Merce non alimentare NR 3,000 F 5,412 16,24 22\n24195 CARTA FORNO 40CM X 50M C/ASTUCCIO",
+        )
+        val answer = """{"seller":"VERDE FRESCO S.p.A.","seller_vat":null,"number":"B26 111945","date":"15/09/2026","subtotal":"209,76","vat":"21,51","total":"231,27",
+            "items":[{"code":"24195","colli":null,"description":"Merce non alimentare","unit":"NR","quantity":"3,000","price":"5,412","discount":null,"amount":"16,24","vat_rate":"22","lot":null}]}"""
+        val d = AiReader.toParsed(AiReader.decode(answer)!!, tilted)
+        assertTrue(d.lineItems.single().originalDescription.startsWith("CARTA FORNO"))
+        assertTrue(ReceiptParser.isSectionHeading("Merce non deperibile - Congelato"))
+        assertTrue(ReceiptParser.isSectionHeading("MERCE NON ALIMENTARE"))
+        assertTrue(!ReceiptParser.isSectionHeading("MERCEDES PANE"))
+    }
 }
