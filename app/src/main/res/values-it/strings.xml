@@ -27,7 +27,7 @@
     <string name="photos_taken">Foto scattate: %1$d</string>
     <string name="use_photos">Leggi queste foto</string>
     <string name="add_page">Aggiungi un\'altra pagina</string>
-    <string name="multi_photo_hint">Più foto vengono unite in un unico PDF, in quest\'ordine.</string>
+    <string name="multi_photo_hint">Aggiungi prima tutte le pagine: diventano un solo documento, in questo ordine, e la lettura parte solo quando tocchi Leggi. Continua in background: puoi usare l\'app o scansionare il documento successivo.</string>
     <string name="remove_photo">Rimuovi foto</string>
     <string name="no_camera_app">Nessuna app fotocamera disponibile. Usa “Importa immagine o PDF”.</string>
     <string name="saving_original">Salvataggio dell\'originale…</string>
@@ -445,5 +445,42 @@
     <plurals name="rep_products">
         <item quantity="one">%d prodotto</item>
         <item quantity="other">%d prodotti</item>
+    </plurals>
+
+    <!-- background reading -->
+    <string name="pick_photos">Scegli foto dalla galleria</string>
+    <string name="import_pdf">Importa un PDF</string>
+    <string name="add_from_gallery">Dalla galleria</string>
+    <string name="notif_channel_progress">Lettura documenti</string>
+    <string name="notif_channel_results">Documenti pronti</string>
+    <string name="notif_starting">Avvio…</string>
+    <string name="notif_ai_page">Lettore IA, pagina %1$d di %2$d</string>
+    <string name="notif_page">Lettura pagina %1$d di %2$d</string>
+    <string name="notif_saved">Documento salvato</string>
+    <string name="notif_ready">Documento pronto da controllare</string>
+    <string name="notif_ready_text">Tocca per controllarlo e salvarlo.</string>
+    <string name="notif_failed">Non è stato possibile leggere un documento</string>
+    <string name="job_stop">Ferma</string>
+    <string name="job_check">Controlla</string>
+    <string name="job_hide">Nascondi</string>
+    <string name="job_open">Apri</string>
+    <string name="job_retry">Riprova</string>
+    <string name="job_waiting">In attesa di lettura</string>
+    <string name="job_reading">Lettura in corso…</string>
+    <string name="job_ready">Pronto da controllare</string>
+    <string name="job_saved">Salvato automaticamente</string>
+    <string name="job_failed">Lettura non riuscita</string>
+    <string name="job_second_look">seconda lettura più accurata</string>
+    <plurals name="read_pages">
+        <item quantity="one">Leggi questa pagina</item>
+        <item quantity="other">Leggi queste %d pagine</item>
+    </plurals>
+    <plurals name="pages_count">
+        <item quantity="one">%d pagina</item>
+        <item quantity="other">%d pagine</item>
+    </plurals>
+    <plurals name="notif_reading">
+        <item quantity="one">Lettura di %d documento</item>
+        <item quantity="other">Lettura di %d documenti</item>
     </plurals>
 </resources>

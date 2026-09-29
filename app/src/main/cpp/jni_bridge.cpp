@@ -20,9 +20,9 @@ static std::string str(JNIEnv * env, jstring s) {
 
 extern "C" JNIEXPORT jlong JNICALL
 Java_com_kitchenreceipts_app_ai_NativeAi_nativeLoad(JNIEnv * env, jclass, jstring backendDir, jstring model, jstring mmproj,
-                                                    jint threads, jobjectArray errorOut) {
+                                                    jint threads, jint batchThreads, jobjectArray errorOut) {
     llama_log_set(android_log, nullptr);
-    auto r = receipt_ai::load(str(env, backendDir), str(env, model), str(env, mmproj), threads);
+    auto r = receipt_ai::load(str(env, backendDir), str(env, model), str(env, mmproj), threads, batchThreads);
     if (!r.engine && errorOut && env->GetArrayLength(errorOut) > 0) {
         env->SetObjectArrayElement(errorOut, 0, env->NewStringUTF(r.error.c_str()));
     }

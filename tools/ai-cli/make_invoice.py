@@ -83,4 +83,22 @@ for _ in range(60000):
 photo = photo.resize((1536, int(photo.height * 1536 / photo.width)), Image.LANCZOS)
 photo.save(f"{out}/invoice.ppm")
 photo.save(f"{out}/invoice.png")
+
+# What the app gives the AI (AiImagePlan): only the area with text, grey table and empty paper cut away.
+g = photo.convert("L")
+w, h = g.size
+gp = g.load()
+paper = [(x, y) for y in range(0, h, 2) for x in range(0, w, 2) if gp[x, y] > 200]
+px0, py0 = min(p[0] for p in paper), min(p[1] for p in paper)
+px1, py1 = max(p[0] for p in paper), max(p[1] for p in paper)
+# Text strokes are thin: a dark pixel with white paper a few pixels to its left and right (not the grey table).
+ink = [(x, y) for y in range(py0 + 8, py1 - 8, 2) for x in range(px0 + 8, px1 - 8, 2)
+       if gp[x, y] < 110 and gp[x - 7, y] > 190 and gp[x + 7, y] > 190]
+m = int(max(w, h) * 0.02)
+box = (max(0, min(p[0] for p in ink) - m), max(0, min(p[1] for p in ink) - m),
+       min(w, max(p[0] for p in ink) + m), min(h, max(p[1] for p in ink) + m))
+crop = photo.crop(box)
+crop.save(f"{out}/invoice-crop.ppm")
+crop.save(f"{out}/invoice-crop.png")
+print("crop", box, crop.size, "pixels", crop.size[0] * crop.size[1], "vs", w * h)
 print("imponibile", fmt(imponibile), "iva", fmt(vat), "totale", fmt(imponibile + vat), "size", photo.size)

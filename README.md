@@ -276,6 +276,23 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 
   Categories are guessed from an Italian keyword dictionary; change one on the product screen.
 
+## 7c-2. Reading in the background
+
+1. Add every page first: take photos, or pick several from the gallery (several pages of one document).
+2. Tap **Read these N pages**. Reading starts only now, once all pages are in.
+
+Then:
+- The app goes straight back to the home screen.
+- The document shows there with its progress ("Reading page 2 of 3", "AI reader…"). A notification shows the same, so you can use other screens, scan the next document, or leave the app.
+- Documents are read one after another.
+- When one is done, a notification says **Ready to check** (tap to open it), or **Document saved** if everything checked out and it was saved automatically.
+
+Background reading also survives the app being closed:
+- A finished reading comes back ready to check, rebuilt from what was stored, without reading again.
+- An unfinished one starts again.
+
+The notification needs the Android notification permission (asked once).
+
 ## 7d. On-phone AI reader (optional)
 
 A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the normal OCR text. It runs **entirely on the phone**, through llama.cpp compiled into the app (CPU, the fastest variant for the phone is picked at start). The app has **no internet permission**: the model is downloaded once by the phone's browser and then loaded with the file picker.
@@ -285,6 +302,13 @@ A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the norma
 2. Tap the two download buttons; each opens huggingface.co in the browser.
 3. When both downloads have finished, tap *Load the 2 downloaded files* and select both.
 4. Tap *Test*.
+
+**Speed-ups built in:**
+- It sees only the part of the photo with text (the table around the paper and the empty paper are cut away).
+- The photo is scaled so the print is about 22 pixels tall.
+- It writes compact JSON (no spaces or line breaks).
+- It uses all fast cores to read the image and the performance cores to write.
+- It uses an 8-bit attention cache.
 
 **When it runs:**
 - *When needed* (default) runs it only if the normal reading does not add up.

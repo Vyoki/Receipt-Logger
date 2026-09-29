@@ -1,6 +1,16 @@
 package com.kitchenreceipts.app.ui.capture
 
+import android.Manifest
 import android.content.ActivityNotFoundException
+import android.content.pm.PackageManager
+import android.os.Build
+import androidx.activity.result.PickVisualMediaRequest
+import androidx.compose.material.icons.filled.PhotoLibrary
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
+import androidx.core.content.ContextCompat
+import com.kitchenreceipts.app.jobs.ReadingService
 import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -72,87 +82,68 @@ import kotlin.coroutines.cancellation.CancellationException
 
 data class CaptureState(
     val busy: Boolean = false,
-    val step: Step = Step.IDLE,
-    val page: Int = 0,
-    val pages: Int = 0,
-    /** 2 = second, closer reading of an enhanced image (the first did not fully check out); 3 = the AI reader. */
-    val pass: Int = 1,
-    /** AI reader: 0 = looking at the photo, 1 = writing ([aiCount] grows). */
-    val aiStage: Int = 0,
-    val aiCount: Int = 0,
     val error: String? = null,
-    val ready: Boolean = false,
-) {
-    enum class Step { IDLE, STORING, READING }
-}
+    /** The document was handed to the background reader. */
+    val queued: Boolean = false,
+)
 
 class CaptureViewModel(private val c: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(CaptureState())
     val state: StateFlow<CaptureState> = _state.asStateFlow()
-    private var job: Job? = null
 
-    fun importUri(uri: Uri) = startImport("file") { c.fileStore.importUri(uri) }
+    /** A PDF (it has all its pages already) goes straight to the reader. */
+    fun importPdf(uri: Uri) = queue("file") { c.fileStore.importUri(uri) }
 
-    fun usePhotos(paths: List<String>) = startImport("camera:${paths.size}") {
+    /** All the pages collected in the tray become one document, read once they are all there. */
+    fun usePages(paths: List<String>) = queue("pages:${paths.size}") {
         val files = paths.map(::File).filter { it.exists() && it.length() > 0 }
         if (files.isEmpty()) throw UnsupportedFileException("No photo to import")
         c.fileStore.storePhotos(files) { c.pageRenderer.decodeImage(it, 3000) }
     }
 
-    private fun startImport(source: String, store: suspend () -> StoredFile) {
+    /** Copies pictures picked from the gallery into the tray (the picker's access does not last). */
+    suspend fun copyPicked(uris: List<Uri>): List<String> = withContext(Dispatchers.IO) {
+        uris.mapNotNull { uri ->
+            runCatching {
+                val (file, _) = c.fileStore.newCaptureTarget()
+                c.appContext.contentResolver.openInputStream(uri)!!.use { input -> file.outputStream().use { input.copyTo(it) } }
+                file.absolutePath
+            }.onFailure { c.log.error("pickImage", it) }.getOrNull()
+        }
+    }
+
+    private fun queue(source: String, store: suspend () -> StoredFile) {
         if (_state.value.busy) return
         c.log.event("IMPORT_START", "source" to source)
-        val t0 = System.currentTimeMillis()
-        job = viewModelScope.launch {
-            _state.value = CaptureState(busy = true, step = CaptureState.Step.STORING)
-            var stored: StoredFile? = null
+        viewModelScope.launch {
+            _state.value = CaptureState(busy = true)
             try {
-                val s = store()
-                stored = s
-                _state.update { it.copy(step = CaptureState.Step.READING) }
-                val storeMs = System.currentTimeMillis() - t0
-                val pending = c.importProcessor.process(s, c.ocrEngine, { p ->
-                    _state.update { it.copy(page = p.page, pages = p.of, pass = p.pass, aiStage = p.aiStage, aiCount = p.aiCount) }
-                }, c.settings.parseOptions(), c.aiUse())
-                c.log.event(
-                    "IMPORT_DONE",
-                    "type" to s.mimeType, "pages" to s.pageCount, "pagesRead" to pending.pagesRead,
-                    "storeMs" to storeMs, "ocrMs" to pending.ocrMillis,
-                    "ocrLines" to pending.rawLines.sumOf { it.size }, "ocrError" to pending.ocrError,
-                    "reading" to pending.readingNote,
-                    "ai" to pending.aiNote,
-                )
-                c.pendingImport = pending
+                val stored = store()
+                c.importQueue.enqueue(stored, source)
                 withContext(Dispatchers.IO) { c.fileStore.deleteCaptures() }
-                _state.value = CaptureState(ready = true)
+                _state.value = CaptureState(queued = true)
             } catch (e: CancellationException) {
-                c.log.event("IMPORT_CANCELLED")
-                stored?.let { c.fileStore.delete(it.relativePath) }
-                _state.value = CaptureState()
                 throw e
             } catch (e: Exception) {
                 c.log.error("import", e)
-                stored?.let { c.fileStore.delete(it.relativePath) }
                 _state.value = CaptureState(error = e.message ?: e.javaClass.simpleName)
             }
         }
     }
 
-    fun cancel() {
-        job?.cancel()
-    }
-
-    fun consumeReady() = _state.update { it.copy(ready = false) }
+    fun consumeQueued() = _state.update { it.copy(queued = false) }
     fun clearError() = _state.update { it.copy(error = null) }
 }
 
 @Composable
-fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
+fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
     val container = appContainer()
+    val context = LocalContext.current
     val vm = appViewModel { CaptureViewModel(it) }
     val state by vm.state.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
 
-    // Photo paths survive rotation and process death while the camera app is open.
+    // Page paths survive rotation and process death while the camera app is open.
     var photos by rememberSaveable { mutableStateOf(listOf<String>()) }
     var pendingPhoto by rememberSaveable { mutableStateOf<String?>(null) }
     var launchError by rememberSaveable { mutableStateOf<String?>(null) }
@@ -165,8 +156,19 @@ fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
             if (ok && File(path).length() > 0) photos = photos + path else File(path).delete()
         }
     }
-    val pickDocument = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-        if (uri != null) vm.importUri(uri)
+    // Photos already on the phone: the system photo picker (no storage permission), several at once.
+    val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(20)) { uris ->
+        if (uris.isNotEmpty()) scope.launch { photos = photos + vm.copyPicked(uris) }
+    }
+    val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri != null) vm.importPdf(uri)
+    }
+    // Android 13+: ask once to show "ready" / "saved" notifications for background reading.
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+    fun ensureNotificationPermission() {
+        if (Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
+        ) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
     }
 
     fun launchCamera() {
@@ -180,18 +182,13 @@ fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
         }
     }
 
-    LaunchedEffect(state.ready) {
-        if (state.ready) {
-            vm.consumeReady()
-            onReady()
+    LaunchedEffect(state.queued) {
+        if (state.queued) {
+            vm.consumeQueued()
+            photos = emptyList()
+            ReadingService.ensureRunning(context)
+            onQueued()
         }
-    }
-    BackHandler(enabled = state.busy) { vm.cancel() }
-    // Reading can take minutes with the AI reader: keep the screen on meanwhile.
-    val view = androidx.compose.ui.platform.LocalView.current
-    androidx.compose.runtime.DisposableEffect(state.busy) {
-        view.keepScreenOn = state.busy
-        onDispose { view.keepScreenOn = false }
     }
 
     AppScaffold(title = stringResource(R.string.scan_document), onBack = if (state.busy) null else onBack) { padding ->
@@ -203,23 +200,7 @@ fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
             ) {
                 CircularProgressIndicator(Modifier.size(64.dp))
                 Spacer(Modifier.height(24.dp))
-                Text(
-                    when (state.step) {
-                        CaptureState.Step.READING -> when {
-                            state.pass == 3 -> stringResource(R.string.ai_reading_page, state.page, state.pages) + "\n" +
-                                (if (state.aiStage == 0) stringResource(R.string.ai_looking) else stringResource(R.string.ai_writing, state.aiCount)) +
-                                "\n\n" + stringResource(R.string.ai_takes_time)
-                            else -> (if (state.pages > 1) stringResource(R.string.reading_page, state.page, state.pages)
-                            else stringResource(R.string.reading_text)) +
-                                (if (state.pass > 1) "\n" + stringResource(R.string.reading_second_pass) else "")
-                        }
-                        else -> stringResource(R.string.saving_original)
-                    },
-                    style = MaterialTheme.typography.titleMedium,
-                    textAlign = TextAlign.Center,
-                )
-                Spacer(Modifier.height(24.dp))
-                OutlinedButton(onClick = vm::cancel, modifier = Modifier.height(56.dp)) { Text(stringResource(R.string.cancel)) }
+                Text(stringResource(R.string.saving_original), style = MaterialTheme.typography.titleMedium, textAlign = TextAlign.Center)
             }
             return@AppScaffold
         }
@@ -234,9 +215,15 @@ fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
             if (photos.isEmpty()) {
                 BigButton(stringResource(R.string.take_photo), Icons.Filled.CameraAlt, onClick = { launchError = null; vm.clearError(); launchCamera() })
                 BigButton(
-                    stringResource(R.string.import_file),
+                    stringResource(R.string.pick_photos),
+                    Icons.Filled.PhotoLibrary,
+                    onClick = { launchError = null; vm.clearError(); pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                    primary = false,
+                )
+                BigButton(
+                    stringResource(R.string.import_pdf),
                     Icons.Filled.UploadFile,
-                    onClick = { launchError = null; vm.clearError(); pickDocument.launch(arrayOf("image/jpeg", "image/png", "application/pdf")) },
+                    onClick = { launchError = null; vm.clearError(); ensureNotificationPermission(); pickPdf.launch(arrayOf("application/pdf")) },
                     primary = false,
                 )
                 Text(stringResource(R.string.capture_tips), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -250,8 +237,21 @@ fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
                         })
                     }
                 }
-                BigButton(stringResource(R.string.use_photos), null, onClick = { vm.usePhotos(photos) })
-                BigButton(stringResource(R.string.add_page), Icons.Filled.AddAPhoto, onClick = { launchCamera() }, primary = false)
+                BigButton(
+                    pluralStringResource(R.plurals.read_pages, photos.size, photos.size),
+                    null,
+                    onClick = { ensureNotificationPermission(); vm.usePages(photos) },
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BigButton(stringResource(R.string.add_page), Icons.Filled.AddAPhoto, onClick = { launchCamera() }, primary = false, modifier = Modifier.weight(1f))
+                    BigButton(
+                        stringResource(R.string.add_from_gallery),
+                        Icons.Filled.PhotoLibrary,
+                        onClick = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
+                        primary = false,
+                        modifier = Modifier.weight(1f),
+                    )
+                }
                 Text(stringResource(R.string.multi_photo_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
         }

@@ -61,7 +61,7 @@ class AiNativeTest {
                 drawText("TOTALE DOCUMENTO 19,58", 20f, 220f, p)
             }
             var progressCalls = 0
-            val r = reader.read(page, "ESEMPIO S.R.L.\nMOZZARELLA KG 2,000 8,90 17,80\nTOTALE DOCUMENTO 19,58", ParseOptions()) { _, _ -> progressCalls++ }
+            val r = reader.read(page, emptyList(), page.width, "ESEMPIO S.R.L.\nMOZZARELLA KG 2,000 8,90 17,80\nTOTALE DOCUMENTO 19,58", ParseOptions()) { _, _ -> progressCalls++ }
             reader.close()
             File(context.filesDir, "ai-e2e.txt").writeText("stats=${r.stats} millis=${r.millis} error=${r.error}\n${r.raw}\n")
             assertEquals(null, r.error)

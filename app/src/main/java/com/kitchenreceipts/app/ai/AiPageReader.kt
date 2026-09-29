@@ -1,7 +1,9 @@
 package com.kitchenreceipts.app.ai
 
 import android.graphics.Bitmap
+import com.kitchenreceipts.core.AiImagePlan
 import com.kitchenreceipts.core.AiReader
+import com.kitchenreceipts.core.OcrLine
 import com.kitchenreceipts.core.ParseOptions
 import com.kitchenreceipts.core.ParsedDocument
 import kotlinx.coroutines.Dispatchers
@@ -26,9 +28,16 @@ class AiPageReader private constructor(private val handle: Long) : Closeable {
      * Reads one page. [ocrText] is what the regular OCR read on it (the model uses it to check digits).
      * [onProgress]: stage 0 = looking at the photo, 1 = writing (count grows).
      */
-    suspend fun read(page: Bitmap, ocrText: String, options: ParseOptions, onProgress: (stage: Int, count: Int) -> Unit): AiPageResult {
+    suspend fun read(
+        page: Bitmap,
+        lines: List<OcrLine>,
+        linesImageWidth: Int,
+        ocrText: String,
+        options: ParseOptions,
+        onProgress: (stage: Int, count: Int) -> Unit,
+    ): AiPageResult {
         val started = System.currentTimeMillis()
-        val (rgb, w, h) = withContext(Dispatchers.Default) { toRgb(page, MAX_SIDE) }
+        val (rgb, w, h) = withContext(Dispatchers.Default) { prepare(page, lines, linesImageWidth) }
         val out = coroutineScope {
             // If the import is cancelled, tell the native loop to stop (it checks between steps).
             val watcher = launch { try { awaitCancellation() } finally { NativeAi.nativeCancel(handle) } }
@@ -44,14 +53,12 @@ class AiPageReader private constructor(private val handle: Long) : Closeable {
         val text = out[0]
         val error = out[1].ifEmpty { null }
         val parsed = if (error == null) AiReader.decode(text)?.let { AiReader.toParsed(it, ocrText, options) } else null
-        return AiPageResult(parsed, text, error ?: if (parsed == null) "unreadable answer" else null, out[2], System.currentTimeMillis() - started)
+        return AiPageResult(parsed, text, error ?: if (parsed == null) "unreadable answer" else null, "${w}x$h ${out[2]}", System.currentTimeMillis() - started)
     }
 
     override fun close() = NativeAi.nativeFree(handle)
 
     companion object {
-        /** Long side of the image given to the model: enough for small print, bounded time and memory. */
-        const val MAX_SIDE = 1536
         const val MAX_TOKENS = 3500
         const val N_CTX = 8192
 
@@ -60,11 +67,34 @@ class AiPageReader private constructor(private val handle: Long) : Closeable {
             check(NativeAi.available) { "The AI reader is not available on this phone" }
             check(store.installed) { "No AI model installed" }
             val cores = Runtime.getRuntime().availableProcessors()
+            // Writing the answer is limited by memory speed: the big cores are enough. Reading the image and the
+            // prompt is pure computation: every core helps.
             val threads = (cores - 2).coerceIn(2, 6)
+            val batchThreads = cores.coerceIn(2, 8)
             val err = arrayOfNulls<String>(1)
-            val h = NativeAi.nativeLoad(nativeLibDir, store.modelFile.absolutePath, store.mmprojFile.absolutePath, threads, err)
+            val h = NativeAi.nativeLoad(nativeLibDir, store.modelFile.absolutePath, store.mmprojFile.absolutePath, threads, batchThreads, err)
             if (h == 0L) throw IllegalStateException(err[0] ?: "The AI model could not be loaded")
             AiPageReader(h)
+        }
+
+        /**
+         * Cuts the photo to the area with text and scales it so the print is about [AiImagePlan.TARGET_TEXT_PX] tall:
+         * the model then sees fewer image pieces and reads faster. [lines] are the OCR boxes, measured on an image
+         * [linesImageWidth] pixels wide.
+         */
+        fun prepare(page: Bitmap, lines: List<OcrLine>, linesImageWidth: Int): Triple<ByteArray, Int, Int> {
+            val k = if (linesImageWidth > 0) page.width.toDouble() / linesImageWidth else 1.0
+            val scaled = if (k == 1.0) lines else lines.map {
+                it.copy(left = (it.left * k).toInt(), top = (it.top * k).toInt(), right = (it.right * k).toInt(), bottom = (it.bottom * k).toInt())
+            }
+            val plan = AiImagePlan.plan(scaled, page.width, page.height)
+            val cropped = if (plan.width == page.width && plan.height == page.height) page
+            else Bitmap.createBitmap(page, plan.left, plan.top, plan.width, plan.height)
+            val out = if (plan.scale < 1.0) Bitmap.createScaledBitmap(cropped, plan.outWidth, plan.outHeight, true) else cropped
+            if (cropped !== page && cropped !== out) cropped.recycle()
+            val result = toRgb(out, Int.MAX_VALUE)
+            if (out !== page) out.recycle()
+            return result
         }
 
         /** Scales the page down to [maxSide] and returns packed RGB bytes. */

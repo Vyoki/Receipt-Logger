@@ -21,7 +21,7 @@ import java.text.Normalizer
 object AiReader {
 
     /** Changes when the prompt or grammar change, so logged results can be compared. */
-    const val PROMPT_VERSION = 1
+    const val PROMPT_VERSION = 2
 
     private const val MAX_OCR_CHARS = 5000
 
@@ -58,13 +58,13 @@ object AiReader {
      * short string or null. The model cannot ramble, add comments or produce half a JSON document.
      */
     val GRAMMAR: String = buildString {
-        fun fields(keys: List<String>) = keys.joinToString(" \",\" ws ") { "\"\\\"$it\\\":\" ws value" }
-        append("root ::= \"{\" ws ").append(fields(HEADER_KEYS))
-        append(" \",\" ws \"\\\"items\\\":\" ws \"[\" ws (item (\",\" ws item)*)? ws \"]\" ws \"}\"\n")
-        append("item ::= \"{\" ws ").append(fields(ITEM_KEYS)).append(" ws \"}\"\n")
+        // Compact JSON: no spaces or line breaks between fields, about a quarter fewer pieces for the model to write.
+        fun fields(keys: List<String>) = keys.joinToString(" \",\" ") { "\"\\\"$it\\\":\" value" }
+        append("root ::= \"{\" ").append(fields(HEADER_KEYS))
+        append(" \",\" \"\\\"items\\\":\" \"[\" (item (\",\" item)*)? \"]\" \"}\"\n")
+        append("item ::= \"{\" ").append(fields(ITEM_KEYS)).append(" \"}\"\n")
         append("value ::= \"null\" | \"\\\"\" char{0,100} \"\\\"\"\n")
         append("char ::= [^\"\\\\\\x00-\\x1F] | \"\\\\\" [\"\\\\/nt]\n")
-        append("ws ::= [ \\n]?\n")
     }
 
     // ------------------------------------------------------------------ parsing the answer

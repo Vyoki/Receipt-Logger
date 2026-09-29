@@ -14,7 +14,7 @@ static std::string slurp(const char * path) {
 
 int main(int argc, char ** argv) {
     if (argc < 6) { fprintf(stderr, "usage: %s model mmproj image.ppm instruction.txt grammar.gbnf\n", argv[0]); return 2; }
-    auto lr = receipt_ai::load("", argv[1], argv[2], 4);
+    auto lr = receipt_ai::load("", argv[1], argv[2], 4, 4);
     if (!lr.engine) { fprintf(stderr, "load failed: %s\n", lr.error.c_str()); return 1; }
     std::string grammar = slurp(argv[5]);
     auto gerr = receipt_ai::check_grammar(lr.engine, grammar);

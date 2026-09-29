@@ -16,6 +16,7 @@ struct Engine {
     llama_model * model = nullptr;
     mtmd_context * mtmd = nullptr;
     int n_threads = 4;
+    int n_threads_batch = 4;
     std::atomic<bool> cancel{false};
 };
 
@@ -23,7 +24,8 @@ void cancel(Engine * e) { if (e) e->cancel = true; }
 
 static std::once_flag g_backend_once;
 
-LoadResult load(const std::string & backend_dir, const std::string & model_path, const std::string & mmproj_path, int n_threads) {
+LoadResult load(const std::string & backend_dir, const std::string & model_path, const std::string & mmproj_path,
+               int n_threads, int n_threads_batch) {
     std::call_once(g_backend_once, [&] {
         if (!backend_dir.empty()) ggml_backend_load_all_from_path(backend_dir.c_str());
         else ggml_backend_load_all();
@@ -37,7 +39,7 @@ LoadResult load(const std::string & backend_dir, const std::string & model_path,
 
     mtmd_context_params cp = mtmd_context_params_default();
     cp.use_gpu = false;
-    cp.n_threads = n_threads;
+    cp.n_threads = n_threads_batch; // the vision encoder is compute bound
     cp.print_timings = false;
     cp.warmup = false;
     mtmd_context * mctx = mtmd_init_from_file(mmproj_path.c_str(), model, cp);
@@ -50,6 +52,7 @@ LoadResult load(const std::string & backend_dir, const std::string & model_path,
     e->model = model;
     e->mtmd = mctx;
     e->n_threads = n_threads;
+    e->n_threads_batch = n_threads_batch;
     r.engine = e;
     return r;
 }
@@ -100,10 +103,18 @@ Result generate(Engine * e, const Request & req, const std::function<bool(int, i
     cp.n_batch = 2048;
     cp.n_ubatch = 512;
     cp.n_threads = e->n_threads;
-    cp.n_threads_batch = e->n_threads;
+    cp.n_threads_batch = e->n_threads_batch;
     cp.abort_callback = abort_cb;
     cp.abort_callback_data = &e->cancel;
+    // 8-bit attention cache: half the memory traffic while writing, no visible change in the answer.
+    cp.type_k = GGML_TYPE_Q8_0;
+    cp.type_v = GGML_TYPE_Q8_0;
     llama_context * lctx = llama_init_from_model(e->model, cp);
+    if (!lctx) {
+        cp.type_k = GGML_TYPE_F16;
+        cp.type_v = GGML_TYPE_F16;
+        lctx = llama_init_from_model(e->model, cp);
+    }
     if (!lctx) { r.error = "Not enough memory for the AI reader"; return r; }
 
     const llama_vocab * vocab = llama_model_get_vocab(e->model);
