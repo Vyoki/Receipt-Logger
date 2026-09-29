@@ -258,6 +258,38 @@ object AiReader {
         return ReceiptParser.finish(merged, text)
     }
 
+    /**
+     * Which pages the AI should read, so it spends its minutes only where they help: pages with a line that does
+     * not add up (or has no amount / an uncertain quantity), the first page when the supplier or date is missing,
+     * the last page when the total is missing. When the problem cannot be pinned to a page, every page.
+     * [pages] = each page read on its own by the regular reader; [whole] = the whole document.
+     */
+    fun pagesToRead(pages: List<ParsedDocument>, whole: ParsedDocument): List<Int> {
+        if (pages.isEmpty()) return emptyList()
+        val out = sortedSetOf<Int>()
+        pages.forEachIndexed { i, p ->
+            if (p.lineItems.any { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings || it.lineTotalCents == null || it.quantity?.confidence == Confidence.LOW }) out += i
+        }
+        val lineProblems = out.isNotEmpty()
+        if (whole.sellerName == null || whole.documentDate == null) out += 0
+        if (whole.totalCents == null) out += pages.lastIndex
+        if ((ParseWarning.ITEMS_SUM_MISMATCH in whole.warnings || ParseWarning.NO_ITEMS_FOUND in whole.warnings) && !lineProblems) {
+            return pages.indices.toList()
+        }
+        return if (out.isEmpty()) pages.indices.toList() else out.toList()
+    }
+
+    /**
+     * The document's items page by page: the AI's lines on the pages it read, where they explain that page better
+     * than the regular reading; the regular reading's lines everywhere else.
+     */
+    fun combineItems(regularPages: List<ParsedDocument>, aiPages: List<ParsedDocument?>): List<ParsedLineItem> =
+        regularPages.indices.flatMap { i ->
+            val regular = regularPages[i].lineItems
+            val ai = aiPages.getOrNull(i)?.lineItems
+            if (ai != null && ReceiptParser.itemScore(ai, null, null) > ReceiptParser.itemScore(regular, null, null)) ai else regular
+        }
+
     /** Joins the AI's page-by-page readings: header from the first page that has it, totals from the last. */
     fun joinPages(pages: List<ParsedDocument>, text: String): ParsedDocument? {
         if (pages.isEmpty()) return null
