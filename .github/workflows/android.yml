@@ -143,7 +143,8 @@ jobs:
           print('\n'.join(out) if out else 'no JUnit results found')
           PY
           )
-          log=$(grep -E 'FAILED|Exception|What went wrong|^> |error:|INSTRUMENTATION' inst.log 2>/dev/null | grep -v '^> Task' | head -40)
+          # (|| true: no match must not end the step before the report is printed)
+          log=$(grep -E 'FAILED|Exception|What went wrong|^> |error:|INSTRUMENTATION|Timeout' inst.log 2>/dev/null | grep -v '^> Task' | head -40 || true)
           all="$msg"$'\n'"--- log ---"$'\n'"$log"
           all="${all//'%'/'%25'}"
           all="${all//$'\n'/'%0A'}"
