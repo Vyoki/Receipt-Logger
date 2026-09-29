@@ -50,6 +50,14 @@ object ReceiptParser {
             "u\\.?\\s?m\\.?|codice|sconto|aliquota|iva|totale|valore)\\b",
     )
 
+    /** Section titles inside the item table ("Merce non deperibile - Congelato", "Merce non alimentare"): never a product. */
+    private val SECTION_HEADING = Regex(
+        "(?i)^\\W*(merce\\s+(non\\s+)?(deperibil[ei]|alimentar[ei]|surgelat[ae]|congelat[ae]|fresc[ah]e?|secc[ah]e?)|" +
+            "(prodotti|articoli|reparto|settore)\\s+(non\\s+)?(surgelati|congelati|freschi|secchi|refrigerati|alimentari|deperibili))\\b",
+    )
+
+    fun isSectionHeading(description: String): Boolean = SECTION_HEADING.containsMatchIn(description.trim())
+
     private val COLLI_HEADING = Regex("(?i)\\b(colli|n\\.?\\s?colli|cartoni)\\b")
     private val PRICE_HEADING = Regex("(?i)\\b(prezzo|prz\\.?|p\\.\\s?unit|pr\\.\\s?unit)")
     private val QTY_HEADING = Regex("(?i)(\\bq\\.?\\s?t[àa']?\\.?(?=\\W|$)|\\bquantit[àa]|\\btot\\.(?!\\w))")
@@ -151,7 +159,8 @@ object ReceiptParser {
         val tolerance = maxOf(2L, items.size.toLong())
         val sumMatches = sums.size == items.size && items.isNotEmpty() &&
             listOfNotNull(subtotal, total).any { kotlin.math.abs(sums.sum() - it) <= tolerance }
-        val named = items.count { it.originalDescription.count(Char::isLetter) >= 3 }
+        val named = items.count { it.originalDescription.count(Char::isLetter) >= 3 && !isSectionHeading(it.originalDescription) } -
+            3 * items.count { isSectionHeading(it.originalDescription) }
         return consistent * 3 + named - mismatched * 2 + (if (sumMatches) 12 else 0)
     }
 
@@ -374,6 +383,28 @@ object ReceiptParser {
                 }
             }
             if (item == null) continue
+            // "Merce non alimentare" took the numbers of the row below it (a tilted photo puts them between the two):
+            // the product is the next line, "24195 CARTA FORNO 40CM X 50M C/ASTUCCIO".
+            if (isSectionHeading(item.originalDescription)) {
+                val nextIdx = idx + 1
+                val next = lines.getOrNull(nextIdx)
+                if (next != null && nextIdx < firstTotalsLine && nextIdx !in consumed && next.count { it.isLetter() } >= 3 &&
+                    parseItemLine(next, colliColumn, priceFirst) == null && !isSectionHeading(next) && lastAmountCents(next) == null
+                ) {
+                    val stripped = stripItemCode(next.split(' ').filter { it.isNotBlank() }, colliColumn)
+                    val name = cleanDescription(stripped.tokens)
+                    if (name.count { it.isLetter() } >= 3) {
+                        item = item.copy(
+                            originalDescription = name,
+                            itemCode = stripped.code ?: item.itemCode,
+                            packages = stripped.packages?.let { Extracted(normalizeColli(it), Confidence.HIGH, next) } ?: item.packages,
+                        )
+                        i++
+                    }
+                } else {
+                    continue // a heading with numbers and no product below it: not an item
+                }
+            }
             val pq = pendingQty
             if (pq != null && item.quantity == null && pq.fits(item)) item = pq.applyTo(item)
             pendingQty = null

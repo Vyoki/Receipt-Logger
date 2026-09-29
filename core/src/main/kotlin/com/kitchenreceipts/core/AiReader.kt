@@ -21,7 +21,7 @@ import java.text.Normalizer
 object AiReader {
 
     /** Changes when the prompt or grammar change, so logged results can be compared. */
-    const val PROMPT_VERSION = 3
+    const val PROMPT_VERSION = 4
 
     private const val MAX_OCR_CHARS = 5000
 
@@ -35,7 +35,9 @@ object AiReader {
         append("- seller_vat: the seller's Partita IVA.\n")
         append("- number: the document number. date: the document date (not delivery, payment or expiry dates).\n")
         append("- subtotal: taxable amount (imponibile). vat: total VAT (IVA). total: total of the document.\n")
-        append("- items: one entry per product line, top to bottom. Skip headings, section titles and totals. For each: ")
+        append("- items: one entry per product line, top to bottom. Skip headings and totals. Lines such as 'Merce non deperibile - ")
+        append("Congelato', 'Merce non deperibile - Fresco' or 'Merce non alimentare' are section titles, never products: the product ")
+        append("is the line with the article code (e.g. 'CARTA FORNO ...' under 'Merce non alimentare'). For each: ")
         append("code (article code), colli (the COLLI column: packages or cartons, e.g. '5' or '1x6'), ")
         append("description (the product name only, without code, colli, quantity or prices), unit (U.M.), ")
         append("quantity (QUANTITA'/QTA/TOT. column), price (unit price, PREZZO), discount (SCONTO %), ")
@@ -141,7 +143,7 @@ object AiReader {
             ?.takeUnless { ownVat != null && it.filter(Char::isDigit) == ownVat }
             ?.let { Extracted(it, if (ev.hasText(it)) Confidence.HIGH else Confidence.LOW, "AI number") }
 
-        val items = answer.items.mapNotNull { item(it, ev) }
+        val items = answer.items.mapNotNull { item(it, ev) }.map { fixHeading(it, ocrText) }
         return finish(
             ParsedDocument(
                 sellerName = seller,
@@ -161,6 +163,19 @@ object AiReader {
     }
 
     private fun finish(d: ParsedDocument, text: String) = ReceiptParser.finish(d, text)
+
+    /**
+     * The AI named a line after a section title ("Merce non alimentare"): the real name is on the OCR line with the
+     * same article code ("24195 CARTA FORNO 40CM X 50M C/ASTUCCIO").
+     */
+    private fun fixHeading(item: ParsedLineItem, ocrText: String): ParsedLineItem {
+        if (!ReceiptParser.isSectionHeading(item.originalDescription)) return item
+        val code = item.itemCode ?: return item
+        val line = OcrCleanup.clean(ocrText).lines().firstOrNull { l -> l.split(' ').any { it == code } && !ReceiptParser.isSectionHeading(l) } ?: return item
+        val name = ReceiptParser.parseItemLine(line)?.originalDescription
+            ?: cleanText(line.split(' ').dropWhile { it != code }.drop(1).dropWhile { ReceiptParser.COLLI_PATTERN.matches(it) || it.all(Char::isDigit) }.joinToString(" "))
+        return if (name.count(Char::isLetter) >= 3 && !ReceiptParser.isSectionHeading(name)) item.copy(originalDescription = name) else item
+    }
 
     private val MARKER_CODE = Regex("^[A-Z0]\\s+(?=\\d)")
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
@@ -244,6 +259,12 @@ object AiReader {
         val total = pick(regular.totalCents, ai.totalCents)
         val useAi = ReceiptParser.itemScore(ai.lineItems, subtotal?.value, total?.value) >
             ReceiptParser.itemScore(regular.lineItems, subtotal?.value, total?.value)
+        // A line the AI still named after a section title takes the name the regular reading gave the same amount.
+        val aiItems = ai.lineItems.map { a ->
+            if (!ReceiptParser.isSectionHeading(a.originalDescription)) a
+            else regular.lineItems.firstOrNull { r -> r.lineTotalCents?.value == a.lineTotalCents?.value && !ReceiptParser.isSectionHeading(r.originalDescription) }
+                ?.let { r -> a.copy(originalDescription = r.originalDescription, itemCode = a.itemCode ?: r.itemCode) } ?: a
+        }
         val merged = regular.copy(
             sellerName = pick(regular.sellerName, ai.sellerName),
             documentDate = pick(regular.documentDate, ai.documentDate),
@@ -252,7 +273,7 @@ object AiReader {
             subtotalCents = subtotal,
             vatCents = pick(regular.vatCents, ai.vatCents),
             totalCents = total,
-            lineItems = if (useAi) ai.lineItems else regular.lineItems,
+            lineItems = if (useAi) aiItems else regular.lineItems,
             itemsReadBy = if (useAi) "ai" else regular.itemsReadBy,
         )
         return ReceiptParser.finish(merged, text)
