@@ -102,3 +102,18 @@ crop.save(f"{out}/invoice-crop.ppm")
 crop.save(f"{out}/invoice-crop.png")
 print("crop", box, crop.size, "pixels", crop.size[0] * crop.size[1], "vs", w * h)
 print("imponibile", fmt(imponibile), "iva", fmt(vat), "totale", fmt(imponibile + vat), "size", photo.size)
+
+# Small questions (AiTargets): the column headings strip stacked over one product line strip, as the app builds them.
+def strip(y0, y1):
+    return page.crop((40, y0, W - 30, y1))
+def stack(parts, name):
+    gap = 8
+    img = Image.new("RGB", (max(p.width for p in parts), sum(p.height for p in parts) + gap * (len(parts) - 1)), "white")
+    y = 0
+    for p in parts:
+        img.paste(p, (0, y)); y += p.height + gap
+    img.save(f"{out}/{name}.ppm"); img.save(f"{out}/{name}.png")
+    print(name, img.size)
+head = strip(195, 236)
+stack([head, strip(245 + 4 * 36 - 10, 245 + 4 * 36 + 34)], "row-filetto")
+stack([head, strip(245 + 2 * 36 - 10, 245 + 2 * 36 + 34)], "row-candeggina")

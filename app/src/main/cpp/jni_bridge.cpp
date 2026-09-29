@@ -85,3 +85,8 @@ Java_com_kitchenreceipts_app_ai_NativeAi_nativeCheckGrammar(JNIEnv * env, jclass
     auto err = receipt_ai::check_grammar(reinterpret_cast<receipt_ai::Engine *>(handle), str(env, grammar));
     return env->NewStringUTF(err.c_str());
 }
+
+extern "C" JNIEXPORT jstring JNICALL
+Java_com_kitchenreceipts_app_ai_NativeAi_nativeSystemInfo(JNIEnv * env, jclass) {
+    return env->NewStringUTF(llama_print_system_info());
+}

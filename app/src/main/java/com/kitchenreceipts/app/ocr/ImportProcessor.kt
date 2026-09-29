@@ -4,6 +4,8 @@ import com.kitchenreceipts.app.files.PageRenderer
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.ai.AiPageReader
 import com.kitchenreceipts.core.AiReader
+import com.kitchenreceipts.core.AiTarget
+import com.kitchenreceipts.core.AiTargets
 import com.kitchenreceipts.core.LayoutRows
 import com.kitchenreceipts.core.OcrLine
 import com.kitchenreceipts.core.ParseOptions
@@ -32,6 +34,8 @@ data class PendingImport(
     val aiNote: String? = null,
     /** The AI's raw answers, page by page (for troubleshooting, and to rebuild the reading after a restart). */
     val aiRaw: List<String> = emptyList(),
+    /** The AI's answers to the small questions about doubtful lines, header or totals (see AiTargets), in order. */
+    val aiTargeted: List<String> = emptyList(),
     /** Width of the image each page was read from (the OCR boxes are in its pixels). */
     val ocrWidths: List<Int> = emptyList(),
 ) {
@@ -43,7 +47,8 @@ data class PendingImport(
         ocrError?.let { append("Error: ").append(it).append('\n') }
         aiNote?.let { append("AI reader: ").append(it).append('\n') }
         append("\n=== Rows ===\n").append(ocrText).append('\n')
-        aiRaw.forEachIndexed { p, raw -> append("\n=== AI answer, page ").append(p + 1).append(" ===\n").append(raw).append('\n') }
+        aiRaw.forEachIndexed { p, raw -> if (raw.isNotBlank()) append("\n=== AI answer, page ").append(p + 1).append(" ===\n").append(raw).append('\n') }
+        aiTargeted.forEachIndexed { i, raw -> append("\n=== AI answer, check ").append(i + 1).append(" ===\n").append(raw).append('\n') }
         rawLines.forEachIndexed { p, lines ->
             append("\n=== Raw lines, page ").append(p + 1).append(" (left,top,right,bottom,angle) ===\n")
             lines.forEach { l ->
@@ -56,7 +61,7 @@ data class PendingImport(
     }
 }
 
-/** Progress of an import: which page of how many, and which reading (1 = photo, 2 = enhanced photo, 3 = AI). */
+/** Progress of an import: which page of how many, and which reading (1 = photo, 2 = enhanced photo, 3 = AI whole page, 4 = AI checks). */
 data class ImportProgress(val page: Int, val of: Int, val pass: Int, val aiStage: Int = 0, val aiCount: Int = 0)
 
 /** How the on-phone AI reader should be used for this import (null = not at all). */
@@ -102,14 +107,68 @@ class ImportProcessor(private val renderer: PageRenderer) {
         // the regular readings still do not check out.
         var aiNote: String? = null
         val aiRaw = mutableListOf<String>()
+        val aiTargeted = mutableListOf<String>()
         if (ai != null && best.error == null && best.lines.isNotEmpty() && (ai.always || !ReceiptParser.isConfident(parsed))) {
-            aiNote = runAi(file, best, ai, options, onProgress, aiRaw, parsed)
+            // First choice: ask only about the doubtful parts (seconds each). Whole pages only when the regular
+            // reading failed too broadly for that, or when the operator asked the AI to always read everything.
+            val targets = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed) }
+            aiNote = if (!targets.isNullOrEmpty()) {
+                runTargets(file, best, ai, targets, onProgress, aiTargeted)
+            } else {
+                runAi(file, best, ai, options, onProgress, aiRaw, parsed)
+            }
         }
         return rebuild(
-            file, best.lines, best.widths, best.error, engine.displayName, aiRaw, aiNote,
+            file, best.lines, best.widths, best.error, engine.displayName, aiRaw, aiNote, aiTargeted,
             "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else ""),
             options, System.currentTimeMillis() - started,
         )
+    }
+
+    /** Asks the AI the small questions of [targets], collecting its answers in [answers]; returns a note for the log. */
+    private suspend fun runTargets(
+        file: StoredFile,
+        best: Reading,
+        ai: AiUse,
+        targets: List<AiTarget>,
+        onProgress: (ImportProgress) -> Unit,
+        answers: MutableList<String>,
+    ): String {
+        onProgress(ImportProgress(1, targets.size, 4))
+        val reader = try {
+            ai.reader()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return "not started: ${e.message}"
+        }
+        val notes = mutableListOf("checks ${targets.size} (" + targets.joinToString(",") { t ->
+            when (t) { is AiTarget.Row -> if (t.itemIndex != null) "line${t.itemIndex + 1}" else "missed"; is AiTarget.Header -> "header"; is AiTarget.Totals -> "totals" }
+        } + ") " + reader.systemInfo)
+        val started = System.currentTimeMillis()
+        val pageCache = mutableMapOf<Int, android.graphics.Bitmap>()
+        try {
+            targets.forEachIndexed { i, t ->
+                onProgress(ImportProgress(i + 1, targets.size, 4))
+                val bmp = pageCache.getOrPut(t.page) { renderer.renderPage(file.relativePath, file.mimeType, t.page, OCR_LONG_SIDE) }
+                val (instruction, grammar) = when (t) {
+                    is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText) to AiReader.ROW_GRAMMAR
+                    is AiTarget.Header -> AiReader.headerInstruction() to AiReader.HEADER_GRAMMAR
+                    is AiTarget.Totals -> AiReader.totalsInstruction() to AiReader.TOTALS_GRAMMAR
+                }
+                val r = reader.readRegions(bmp, best.lines[t.page], best.widths.getOrElse(t.page) { bmp.width }, t.boxes, instruction, grammar) { stage, count ->
+                    onProgress(ImportProgress(i + 1, targets.size, 4, stage, count))
+                }
+                if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
+                answers += if (r.error == null) r.raw else ""
+                notes += "c${i + 1}: ${r.millis / 100 / 10.0}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "")
+            }
+        } finally {
+            pageCache.values.forEach { it.recycle() }
+            reader.close()
+        }
+        notes += "total ${(System.currentTimeMillis() - started) / 1000}s"
+        return notes.joinToString("; ")
     }
 
     /**
@@ -216,6 +275,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             engineName: String,
             aiRaw: List<String>,
             aiNote: String?,
+            aiTargeted: List<String>,
             readingNote: String,
             options: ParseOptions,
             ocrMillis: Long,
@@ -223,6 +283,13 @@ class ImportProcessor(private val renderer: PageRenderer) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
             var parsed = if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options)
+            if (aiTargeted.isNotEmpty()) {
+                // The questions are worked out again from the same reading, so they pair up with the stored answers.
+                val targets = AiTargets.plan(lines, parsed)
+                if (targets != null && targets.size == aiTargeted.size) {
+                    parsed = AiReader.applyTargets(parsed, targets.zip(aiTargeted).filter { it.second.isNotBlank() }, text, options)
+                }
+            }
             if (aiRaw.size == lines.size && aiRaw.any { it.isNotBlank() }) {
                 val aiPages = aiRaw.mapIndexed { i, raw ->
                     raw.takeIf { it.isNotBlank() }?.let { AiReader.decode(it) }?.let { AiReader.toParsed(it, pageTexts[i], options) }
@@ -239,6 +306,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 readingNote = "$readingNote, items read by ${parsed.itemsReadBy}",
                 aiNote = aiNote,
                 aiRaw = aiRaw,
+                aiTargeted = aiTargeted,
                 ocrWidths = widths,
             )
         }

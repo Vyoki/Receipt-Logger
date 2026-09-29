@@ -254,8 +254,10 @@ class ImportQueue(
         pending.ocrError?.let { p["ocrError"] = it }
         p["ocrMillis"] = pending.ocrMillis.toString()
         p["aiPages"] = pending.aiRaw.size.toString()
+        p["aiChecks"] = pending.aiTargeted.size.toString()
         File(d, "reading.properties").outputStream().use { p.store(it, null) }
         pending.aiRaw.forEachIndexed { i, raw -> File(d, "ai-$i.json").writeText(raw) }
+        pending.aiTargeted.forEachIndexed { i, raw -> File(d, "ai-check-$i.json").writeText(raw) }
     }
 
     private suspend fun loadReading(job: ImportJob): PendingImport? = withContext(Dispatchers.IO) {
@@ -265,8 +267,9 @@ class ImportQueue(
         val lines = OcrLineCodec.decode(ocr.readText())
         val widths = File(d, "widths.txt").takeIf { it.exists() }?.readText()?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
         val aiRaw = (0 until (p.getProperty("aiPages")?.toIntOrNull() ?: 0)).map { i -> File(d, "ai-$i.json").takeIf { it.exists() }?.readText() ?: "" }
+        val aiChecks = (0 until (p.getProperty("aiChecks")?.toIntOrNull() ?: 0)).map { i -> File(d, "ai-check-$i.json").takeIf { it.exists() }?.readText() ?: "" }
         ImportProcessor.rebuild(
-            job.file, lines, widths, p.getProperty("ocrError"), p.getProperty("engine", ""), aiRaw, p.getProperty("aiNote"),
+            job.file, lines, widths, p.getProperty("ocrError"), p.getProperty("engine", ""), aiRaw, p.getProperty("aiNote"), aiChecks,
             p.getProperty("readingNote", ""), settings.parseOptions(), p.getProperty("ocrMillis")?.toLongOrNull() ?: 0,
         )
     }

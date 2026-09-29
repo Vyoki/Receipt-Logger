@@ -60,6 +60,8 @@ class DraftPreparer(private val repo: ReceiptRepository, private val settings: A
         if (draft.vatBasis == VatBasis.UNKNOWN || draft.vatBasisUncertain) {
             AutoAccept.inferVatBasis(draft)?.let { draft = draft.copy(vatBasis = it, vatBasisUncertain = false) }
         }
+        // Numbers proven by the arithmetic over the whole document need no confirmation.
+        draft = AutoAccept.settleProven(draft)
         val initial = draft
 
         // Link each line to a product: remembered for this supplier, recognised despite typos, or new.

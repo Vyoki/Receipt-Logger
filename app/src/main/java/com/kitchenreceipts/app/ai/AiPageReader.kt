@@ -56,6 +56,42 @@ class AiPageReader private constructor(private val handle: Long) : Closeable {
         return AiPageResult(parsed, text, error ?: if (parsed == null) "unreadable answer" else null, "${w}x$h ${out[2]}", System.currentTimeMillis() - started)
     }
 
+    /** What the phone's processor offers the AI (for the troubleshooting report): e.g. "NEON = 1 | DOTPROD = 1 | ...". */
+    val systemInfo: String by lazy {
+        runCatching { NativeAi.nativeSystemInfo() }.getOrDefault("")
+            .split('|').map { it.trim() }.filter { it.endsWith("= 1") || it.startsWith("CPU") }.joinToString(" ").take(200)
+    }
+
+    /**
+     * Answers one small question: [boxes] of the page (in the coordinates of the OCR [lines], measured on an image
+     * [linesImageWidth] wide) are cut out, scaled so the print is readable and stacked top to bottom.
+     */
+    suspend fun readRegions(
+        page: Bitmap,
+        lines: List<OcrLine>,
+        linesImageWidth: Int,
+        boxes: List<com.kitchenreceipts.core.PageBox>,
+        instruction: String,
+        grammar: String,
+        onProgress: (stage: Int, count: Int) -> Unit,
+    ): AiPageResult {
+        val started = System.currentTimeMillis()
+        val (rgb, w, h) = withContext(Dispatchers.Default) { stack(page, lines, linesImageWidth, boxes) }
+        val out = coroutineScope {
+            val watcher = launch { try { awaitCancellation() } finally { NativeAi.nativeCancel(handle) } }
+            val ctx = coroutineContext
+            val r = withContext(Dispatchers.Default) {
+                NativeAi.nativeGenerate(handle, rgb, w, h, instruction, grammar, REGION_MAX_TOKENS, REGION_N_CTX) { stage, count ->
+                    onProgress(stage, count); ctx.isActive
+                }
+            }
+            watcher.cancel()
+            r
+        }
+        val error = out[1].ifEmpty { null }
+        return AiPageResult(null, out[0], error, "${w}x$h ${out[2]}", System.currentTimeMillis() - started)
+    }
+
     override fun close() = NativeAi.nativeFree(handle)
 
     companion object {
@@ -95,6 +131,43 @@ class AiPageReader private constructor(private val handle: Long) : Closeable {
             val result = toRgb(out, Int.MAX_VALUE)
             if (out !== page) out.recycle()
             return result
+        }
+
+        const val REGION_MAX_TOKENS = 400
+        const val REGION_N_CTX = 4096
+
+        /** Cuts [boxes] out of the page, scales them like [prepare] would and stacks them with a white gap. */
+        fun stack(page: Bitmap, lines: List<OcrLine>, linesImageWidth: Int, boxes: List<com.kitchenreceipts.core.PageBox>): Triple<ByteArray, Int, Int> {
+            val k = if (linesImageWidth > 0) page.width.toDouble() / linesImageWidth else 1.0
+            val scaledLines = if (k == 1.0) lines else lines.map {
+                it.copy(left = (it.left * k).toInt(), top = (it.top * k).toInt(), right = (it.right * k).toInt(), bottom = (it.bottom * k).toInt())
+            }
+            val scale = AiImagePlan.plan(scaledLines, page.width, page.height).scale
+            val pieces = boxes.map { b ->
+                val l = (b.left * k).toInt().coerceIn(0, page.width - 1)
+                val t = (b.top * k).toInt().coerceIn(0, page.height - 1)
+                val r = (b.right * k).toInt().coerceIn(l + 1, page.width)
+                val bt = (b.bottom * k).toInt().coerceIn(t + 1, page.height)
+                val crop = Bitmap.createBitmap(page, l, t, r - l, bt - t)
+                // Never wider than the model's usual image, never scaled up.
+                val s = minOf(scale, AiImagePlan.MAX_SIDE.toDouble() / crop.width, 1.0)
+                if (s < 1.0) Bitmap.createScaledBitmap(crop, maxOf(1, (crop.width * s).toInt()), maxOf(1, (crop.height * s).toInt()), true).also { crop.recycle() } else crop
+            }
+            val gap = 8
+            val w = pieces.maxOf { it.width }
+            val h = pieces.sumOf { it.height } + gap * (pieces.size - 1)
+            val out = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+            val c = android.graphics.Canvas(out)
+            c.drawColor(android.graphics.Color.WHITE)
+            var y = 0f
+            for (p in pieces) {
+                c.drawBitmap(p, 0f, y, null)
+                y += p.height + gap
+                p.recycle()
+            }
+            val rgb = toRgb(out, Int.MAX_VALUE)
+            out.recycle()
+            return rgb
         }
 
         /** Scales the page down to [maxSide] and returns packed RGB bytes. */

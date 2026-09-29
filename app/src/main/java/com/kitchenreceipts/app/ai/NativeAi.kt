@@ -26,6 +26,9 @@ object NativeAi {
         maxTokens: Int, nCtx: Int, listener: Listener?,
     ): Array<String>
 
+    /** llama.cpp's description of the processor features in use (after a model was loaded). */
+    @JvmStatic external fun nativeSystemInfo(): String
+
     @JvmStatic external fun nativeCancel(handle: Long)
     @JvmStatic external fun nativeFree(handle: Long)
     @JvmStatic external fun nativeCheckGrammar(handle: Long, grammar: String): String
