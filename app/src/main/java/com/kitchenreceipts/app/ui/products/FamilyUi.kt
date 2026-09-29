@@ -248,8 +248,9 @@ private fun VariantPriceCard(r: ProductFamilies.VariantPrice, onClick: () -> Uni
                     )
                 }
             }
-            val main = if (r.perBase != null) {
-                "${ItalianNumbers.formatDecimal(r.perBase, minScale = 2, maxScale = 2)} €/${r.baseUnit}"
+            val perBase = r.perBase
+            val main = if (perBase != null) {
+                "${ItalianNumbers.formatDecimal(perBase, minScale = 2, maxScale = 2)} €/${r.baseUnit}"
             } else {
                 "${ItalianNumbers.formatDecimal(r.paid, minScale = 2, maxScale = 4)} €/${r.paidUnit}"
             }
