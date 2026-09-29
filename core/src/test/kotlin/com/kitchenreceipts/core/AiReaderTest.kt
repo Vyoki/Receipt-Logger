@@ -73,9 +73,8 @@ class AiReaderTest {
 
     @Test fun grammarShape() {
         val g = AiReader.GRAMMAR
-        assertTrue(g, g.startsWith("root ::= \"{\" \"\\\"seller\\\":\" value"))
-        assertTrue(g.contains("item ::= \"{\" \"\\\"code\\\":\" value"))
-        assertTrue(!g.contains("ws"))
+        assertTrue(g, g.startsWith("root ::= \"{\" ws \"\\\"seller\\\":\" ws value"))
+        assertTrue(g.contains("item ::= \"{\" ws \"\\\"code\\\":\" ws value"))
         assertTrue(g.contains("value ::= \"null\" | \"\\\"\" char{0,100} \"\\\"\""))
         assertEquals(BigDecimal("40"), BigDecimal("40.000").stripTrailingZeros().let { BigDecimal(it.toPlainString()) })
     }

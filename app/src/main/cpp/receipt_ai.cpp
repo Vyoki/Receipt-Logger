@@ -106,15 +106,7 @@ Result generate(Engine * e, const Request & req, const std::function<bool(int, i
     cp.n_threads_batch = e->n_threads_batch;
     cp.abort_callback = abort_cb;
     cp.abort_callback_data = &e->cancel;
-    // 8-bit attention cache: half the memory traffic while writing, no visible change in the answer.
-    cp.type_k = GGML_TYPE_Q8_0;
-    cp.type_v = GGML_TYPE_Q8_0;
     llama_context * lctx = llama_init_from_model(e->model, cp);
-    if (!lctx) {
-        cp.type_k = GGML_TYPE_F16;
-        cp.type_v = GGML_TYPE_F16;
-        lctx = llama_init_from_model(e->model, cp);
-    }
     if (!lctx) { r.error = "Not enough memory for the AI reader"; return r; }
 
     const llama_vocab * vocab = llama_model_get_vocab(e->model);
