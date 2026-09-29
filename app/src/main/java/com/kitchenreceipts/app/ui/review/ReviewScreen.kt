@@ -97,8 +97,8 @@ import java.time.Instant
 import java.time.ZoneOffset
 
 @Composable
-fun ReviewScreen(documentId: Long?, onBack: () -> Unit, onViewOriginal: () -> Unit, onSaved: (Long, Boolean) -> Unit) {
-    val vm = appViewModel(key = "review-${documentId ?: "new"}") { ReviewViewModel(it, documentId) }
+fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOriginal: () -> Unit, onSaved: (Long, Boolean) -> Unit) {
+    val vm = appViewModel(key = "review-${documentId ?: jobId}") { ReviewViewModel(it, documentId, jobId) }
     val state by vm.state.collectAsStateWithLifecycle()
     val products by vm.products.collectAsStateWithLifecycle()
     val sellerNames by vm.sellerNames.collectAsStateWithLifecycle()
@@ -111,13 +111,20 @@ fun ReviewScreen(documentId: Long?, onBack: () -> Unit, onViewOriginal: () -> Un
 
     LaunchedEffect(state.savedId) { state.savedId?.let { onSaved(it, state.autoSaved) } }
 
-    val leave: () -> Unit = { if (state.isNew && state.fatal == null) askDiscard = true else onBack() }
-    BackHandler(enabled = !state.loading) { leave() }
+    // Going back keeps a new document waiting on the home screen; throwing it away is its own button.
+    val leave: () -> Unit = onBack
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
     AppScaffold(
         title = title,
         onBack = leave,
+        actions = {
+            if (state.isNew && state.fatal == null && !state.loading) {
+                IconButton(onClick = { askDiscard = true }, modifier = Modifier.size(48.dp)) {
+                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.discard))
+                }
+            }
+        },
         bottomBar = {
             if (!state.loading && state.fatal == null) {
                 SaveBar(

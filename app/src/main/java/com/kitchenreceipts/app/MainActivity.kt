@@ -1,6 +1,7 @@
 package com.kitchenreceipts.app
 
 import android.content.Context
+import android.content.Intent
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.WindowManager
@@ -32,6 +33,7 @@ class MainActivity : FragmentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         applySecureScreen()
+        handleRoute(intent)
         setContent {
             KitchenReceiptsTheme {
                 if (locked.value) LockScreen(onUnlock = ::authenticate) else AppNavHost()
@@ -39,8 +41,21 @@ class MainActivity : FragmentActivity() {
         }
     }
 
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        handleRoute(intent)
+    }
+
+    /** Opens the screen a notification points to. */
+    private fun handleRoute(intent: Intent?) {
+        intent?.getStringExtra(EXTRA_ROUTE)?.let { container.pendingRoute.value = it }
+        intent?.removeExtra(EXTRA_ROUTE)
+    }
+
     override fun onStart() {
         super.onStart()
+        // Reading left over from before (or restored after a restart) continues in the background service.
+        com.kitchenreceipts.app.jobs.ReadingService.ensureRunning(this)
         applySecureScreen()
         val c = container
         val away = c.lastBackgroundAt > 0 && SystemClock.elapsedRealtime() - c.lastBackgroundAt > LOCK_AFTER_MS
@@ -96,6 +111,7 @@ class MainActivity : FragmentActivity() {
 
     companion object {
         const val AUTHENTICATORS = BIOMETRIC_WEAK or DEVICE_CREDENTIAL
+        const val EXTRA_ROUTE = "route"
         private const val LOCK_AFTER_MS = 3 * 60 * 1000L
 
         fun canUseAppLock(context: Context): Boolean =

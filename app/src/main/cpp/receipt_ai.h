@@ -18,7 +18,10 @@ struct LoadResult {
 
 // Loads the language model and its vision projector ("mmproj"). backend_dir: where ggml CPU backend
 // variants live (Android: the app's native library directory); empty = built-in backends only.
-LoadResult load(const std::string & backend_dir, const std::string & model_path, const std::string & mmproj_path, int n_threads);
+// n_threads: for writing the answer (memory bound: the performance cores); n_threads_batch: for reading the
+// image and the prompt (compute bound: every fast core).
+LoadResult load(const std::string & backend_dir, const std::string & model_path, const std::string & mmproj_path,
+               int n_threads, int n_threads_batch);
 
 struct Request {
     const uint8_t * rgb = nullptr;  // width * height * 3 bytes

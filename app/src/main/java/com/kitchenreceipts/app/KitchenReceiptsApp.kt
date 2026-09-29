@@ -14,13 +14,17 @@ import com.kitchenreceipts.app.ocr.AiUse
 import com.kitchenreceipts.app.ocr.ImportProcessor
 import com.kitchenreceipts.app.ocr.MlKitOcrEngine
 import com.kitchenreceipts.app.ocr.OcrEngine
-import com.kitchenreceipts.app.ocr.PendingImport
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
+import com.kitchenreceipts.app.jobs.DraftPreparer
+import com.kitchenreceipts.app.jobs.ImportQueue
+import com.kitchenreceipts.app.jobs.ReadingNotifier
 
 /** Manual dependency container: small enough that a DI framework would add more than it saves. */
 class AppContainer(context: Context) {
+    val appContext: Context = context.applicationContext
     val settings = AppSettings(context)
     val log = AppLog(context, settings)
     val database: AppDatabase = AppDatabase.build(context)
@@ -48,10 +52,18 @@ class AppContainer(context: Context) {
     /** Swap this line to change OCR engine. */
     val ocrEngine: OcrEngine = MlKitOcrEngine()
 
-    /** Hand-over from the capture screen to the review screen (in memory; nothing is saved yet). */
-    @Volatile var pendingImport: PendingImport? = null
-
     val appScope = CoroutineScope(SupervisorJob())
+
+    val notifier = ReadingNotifier(context)
+    val preparer = DraftPreparer(repository, settings, log)
+
+    /** Documents read in the background, one after another; survives restarts. */
+    val importQueue = ImportQueue(
+        context, appScope, importProcessor, ocrEngine, settings, ::aiUse, preparer, fileStore, log, notifier,
+    )
+
+    /** A screen to open, e.g. from a notification tap ("review/<job>", "document/<id>"). */
+    val pendingRoute = MutableStateFlow<String?>(null)
 
     /** App-lock state for this process: unlocked once per launch, locked again after 3 minutes in background. */
     @Volatile var unlocked: Boolean = false
@@ -79,8 +91,11 @@ class KitchenReceiptsApp : Application() {
             "device" to "${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}",
             "language" to c.settings.language,
         )
+        // Documents that were being read when the app was closed: finished ones come back ready to check,
+        // unfinished ones are read again.
+        runCatching { c.importQueue.restore() }.onFailure { c.log.error("restoreQueue", it) }
         container.appScope.launch {
-            runCatching { container.repository.cleanupOrphanFiles() }
+            runCatching { container.repository.cleanupOrphanFiles(c.importQueue.filePaths()) }
         }
     }
 }

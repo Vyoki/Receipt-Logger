@@ -18,7 +18,7 @@ object NativeAi {
         }
     }
 
-    @JvmStatic external fun nativeLoad(backendDir: String, model: String, mmproj: String, threads: Int, errorOut: Array<String?>): Long
+    @JvmStatic external fun nativeLoad(backendDir: String, model: String, mmproj: String, threads: Int, batchThreads: Int, errorOut: Array<String?>): Long
 
     /** Returns [text, error ("" / "cancelled" / message), stats]. */
     @JvmStatic external fun nativeGenerate(

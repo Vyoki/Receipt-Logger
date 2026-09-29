@@ -82,7 +82,7 @@ data class ReviewState(
 
 data class SaveConfirmation(val duplicates: List<DuplicateInfo>, val uncertainCount: Int, val valid: ValidDocument)
 
-class ReviewViewModel(private val c: AppContainer, private val documentId: Long?) : ViewModel() {
+class ReviewViewModel(private val c: AppContainer, private val documentId: Long?, private val jobId: String? = null) : ViewModel() {
 
     private val repo = c.repository
     private val _state = MutableStateFlow(ReviewState(isNew = documentId == null))
@@ -106,90 +106,30 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     }
 
     private suspend fun loadPending() {
-        val pending = c.pendingImport
+        val pending = jobId?.let { c.importQueue.job(it) }?.pending
         if (pending == null) {
             _state.value = ReviewState(loading = false, fatal = "nothing_to_review")
             return
         }
         storedFile = pending.file
         ocrText = pending.ocrText
-        var draft = DocumentDraft.fromParsed(pending.parsed)
-        ocrSellerRaw = pending.parsed.sellerName?.value
-
-        // Recognise the supplier from earlier documents (VAT number, past corrections, letterhead).
-        val recognition = runCatching {
-            repo.identifySeller(
-                pending.ocrText, ocrSellerRaw, c.settings.ownVatNumber.ifBlank { null },
-                ocrSellerReliable = pending.parsed.sellerName?.confidence == Confidence.HIGH,
-            )
-        }.getOrNull()
-        if (recognition != null) {
-            val m = recognition.match
-            draft = draft.copy(
-                seller = DraftField(m.name, uncertain = m.reason == SellerMatchReason.LAYOUT, source = draft.seller.source ?: draft.seller.text),
-            )
-            val usual = recognition.usualVatBasis
-            if (usual != null && draft.vatBasis == VatBasis.UNKNOWN) {
-                draft = draft.copy(vatBasis = usual, vatBasisUncertain = true)
-            }
-        }
-
-        // The line amounts prove whether prices include VAT: no need to ask.
-        if (draft.vatBasis == VatBasis.UNKNOWN || draft.vatBasisUncertain) {
-            AutoAccept.inferVatBasis(draft)?.let { draft = draft.copy(vatBasis = it, vatBasisUncertain = false) }
-        }
-
-        initialDraft = draft
-
-        // Link each line to a product: remembered for this supplier, recognised despite typos, or new.
-        draft = draft.copy(
-            items = runCatching { repo.autoAssign(draft.seller.text, draft.items, c.settings.autoLinkProducts) }
-                .onFailure { c.log.error("autoAssign", it) }.getOrDefault(draft.items),
-        )
-        // Quantity and price the wrong way round? The product's own price history tells.
-        runCatching { repo.fixSwappedQuantities(draft.items) }.getOrNull()?.let { fixed ->
-            val swapped = fixed.zip(draft.items).count { (a, b) -> a.quantity.text != b.quantity.text }
-            if (swapped > 0) c.log.event("QTY_PRICE_SWAPPED", "lines" to swapped)
-            draft = draft.copy(items = fixed)
-        }
-        val reasons = AutoAccept.reasons(draft)
-        val changes = priceChanges(draft)
+        val prepared = c.preparer.prepare(pending)
+        ocrSellerRaw = prepared.ocrSellerRaw
+        initialDraft = prepared.initialDraft
         _state.value = ReviewState(
-            loading = true,
-            isNew = true, draft = draft,
+            loading = false,
+            isNew = true, draft = prepared.draft,
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
-            engineName = if (pending.parsed.itemsReadBy == "ai") "${pending.engineName} + AI" else pending.engineName, ocrError = pending.ocrError, pagesRead = pending.pagesRead,
+            engineName = if (pending.parsed.itemsReadBy == "ai") "${pending.engineName} + AI" else pending.engineName,
+            ocrError = pending.ocrError, pagesRead = pending.pagesRead,
             recognisedText = pending.debugReport(),
-            recognition = recognition,
-            reviewReasons = reasons,
-            priceChanges = changes,
+            recognition = prepared.recognition,
+            reviewReasons = prepared.reasons,
+            priceChanges = prepared.priceChanges,
         )
-        logParsed(pending, draft, recognition)
-        c.log.event(
-            "AUTO_CHECK",
-            "reasons" to reasons.joinToString(",").ifEmpty { "none" },
-            "linked" to draft.items.count { it.productId != null }, "newProducts" to draft.items.count { it.newProductName != null },
-            "priceChanges" to changes.size,
-        )
-        if (reasons.isEmpty() && c.settings.autoSave) {
-            // Everything was read with confidence and adds up: save without asking, unless it may be a duplicate.
-            when (val r = DraftValidator.validate(draft)) {
-                is ValidationResult.Valid -> {
-                    val dups = repo.findDuplicates(r.document, storedFile?.sha256, null)
-                    if (dups.isEmpty()) {
-                        save(r.document, auto = true)
-                        if (_state.value.savedId != null) return
-                    }
-                }
-                is ValidationResult.Invalid -> Unit
-            }
-        }
-        _state.update { it.copy(loading = false) }
     }
 
-    private suspend fun priceChanges(d: DocumentDraft): List<PriceChange> = runCatching {
-        repo.priceChangesForDraft(d.seller.text, ItalianDates.parse(d.date.text), d.vatBasis, d.items, documentId)
-    }.getOrDefault(emptyList())
+    private suspend fun priceChanges(d: DocumentDraft): List<PriceChange> = c.preparer.priceChanges(d, documentId)
 
     private var priceJob: Job? = null
 
@@ -201,20 +141,6 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             val changes = priceChanges(_state.value.draft)
             _state.update { it.copy(priceChanges = changes) }
         }
-    }
-
-    private fun logParsed(pending: PendingImport, draft: DocumentDraft, recognition: SellerRecognition?) {
-        val p = pending.parsed
-        fun <T> f(e: Extracted<T>?) = if (e == null) "missing" else if (e.confidence == Confidence.HIGH) "ok" else "uncertain"
-        c.log.event(
-            "PARSED",
-            "seller" to f(p.sellerName), "supplierMatch" to recognition?.match?.reason,
-            "date" to f(p.documentDate), "number" to f(p.documentNumber), "total" to f(p.totalCents),
-            "subtotal" to f(p.subtotalCents), "vat" to f(p.vatCents), "vatBasis" to (p.vatBasis?.value ?: "missing"),
-            "items" to p.lineItems.size, "itemsUncertain" to draft.items.count { it.uncertainCount > 0 },
-            "warnings" to p.warnings.joinToString(",").ifEmpty { null },
-        )
-        c.log.block("recognised text", pending.ocrText.lines().filter { it.isNotBlank() })
     }
 
     private suspend fun loadExisting(id: Long) {
@@ -358,7 +284,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 docOcrText?.let { SellerLearning(it, null, own) }
             }
             val id = repo.saveDocument(doc, storedFile, ocrText, documentId, learning)
-            if (documentId == null) c.pendingImport = null
+            if (documentId == null) jobId?.let { c.importQueue.markSaved(it) }
             val finalDraft = _state.value.draft
             val corrections = initialDraft?.let { Corrections.diff(it, finalDraft) }.orEmpty()
             c.log.event(
@@ -375,13 +301,10 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         }
     }
 
-    /** Throws away an unsaved import, including its stored file. */
+    /** Throws away a document that was read but not saved, including its stored original. */
     fun discard() {
         c.log.event("DISCARDED", "new" to (documentId == null), "seconds" to (System.currentTimeMillis() - openedAt) / 1000)
-        if (documentId == null) {
-            storedFile?.let { c.fileStore.delete(it.relativePath) }
-            c.pendingImport = null
-        }
+        if (documentId == null) jobId?.let { c.importQueue.discard(it) } // deletes the stored original too
     }
 
     private fun mapErrorKey(field: String, draft: DocumentDraft): String {

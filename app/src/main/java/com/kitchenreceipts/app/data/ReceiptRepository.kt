@@ -259,8 +259,9 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         return products.findAlias(seller.id, ProductMatching.aliasKey(description))
     }
 
-    suspend fun cleanupOrphanFiles() = withContext(Dispatchers.IO) {
-        files.deleteOrphans(documents.allFilePaths().toSet())
+    /** Deletes stored originals that belong to no document; [keep] = files still used elsewhere (being read). */
+    suspend fun cleanupOrphanFiles(keep: Set<String> = emptySet()) = withContext(Dispatchers.IO) {
+        files.deleteOrphans(documents.allFilePaths().toSet() + keep)
     }
 
     // ------------------------------------------------------------ sellers

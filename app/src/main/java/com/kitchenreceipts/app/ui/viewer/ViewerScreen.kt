@@ -16,13 +16,13 @@ import com.kitchenreceipts.app.ui.components.LoadingBox
 
 private data class ViewerFile(val path: String, val mime: String, val pages: Int)
 
-/** Full-screen original with pinch-to-zoom. [documentId] null = the import being reviewed. */
+/** Full-screen original with pinch-to-zoom. [documentId] null = the document being read ([jobId]). */
 @Composable
-fun ViewerScreen(documentId: Long?, onBack: () -> Unit) {
+fun ViewerScreen(documentId: Long?, jobId: String? = null, onBack: () -> Unit) {
     val c = appContainer()
     val file by produceState<Result<ViewerFile?>?>(null, documentId) {
         value = Result.success(if (documentId == null) {
-            c.pendingImport?.file?.let { ViewerFile(it.relativePath, it.mimeType, it.pageCount) }
+            jobId?.let { c.importQueue.job(it) }?.file?.let { ViewerFile(it.relativePath, it.mimeType, it.pageCount) }
         } else {
             c.repository.documentOnce(documentId)?.let { ViewerFile(it.filePath, it.mimeType, it.pageCount) }
         })

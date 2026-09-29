@@ -1,6 +1,9 @@
 package com.kitchenreceipts.app.ui
 
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
@@ -23,12 +26,12 @@ import com.kitchenreceipts.app.ui.viewer.ViewerScreen
 object Routes {
     const val HOME = "home"
     const val CAPTURE = "capture"
-    const val REVIEW_NEW = "review"
+    const val REVIEW_NEW = "review/{jobId}"
     const val EDIT = "edit/{id}"
     const val DOCUMENTS = "documents?sellerId={sellerId}"
     const val DOCUMENT = "document/{id}?auto={auto}"
     const val INVENTORY = "inventory"
-    const val VIEWER = "viewer/{id}" // id = -1: the pending (not yet saved) import
+    const val VIEWER = "viewer/{id}?job={job}" // id = -1: a document being read ([job]), not saved yet
     const val PRODUCTS = "products"
     const val PRODUCT = "product/{id}"
     const val SELLERS = "sellers"
@@ -39,12 +42,22 @@ object Routes {
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
     fun document(id: Long, auto: Boolean = false) = if (auto) "document/$id?auto=true" else "document/$id"
     fun viewer(id: Long) = "viewer/$id"
+    fun viewerForJob(jobId: String) = "viewer/-1?job=$jobId"
+    fun review(jobId: String) = "review/$jobId"
     fun product(id: Long) = "product/$id"
 }
 
 @Composable
 fun AppNavHost(nav: NavHostController = rememberNavController()) {
     val back: () -> Unit = { nav.popBackStack() }
+    // Screens opened from a notification ("ready to check", "saved").
+    val c = appContainer()
+    val route by c.pendingRoute.collectAsState()
+    LaunchedEffect(route) {
+        val r = route ?: return@LaunchedEffect
+        c.pendingRoute.value = null
+        runCatching { nav.navigate(r) { launchSingleTop = true } }
+    }
     NavHost(navController = nav, startDestination = Routes.HOME) {
         composable(Routes.HOME) {
             HomeScreen(
@@ -56,6 +69,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onOpenDocument = { nav.navigate(Routes.document(it)) },
                 onSettings = { nav.navigate(Routes.SETTINGS) },
                 onInventory = { nav.navigate(Routes.INVENTORY) },
+                onReviewJob = { nav.navigate(Routes.review(it)) },
             )
         }
         composable(Routes.SETTINGS) {
@@ -64,14 +78,17 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
         composable(Routes.CAPTURE) {
             CaptureScreen(
                 onBack = back,
-                onReady = { nav.navigate(Routes.REVIEW_NEW) { popUpTo(Routes.CAPTURE) { inclusive = true } } },
+                // The document is read in the background: straight back to the home screen, where its progress shows.
+                onQueued = { nav.popBackStack(Routes.HOME, inclusive = false) },
             )
         }
-        composable(Routes.REVIEW_NEW) {
+        composable(Routes.REVIEW_NEW, arguments = listOf(navArgument("jobId") { type = NavType.StringType })) { entry ->
+            val jobId = entry.arguments!!.getString("jobId")!!
             ReviewScreen(
                 documentId = null,
+                jobId = jobId,
                 onBack = back,
-                onViewOriginal = { nav.navigate(Routes.viewer(-1)) },
+                onViewOriginal = { nav.navigate(Routes.viewerForJob(jobId)) },
                 onSaved = { id, auto -> nav.navigate(Routes.document(id, auto)) { popUpTo(Routes.HOME) } },
             )
         }
@@ -79,6 +96,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             val id = entry.arguments!!.getLong("id")
             ReviewScreen(
                 documentId = id,
+                jobId = null,
                 onBack = back,
                 onViewOriginal = { nav.navigate(Routes.viewer(id)) },
                 onSaved = { _, _ -> nav.popBackStack() },
@@ -108,8 +126,14 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onOpenProduct = { nav.navigate(Routes.product(it)) },
             )
         }
-        composable(Routes.VIEWER, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
-            ViewerScreen(documentId = entry.arguments!!.getLong("id").takeIf { it > 0 }, onBack = back)
+        composable(
+            Routes.VIEWER,
+            arguments = listOf(
+                navArgument("id") { type = NavType.LongType },
+                navArgument("job") { type = NavType.StringType; nullable = true; defaultValue = null },
+            ),
+        ) { entry ->
+            ViewerScreen(documentId = entry.arguments!!.getLong("id").takeIf { it > 0 }, jobId = entry.arguments!!.getString("job"), onBack = back)
         }
         composable(Routes.PRODUCTS) {
             ProductsScreen(onBack = back, onOpen = { nav.navigate(Routes.product(it)) })

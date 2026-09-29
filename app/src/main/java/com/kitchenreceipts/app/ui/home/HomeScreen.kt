@@ -67,6 +67,7 @@ fun HomeScreen(
     onOpenDocument: (Long) -> Unit,
     onSettings: () -> Unit,
     onInventory: () -> Unit,
+    onReviewJob: (String) -> Unit,
 ) {
     val vm = appViewModel { HomeViewModel(it.repository) }
     val recent by vm.recent.collectAsStateWithLifecycle()
@@ -85,6 +86,7 @@ fun HomeScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
+            item("jobs") { JobsSection(onReview = onReviewJob, onOpenDocument = onOpenDocument) }
             item {
                 BigButton(
                     text = stringResource(R.string.scan_document),

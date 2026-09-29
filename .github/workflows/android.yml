@@ -183,10 +183,10 @@ jobs:
           python3 tools/ai-cli/make_invoice.py ai-run
       - name: Run the models
         run: |
-          run() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/invoice.ppm ai-run/$2 ai-run/grammar.gbnf > ai-run/answer-$3.json 2> ai-run/$3.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/$3.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/$3.log; }
-          run 2b instruction.txt 2b
-          run 2b instruction-no-ocr.txt 2b-no-ocr
-          run 4b instruction.txt 4b
+          run() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/$4.ppm ai-run/$2 ai-run/grammar.gbnf > ai-run/answer-$3.json 2> ai-run/$3.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/$3.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/$3.log; }
+          run 2b instruction.txt 2b-full invoice
+          run 2b instruction.txt 2b-crop invoice-crop
+          run 4b instruction.txt 4b-crop invoice-crop
       - name: Check the answers
         run: AI_ANSWER_DIR=$PWD/ai-run ./gradlew :core:test --tests '*AiModelCheckTest.checkAnswers' --rerun --quiet
       - name: Publish results

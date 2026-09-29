@@ -30,7 +30,7 @@
     <string name="photos_taken">%1$d photo(s) taken</string>
     <string name="use_photos">Read these photos</string>
     <string name="add_page">Add another page</string>
-    <string name="multi_photo_hint">Several photos are combined into one PDF, in this order.</string>
+    <string name="multi_photo_hint">Add every page first: the pages become one document, in this order, and reading starts only when you tap Read. It continues in the background, so you can keep using the app or scan the next document.</string>
     <string name="remove_photo">Remove photo</string>
     <string name="no_camera_app">No camera app is available on this phone. Use “Import image or PDF” instead.</string>
     <string name="saving_original">Saving the original…</string>
@@ -457,5 +457,42 @@
     <plurals name="rep_products">
         <item quantity="one">%d product</item>
         <item quantity="other">%d products</item>
+    </plurals>
+
+    <!-- background reading -->
+    <string name="pick_photos">Choose photos from the gallery</string>
+    <string name="import_pdf">Import a PDF</string>
+    <string name="add_from_gallery">From gallery</string>
+    <string name="notif_channel_progress">Reading documents</string>
+    <string name="notif_channel_results">Documents ready</string>
+    <string name="notif_starting">Starting…</string>
+    <string name="notif_ai_page">AI reader, page %1$d of %2$d</string>
+    <string name="notif_page">Reading page %1$d of %2$d</string>
+    <string name="notif_saved">Document saved</string>
+    <string name="notif_ready">Document ready to check</string>
+    <string name="notif_ready_text">Tap to check and save it.</string>
+    <string name="notif_failed">A document could not be read</string>
+    <string name="job_stop">Stop</string>
+    <string name="job_check">Check</string>
+    <string name="job_hide">Hide</string>
+    <string name="job_open">Open</string>
+    <string name="job_retry">Try again</string>
+    <string name="job_waiting">Waiting to be read</string>
+    <string name="job_reading">Reading…</string>
+    <string name="job_ready">Ready to check</string>
+    <string name="job_saved">Saved automatically</string>
+    <string name="job_failed">Could not be read</string>
+    <string name="job_second_look">second, closer look</string>
+    <plurals name="read_pages">
+        <item quantity="one">Read this page</item>
+        <item quantity="other">Read these %d pages</item>
+    </plurals>
+    <plurals name="pages_count">
+        <item quantity="one">%d page</item>
+        <item quantity="other">%d pages</item>
+    </plurals>
+    <plurals name="notif_reading">
+        <item quantity="one">Reading %d document</item>
+        <item quantity="other">Reading %d documents</item>
     </plurals>
 </resources>
