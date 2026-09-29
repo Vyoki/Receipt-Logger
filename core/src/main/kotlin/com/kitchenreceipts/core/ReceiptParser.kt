@@ -596,8 +596,11 @@ object ReceiptParser {
             for (j in i + 1..minOf(i + 3, lines.lastIndex)) {
                 val next = lines[j]
                 if (DATE_LABEL.containsMatchIn(next) && ItalianDates.findDates(next).isEmpty()) break // another label row
-                val d = ItalianDates.findDates(next).firstOrNull { !isInsideExpiry(next, it) && !afterNotDocWord(next, it) } ?: continue
-                return Extracted(d.date, Confidence.LOW, "$line / $next")
+                val candidates = ItalianDates.findDates(next).filter { !isInsideExpiry(next, it) && !afterNotDocWord(next, it) }
+                val d = candidates.firstOrNull() ?: continue
+                // Right under a "DATA DOCUMENTO"-style heading, the only date on the row: that is the document date.
+                val sure = j == i + 1 && candidates.size == 1 && ItalianDates.findDates(next).size == 1
+                return Extracted(d.date, if (sure) Confidence.HIGH else Confidence.LOW, "$line / $next")
             }
         }
         // 3. Otherwise the first date on a line that is not about expiry, delivery or payment.

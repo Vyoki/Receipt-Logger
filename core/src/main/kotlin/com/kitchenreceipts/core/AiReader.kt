@@ -71,6 +71,111 @@ object AiReader {
         append("ws ::= [ \\n]?\n")
     }
 
+    // ------------------------------------------------------------------ small questions (see AiTargets)
+
+    private fun grammarFor(keys: List<String>): String = buildString {
+        append("root ::= \"{\" ws ").append(keys.joinToString(" \",\" ws ") { "\"\\\"$it\\\":\" ws value" }).append(" ws \"}\"\n")
+        append("value ::= \"null\" | \"\\\"\" char{0,100} \"\\\"\"\n")
+        append("char ::= [^\"\\\\\\x00-\\x1F] | \"\\\\\" [\"\\\\/nt]\n")
+        append("ws ::= [ \\n]?\n")
+    }
+
+    /** One product line: the answer is a single item. */
+    val ROW_GRAMMAR: String = grammarFor(ITEM_KEYS)
+    val HEADER_GRAMMAR: String = grammarFor(listOf("seller", "seller_vat", "number", "date"))
+    val TOTALS_GRAMMAR: String = grammarFor(listOf("subtotal", "vat", "total"))
+
+    fun rowInstruction(headerText: String, rowText: String): String = buildString {
+        append("The picture shows two strips of an Italian supplier document (fattura or DDT): on top the column headings of ")
+        append("the product table, below them one product line (its name or lot may continue on a second line). ")
+        append("Copy that product line, reading each value in the column under its heading. Copy values exactly as printed, ")
+        append("with the Italian comma; do not calculate or guess; null for an empty column.\n")
+        append("code = article code, colli = COLLI column, description = product name only, unit = U.M., quantity = QUANTITA'/QTA/TOT., ")
+        append("price = unit price (PREZZO), discount = SC.%, amount = line total (IMPORTO), vat_rate = % IVA, lot = lot number if printed.\n")
+        append("The regular OCR read the headings as: ").append(headerText.take(300)).append('\n')
+        append("and the line as: ").append(rowText.take(400)).append(" (it may be misread or mixed with a neighbouring line)\n")
+    }
+
+    fun headerInstruction(): String =
+        "The picture shows the top of an Italian supplier document (fattura, DDT or scontrino). Return: seller = the company " +
+            "that issued it (letterhead), never the customer after 'Spett.le'/'Destinatario'; seller_vat = its Partita IVA; " +
+            "number = document number; date = document date (not delivery or payment dates). Copy exactly as printed; null if absent.\n"
+
+    fun totalsInstruction(): String =
+        "The picture shows the bottom part of an Italian supplier document. Return: subtotal = taxable amount (imponibile, " +
+            "TOTALI column of the VAT summary), vat = total VAT (importo IVA), total = total of the document (totale documento / " +
+            "da pagare). Copy exactly as printed with the Italian comma; null if absent.\n"
+
+    private fun obj(json: String): Map<*, *>? = runCatching { Json.parse(json.trim()) }.getOrNull() as? Map<*, *>
+    private fun str(m: Map<*, *>, k: String): String? = (m[k] as? String)?.trim()?.takeIf { it.isNotEmpty() && it.lowercase() != "null" }
+
+    fun decodeItem(json: String): AiItem? = obj(json)?.let { m ->
+        AiItem(str(m, "code"), str(m, "colli"), str(m, "description"), str(m, "unit"), str(m, "quantity"),
+            str(m, "price"), str(m, "discount"), str(m, "amount"), str(m, "vat_rate"), str(m, "lot"))
+    }
+
+    /**
+     * Applies the answers to the small questions to the regular reading. A line is replaced only when the AI's version
+     * proves itself (quantity x price = amount, digits seen by the OCR) and the old one did not; a missed line is added
+     * only when it proves itself; header and totals only fill what was missing or uncertain, and only with values
+     * the OCR also saw. Everything is then cross-checked again.
+     */
+    fun applyTargets(doc: ParsedDocument, answers: List<Pair<AiTarget, String>>, text: String, options: ParseOptions = ParseOptions()): ParsedDocument {
+        val items = doc.lineItems.toMutableList<ParsedLineItem?>()
+        val inserts = mutableListOf<Pair<Int, ParsedLineItem>>()
+        var d = doc
+        val ev = Evidence(text)
+        for ((target, raw) in answers) {
+            when (target) {
+                is AiTarget.Row -> {
+                    val a = decodeItem(raw) ?: continue
+                    val rowEv = Evidence(target.rowText + "\n" + text)
+                    val new = item(a, rowEv)?.let { fixHeading(it, text) } ?: continue
+                    val proven = ParseWarning.LINE_TOTAL_MISMATCH !in new.warnings && new.quantity?.confidence == Confidence.HIGH &&
+                        new.lineTotalCents?.confidence == Confidence.HIGH && !ReceiptParser.isSectionHeading(new.originalDescription)
+                    if (!proven) continue
+                    val idx = target.itemIndex
+                    if (idx != null) {
+                        val old = items[idx] ?: continue
+                        items[idx] = new.copy(
+                            originalDescription = if (ReceiptParser.isSectionHeading(old.originalDescription) || old.originalDescription.isBlank()) new.originalDescription else old.originalDescription,
+                            lotNumber = old.lotNumber ?: new.lotNumber,
+                            expiryDate = old.expiryDate,
+                            itemCode = old.itemCode ?: new.itemCode,
+                            packages = old.packages ?: new.packages,
+                        )
+                    } else if (doc.lineItems.none { it.lineTotalCents?.value == new.lineTotalCents?.value && it.originalDescription == new.originalDescription }) {
+                        inserts += target.insertAfter to new
+                    }
+                }
+                is AiTarget.Header -> {
+                    val m = obj(raw) ?: continue
+                    val parsed = toParsed(AiAnswer(str(m, "seller"), str(m, "seller_vat"), str(m, "number"), str(m, "date"), null, null, null, emptyList()), text, options)
+                    fun <T> better(old: Extracted<T>?, new: Extracted<T>?) = if (new != null && new.confidence == Confidence.HIGH && (old == null || old.confidence == Confidence.LOW)) new else old
+                    d = d.copy(
+                        sellerName = better(d.sellerName, parsed.sellerName),
+                        documentNumber = better(d.documentNumber, parsed.documentNumber),
+                        documentDate = better(d.documentDate, parsed.documentDate),
+                    )
+                }
+                is AiTarget.Totals -> {
+                    val m = obj(raw) ?: continue
+                    fun money(k: String): Extracted<Long>? = str(m, k)?.let(::number)?.takeIf { ev.hasNumber(it) }
+                        ?.let { Extracted(ItalianNumbers.toCents(it), Confidence.HIGH, "AI $k: ${str(m, k)}") }
+                    fun <T> better(old: Extracted<T>?, new: Extracted<T>?) = if (new != null && (old == null || old.confidence == Confidence.LOW)) new else old
+                    d = d.copy(subtotalCents = better(d.subtotalCents, money("subtotal")), vatCents = better(d.vatCents, money("vat")), totalCents = better(d.totalCents, money("total")))
+                }
+            }
+        }
+        val out = mutableListOf<ParsedLineItem>()
+        inserts.filter { it.first < 0 }.forEach { out += it.second }
+        items.forEachIndexed { i, it ->
+            if (it != null) out += it
+            inserts.filter { ins -> ins.first == i }.forEach { ins -> out += ins.second }
+        }
+        return ReceiptParser.finish(d.copy(lineItems = out, itemsReadBy = if (answers.isEmpty()) d.itemsReadBy else d.itemsReadBy + "+ai"), text)
+    }
+
     // ------------------------------------------------------------------ parsing the answer
 
     data class AiItem(

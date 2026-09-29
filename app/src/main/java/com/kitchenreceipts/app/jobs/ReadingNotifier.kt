@@ -56,6 +56,7 @@ class ReadingNotifier(private val context: Context) {
         val p = reading?.progress
         val text = when {
             p == null -> c.getString(R.string.notif_starting)
+            p.pass == 4 -> c.getString(R.string.ai_checking, p.page, p.of)
             p.pass == 3 -> c.getString(R.string.notif_ai_page, p.page, p.of) +
                 (if (p.aiStage == 1) " · " + c.getString(R.string.ai_writing, p.aiCount) else " · " + c.getString(R.string.ai_looking))
             else -> c.getString(R.string.notif_page, p.page, p.of)

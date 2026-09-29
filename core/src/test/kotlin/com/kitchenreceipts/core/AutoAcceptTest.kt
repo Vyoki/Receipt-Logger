@@ -31,4 +31,17 @@ class AutoAcceptTest {
         assertEquals(VatBasis.INCLUSIVE, AutoAccept.inferVatBasis(d))
         assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(d))
     }
+
+    @Test fun numbersProvenByTheArithmeticNeedNoConfirmation() {
+        val item = LineItemDraft(1, DraftField("Biscotti"), quantity = DraftField("1", uncertain = true), unit = DraftField("pz"),
+            unitPrice = DraftField("3,450", uncertain = true), lineTotal = DraftField("3,45"))
+        val d = DocumentDraft(seller = DraftField("Alfa"), date = DraftField("01/09/2026"), subtotal = DraftField("3,45"),
+            vat = DraftField("0,35", uncertain = true), total = DraftField("3,80"), items = listOf(item))
+        val settled = AutoAccept.settleProven(d)
+        assertEquals(0, settled.uncertainCount)
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(settled))
+        // Lines that do not add up to the total: nothing is settled.
+        val off = d.copy(subtotal = DraftField("4,45"), total = DraftField("4,80"))
+        assertEquals(d.copy(subtotal = off.subtotal, total = off.total).uncertainCount, AutoAccept.settleProven(off).uncertainCount)
+    }
 }

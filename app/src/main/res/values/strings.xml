@@ -495,4 +495,5 @@
         <item quantity="one">Reading %d document</item>
         <item quantity="other">Reading %d documents</item>
     </plurals>
+    <string name="ai_checking">AI checking doubtful part %1$d of %2$d</string>
 </resources>

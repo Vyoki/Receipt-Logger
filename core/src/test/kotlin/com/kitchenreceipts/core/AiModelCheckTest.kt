@@ -22,6 +22,31 @@ class AiModelCheckTest {
         File(dir, "instruction.txt").writeText(AiReader.instruction(ocrText))
         File(dir, "instruction-no-ocr.txt").writeText(AiReader.instruction(""))
         File(dir, "grammar.gbnf").writeText(AiReader.GRAMMAR)
+        val head = "CODICE COLLI DESCRIZIONE BENI TIPO CONF. TOT. PREZZ0 IMPORTO COD"
+        File(dir, "row-filetto.txt").writeText(AiReader.rowInstruction(head, "0 10000051 FILETTO B/A KG 3,5+ S/V -, CS KG 4,24 29,900 126,78"))
+        File(dir, "row-candeggina.txt").writeText(AiReader.rowInstruction(head, "O 10000032x3 CANDEGGINA NORMALE LT.5- MARCA C FL LT 5 6 1,790 10,74 22"))
+        File(dir, "row.gbnf").writeText(AiReader.ROW_GRAMMAR)
+    }
+
+    /** The small questions: one line each, answered from a strip of headings + the line. */
+    @Test fun checkRowAnswers() {
+        val dir = System.getenv("AI_ANSWER_DIR")
+        assumeTrue(dir != null)
+        val expected = mapOf("filetto" to Triple("4.24", "29.900", 12678L), "candeggina" to Triple("6", "1.790", 1074L))
+        val report = StringBuilder()
+        File(dir!!).listFiles { f -> f.name.startsWith("rowanswer-") }!!.sorted().forEach { f ->
+            val raw = f.readText()
+            val a = AiReader.decodeItem(raw)
+            assertNotNull("${f.name}: not the expected JSON:\n$raw", a)
+            val key = expected.keys.first { f.name.contains(it) }
+            val (q, p, t) = expected.getValue(key)
+            val ok = a!!.quantity?.let { ItalianNumbers.parse(it) }?.compareTo(q.toBigDecimal()) == 0 &&
+                a.price?.let { ItalianNumbers.parse(it) }?.compareTo(p.toBigDecimal()) == 0 &&
+                a.amount?.let { ItalianNumbers.parse(it) }?.let { ItalianNumbers.toCents(it) } == t
+            report.append("${f.name}: ${if (ok) "RIGHT" else "WRONG"} desc=${a.description} q=${a.quantity} p=${a.price} t=${a.amount} colli=${a.colli} code=${a.code}\n")
+        }
+        File(dir, "row-report.txt").writeText(report.toString())
+        println(report)
     }
 
     @Test fun checkAnswers() {

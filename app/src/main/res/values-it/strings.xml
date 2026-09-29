@@ -483,4 +483,5 @@
         <item quantity="one">Lettura di %d documento</item>
         <item quantity="other">Lettura di %d documenti</item>
     </plurals>
+    <string name="ai_checking">L\'IA controlla la parte dubbia %1$d di %2$d</string>
 </resources>

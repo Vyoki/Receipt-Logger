@@ -121,6 +121,7 @@ private fun subtitle(job: ImportJob): String {
     return when (job.status) {
         JobStatus.READING -> when {
             p == null -> pages
+            p.pass == 4 -> stringResource(R.string.ai_checking, p.page, p.of)
             p.pass == 3 -> stringResource(R.string.ai_reading_page, p.page, p.of) + " · " +
                 (if (p.aiStage == 0) stringResource(R.string.ai_looking) else stringResource(R.string.ai_writing, p.aiCount))
             p.pass == 2 -> stringResource(R.string.reading_page, p.page, p.of) + " · " + stringResource(R.string.job_second_look)
