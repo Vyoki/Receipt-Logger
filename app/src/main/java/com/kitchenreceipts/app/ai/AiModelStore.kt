@@ -116,18 +116,19 @@ class AiModelStore(private val context: Context) {
 
     companion object {
         private const val HF = "https://huggingface.co/Qwen"
+        /** Checked in CI on a synthetic invoice: both read every line right when given the OCR text; 2B takes about half the time. */
         val OPTIONS = listOf(
-            AiModelOption(
-                id = "qwen3vl-4b", label = "Qwen3-VL 4B", approxGb = "3",
-                modelUrl = "$HF/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3VL-4B-Instruct-Q4_K_M.gguf?download=true",
-                mmprojUrl = "$HF/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf?download=true",
-                minRamGb = 8,
-            ),
             AiModelOption(
                 id = "qwen3vl-2b", label = "Qwen3-VL 2B", approxGb = "1.5",
                 modelUrl = "$HF/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf?download=true",
                 mmprojUrl = "$HF/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf?download=true",
                 minRamGb = 6,
+            ),
+            AiModelOption(
+                id = "qwen3vl-4b", label = "Qwen3-VL 4B", approxGb = "3",
+                modelUrl = "$HF/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3VL-4B-Instruct-Q4_K_M.gguf?download=true",
+                mmprojUrl = "$HF/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf?download=true",
+                minRamGb = 8,
             ),
         )
     }

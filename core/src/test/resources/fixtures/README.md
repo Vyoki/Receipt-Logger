@@ -20,3 +20,5 @@ They imitate the OCR text of typical Italian supplier documents:
 - `ocr_mlkit_lines_4_photos.txt`: the raw line boxes ML Kit returned on an Android emulator for the invented
   "ABC S.r.l." cash & carry page, photographed four ways (straight, angled, angled + enhanced image,
   angled + rotated 3°). Format per case: `# name`, then `left,top,right,bottom,angle | text`.
+- `ai_answer_qwen3vl_2b.json`: the answer Qwen3-VL 2B gave in CI (job ai-model-check) for the synthetic
+  "ABC S.r.l." invoice photo drawn by `tools/ai-cli/make_invoice.py`, with the app's prompt and grammar.

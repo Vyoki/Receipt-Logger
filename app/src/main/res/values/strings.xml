@@ -362,7 +362,7 @@
     <string name="ai_reading_page">AI reader: page %1$d of %2$d</string>
     <string name="ai_looking">Looking at the photo…</string>
     <string name="ai_writing">Writing down the lines… (%d)</string>
-    <string name="ai_takes_time">This runs on your phone and can take 1–3 minutes per page. Keep the app open.</string>
+    <string name="ai_takes_time">This runs on your phone and takes about 2–5 minutes per page. Keep the app open.</string>
     <string name="no_browser">No web browser found on this phone.</string>
     <string name="ai_test_ok">AI reader ready (loaded in %s s).</string>
     <string name="ai_failed">AI reader problem: %s</string>
@@ -381,8 +381,8 @@
     <string name="ai_remove">Remove AI model</string>
     <string name="ai_remove_text">The model files are deleted from the app. You can load them again at any time.</string>
     <string name="ai_step1">1. Choose the model</string>
-    <string name="ai_option_best">%1$s – best reading (about %2$s GB)</string>
-    <string name="ai_option_fast">%1$s – faster, smaller (about %2$s GB)</string>
+    <string name="ai_option_best">%1$s – recommended: reads well, faster (about %2$s GB)</string>
+    <string name="ai_option_fast">%1$s – larger, about twice as slow (about %2$s GB)</string>
     <string name="ai_step2">2. Download both files with your browser</string>
     <string name="ai_download_model">Download the model file</string>
     <string name="ai_download_vision">Download the vision file (mmproj)</string>

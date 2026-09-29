@@ -160,8 +160,30 @@ object AiReader {
 
     private fun finish(d: ParsedDocument, text: String) = ReceiptParser.finish(d, text)
 
+    private val MARKER_CODE = Regex("^[A-Z0]\\s+(?=\\d)")
+    private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
+
+    /**
+     * The unit column as the model copied it may hold packaging and pack size ("SK GR 800", "CF GR", "NC KG 1"):
+     * a weight/volume with a number is the pack size (the item is counted in pieces, the size goes with the name);
+     * a unit alone ("NC KG") is the unit. Returns (unit, text to add to the description).
+     */
+    fun splitUnit(raw: String?): Pair<String?, String?> {
+        val t = raw?.let { cleanText(it) }?.takeIf { it.isNotEmpty() } ?: return null to null
+        Units.normalizeKnown(t)?.let { return it to null }
+        val tokens = t.split(' ').filter { it.isNotBlank() }
+        val units = tokens.mapIndexedNotNull { i, tok -> Units.normalizeKnown(tok.trimEnd('.'))?.let { i to it } }
+        val physical = units.firstOrNull { Units.dimension(it.second) != null }
+        if (physical != null) {
+            val rest = tokens.drop(physical.first)
+            val hasNumber = rest.drop(1).any { tok -> tok.any(Char::isDigit) }
+            return if (hasNumber) "pz" to rest.joinToString(" ").uppercase() else physical.second to null
+        }
+        return (units.lastOrNull()?.second) to null
+    }
+
     private fun item(a: AiItem, ev: Evidence): ParsedLineItem? {
-        val description = a.description?.let { cleanText(it) }?.takeIf { it.count(Char::isLetter) >= 2 } ?: return null
+        var description = a.description?.let { cleanText(it) }?.takeIf { it.count(Char::isLetter) >= 2 } ?: return null
         val source = "AI: " + listOfNotNull(a.code, a.colli, a.description, a.unit, a.quantity, a.price, a.discount, a.amount, a.vatRate).joinToString(" ")
         var qty = a.quantity?.let(::number)
         var price = a.price?.let(::number)
@@ -174,7 +196,9 @@ object AiReader {
         val printed = { v: BigDecimal? -> v != null && ev.hasNumber(v) }
         val amountConf = if (amount != null && (consistent || ev.hasNumber(ItalianNumbers.centsToDecimal(amount)))) Confidence.HIGH else Confidence.LOW
         val qpConf = if (consistent && (printed(qty) || printed(price))) Confidence.HIGH else Confidence.LOW
-        var unit = a.unit?.let { Units.normalize(it.trim('.', ' ')) }?.takeIf { it.length <= 10 }
+        val (readUnit, packSize) = splitUnit(a.unit)
+        var unit = readUnit
+        if (packSize != null && !description.uppercase().endsWith(packSize)) description = "$description $packSize"
         // "GR" with 0,480 means kilograms.
         val q0 = qty
         if (q0 != null && q0.stripTrailingZeros().scale() > 0 && q0 < BigDecimal(100)) {
@@ -184,8 +208,11 @@ object AiReader {
         val rate = a.vatRate?.let(::number)?.takeIf { it.stripTrailingZeros().toPlainString() in setOf("0", "4", "5", "10", "22") }
         // A lot must be printed on the page and must not be a date (expiry dates are never lots).
         val lot = a.lot?.let { cleanText(it) }?.takeIf { it.any(Char::isDigit) && ev.hasText(it) && ItalianDates.findDates(it).isEmpty() && it.length <= 40 }
-        val colli = a.colli?.let { cleanText(it) }?.takeIf { it.any(Char::isDigit) && it.length <= 12 }
-        val code = a.code?.let { cleanText(it) }?.takeIf { it.any(Char::isDigit) && ev.hasText(it) && it.length <= 30 }
+        var colli = a.colli?.let { cleanText(it) }?.takeIf { it.any(Char::isDigit) && it.length <= 12 }
+        // "O 10000032x3": offer marker, article code and colli printed together.
+        var codeText = a.code?.let { cleanText(it) }?.replace(MARKER_CODE, "")
+        CODE_WITH_COLLI.find(codeText ?: "")?.let { m -> codeText = m.groupValues[1]; colli = m.groupValues[2] }
+        val code = codeText?.takeIf { it.any(Char::isDigit) && ev.hasText(it) && it.length <= 30 }
         return ParsedLineItem(
             originalDescription = description,
             quantity = qty?.let { Extracted(it, qpConf, source) },
