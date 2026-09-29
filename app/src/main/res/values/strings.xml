@@ -357,4 +357,105 @@
     <string name="reading_second_pass">Taking a closer look to get every number right…</string>
     <string name="packages">Colli</string>
     <string name="packages_value">Colli (packages): %s</string>
+
+    <!-- AI reader -->
+    <string name="ai_reading_page">AI reader: page %1$d of %2$d</string>
+    <string name="ai_looking">Looking at the photo…</string>
+    <string name="ai_writing">Writing down the lines… (%d)</string>
+    <string name="ai_takes_time">This runs on your phone and can take 1–3 minutes per page. Keep the app open.</string>
+    <string name="no_browser">No web browser found on this phone.</string>
+    <string name="ai_test_ok">AI reader ready (loaded in %s s).</string>
+    <string name="ai_failed">AI reader problem: %s</string>
+    <string name="ai_reader">AI reader (on this phone)</string>
+    <string name="ai_reader_hint">A vision AI that reads the photo like a person does, to fix what the normal reading gets wrong. It runs entirely on this phone: nothing is sent anywhere.</string>
+    <string name="ai_this_phone">This phone: %s GB memory.</string>
+    <string name="ai_phone_ok">Suitable.</string>
+    <string name="ai_phone_weak">May be too slow or run out of memory.</string>
+    <string name="ai_installed">Installed: %1$s (%2$s GB)</string>
+    <string name="ai_when">When to use it</string>
+    <string name="ai_mode_needed">When the normal reading does not add up (recommended)</string>
+    <string name="ai_mode_always">On every document (slower)</string>
+    <string name="ai_mode_off">Off</string>
+    <string name="ai_test">Test</string>
+    <string name="ai_testing">Loading…</string>
+    <string name="ai_remove">Remove AI model</string>
+    <string name="ai_remove_text">The model files are deleted from the app. You can load them again at any time.</string>
+    <string name="ai_step1">1. Choose the model</string>
+    <string name="ai_option_best">%1$s – best reading (about %2$s GB)</string>
+    <string name="ai_option_fast">%1$s – faster, smaller (about %2$s GB)</string>
+    <string name="ai_step2">2. Download both files with your browser</string>
+    <string name="ai_download_model">Download the model file</string>
+    <string name="ai_download_vision">Download the vision file (mmproj)</string>
+    <string name="ai_step3">3. When both downloads have finished</string>
+    <string name="ai_load_files">Load the 2 downloaded files</string>
+    <string name="ai_download_note">Files come from huggingface.co (Qwen models, Apache 2.0 licence). The app itself never connects to the internet. After loading, you can delete the files from your Downloads.</string>
+    <string name="ai_copying">Copying the model into the app…</string>
+
+    <!-- owner report -->
+    <string name="rep_title">Purchases report</string>
+    <string name="rep_subtitle">Purchases report · %s</string>
+    <string name="rep_generated">Created on %1$s · compared with %2$s</string>
+    <string name="rep_footer">Kitchen Receipts · figures from the saved invoices and delivery notes</string>
+    <string name="rep_page">Page %d</string>
+    <string name="rep_kpi_spend">Total spent (document totals)</string>
+    <string name="rep_kpi_docs">Documents</string>
+    <string name="rep_kpi_suppliers">from %d suppliers</string>
+    <string name="rep_kpi_prices">Price changes</string>
+    <string name="rep_kpi_prices_hint">up / down vs last purchase</string>
+    <string name="rep_suppliers">Spend by supplier</string>
+    <string name="rep_categories">Spend by category</string>
+    <string name="rep_prices">Price changes</string>
+    <string name="rep_inventory">What was bought</string>
+    <string name="rep_nothing">Nothing in this period.</string>
+    <string name="rep_no_prices">No price changes in this period.</string>
+    <string name="rep_col_supplier">Supplier</string>
+    <string name="rep_col_docs">Docs</string>
+    <string name="rep_col_total">Total</string>
+    <string name="rep_col_vs_prev">vs before</string>
+    <string name="rep_col_category">Category</string>
+    <string name="rep_col_this_period">This period</string>
+    <string name="rep_col_previous">Before</string>
+    <string name="rep_col_product">Product</string>
+    <string name="rep_col_price">Price</string>
+    <string name="rep_col_bought">Bought</string>
+    <string name="rep_col_usual">Usually</string>
+    <string name="rep_col_spend">Spent</string>
+    <string name="rep_vat_note">Category amounts are line totals: \"+VAT\" = VAT excluded, \"VAT incl.\" = VAT included; the two are never added together.</string>
+    <string name="rep_other_supplier_note">* compared with the last price paid to a different supplier.</string>
+    <string name="rep_note_missing_total">%d document(s) in this period have no total and are not in the amounts.</string>
+    <string name="rep_note_no_date">%d saved document(s) have no date and are not in any period.</string>
+    <string name="rep_new">new</string>
+    <string name="rep_basis_excl">+VAT</string>
+    <string name="rep_basis_incl">VAT incl.</string>
+    <string name="rep_basis_unknown">(VAT ?)</string>
+    <string name="rep_file_prefix">Purchases_report</string>
+    <string name="rep_vs">vs %s</string>
+    <string name="rep_share_text">Purchases report %1$s: %2$s · %3$d documents · %4$d price increases. Details in the PDF.</string>
+    <string name="rep_subject">%1$s – purchases report %2$s</string>
+    <string name="rep_failed">The report could not be created.</string>
+    <string name="rep_card_title">Report for the owner</string>
+    <string name="rep_card_hint">A one-page summary as a PDF: spend by supplier and category, price changes, what was bought. It opens on any phone, including iPhone.</string>
+    <string name="rep_language">Report language:</string>
+    <string name="rep_send">Create and send</string>
+    <string name="rep_building">Creating…</string>
+    <string name="rep_preview">Preview the PDF</string>
+    <string name="rep_home_tile">Send report</string>
+    <string-array name="month_names">
+        <item>January</item>
+        <item>February</item>
+        <item>March</item>
+        <item>April</item>
+        <item>May</item>
+        <item>June</item>
+        <item>July</item>
+        <item>August</item>
+        <item>September</item>
+        <item>October</item>
+        <item>November</item>
+        <item>December</item>
+    </string-array>
+    <plurals name="rep_products">
+        <item quantity="one">%d product</item>
+        <item quantity="other">%d products</item>
+    </plurals>
 </resources>

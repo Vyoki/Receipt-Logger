@@ -19,7 +19,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Warehouse
-import androidx.compose.material.icons.automirrored.filled.TrendingUp
+import androidx.compose.material.icons.automirrored.filled.Send
 import androidx.compose.material3.ElevatedCard
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
@@ -96,7 +96,7 @@ fun HomeScreen(
             item {
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     Tile(stringResource(R.string.inventory), Icons.Filled.Warehouse, onInventory, Modifier.weight(1f))
-                    Tile(stringResource(R.string.price_changes), Icons.AutoMirrored.Filled.TrendingUp, onInventory, Modifier.weight(1f))
+                    Tile(stringResource(R.string.rep_home_tile), Icons.AutoMirrored.Filled.Send, onReports, Modifier.weight(1f))
                 }
             }
             item {

@@ -10,6 +10,9 @@ class AppSettings(context: Context) {
 
     enum class Language(val tag: String?) { SYSTEM(null), ENGLISH("en"), ITALIAN("it") }
 
+    /** When the on-phone AI reader runs (only if a model is installed). */
+    enum class AiMode { OFF, WHEN_NEEDED, ALWAYS }
+
     private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     var language: Language
@@ -53,6 +56,15 @@ class AppSettings(context: Context) {
     var autoLinkProducts: Boolean
         get() = prefs.getBoolean("auto_link", true)
         set(v) = prefs.edit().putBoolean("auto_link", v).apply()
+
+    var aiMode: AiMode
+        get() = AiMode.entries.firstOrNull { it.name == prefs.getString("ai_mode", null) } ?: AiMode.WHEN_NEEDED
+        set(v) = prefs.edit().putString("ai_mode", v.name).apply()
+
+    /** Language of the reports sent to others (the boss may read Italian while the app is in English). */
+    var reportLanguage: Language
+        get() = readLanguage(prefs.getString("report_language", null)).takeIf { it != Language.SYSTEM } ?: Language.ITALIAN
+        set(v) = prefs.edit().putString("report_language", v.name).apply()
 
     fun parseOptions() = ParseOptions(ownBusinessName.ifBlank { null }, ownVatNumber.ifBlank { null })
 

@@ -35,6 +35,7 @@ import com.kitchenreceipts.core.ValidDocument
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -466,6 +467,22 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             }
             Inventory.report(purchases, period, conv)
         }.flowOn(Dispatchers.Default)
+
+    /** The owner's report for [period], from everything saved (computed on the phone). */
+    suspend fun bossReport(period: Period): com.kitchenreceipts.core.BossReport = withContext(Dispatchers.Default) {
+        val rows = documents.allPurchasesOnce()
+        val docs = documents.reportRows().first().map {
+            ReportDocument(it.id, it.sellerName, it.documentDate, it.documentNumber, it.totalCents, it.itemCount)
+        }
+        val conv = products.allConversions().first().groupBy { it.productId }.mapValues { (_, list) ->
+            list.mapNotNull { c -> runCatching { UnitConversion(c.fromUnit, c.toUnit, c.factor) }.getOrNull() }
+        }
+        val purchases = rows.map {
+            val name = it.productName ?: it.originalDescription
+            InventoryPurchase(it.productId, name, Category.fromKey(it.productCategory) ?: Categories.guess(name), it.documentDate, it.quantity, it.unit, it.lineTotalCents, it.vatBasis)
+        }
+        com.kitchenreceipts.core.BossReports.build(period, docs, purchases, rows.filter { it.productId != null }.map { it.toPricePoint() }, conv)
+    }
 
     /** Products that look like the same thing, for the operator to merge if they agree. */
     suspend fun possibleDuplicateProducts(): List<Pair<ProductCandidate, ProductCandidate>> {

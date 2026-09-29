@@ -345,4 +345,105 @@
     <string name="reading_second_pass">Seconda lettura più accurata per avere tutti i numeri giusti…</string>
     <string name="packages">Colli</string>
     <string name="packages_value">Colli: %s</string>
+
+    <!-- AI reader -->
+    <string name="ai_reading_page">Lettore IA: pagina %1$d di %2$d</string>
+    <string name="ai_looking">Sto guardando la foto…</string>
+    <string name="ai_writing">Sto trascrivendo le righe… (%d)</string>
+    <string name="ai_takes_time">Funziona sul telefono e può richiedere 1–3 minuti per pagina. Tieni l\'app aperta.</string>
+    <string name="no_browser">Nessun browser trovato sul telefono.</string>
+    <string name="ai_test_ok">Lettore IA pronto (caricato in %s s).</string>
+    <string name="ai_failed">Problema con il lettore IA: %s</string>
+    <string name="ai_reader">Lettore IA (sul telefono)</string>
+    <string name="ai_reader_hint">Un\'IA che legge la foto come una persona, per correggere ciò che la lettura normale sbaglia. Funziona interamente sul telefono: non invia nulla.</string>
+    <string name="ai_this_phone">Questo telefono: %s GB di memoria.</string>
+    <string name="ai_phone_ok">Adatto.</string>
+    <string name="ai_phone_weak">Potrebbe essere troppo lento o esaurire la memoria.</string>
+    <string name="ai_installed">Installato: %1$s (%2$s GB)</string>
+    <string name="ai_when">Quando usarlo</string>
+    <string name="ai_mode_needed">Quando la lettura normale non torna (consigliato)</string>
+    <string name="ai_mode_always">Su ogni documento (più lento)</string>
+    <string name="ai_mode_off">Disattivato</string>
+    <string name="ai_test">Prova</string>
+    <string name="ai_testing">Caricamento…</string>
+    <string name="ai_remove">Rimuovi modello IA</string>
+    <string name="ai_remove_text">I file del modello vengono cancellati dall\'app. Puoi caricarli di nuovo quando vuoi.</string>
+    <string name="ai_step1">1. Scegli il modello</string>
+    <string name="ai_option_best">%1$s – lettura migliore (circa %2$s GB)</string>
+    <string name="ai_option_fast">%1$s – più veloce, più piccolo (circa %2$s GB)</string>
+    <string name="ai_step2">2. Scarica i due file con il browser</string>
+    <string name="ai_download_model">Scarica il file del modello</string>
+    <string name="ai_download_vision">Scarica il file visione (mmproj)</string>
+    <string name="ai_step3">3. Quando i due download sono finiti</string>
+    <string name="ai_load_files">Carica i 2 file scaricati</string>
+    <string name="ai_download_note">I file provengono da huggingface.co (modelli Qwen, licenza Apache 2.0). L\'app non si collega mai a internet. Dopo il caricamento puoi cancellare i file dai Download.</string>
+    <string name="ai_copying">Copia del modello nell\'app…</string>
+
+    <!-- owner report -->
+    <string name="rep_title">Report acquisti</string>
+    <string name="rep_subtitle">Report acquisti · %s</string>
+    <string name="rep_generated">Creato il %1$s · confronto con %2$s</string>
+    <string name="rep_footer">Kitchen Receipts · dati dalle fatture e dai DDT salvati</string>
+    <string name="rep_page">Pagina %d</string>
+    <string name="rep_kpi_spend">Totale speso (totali documento)</string>
+    <string name="rep_kpi_docs">Documenti</string>
+    <string name="rep_kpi_suppliers">da %d fornitori</string>
+    <string name="rep_kpi_prices">Variazioni di prezzo</string>
+    <string name="rep_kpi_prices_hint">su / giù rispetto all\'ultimo acquisto</string>
+    <string name="rep_suppliers">Spesa per fornitore</string>
+    <string name="rep_categories">Spesa per categoria</string>
+    <string name="rep_prices">Variazioni di prezzo</string>
+    <string name="rep_inventory">Cosa è stato acquistato</string>
+    <string name="rep_nothing">Nulla in questo periodo.</string>
+    <string name="rep_no_prices">Nessuna variazione di prezzo in questo periodo.</string>
+    <string name="rep_col_supplier">Fornitore</string>
+    <string name="rep_col_docs">Doc.</string>
+    <string name="rep_col_total">Totale</string>
+    <string name="rep_col_vs_prev">vs prima</string>
+    <string name="rep_col_category">Categoria</string>
+    <string name="rep_col_this_period">Questo periodo</string>
+    <string name="rep_col_previous">Prima</string>
+    <string name="rep_col_product">Prodotto</string>
+    <string name="rep_col_price">Prezzo</string>
+    <string name="rep_col_bought">Acquistato</string>
+    <string name="rep_col_usual">Di solito</string>
+    <string name="rep_col_spend">Speso</string>
+    <string name="rep_vat_note">Gli importi per categoria sono totali di riga: \"+IVA\" = IVA esclusa, \"IVA incl.\" = IVA inclusa; non vengono mai sommati tra loro.</string>
+    <string name="rep_other_supplier_note">* confronto con l\'ultimo prezzo pagato a un altro fornitore.</string>
+    <string name="rep_note_missing_total">%d documento/i del periodo senza totale non sono inclusi negli importi.</string>
+    <string name="rep_note_no_date">%d documento/i salvati senza data non rientrano in nessun periodo.</string>
+    <string name="rep_new">nuovo</string>
+    <string name="rep_basis_excl">+IVA</string>
+    <string name="rep_basis_incl">IVA incl.</string>
+    <string name="rep_basis_unknown">(IVA ?)</string>
+    <string name="rep_file_prefix">Report_acquisti</string>
+    <string name="rep_vs">vs %s</string>
+    <string name="rep_share_text">Report acquisti %1$s: %2$s · %3$d documenti · %4$d aumenti di prezzo. Dettagli nel PDF.</string>
+    <string name="rep_subject">%1$s – report acquisti %2$s</string>
+    <string name="rep_failed">Impossibile creare il report.</string>
+    <string name="rep_card_title">Report per il titolare</string>
+    <string name="rep_card_hint">Un riepilogo in PDF: spesa per fornitore e categoria, variazioni di prezzo, cosa è stato acquistato. Si apre su qualsiasi telefono, anche iPhone.</string>
+    <string name="rep_language">Lingua del report:</string>
+    <string name="rep_send">Crea e invia</string>
+    <string name="rep_building">Creazione…</string>
+    <string name="rep_preview">Anteprima del PDF</string>
+    <string name="rep_home_tile">Invia report</string>
+    <string-array name="month_names">
+        <item>Gennaio</item>
+        <item>Febbraio</item>
+        <item>Marzo</item>
+        <item>Aprile</item>
+        <item>Maggio</item>
+        <item>Giugno</item>
+        <item>Luglio</item>
+        <item>Agosto</item>
+        <item>Settembre</item>
+        <item>Ottobre</item>
+        <item>Novembre</item>
+        <item>Dicembre</item>
+    </string-array>
+    <plurals name="rep_products">
+        <item quantity="one">%d prodotto</item>
+        <item quantity="other">%d prodotti</item>
+    </plurals>
 </resources>

@@ -143,6 +143,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                 c.log.event("SETTINGS", "autoLink" to on)
             }
 
+            // ---------------------------------------------------------------- AI reader
+            AiSettingsSection(c)
+
             // ---------------------------------------------------------------- privacy & security
             SectionTitle(stringResource(R.string.privacy_security))
             Card {

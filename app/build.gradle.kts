@@ -16,6 +16,22 @@ android {
         versionCode = 1
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
+
+        // On-device AI reader (llama.cpp). arm64 for phones, x86_64 for the emulator used in tests.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "x86_64")
+        }
+        externalNativeBuild {
+            cmake {
+                arguments += listOf("-DCMAKE_BUILD_TYPE=Release", "-DANDROID_STL=c++_shared")
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path = file("src/main/cpp/CMakeLists.txt")
+        }
     }
 
     buildTypes {
@@ -36,8 +52,21 @@ android {
     }
     packaging {
         resources.excludes += "/META-INF/{AL2.0,LGPL2.1}"
+        // The AI reader loads the best CPU variant for the phone from the native library folder at run time,
+        // so native libraries must be extracted on install.
+        jniLibs.useLegacyPackaging = true
     }
 }
+
+// llama.cpp, pinned: downloaded once into third_party/ (not committed).
+val llamaCppTag = "b11242"
+val llamaCppDir = rootProject.file("third_party/llama.cpp")
+val fetchLlamaCpp by tasks.registering(Exec::class) {
+    description = "Downloads llama.cpp $llamaCppTag for the on-device AI reader"
+    onlyIf { !llamaCppDir.resolve("CMakeLists.txt").exists() }
+    commandLine("git", "clone", "--depth", "1", "--branch", llamaCppTag, "https://github.com/ggml-org/llama.cpp", llamaCppDir.absolutePath)
+}
+tasks.named("preBuild") { dependsOn(fetchLlamaCpp) }
 
 ksp {
     // Room writes a JSON snapshot of every schema version here; commit it with each migration.

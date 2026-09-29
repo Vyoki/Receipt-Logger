@@ -158,7 +158,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             loading = true,
             isNew = true, draft = draft,
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
-            engineName = pending.engineName, ocrError = pending.ocrError, pagesRead = pending.pagesRead,
+            engineName = if (pending.parsed.itemsReadBy == "ai") "${pending.engineName} + AI" else pending.engineName, ocrError = pending.ocrError, pagesRead = pending.pagesRead,
             recognisedText = pending.debugReport(),
             recognition = recognition,
             reviewReasons = reasons,

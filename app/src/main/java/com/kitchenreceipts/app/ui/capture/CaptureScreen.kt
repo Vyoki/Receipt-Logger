@@ -75,8 +75,11 @@ data class CaptureState(
     val step: Step = Step.IDLE,
     val page: Int = 0,
     val pages: Int = 0,
-    /** 2 = second, closer reading of an enhanced image (the first did not fully check out). */
+    /** 2 = second, closer reading of an enhanced image (the first did not fully check out); 3 = the AI reader. */
     val pass: Int = 1,
+    /** AI reader: 0 = looking at the photo, 1 = writing ([aiCount] grows). */
+    val aiStage: Int = 0,
+    val aiCount: Int = 0,
     val error: String? = null,
     val ready: Boolean = false,
 ) {
@@ -108,15 +111,16 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
                 stored = s
                 _state.update { it.copy(step = CaptureState.Step.READING) }
                 val storeMs = System.currentTimeMillis() - t0
-                val pending = c.importProcessor.process(s, c.ocrEngine, { page, of, pass ->
-                    _state.update { it.copy(page = page, pages = of, pass = pass) }
-                }, c.settings.parseOptions())
+                val pending = c.importProcessor.process(s, c.ocrEngine, { p ->
+                    _state.update { it.copy(page = p.page, pages = p.of, pass = p.pass, aiStage = p.aiStage, aiCount = p.aiCount) }
+                }, c.settings.parseOptions(), c.aiUse())
                 c.log.event(
                     "IMPORT_DONE",
                     "type" to s.mimeType, "pages" to s.pageCount, "pagesRead" to pending.pagesRead,
                     "storeMs" to storeMs, "ocrMs" to pending.ocrMillis,
                     "ocrLines" to pending.rawLines.sumOf { it.size }, "ocrError" to pending.ocrError,
                     "reading" to pending.readingNote,
+                    "ai" to pending.aiNote,
                 )
                 c.pendingImport = pending
                 withContext(Dispatchers.IO) { c.fileStore.deleteCaptures() }
@@ -183,6 +187,12 @@ fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
         }
     }
     BackHandler(enabled = state.busy) { vm.cancel() }
+    // Reading can take minutes with the AI reader: keep the screen on meanwhile.
+    val view = androidx.compose.ui.platform.LocalView.current
+    androidx.compose.runtime.DisposableEffect(state.busy) {
+        view.keepScreenOn = state.busy
+        onDispose { view.keepScreenOn = false }
+    }
 
     AppScaffold(title = stringResource(R.string.scan_document), onBack = if (state.busy) null else onBack) { padding ->
         if (state.busy) {
@@ -195,10 +205,14 @@ fun CaptureScreen(onBack: () -> Unit, onReady: () -> Unit) {
                 Spacer(Modifier.height(24.dp))
                 Text(
                     when (state.step) {
-                        CaptureState.Step.READING ->
-                            (if (state.pages > 1) stringResource(R.string.reading_page, state.page, state.pages)
+                        CaptureState.Step.READING -> when {
+                            state.pass == 3 -> stringResource(R.string.ai_reading_page, state.page, state.pages) + "\n" +
+                                (if (state.aiStage == 0) stringResource(R.string.ai_looking) else stringResource(R.string.ai_writing, state.aiCount)) +
+                                "\n\n" + stringResource(R.string.ai_takes_time)
+                            else -> (if (state.pages > 1) stringResource(R.string.reading_page, state.page, state.pages)
                             else stringResource(R.string.reading_text)) +
                                 (if (state.pass > 1) "\n" + stringResource(R.string.reading_second_pass) else "")
+                        }
                         else -> stringResource(R.string.saving_original)
                     },
                     style = MaterialTheme.typography.titleMedium,
