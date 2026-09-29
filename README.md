@@ -276,6 +276,47 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 
   Categories are guessed from an Italian keyword dictionary; change one on the product screen.
 
+## 7d. On-phone AI reader (optional)
+
+A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the normal OCR text. It runs **entirely on the phone**, through llama.cpp compiled into the app (CPU, the fastest variant for the phone is picked at start). The app has **no internet permission**: the model is downloaded once by the phone's browser and then loaded with the file picker.
+
+**Setup:** Settings ▸ AI reader:
+1. Choose the model: 2B (recommended, about 1.5 GB) or 4B (about 3 GB).
+2. Tap the two download buttons; each opens huggingface.co in the browser.
+3. When both downloads have finished, tap *Load the 2 downloaded files* and select both.
+4. Tap *Test*.
+
+**When it runs:**
+- *When needed* (default) runs it only if the normal reading does not add up.
+- *Always* runs it on every document.
+- Expect about 2–5 minutes per page on a fast phone; the screen stays on meanwhile.
+
+**Checks on the AI's answer:**
+- The answer is forced into a fixed JSON shape (a GBNF grammar).
+- Every amount must appear in the OCR text or be proven by quantity × price.
+- A lot is kept only if it is printed and is not a date.
+- Your own business is never taken as the supplier.
+- The AI's lines replace the normal reading only when more of them add up.
+
+**Measured in CI** (job `ai-model-check`): the app's own reader code, prompt and grammar, run with the real models on a synthetic invoice photo.
+- With the OCR text, both 2B and 4B got all 12 lines right: amounts, quantity, price, header and totals.
+- Without the OCR text, 2B got 11 of 12, which is why both are used together.
+- Time on a 4-core cloud computer: 2B about 7 min per page, 4B about 13 min. A recent phone with 8 fast cores should be faster, but this has not been measured on a real phone.
+
+**Build:** `third_party/llama.cpp` is cloned automatically (pinned tag `b11242`, Gradle task `:app:fetchLlamaCpp`). This needs `git`, and the NDK/CMake from Android Studio's SDK Manager.
+
+## 7e. Report for the owner
+
+Reports ▸ *Report for the owner*, or the *Send report* tile on the home screen:
+1. Pick week, month or quarter, and Italian or English.
+2. Tap **Create and send**.
+
+The app then:
+- builds an A4 PDF on the phone with total spend compared with the period before, spend by supplier (with bars), spend by category (VAT-inclusive and VAT-exclusive amounts never added together), price changes, and what was bought compared with the usual amount;
+- opens the share sheet (WhatsApp, Mail…) with a one-line summary as the message.
+
+The PDF opens natively on an iPhone. Nothing leaves the phone until you pick where to send it.
+
 ## 8. MVP assumptions and limits
 
 - Main target: Italian supplier documents in EUR. Other currencies can be typed as a 3-letter code, but no conversion is done.
@@ -293,7 +334,7 @@ Built and tested in an environment **without** access to Google's Maven reposito
 | Check | Status |
 |---|---|
 | `:core` compiles (Kotlin 2.0.21) | ✅ verified |
-| `:core` unit tests: 142 tests on synthetic Italian fixtures (invoices, receipts, delivery notes, messy phone OCR) | ✅ all passing |
+| `:core` unit tests: 152 tests on synthetic Italian fixtures (invoices, receipts, delivery notes, messy phone OCR) | ✅ all passing |
 | All 34 Room `@Query` statements and the v1→v2 migration SQL run in SQLite against a schema matching the entities | ✅ verified |
 | String resources: every referenced key exists in English and Italian, with matching format arguments | ✅ verified |
 | `:app` Android build (Room/KSP code generation, Compose compilation, APK) | ✅ built by GitHub Actions on every push |

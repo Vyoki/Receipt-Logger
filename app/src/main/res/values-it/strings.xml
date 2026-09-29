@@ -350,7 +350,7 @@
     <string name="ai_reading_page">Lettore IA: pagina %1$d di %2$d</string>
     <string name="ai_looking">Sto guardando la foto…</string>
     <string name="ai_writing">Sto trascrivendo le righe… (%d)</string>
-    <string name="ai_takes_time">Funziona sul telefono e può richiedere 1–3 minuti per pagina. Tieni l\'app aperta.</string>
+    <string name="ai_takes_time">Funziona sul telefono e richiede circa 2–5 minuti per pagina. Tieni l\'app aperta.</string>
     <string name="no_browser">Nessun browser trovato sul telefono.</string>
     <string name="ai_test_ok">Lettore IA pronto (caricato in %s s).</string>
     <string name="ai_failed">Problema con il lettore IA: %s</string>
@@ -369,8 +369,8 @@
     <string name="ai_remove">Rimuovi modello IA</string>
     <string name="ai_remove_text">I file del modello vengono cancellati dall\'app. Puoi caricarli di nuovo quando vuoi.</string>
     <string name="ai_step1">1. Scegli il modello</string>
-    <string name="ai_option_best">%1$s – lettura migliore (circa %2$s GB)</string>
-    <string name="ai_option_fast">%1$s – più veloce, più piccolo (circa %2$s GB)</string>
+    <string name="ai_option_best">%1$s – consigliato: legge bene, più veloce (circa %2$s GB)</string>
+    <string name="ai_option_fast">%1$s – più grande, circa due volte più lento (circa %2$s GB)</string>
     <string name="ai_step2">2. Scarica i due file con il browser</string>
     <string name="ai_download_model">Scarica il file del modello</string>
     <string name="ai_download_vision">Scarica il file visione (mmproj)</string>

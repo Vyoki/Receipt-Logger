@@ -78,4 +78,32 @@ class AiReaderTest {
         assertTrue(g.contains("value ::= \"null\" | \"\\\"\" char{0,100} \"\\\"\""))
         assertEquals(BigDecimal("40"), BigDecimal("40.000").stripTrailingZeros().let { BigDecimal(it.toPlainString()) })
     }
+
+    /** A real answer of the 2B model (from CI) for the synthetic cash & carry photo. */
+    @Test fun realModelAnswer() {
+        val raw = javaClass.classLoader!!.getResource("fixtures/ai_answer_qwen3vl_2b.json")!!.readText()
+        val ocrText = javaClass.classLoader!!.getResource("fixtures/ocr_mlkit_cash_and_carry.txt")!!.readText()
+        val d = AiReader.toParsed(AiReader.decode(raw)!!, ocrText)
+        assertEquals(listOf(345L, 109L, 1074L, 1954L, 12678L, 252L, 8180L, 6220L, 490L, 1132L, 1490L, 970L), d.lineItems.map { it.lineTotalCents?.value })
+        assertTrue(d.lineItems.all { it.quantity?.confidence == Confidence.HIGH })
+        val biscotti = d.lineItems[0]
+        assertEquals("pz", biscotti.unit?.value)                          // "SK GR 800": one 800 g pack
+        assertTrue(biscotti.originalDescription.endsWith("GR 800"))
+        assertEquals("kg", d.lineItems[3].unit?.value)                    // "NC KG" + 4,45
+        assertEquals("kg", d.lineItems[8].unit?.value)                    // "CF GR" + 0,48 = kilograms
+        val candeggina = d.lineItems[2]                                   // "O 10000032x3"
+        assertEquals("1000003", candeggina.itemCode)
+        assertEquals("2x3", candeggina.packages?.value)
+        assertEquals(38152L, d.totalCents?.value)
+        assertTrue(ParseWarning.ITEMS_SUM_MISMATCH !in d.warnings)
+        assertEquals(VatBasis.EXCLUSIVE, d.vatBasis?.value)
+    }
+
+    @Test fun unitColumnVariants() {
+        assertEquals("kg" to null, AiReader.splitUnit("KG"))
+        assertEquals("pz" to "LT 5", AiReader.splitUnit("FL LT 5"))
+        assertEquals("g" to null, AiReader.splitUnit("CF GR"))
+        assertEquals("pz" to null, AiReader.splitUnit("NR"))
+        assertEquals(null to null, AiReader.splitUnit("SK"))
+    }
 }
