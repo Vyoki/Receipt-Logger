@@ -306,9 +306,7 @@ A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the norma
 **Speed-ups built in:**
 - It sees only the part of the photo with text (the table around the paper and the empty paper are cut away).
 - The photo is scaled so the print is about 22 pixels tall.
-- It writes compact JSON (no spaces or line breaks).
 - It uses all fast cores to read the image and the performance cores to write.
-- It uses an 8-bit attention cache.
 
 **When it runs:**
 - *When needed* (default) runs it only if the normal reading does not add up.
