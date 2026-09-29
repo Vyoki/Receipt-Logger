@@ -16,6 +16,7 @@ import com.kitchenreceipts.app.MainActivity
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.settings.AppSettings
 import com.kitchenreceipts.core.ItalianNumbers
+import com.kitchenreceipts.core.PriceChange
 
 /**
  * Notifications for background reading: an ongoing one while documents are read (with progress), and one when
@@ -35,6 +36,9 @@ class ReadingNotifier(private val context: Context) {
             )
             nm.createNotificationChannel(
                 NotificationChannel(CHANNEL_RESULTS, c.getString(R.string.notif_channel_results), NotificationManager.IMPORTANCE_DEFAULT),
+            )
+            nm.createNotificationChannel(
+                NotificationChannel(CHANNEL_PRICES, c.getString(R.string.notif_channel_prices), NotificationManager.IMPORTANCE_DEFAULT),
             )
         }
     }
@@ -109,6 +113,43 @@ class ReadingNotifier(private val context: Context) {
         manager.notify(job.id.hashCode(), n)
     }
 
+    /**
+     * Prices of a document read in the background that changed by 5% or more against the last purchase.
+     * [saved]: the app saved the document itself (tap opens it); otherwise it waits to be checked (tap opens the check).
+     */
+    fun priceChanges(job: ImportJob, changes: List<PriceChange>, saved: Boolean) {
+        if (changes.isEmpty() || !canPost()) return
+        val c = localized()
+        val lines = changes.map { ch ->
+            val sign = if (ch.percent.signum() > 0) "+" else ""
+            c.getString(
+                R.string.notif_price_line,
+                ch.productName,
+                sign + ItalianNumbers.formatDecimal(ch.percent, minScale = 1, maxScale = 1) + "%",
+                ItalianNumbers.formatDecimal(ch.oldPrice, minScale = 2, maxScale = 4),
+                ItalianNumbers.formatDecimal(ch.newPrice, minScale = 2, maxScale = 4),
+                ch.unit,
+            )
+        }
+        val title = c.resources.getQuantityString(R.plurals.notif_price_title, changes.size, changes.size)
+        val sub = listOfNotNull(job.sellerName, if (saved) null else c.getString(R.string.notif_price_not_saved)).joinToString(" · ")
+        val style = NotificationCompat.InboxStyle()
+        lines.take(6).forEach { style.addLine(it) }
+        if (lines.size > 6) style.setSummaryText("+" + (lines.size - 6))
+        if (sub.isNotEmpty()) style.setBigContentTitle("$title · $sub")
+        val route = if (saved) job.savedDocumentId?.let { "document/$it" } else "review/${job.id}"
+        val n = NotificationCompat.Builder(context, CHANNEL_PRICES)
+            .setSmallIcon(R.drawable.ic_stat_reading)
+            .setContentTitle(title)
+            .setContentText(lines.first())
+            .setStyle(style)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openIntent(route, ("price" + job.id).hashCode()))
+            .build()
+        manager.notify(("price" + job.id).hashCode(), n)
+    }
+
     fun cancelFor(jobId: String) = manager.cancel(jobId.hashCode())
 
     private fun canPost(): Boolean =
@@ -118,6 +159,7 @@ class ReadingNotifier(private val context: Context) {
     companion object {
         const val CHANNEL_PROGRESS = "reading"
         const val CHANNEL_RESULTS = "results"
+        const val CHANNEL_PRICES = "prices"
         const val PROGRESS_ID = 4711
     }
 }

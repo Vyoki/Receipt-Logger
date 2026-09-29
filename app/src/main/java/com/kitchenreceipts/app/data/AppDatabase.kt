@@ -34,6 +34,7 @@ class Converters {
         ProductAliasEntity::class,
         UnitConversionEntity::class,
         SellerAliasEntity::class,
+        ProductFamilyEntity::class,
     ],
     version = AppDatabase.VERSION,
     exportSchema = true,
@@ -45,7 +46,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun productDao(): ProductDao
 
     companion object {
-        const val VERSION = 5
+        const val VERSION = 6
         const val NAME = "kitchen_receipts.db"
 
         fun build(context: Context): AppDatabase =
@@ -66,6 +67,7 @@ abstract class AppDatabase : RoomDatabase() {
  * v3: + sellers.vat_number, sellers.header_profile, seller_aliases (supplier recognition)
  * v4: + products.category (inventory)
  * v5: + line_items.packages (colli)
+ * v6: + product_families, products.family_id / brand / family_dismissed (product groups)
  */
 object Migrations {
 
@@ -116,5 +118,22 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
+    val MIGRATION_5_6 = object : Migration(5, 6) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `product_families` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, " +
+                    "`name` TEXT NOT NULL, " +
+                    "`normalized_name` TEXT NOT NULL, " +
+                    "`created_at` INTEGER NOT NULL)",
+            )
+            db.execSQL("CREATE UNIQUE INDEX IF NOT EXISTS `index_product_families_normalized_name` ON `product_families` (`normalized_name`)")
+            db.execSQL("ALTER TABLE `products` ADD COLUMN `family_id` INTEGER")
+            db.execSQL("ALTER TABLE `products` ADD COLUMN `brand` TEXT")
+            db.execSQL("ALTER TABLE `products` ADD COLUMN `family_dismissed` INTEGER NOT NULL DEFAULT 0")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_products_family_id` ON `products` (`family_id`)")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6)
 }

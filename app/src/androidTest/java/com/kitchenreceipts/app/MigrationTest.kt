@@ -37,6 +37,21 @@ class MigrationTest {
         }
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
             db.execSQL("PRAGMA foreign_keys=OFF")
+            // v6 -> v5: no product groups, products without family_id / brand / family_dismissed
+            db.execSQL("DROP TABLE product_families")
+            db.execSQL(
+                "CREATE TABLE `products_v5` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, " +
+                    "`normalized_name` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `category` TEXT)",
+            )
+            db.execSQL("DROP TABLE products")
+            db.execSQL("ALTER TABLE products_v5 RENAME TO products")
+            db.execSQL("CREATE UNIQUE INDEX `index_products_normalized_name` ON `products` (`normalized_name`)")
+            if (version == 5) {
+                insertRows(db)
+                db.execSQL("INSERT INTO products (id, name, normalized_name, created_at, category) VALUES (1, 'Mozzarella', 'mozzarella', 0, NULL)")
+                db.version = 5
+                return@use
+            }
             // v5 -> v4: line_items without packages
             db.execSQL(
                 "CREATE TABLE `line_items_v4` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `document_id` INTEGER NOT NULL, " +
@@ -111,6 +126,10 @@ class MigrationTest {
                 val product = migrated.productDao().allOnce().single()
                 assertEquals("Mozzarella", product.name)
                 assertNull(product.category)
+                assertNull(product.familyId)
+                assertNull(product.brand)
+                assertEquals(false, product.familyDismissed)
+                assertEquals(0, migrated.productDao().familiesOnce().size)
             }
             migrated.openHelper.readableDatabase.query("SELECT COUNT(*) FROM unit_conversions").use { c ->
                 c.moveToFirst()
@@ -120,6 +139,11 @@ class MigrationTest {
         } finally {
             migrated.close()
         }
+    }
+
+    @Test fun migrate5To6() {
+        createOldDatabase(5)
+        openAndCheck()
     }
 
     @Test fun migrate4To5() {

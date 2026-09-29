@@ -75,7 +75,7 @@ data class DocumentEntity(
 
 @Entity(
     tableName = "products",
-    indices = [Index(value = ["normalized_name"], unique = true)],
+    indices = [Index(value = ["normalized_name"], unique = true), Index("family_id")],
 )
 data class ProductEntity(
     @PrimaryKey(autoGenerate = true) val id: Long = 0,
@@ -84,6 +84,27 @@ data class ProductEntity(
     @ColumnInfo(name = "created_at") val createdAt: Long,
     /** v4: inventory category key (see core Category); null = guessed from the name. */
     val category: String? = null,
+    /** v6: the group this product belongs to (e.g. "Passata di pomodoro"); null = none. */
+    @ColumnInfo(name = "family_id") val familyId: Long? = null,
+    /** v6: brand, typed by the operator (never guessed). */
+    val brand: String? = null,
+    /** v6: the operator said no to the suggested group; it is not suggested again. */
+    @ColumnInfo(name = "family_dismissed", defaultValue = "0") val familyDismissed: Boolean = false,
+)
+
+/**
+ * v6: a group of different products of the same kind ("Passata di pomodoro": several brands and suppliers).
+ * Each product keeps its own purchases and averages; the group only puts them side by side for comparing.
+ */
+@Entity(
+    tableName = "product_families",
+    indices = [Index(value = ["normalized_name"], unique = true)],
+)
+data class ProductFamilyEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    @ColumnInfo(name = "normalized_name") val normalizedName: String,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
 )
 
 @Entity(

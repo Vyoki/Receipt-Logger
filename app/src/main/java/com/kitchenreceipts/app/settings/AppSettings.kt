@@ -57,6 +57,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("auto_link", true)
         set(v) = prefs.edit().putBoolean("auto_link", v).apply()
 
+    /** Notify when a document read in the background has prices 5% or more above/below the last purchase. */
+    var priceAlerts: Boolean
+        get() = prefs.getBoolean("price_alerts", true)
+        set(v) = prefs.edit().putBoolean("price_alerts", v).apply()
+
     var aiMode: AiMode
         get() = AiMode.entries.firstOrNull { it.name == prefs.getString("ai_mode", null) } ?: AiMode.WHEN_NEEDED
         set(v) = prefs.edit().putString("ai_mode", v.name).apply()

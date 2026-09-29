@@ -14,6 +14,7 @@ import com.kitchenreceipts.core.DraftValidator
 import com.kitchenreceipts.core.Extracted
 import com.kitchenreceipts.core.ItalianDates
 import com.kitchenreceipts.core.PriceChange
+import com.kitchenreceipts.core.PriceWatch
 import com.kitchenreceipts.core.ReviewReason
 import com.kitchenreceipts.core.SellerMatchReason
 import com.kitchenreceipts.core.ValidationResult
@@ -99,6 +100,21 @@ class DraftPreparer(private val repo: ReceiptRepository, private val settings: A
         )
         log.event("SAVED", "doc" to id, "new" to true, "auto" to true, "items" to valid.items.size, "priceChanges" to p.priceChanges.size)
         return id
+    }
+
+    /**
+     * Price changes worth a notification (5% or more) for a document read in the background: of the saved
+     * document when the app saved it, otherwise of the draft waiting to be checked. Empty if the operator turned
+     * price notifications off.
+     */
+    suspend fun priceAlerts(savedDocumentId: Long?, p: PreparedDraft): List<PriceChange> {
+        if (!settings.priceAlerts) return emptyList()
+        val changes = if (savedDocumentId != null) {
+            runCatching { repo.priceChangesForDocument(savedDocumentId) }.getOrDefault(emptyList())
+        } else {
+            p.priceChanges
+        }
+        return PriceWatch.alerts(changes)
     }
 
     private fun logParsed(

@@ -496,4 +496,47 @@
         <item quantity="other">Reading %d documents</item>
     </plurals>
     <string name="ai_checking">AI checking doubtful part %1$d of %2$d</string>
+    <!-- price notifications -->
+    <string name="notif_channel_prices">Price changes</string>
+    <string name="notif_price_line">%1$s %2$s (%3$s → %4$s €/%5$s)</string>
+    <plurals name="notif_price_title">
+        <item quantity="one">%d price changed by 5%% or more</item>
+        <item quantity="other">%d prices changed by 5%% or more</item>
+    </plurals>
+    <string name="notif_price_not_saved">not saved yet, tap to check</string>
+    <string name="price_alerts">Price change notifications</string>
+    <string name="price_alerts_hint" formatted="false">After a document is read in the background, notify when a price is 5% or more above or below the last purchase.</string>
+
+    <!-- product groups -->
+    <string name="families">Groups</string>
+    <string name="family">Group</string>
+    <string name="family_none">No group</string>
+    <string name="family_value">Group: %1$s</string>
+    <string name="family_name">Group name</string>
+    <string name="family_hint">Products of the same kind (e.g. passata from different brands) go in one group to compare their prices. Each product stays separate.</string>
+    <string name="family_suggested">Suggested: %1$s</string>
+    <string name="family_remove">Remove from group</string>
+    <string name="family_suggestions">Suggested groups</string>
+    <string name="family_suggestions_hint">Products that look like the same kind of thing. Nothing is grouped until you tap “Group them”.</string>
+    <string name="family_new_suggested">New group “%1$s”</string>
+    <string name="family_add_to">Add to “%1$s”</string>
+    <string name="family_accept">Group them</string>
+    <string name="family_refuse">No</string>
+    <string name="family_compare">Compare prices in “%1$s”</string>
+    <string name="family_prices">Latest prices</string>
+    <string name="family_prices_hint">Latest price of each product from each supplier, per kg or litre when the size is known. Prices with and without VAT are never compared.</string>
+    <string name="family_cheapest">Cheapest</string>
+    <string name="family_paid">Paid %1$s €/%2$s</string>
+    <string name="family_size_unknown">Size unknown: not compared per kg/l. Add a unit conversion on the product to compare it.</string>
+    <string name="family_add_hint">To add a product, open it and choose its group.</string>
+    <string name="family_name_taken">A group with this name already exists.</string>
+    <string name="family_delete_title">Delete this group?</string>
+    <string name="family_delete_text">Only the group is deleted. Its products and their purchases stay as they are.</string>
+    <plurals name="family_products">
+        <item quantity="one">%d product</item>
+        <item quantity="other">%d products</item>
+    </plurals>
+    <string name="brand">Brand</string>
+    <string name="brand_none">Not set</string>
+    <string name="brand_value">Brand: %1$s</string>
 </resources>

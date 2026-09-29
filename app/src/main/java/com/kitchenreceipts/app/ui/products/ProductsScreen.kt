@@ -34,6 +34,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewModelScope
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.data.ProductEntity
+import com.kitchenreceipts.app.data.ProductFamilyEntity
 import com.kitchenreceipts.app.data.ProductNameTakenException
 import com.kitchenreceipts.app.data.ProductWithSummary
 import com.kitchenreceipts.app.data.ReceiptRepository
@@ -46,6 +47,7 @@ import com.kitchenreceipts.app.ui.components.SectionTitle
 import com.kitchenreceipts.app.ui.review.ProductPickerSheet
 import com.kitchenreceipts.app.ui.theme.LocalStatusColors
 import com.kitchenreceipts.core.AverageCost
+import com.kitchenreceipts.core.ProductFamilies
 import com.kitchenreceipts.core.ItalianNumbers
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -56,6 +58,12 @@ class ProductsViewModel(private val repo: ReceiptRepository) : ViewModel() {
     val summaries: StateFlow<List<ProductWithSummary>?> = repo.productSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val unassigned: StateFlow<List<UnassignedGroup>> = repo.unassignedGroups().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val products: StateFlow<List<ProductEntity>> = repo.products().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val families: StateFlow<List<ProductFamilyEntity>> = repo.families().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    val suggestions: StateFlow<List<ProductFamilies.Suggestion>> =
+        repo.familySuggestions().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+
+    fun acceptFamily(s: ProductFamilies.Suggestion) = viewModelScope.launch { repo.addToFamily(s.name, s.productIds) }
+    fun refuseFamily(s: ProductFamilies.Suggestion) = viewModelScope.launch { repo.dismissFamilySuggestion(s.productIds) }
 
     fun assign(group: UnassignedGroup, product: ProductEntity) = viewModelScope.launch { repo.assignGroup(group, product.id) }
 
@@ -73,11 +81,13 @@ class ProductsViewModel(private val repo: ReceiptRepository) : ViewModel() {
 }
 
 @Composable
-fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit) {
+fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Long) -> Unit) {
     val vm = appViewModel { ProductsViewModel(it.repository) }
     val summaries by vm.summaries.collectAsStateWithLifecycle()
     val unassigned by vm.unassigned.collectAsStateWithLifecycle()
     val products by vm.products.collectAsStateWithLifecycle()
+    val families by vm.families.collectAsStateWithLifecycle()
+    val suggestions by vm.suggestions.collectAsStateWithLifecycle()
     var assigning by remember { mutableStateOf<UnassignedGroup?>(null) }
     var creating by remember { mutableStateOf(false) }
     var showAllUnassigned by remember { mutableStateOf(false) }
@@ -117,6 +127,29 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit) {
                     item { TextButton(onClick = { showAllUnassigned = true }) { Text(stringResource(R.string.show_all, unassigned.size)) } }
                 }
             }
+            if (suggestions.isNotEmpty()) {
+                item {
+                    SectionTitle(stringResource(R.string.family_suggestions))
+                    Text(stringResource(R.string.family_suggestions_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                val names = products.associate { it.id to it.name }
+                items(suggestions.take(5), key = { "s${it.name}" }) { s ->
+                    FamilySuggestionCard(s, names, onAccept = { vm.acceptFamily(s) }, onDismiss = { vm.refuseFamily(s) })
+                }
+            }
+            if (families.isNotEmpty()) {
+                item { SectionTitle(stringResource(R.string.families)) }
+                val counts = products.groupingBy { it.familyId }.eachCount()
+                items(families, key = { "f${it.id}" }) { f ->
+                    ClickCard(onClick = { onOpenFamily(f.id) }) {
+                        Column {
+                            Text(f.name, style = MaterialTheme.typography.titleMedium)
+                            val n = counts[f.id] ?: 0
+                            Text(pluralStringResource(R.plurals.family_products, n, n), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+            }
             item { SectionTitle(stringResource(R.string.products)) }
             val rows = summaries
             if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_products)) }
@@ -124,6 +157,9 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit) {
                 ClickCard(onClick = { onOpen(p.product.id) }) {
                     Column {
                         Text(p.product.name, style = MaterialTheme.typography.titleMedium)
+                        p.product.familyId?.let { fid -> families.firstOrNull { it.id == fid } }?.let { f ->
+                            Text(stringResource(R.string.family_value, f.name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+                        }
                         if (p.summary.averages.isEmpty()) {
                             Text(
                                 if (p.purchaseCount == 0) stringResource(R.string.no_purchases) else stringResource(R.string.no_average_yet),

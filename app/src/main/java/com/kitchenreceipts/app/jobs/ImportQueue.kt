@@ -182,6 +182,11 @@ class ImportQueue(
             )
             update(j)
             notifier.finished(j)
+            val alerts = runCatching { preparer.priceAlerts(savedId, prepared) }.onFailure { log.error("priceAlerts", it) }.getOrDefault(emptyList())
+            if (alerts.isNotEmpty()) {
+                log.event("PRICE_ALERT", "job" to j.id.take(8), "changes" to alerts.size, "saved" to (savedId != null))
+                notifier.priceChanges(j, alerts, saved = savedId != null)
+            }
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {

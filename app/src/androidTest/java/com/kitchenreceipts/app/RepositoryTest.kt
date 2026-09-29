@@ -71,6 +71,40 @@ class RepositoryTest {
         assertEquals(1, repo.sellerStats().first().size) // same seller despite different spelling
     }
 
+    @Test fun productGroupsSuggestConfirmAndCompare() = runBlocking {
+        val a = repo.createProduct("PASSATA VALLEVERDE 700G")
+        val b = repo.createProduct("PASSATA COLLINA ROSSA 5KG")
+        val file = StoredFile("documents/fam.jpg", "image/jpeg", 1, "sha-fam")
+        repo.saveDocument(
+            doc("Alfa Ingrosso", "7", listOf(item("PASSATA VALLEVERDE 700G", a.id, "12", "pz", 1260), item("PASSATA COLLINA ROSSA 5KG", b.id, "2", "pz", 1300)), 2560),
+            file, null, null,
+        )
+        // Suggested, not applied.
+        val s = repo.familySuggestions().first().single()
+        assertEquals("Passata di pomodoro", s.name)
+        assertTrue(repo.productsOnce().all { it.familyId == null })
+
+        val fid = repo.addToFamily(s.name, s.productIds)
+        assertTrue(repo.familySuggestions().first().isEmpty())
+        val rows = repo.familyComparison(fid).first()
+        assertEquals(2, rows.size)
+        val cheapest = rows.single { it.cheapest }
+        assertEquals(b.id, cheapest.productId) // 6,50 per 5 kg = 1,30/kg < 1,05 per 700 g = 1,50/kg
+        assertEquals(0, BigDecimal("1.3").compareTo(cheapest.perBase))
+
+        // Products stay separate: each keeps its own purchases.
+        assertEquals(1, repo.purchasesForProduct(a.id).first().size)
+
+        // Removing a product from its group: it is not suggested again.
+        repo.dismissFamilySuggestion(listOf(a.id))
+        assertEquals(1, repo.productsInFamily(fid).first().size)
+        assertTrue(repo.familySuggestions().first().isEmpty())
+
+        repo.deleteFamily(fid)
+        assertTrue(repo.productsOnce().all { it.familyId == null })
+        assertEquals(2, repo.productsOnce().size)
+    }
+
     @Test fun duplicateWarningAndDeleteCascade() = runBlocking {
         val file = StoredFile("documents/test2.jpg", "image/jpeg", 1, "sha-x")
         val d = doc("Mercato Fresco", "42", listOf(item("Limoni", null, "2", "pz", 240)))

@@ -346,4 +346,41 @@ interface ProductDao {
 
     @Query("UPDATE OR IGNORE unit_conversions SET product_id = :into WHERE product_id = :from")
     suspend fun moveConversions(from: Long, into: Long)
+
+    // ---- product groups (v6)
+    @Query("SELECT * FROM product_families ORDER BY name COLLATE NOCASE")
+    fun families(): Flow<List<ProductFamilyEntity>>
+
+    @Query("SELECT * FROM product_families ORDER BY name COLLATE NOCASE")
+    suspend fun familiesOnce(): List<ProductFamilyEntity>
+
+    @Query("SELECT * FROM product_families WHERE id = :id")
+    fun observeFamily(id: Long): Flow<ProductFamilyEntity?>
+
+    @Query("SELECT * FROM product_families WHERE normalized_name = :normalized LIMIT 1")
+    suspend fun findFamilyByNormalized(normalized: String): ProductFamilyEntity?
+
+    @Insert(onConflict = OnConflictStrategy.ABORT)
+    suspend fun insertFamily(family: ProductFamilyEntity): Long
+
+    @Query("UPDATE product_families SET name = :name, normalized_name = :normalized WHERE id = :id")
+    suspend fun renameFamily(id: Long, name: String, normalized: String)
+
+    @Query("DELETE FROM product_families WHERE id = :id")
+    suspend fun deleteFamily(id: Long)
+
+    @Query("UPDATE products SET family_id = NULL WHERE family_id = :familyId")
+    suspend fun clearFamily(familyId: Long)
+
+    @Query("UPDATE products SET family_id = :familyId, family_dismissed = 0 WHERE id IN (:productIds)")
+    suspend fun setFamily(productIds: List<Long>, familyId: Long?)
+
+    @Query("UPDATE products SET family_id = NULL, family_dismissed = 1 WHERE id IN (:productIds)")
+    suspend fun dismissFamily(productIds: List<Long>)
+
+    @Query("UPDATE products SET brand = :brand WHERE id = :id")
+    suspend fun setBrand(id: Long, brand: String?)
+
+    @Query("SELECT * FROM products WHERE family_id = :familyId ORDER BY name COLLATE NOCASE")
+    fun productsInFamily(familyId: Long): Flow<List<ProductEntity>>
 }

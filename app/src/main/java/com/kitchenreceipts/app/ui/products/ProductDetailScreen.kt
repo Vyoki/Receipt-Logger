@@ -44,6 +44,7 @@ import androidx.lifecycle.viewModelScope
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.data.AliasRow
 import com.kitchenreceipts.app.data.ProductEntity
+import com.kitchenreceipts.app.data.ProductFamilyEntity
 import com.kitchenreceipts.app.data.ProductNameTakenException
 import com.kitchenreceipts.app.data.PurchaseRow
 import com.kitchenreceipts.app.data.ReceiptRepository
@@ -107,6 +108,11 @@ class ProductDetailViewModel(private val repo: ReceiptRepository, private val id
     fun deleteAlias(aid: Long) = viewModelScope.launch { repo.deleteAlias(aid) }
     fun setCategory(c: Category) = viewModelScope.launch { repo.setCategory(id, c) }
     fun mergeInto(target: Long, done: () -> Unit) = viewModelScope.launch { repo.mergeProducts(id, target); done() }
+    fun setFamily(name: String) = viewModelScope.launch { repo.addToFamily(name, listOf(id)) }
+    fun removeFromFamily() = viewModelScope.launch { repo.dismissFamilySuggestion(listOf(id)) }
+    fun setBrand(brand: String) = viewModelScope.launch { repo.setBrand(id, brand) }
+
+    val families: StateFlow<List<ProductFamilyEntity>> = repo.families().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
     val otherProducts: StateFlow<List<ProductEntity>> = repo.products().map { list -> list.filter { it.id != id } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -115,11 +121,14 @@ class ProductDetailViewModel(private val repo: ReceiptRepository, private val id
 }
 
 @Composable
-fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Long) -> Unit) {
+fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenFamily: (Long) -> Unit) {
     val vm = appViewModel(key = "product-$productId") { ProductDetailViewModel(it.repository, productId) }
     val detail by vm.detail.collectAsStateWithLifecycle()
     val others by vm.otherProducts.collectAsStateWithLifecycle()
     val changes by vm.priceChanges.collectAsStateWithLifecycle()
+    val families by vm.families.collectAsStateWithLifecycle()
+    var choosingFamily by remember { mutableStateOf(false) }
+    var editingBrand by remember { mutableStateOf(false) }
     var choosingCategory by remember { mutableStateOf(false) }
     var merging by remember { mutableStateOf(false) }
     var mergeTarget by remember { mutableStateOf<ProductEntity?>(null) }
@@ -154,6 +163,34 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
                             Column(Modifier.weight(1f)) {
                                 Text(stringResource(R.string.category), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(categoryLabel(category), style = MaterialTheme.typography.titleMedium)
+                            }
+                            Text(stringResource(R.string.change), color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+                item("family") {
+                    val family = families.firstOrNull { it.id == d.product.familyId }
+                    ClickCard(onClick = { choosingFamily = true }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.family), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(family?.name ?: stringResource(R.string.family_none), style = MaterialTheme.typography.titleMedium)
+                            }
+                            Text(stringResource(R.string.change), color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                    if (family != null) {
+                        TextButton(onClick = { onOpenFamily(family.id) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                            Text(stringResource(R.string.family_compare, family.name))
+                        }
+                    }
+                }
+                item("brand") {
+                    ClickCard(onClick = { editingBrand = true }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(stringResource(R.string.brand), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                                Text(d.product.brand ?: stringResource(R.string.brand_none), style = MaterialTheme.typography.titleMedium)
                             }
                             Text(stringResource(R.string.change), color = MaterialTheme.colorScheme.primary)
                         }
@@ -240,6 +277,22 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
         NameDialog(stringResource(R.string.rename), d.product.name, onDismiss = { renaming = false }) { name ->
             renaming = false
             vm.rename(name) { scope.launch { snackbar.showSnackbar(takenMsg.format(name)) } }
+        }
+    }
+    if (choosingFamily && d?.product != null) {
+        FamilyPickerDialog(
+            productName = d.product.name,
+            current = families.firstOrNull { it.id == d.product.familyId },
+            families = families,
+            onPick = { name -> choosingFamily = false; vm.setFamily(name) },
+            onRemove = { choosingFamily = false; vm.removeFromFamily() },
+            onDismiss = { choosingFamily = false },
+        )
+    }
+    if (editingBrand && d?.product != null) {
+        BrandDialog(d.product.brand ?: "", onDismiss = { editingBrand = false }) { brand ->
+            editingBrand = false
+            vm.setBrand(brand)
         }
     }
     if (choosingCategory) {
@@ -377,6 +430,19 @@ private fun ConversionDialog(units: List<String>, onDismiss: () -> Unit, onConfi
         confirmButton = {
             TextButton(onClick = { if (valid) onConfirm(fromN!!, f!!, toN!!) }, enabled = valid) { Text(stringResource(R.string.save)) }
         },
+        dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
+    )
+}
+
+/** Brand as the operator types it; empty = none. Never filled in by the app. */
+@Composable
+private fun BrandDialog(initial: String, onDismiss: () -> Unit, onConfirm: (String) -> Unit) {
+    var text by remember { mutableStateOf(initial) }
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text(stringResource(R.string.brand)) },
+        text = { OutlinedTextField(value = text, onValueChange = { text = it }, singleLine = true, label = { Text(stringResource(R.string.brand)) }) },
+        confirmButton = { TextButton(onClick = { onConfirm(text.trim()) }) { Text(stringResource(R.string.ok)) } },
         dismissButton = { TextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) } },
     )
 }
