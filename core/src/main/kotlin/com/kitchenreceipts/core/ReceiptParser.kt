@@ -388,11 +388,41 @@ object ReceiptParser {
             itemsReadBy = "columns"
         }
         if (lotRejected) warnings += ParseWarning.LOT_LOOKS_LIKE_DATE
+        return finish(
+            ParsedDocument(
+                sellerName = seller,
+                documentDate = date,
+                documentNumber = docNumber,
+                currency = currency,
+                subtotalCents = subtotal,
+                vatCents = vat,
+                totalCents = total,
+                vatBasis = null,
+                lineItems = items,
+                warnings = warnings,
+                itemsReadBy = itemsReadBy,
+            ),
+            text,
+        )
+    }
+
+    private val CHECK_WARNINGS = setOf(
+        ParseWarning.NO_ITEMS_FOUND, ParseWarning.LINE_TOTAL_MISMATCH, ParseWarning.TOTALS_INCONSISTENT, ParseWarning.ITEMS_SUM_MISMATCH,
+    )
+
+    /**
+     * Cross-checks a reading: subtotal + VAT = total, the lines against the totals, and whether prices
+     * include VAT (printed wording first, then the arithmetic). Used for every reading (text, columns, AI).
+     */
+    fun finish(doc: ParsedDocument, text: String): ParsedDocument {
+        val items = doc.lineItems
+        val warnings = (doc.warnings - CHECK_WARNINGS).toMutableSet()
+        var total = doc.totalCents
+        var vat = doc.vatCents
         if (items.isEmpty()) warnings += ParseWarning.NO_ITEMS_FOUND
         if (items.any { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings }) warnings += ParseWarning.LINE_TOTAL_MISMATCH
 
-        // ------------------------------------------------------------ cross checks
-        val s = subtotal; val v = vat; val t = total
+        val s = doc.subtotalCents; val v = vat; val t = total
         if (s != null && v != null && t != null) {
             if (kotlin.math.abs(s.value + v.value - t.value) > 1) warnings += ParseWarning.TOTALS_INCONSISTENT
             else {
@@ -405,7 +435,7 @@ object ReceiptParser {
         val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) itemTotals.sum() else null
         val tolerance = maxOf(2L, items.size.toLong())
         val matchesSubtotal = itemsSum != null && s != null && kotlin.math.abs(itemsSum - s.value) <= tolerance
-        val matchesTotal = itemsSum != null && total != null && kotlin.math.abs(itemsSum - total!!.value) <= tolerance
+        val matchesTotal = itemsSum != null && total != null && kotlin.math.abs(itemsSum - total.value) <= tolerance
         if (itemsSum != null && (s != null || total != null) && !matchesSubtotal && !matchesTotal) {
             warnings += ParseWarning.ITEMS_SUM_MISMATCH
         }
@@ -421,20 +451,7 @@ object ReceiptParser {
                 Extracted(VatBasis.EXCLUSIVE, Confidence.LOW, "somma righe = imponibile")
             else -> null
         }
-
-        return ParsedDocument(
-            sellerName = seller,
-            documentDate = date,
-            documentNumber = docNumber,
-            currency = currency,
-            subtotalCents = subtotal,
-            vatCents = vat,
-            totalCents = total,
-            vatBasis = vatBasis,
-            lineItems = items,
-            warnings = warnings,
-            itemsReadBy = itemsReadBy,
-        )
+        return doc.copy(totalCents = total, vatCents = vat, vatBasis = vatBasis, warnings = warnings)
     }
 
     /** Number of leading lines of [next] that repeat the last lines of [prev] (at least 2 to count). */
