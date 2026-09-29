@@ -103,7 +103,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         var aiNote: String? = null
         val aiRaw = mutableListOf<String>()
         if (ai != null && best.error == null && best.lines.isNotEmpty() && (ai.always || !ReceiptParser.isConfident(parsed))) {
-            aiNote = runAi(file, best, ai, options, onProgress, aiRaw)
+            aiNote = runAi(file, best, ai, options, onProgress, aiRaw, parsed)
         }
         return rebuild(
             file, best.lines, best.widths, best.error, engine.displayName, aiRaw, aiNote,
@@ -112,7 +112,10 @@ class ImportProcessor(private val renderer: PageRenderer) {
         )
     }
 
-    /** Runs the AI on every read page, collecting its answers in [raw]; returns a note for the log. */
+    /**
+     * Runs the AI on the pages that need it (all of them when it should always help), collecting its answers in
+     * [raw] ("" for pages it did not read); returns a note for the log.
+     */
     private suspend fun runAi(
         file: StoredFile,
         best: Reading,
@@ -120,9 +123,14 @@ class ImportProcessor(private val renderer: PageRenderer) {
         options: ParseOptions,
         onProgress: (ImportProgress) -> Unit,
         raw: MutableList<String>,
+        whole: ParsedDocument,
     ): String {
         val pages = best.lines.size
-        onProgress(ImportProgress(1, pages, 3))
+        val selected = if (ai.always) (0 until pages).toList() else withContext(Dispatchers.Default) {
+            AiReader.pagesToRead(best.lines.map { ReceiptParser.parsePages(listOf(it), options) }, whole)
+        }
+        repeat(pages) { raw += "" }
+        onProgress(ImportProgress(selected.first() + 1, pages, 3))
         val reader = try {
             ai.reader()
         } catch (e: CancellationException) {
@@ -130,9 +138,9 @@ class ImportProcessor(private val renderer: PageRenderer) {
         } catch (e: Exception) {
             return "not started: ${e.message}"
         }
-        val notes = mutableListOf<String>()
+        val notes = mutableListOf("pages ${selected.joinToString(",") { "${it + 1}" }} of $pages")
         try {
-            for (i in 0 until pages) {
+            for (i in selected) {
                 val bmp = renderer.renderPage(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
                 val r = try {
                     reader.read(bmp, best.lines[i], best.widths.getOrElse(i) { bmp.width }, LayoutRows.toText(best.lines[i]), options) { stage, count ->
@@ -141,7 +149,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 } finally {
                     bmp.recycle()
                 }
-                raw += if (r.error == null) r.raw else ""
+                raw[i] = if (r.error == null) r.raw else ""
                 notes += "p${i + 1}: ${r.millis / 1000}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "") +
                     (r.parsed?.let { " items=${it.lineItems.size}" } ?: "")
                 if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
@@ -215,10 +223,15 @@ class ImportProcessor(private val renderer: PageRenderer) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
             var parsed = if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options)
-            if (aiRaw.size == lines.size && aiRaw.isNotEmpty()) {
-                val pages = aiRaw.mapIndexed { i, raw -> AiReader.decode(raw)?.let { AiReader.toParsed(it, pageTexts[i], options) } }
-                if (pages.all { it != null }) {
-                    AiReader.joinPages(pages.filterNotNull(), text)?.let { parsed = AiReader.merge(parsed, it, text) }
+            if (aiRaw.size == lines.size && aiRaw.any { it.isNotBlank() }) {
+                val aiPages = aiRaw.mapIndexed { i, raw ->
+                    raw.takeIf { it.isNotBlank() }?.let { AiReader.decode(it) }?.let { AiReader.toParsed(it, pageTexts[i], options) }
+                }
+                val joined = AiReader.joinPages(aiPages.filterNotNull(), text)
+                if (joined != null) {
+                    // Lines page by page (AI where it read the page and did better), header and totals from both readings.
+                    val regularPages = lines.map { ReceiptParser.parsePages(listOf(it), options) }
+                    parsed = AiReader.merge(parsed, joined.copy(lineItems = AiReader.combineItems(regularPages, aiPages)), text)
                 }
             }
             PendingImport(

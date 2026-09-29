@@ -307,6 +307,8 @@ A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the norma
 - It sees only the part of the photo with text (the table around the paper and the empty paper are cut away).
 - The photo is scaled so the print is about 22 pixels tall.
 - It uses all fast cores to read the image and the performance cores to write.
+- On documents of several pages it reads only the pages that need it: a line that does not add up, the first page if the supplier or date is missing, the last page if the total is missing.
+- Measured in CI (4-core cloud computer, one page): the cut-down photo took 2B from 418 s to 330 s and 4B from 855 s to 654 s, still with every line right.
 
 **When it runs:**
 - *When needed* (default) runs it only if the normal reading does not add up.
@@ -356,7 +358,7 @@ Built and tested in an environment **without** access to Google's Maven reposito
 | Check | Status |
 |---|---|
 | `:core` compiles (Kotlin 2.0.21) | ✅ verified |
-| `:core` unit tests: 152 tests on synthetic Italian fixtures (invoices, receipts, delivery notes, messy phone OCR) | ✅ all passing |
+| `:core` unit tests: 156 tests on synthetic Italian fixtures (invoices, receipts, delivery notes, messy phone OCR) | ✅ all passing |
 | All 34 Room `@Query` statements and the v1→v2 migration SQL run in SQLite against a schema matching the entities | ✅ verified |
 | String resources: every referenced key exists in English and Italian, with matching format arguments | ✅ verified |
 | `:app` Android build (Room/KSP code generation, Compose compilation, APK) | ✅ built by GitHub Actions on every push |
