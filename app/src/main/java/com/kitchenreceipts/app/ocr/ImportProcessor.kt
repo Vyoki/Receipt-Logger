@@ -2,6 +2,8 @@ package com.kitchenreceipts.app.ocr
 
 import com.kitchenreceipts.app.files.PageRenderer
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.app.ai.AiPageReader
+import com.kitchenreceipts.core.AiReader
 import com.kitchenreceipts.core.LayoutRows
 import com.kitchenreceipts.core.OcrLine
 import com.kitchenreceipts.core.ParseOptions
@@ -26,6 +28,10 @@ data class PendingImport(
     val ocrMillis: Long = 0,
     /** Which reading was kept ("pass 2 of 2 (enhanced image), items read by columns"). */
     val readingNote: String = "",
+    /** What the on-phone AI reader did, if it ran (per page: time, size of the answer, errors). */
+    val aiNote: String? = null,
+    /** The AI's raw answers, page by page (for troubleshooting). */
+    val aiRaw: List<String> = emptyList(),
 ) {
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
@@ -33,7 +39,9 @@ data class PendingImport(
         append("Engine: ").append(engineName).append(" · pages read: ").append(pagesRead).append('/').append(file.pageCount).append('\n')
         if (readingNote.isNotEmpty()) append("Reading: ").append(readingNote).append('\n')
         ocrError?.let { append("Error: ").append(it).append('\n') }
+        aiNote?.let { append("AI reader: ").append(it).append('\n') }
         append("\n=== Rows ===\n").append(ocrText).append('\n')
+        aiRaw.forEachIndexed { p, raw -> append("\n=== AI answer, page ").append(p + 1).append(" ===\n").append(raw).append('\n') }
         rawLines.forEachIndexed { p, lines ->
             append("\n=== Raw lines, page ").append(p + 1).append(" (left,top,right,bottom,angle) ===\n")
             lines.forEach { l ->
@@ -46,6 +54,12 @@ data class PendingImport(
     }
 }
 
+/** Progress of an import: which page of how many, and which reading (1 = photo, 2 = enhanced photo, 3 = AI). */
+data class ImportProgress(val page: Int, val of: Int, val pass: Int, val aiStage: Int = 0, val aiCount: Int = 0)
+
+/** How the on-phone AI reader should be used for this import (null = not at all). */
+class AiUse(val reader: suspend () -> AiPageReader, val always: Boolean)
+
 class ImportProcessor(private val renderer: PageRenderer) {
 
     /**
@@ -57,16 +71,23 @@ class ImportProcessor(private val renderer: PageRenderer) {
     suspend fun process(
         file: StoredFile,
         engine: OcrEngine,
-        onProgress: (page: Int, of: Int, pass: Int) -> Unit = { _, _, _ -> },
+        onProgress: (ImportProgress) -> Unit = {},
         options: ParseOptions = ParseOptions(),
+        ai: AiUse? = null,
     ): PendingImport {
         val started = System.currentTimeMillis()
         val pages = minOf(file.pageCount, MAX_OCR_PAGES)
-        val first = readAll(file, engine, pages, 1, onProgress)
+        val first = readAll(file, engine, pages, 1) { p, of -> onProgress(ImportProgress(p, of, 1)) }
         var best = first
         var passes = 1
         if (first.error == null && first.lines.isNotEmpty() && !ReceiptParser.isConfident(first.parsed(options)) && engine.worksOffline && engine !== NoOcrEngine) {
-            val second = runCatching { readAll(file, engine, first.lines.size, 2, onProgress) }.getOrNull()
+            val second = try {
+                readAll(file, engine, first.lines.size, 2) { p, of -> onProgress(ImportProgress(p, of, 2)) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (_: Exception) {
+                null
+            }
             passes = 2
             if (second != null && second.error == null &&
                 ReceiptParser.quality(second.parsed(options)) > ReceiptParser.quality(first.parsed(options))
@@ -74,12 +95,65 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 best = second
             }
         }
-        val parsed = best.parsed(options)
+        var parsed = best.parsed(options)
+        // The on-phone AI reader: when asked to always help, or when the regular readings still do not check out.
+        var aiNote: String? = null
+        val aiRaw = mutableListOf<String>()
+        if (ai != null && best.error == null && best.lines.isNotEmpty() && (ai.always || !ReceiptParser.isConfident(parsed))) {
+            val aiResult = runAi(file, best, ai, options, onProgress, aiRaw)
+            aiNote = aiResult.second
+            aiResult.first?.let { aiDoc -> parsed = AiReader.merge(parsed, aiDoc, best.text) }
+        }
         return PendingImport(
             file, best.text, parsed, engine.displayName, best.lines.size, best.error, best.lines,
             System.currentTimeMillis() - started,
             readingNote = "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else "") + ", items read by ${parsed.itemsReadBy}",
+            aiNote = aiNote,
+            aiRaw = aiRaw,
         )
+    }
+
+    /** Runs the AI on every read page; returns its joined reading (null if any page failed) and a note for the log. */
+    private suspend fun runAi(
+        file: StoredFile,
+        best: Reading,
+        ai: AiUse,
+        options: ParseOptions,
+        onProgress: (ImportProgress) -> Unit,
+        raw: MutableList<String>,
+    ): Pair<ParsedDocument?, String> {
+        val pages = best.lines.size
+        onProgress(ImportProgress(1, pages, 3))
+        val reader = try {
+            ai.reader()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null to "not started: ${e.message}"
+        }
+        val notes = mutableListOf<String>()
+        val results = mutableListOf<ParsedDocument>()
+        try {
+            for (i in 0 until pages) {
+                val bmp = renderer.renderPage(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
+                val r = try {
+                    reader.read(bmp, LayoutRows.toText(best.lines[i]), options) { stage, count ->
+                        onProgress(ImportProgress(i + 1, pages, 3, stage, count))
+                    }
+                } finally {
+                    bmp.recycle()
+                }
+                raw += r.raw
+                notes += "p${i + 1}: ${r.millis / 1000}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "") +
+                    (r.parsed?.let { " items=${it.lineItems.size}" } ?: "")
+                if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
+                r.parsed?.let { results += it }
+            }
+        } finally {
+            reader.close()
+        }
+        val joined = if (results.size == pages) AiReader.joinPages(results, best.text) else null
+        return joined to notes.joinToString("; ")
     }
 
     private inner class Reading(val lines: List<List<OcrLine>>, val error: String?, val pass: Int) {
@@ -95,12 +169,12 @@ class ImportProcessor(private val renderer: PageRenderer) {
         engine: OcrEngine,
         pages: Int,
         pass: Int,
-        onProgress: (Int, Int, Int) -> Unit,
+        onProgress: (Int, Int) -> Unit,
     ): Reading {
         val raw = mutableListOf<List<OcrLine>>()
         var error: String? = null
         for (i in 0 until pages) {
-            onProgress(i + 1, pages, pass)
+            onProgress(i + 1, pages)
             try {
                 val bmp = renderer.renderPage(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
                 try {

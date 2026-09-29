@@ -8,6 +8,9 @@ import com.kitchenreceipts.app.settings.AppSettings
 import com.kitchenreceipts.app.data.ReceiptRepository
 import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.files.PageRenderer
+import com.kitchenreceipts.app.ai.AiModelStore
+import com.kitchenreceipts.app.ai.AiPageReader
+import com.kitchenreceipts.app.ocr.AiUse
 import com.kitchenreceipts.app.ocr.ImportProcessor
 import com.kitchenreceipts.app.ocr.MlKitOcrEngine
 import com.kitchenreceipts.app.ocr.OcrEngine
@@ -25,6 +28,15 @@ class AppContainer(context: Context) {
     val pageRenderer = PageRenderer(fileStore)
     val repository = ReceiptRepository(database, fileStore)
     val importProcessor = ImportProcessor(pageRenderer)
+    val aiModels = AiModelStore(context)
+    private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir
+
+    /** How the AI reader should help with the next import, from the settings and the installed model (null = not at all). */
+    fun aiUse(): AiUse? {
+        val mode = settings.aiMode
+        if (mode == AppSettings.AiMode.OFF || !aiModels.installed || !aiModels.deviceSupport().nativeOk) return null
+        return AiUse(reader = { AiPageReader.open(aiModels, nativeLibDir) }, always = mode == AppSettings.AiMode.ALWAYS)
+    }
 
     init {
         repository.onSharedVatNumber = { vat ->

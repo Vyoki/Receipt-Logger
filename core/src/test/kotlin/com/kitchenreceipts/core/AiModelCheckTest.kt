@@ -1,0 +1,62 @@
+package com.kitchenreceipts.core
+
+import org.junit.Assert.assertNotNull
+import org.junit.Assume.assumeTrue
+import org.junit.Test
+import java.io.File
+
+/**
+ * Used by the CI job that runs the real AI model on a synthetic invoice (see .github/workflows/android.yml,
+ * job ai-model-check). Skipped in normal test runs.
+ * - AI_EXPORT_DIR: writes instruction.txt and grammar.gbnf exactly as the app sends them;
+ * - AI_ANSWER_DIR: checks answer-*.json against the expected lines and prints a report.
+ */
+class AiModelCheckTest {
+
+    private val ocrText: String get() = javaClass.classLoader!!.getResource("fixtures/ocr_mlkit_cash_and_carry.txt")!!.readText()
+
+    @Test fun exportPrompt() {
+        val dir = System.getenv("AI_EXPORT_DIR")
+        assumeTrue(dir != null)
+        File(dir!!).mkdirs()
+        File(dir, "instruction.txt").writeText(AiReader.instruction(ocrText))
+        File(dir, "instruction-no-ocr.txt").writeText(AiReader.instruction(""))
+        File(dir, "grammar.gbnf").writeText(AiReader.GRAMMAR)
+    }
+
+    @Test fun checkAnswers() {
+        val dir = System.getenv("AI_ANSWER_DIR")
+        assumeTrue(dir != null)
+        val expected = listOf(
+            Triple("BISCOTTI", "1", "3.450"), Triple("FETTE", "1", "1.090"), Triple("CANDEGGINA", "6", "1.790"),
+            Triple("FILONE", "4.45", "4.390"), Triple("FILETTO", "4.24", "29.900"), Triple("ACQUA", "6", "0.420"),
+            Triple("UOVA", "2", "40.900"), Triple("PARMIGIANO", "4", "15.550"), Triple("SALAMELLA", "0.48", "10.210"),
+            Triple("CARBONE", "1", "11.320"), Triple("CIPOLLA", "10", "1.490"), Triple("RICOTTA", "2", "4.850"),
+        )
+        val totals = listOf(345L, 109L, 1074L, 1954L, 12678L, 252L, 8180L, 6220L, 490L, 1132L, 1490L, 970L)
+        val colli = listOf("1x1", "1x1", "2x3", "1", "1", "1x6", "2x1", "1x4", "1", "1x1", "1x10", "1x2")
+        val report = StringBuilder()
+        File(dir!!).listFiles { f -> f.name.startsWith("answer-") && f.name.endsWith(".json") }!!.sorted().forEach { f ->
+            val raw = f.readText()
+            val a = AiReader.decode(raw)
+            assertNotNull("${f.name}: not valid JSON of the expected shape:\n$raw", a)
+            val ocr = if (f.name.contains("no-ocr")) "" else ocrText
+            val d = AiReader.toParsed(a!!, ocr)
+            var amountsOk = 0; var qtyPriceOk = 0; var colliOk = 0; var namesOk = 0
+            expected.forEachIndexed { i, (name, q, p) ->
+                val it = d.lineItems.firstOrNull { li -> li.originalDescription.uppercase().startsWith(name) }
+                if (it != null) namesOk++
+                if (it?.lineTotalCents?.value == totals[i]) amountsOk++
+                if (it?.quantity?.value?.compareTo(q.toBigDecimal()) == 0 && it.unitPrice?.value?.compareTo(p.toBigDecimal()) == 0) qtyPriceOk++
+                if (it?.packages?.value == colli[i]) colliOk++
+            }
+            report.append("${f.name}: items=${d.lineItems.size}/12 names=$namesOk amounts=$amountsOk qty+price=$qtyPriceOk colli=$colliOk ")
+                .append("seller=${d.sellerName?.value} number=${d.documentNumber?.value} date=${d.documentDate?.value} total=${d.totalCents?.value}\n")
+            d.lineItems.forEach { li ->
+                report.append("  ${li.itemCode}|${li.packages?.value}|${li.originalDescription}|q=${li.quantity?.value} ${li.unit?.value} p=${li.unitPrice?.value} t=${li.lineTotalCents?.value} ${li.quantity?.confidence}\n")
+            }
+        }
+        File(dir, "report.txt").writeText(report.toString())
+        println(report)
+    }
+}

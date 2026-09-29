@@ -9,7 +9,7 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
 
@@ -22,6 +22,9 @@ jobs:
 
       - name: Make gradlew executable
         run: chmod +x gradlew
+
+      - name: Fetch llama.cpp (pinned)
+        run: git clone --depth 1 --branch b11242 https://github.com/ggml-org/llama.cpp third_party/llama.cpp
 
       - name: Core unit tests
         run: ./gradlew :core:test --stacktrace
@@ -43,7 +46,7 @@ jobs:
         shell: bash
         run: |
           # Surface compiler / Gradle errors as annotations so they are visible without the raw log.
-          errs=$(grep -E '^e: |error:|^\* What went wrong|^> |Could not |FAILED' build.log | grep -v '^> Task' | head -60)
+          errs=$(grep -E '^e: |error:|^\* What went wrong|^> |Could not |FAILED|CMake Error|ninja: build stopped' build.log | grep -v '^> Task' | head -60)
           errs="${errs//'%'/'%25'}"
           errs="${errs//$'\n'/'%0A'}"
           echo "::error title=Build errors::${errs}"
@@ -63,9 +66,17 @@ jobs:
   # Runs the Room migration and repository tests on a real Android emulator.
   instrumented-tests:
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v5
+      - name: Fetch llama.cpp (pinned)
+        run: git clone --depth 1 --branch b11242 https://github.com/ggml-org/llama.cpp third_party/llama.cpp
+      - name: Download a tiny vision model for the AI reader test
+        run: |
+          mkdir -p ai-test
+          curl -fsSL --retry 3 -o ai-test/model.gguf https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/SmolVLM-256M-Instruct-Q8_0.gguf
+          curl -fsSL --retry 3 -o ai-test/mmproj.gguf https://huggingface.co/ggml-org/SmolVLM-256M-Instruct-GGUF/resolve/main/mmproj-SmolVLM-256M-Instruct-Q8_0.gguf
+          ls -la ai-test
       - uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -83,7 +94,7 @@ jobs:
           arch: x86_64
           target: default
           disable-animations: true
-          script: chmod +x gradlew && (./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > inst.log 2>&1; rc=$?; adb shell run-as com.kitchenreceipts.app cat files/ocr-e2e.txt > ocr-e2e.txt 2>/dev/null; exit $rc)
+          script: chmod +x gradlew && adb shell mkdir -p /data/local/tmp/ai-test && adb push ai-test/model.gguf /data/local/tmp/ai-test/model.gguf && adb push ai-test/mmproj.gguf /data/local/tmp/ai-test/mmproj.gguf && (./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.build.abi=x86_64 -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > inst.log 2>&1; rc=$?; adb shell run-as com.kitchenreceipts.app cat files/ocr-e2e.txt > ocr-e2e.txt 2>/dev/null; adb shell run-as com.kitchenreceipts.app cat files/ai-e2e.txt > ai-e2e.txt 2>/dev/null; exit $rc)
       - name: Publish OCR end-to-end output
         if: always()
         shell: bash
@@ -91,6 +102,9 @@ jobs:
           # Annotations are cut at 4 KB: publish the file in up to 10 chunks.
           python3 - <<'PY'
           import os
+          if os.path.exists('ai-e2e.txt') and os.path.getsize('ai-e2e.txt') > 0:
+              t = open('ai-e2e.txt', encoding='utf-8', errors='replace').read()[:3800]
+              print('::notice title=AI reader on emulator::' + t.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
           if not os.path.exists('ocr-e2e.txt') or os.path.getsize('ocr-e2e.txt') == 0:
               print('::notice title=OCR end-to-end output::no output file')
           else:
@@ -125,3 +139,74 @@ jobs:
         with:
           name: instrumented-test-report
           path: app/build/reports/androidTests/
+
+  # Runs the real AI models (Qwen3-VL 2B and 4B, as the app uses them) with the app's own reader code, prompt
+  # and grammar on a synthetic invoice photo, and reports how well they read it.
+  ai-model-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 75
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: '17'
+      - uses: gradle/actions/setup-gradle@v5
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+      - name: Fetch llama.cpp (pinned)
+        run: git clone --depth 1 --branch b11242 https://github.com/ggml-org/llama.cpp third_party/llama.cpp
+      - name: Build the reader for the desktop
+        run: |
+          cmake -S tools/ai-cli -B build-cli -DCMAKE_BUILD_TYPE=Release > cmake.log
+          cmake --build build-cli --target receipt-ai-cli -j 4 > build-cli.log 2>&1 || (tail -40 build-cli.log; exit 1)
+      - uses: actions/cache@v4
+        with:
+          path: models
+          key: qwen3vl-2b-4b-q4km-v1
+      - name: Download models
+        run: |
+          mkdir -p models && cd models
+          base=https://huggingface.co/Qwen
+          get() { [ -s "$2" ] || curl -fsSL --retry 3 -o "$2" "$1"; }
+          get $base/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf 2b.gguf
+          get $base/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf 2b-mmproj.gguf
+          get $base/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3VL-4B-Instruct-Q4_K_M.gguf 4b.gguf
+          get $base/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf 4b-mmproj.gguf
+          ls -la
+      - name: Prompt, grammar and invoice photo
+        run: |
+          pip install --quiet pillow
+          mkdir -p ai-run
+          AI_EXPORT_DIR=$PWD/ai-run ./gradlew :core:test --tests '*AiModelCheckTest.exportPrompt' --rerun --quiet
+          python3 tools/ai-cli/make_invoice.py ai-run
+      - name: Run the models
+        run: |
+          run() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/invoice.ppm ai-run/$2 ai-run/grammar.gbnf > ai-run/answer-$3.json 2> ai-run/$3.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/$3.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/$3.log; }
+          run 2b instruction.txt 2b
+          run 2b instruction-no-ocr.txt 2b-no-ocr
+          run 4b instruction.txt 4b
+      - name: Check the answers
+        run: AI_ANSWER_DIR=$PWD/ai-run ./gradlew :core:test --tests '*AiModelCheckTest.checkAnswers' --rerun --quiet
+      - name: Publish results
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import glob, os
+          def note(title, text):
+              text = text[:3800].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
+              print(f'::notice title={title}::{text}')
+          if os.path.exists('ai-run/report.txt'):
+              note('AI model check report', open('ai-run/report.txt').read())
+          for f in sorted(glob.glob('ai-run/*.log')):
+              lines = [l for l in open(f, errors='replace').read().splitlines() if 'prompt=' in l or 'Maximum resident' in l or 'Elapsed' in l or 'error' in l.lower()]
+              note('AI run ' + os.path.basename(f), '\n'.join(lines[-8:]))
+          for f in sorted(glob.glob('ai-run/answer-*.json')):
+              note('AI answer ' + os.path.basename(f), open(f, errors='replace').read())
+          PY
+      - uses: actions/upload-artifact@v5
+        if: always()
+        with:
+          name: ai-model-check
+          path: ai-run/
