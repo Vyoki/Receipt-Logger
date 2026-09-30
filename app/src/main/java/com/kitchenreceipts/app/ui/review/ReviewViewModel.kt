@@ -24,6 +24,8 @@ import com.kitchenreceipts.core.ErrorCode
 import com.kitchenreceipts.core.ItalianDates
 import com.kitchenreceipts.core.ItalianNumbers
 import com.kitchenreceipts.core.LineItemDraft
+import com.kitchenreceipts.core.LineChoice
+import com.kitchenreceipts.core.SupplierMemory
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidationResult
 import com.kitchenreceipts.core.VatBasis
@@ -95,6 +97,11 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     /** What the OCR proposed, to log the operator's corrections on save. */
     private var initialDraft: DocumentDraft? = null
     private var ocrSellerRaw: String? = null
+    private var supplierKey: String? = null
+    /** What the OCR found where, for showing the part of the photo behind a field (new documents only). */
+    private var ocrPages: List<List<com.kitchenreceipts.core.OcrLine>> = emptyList()
+    private var ocrWidths: List<Int> = emptyList()
+    private var peekPage: Pair<Int, android.graphics.Bitmap>? = null
     private var openedAt = System.currentTimeMillis()
 
     val products: StateFlow<List<ProductEntity>> = repo.products().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -115,6 +122,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         ocrText = pending.ocrText
         val prepared = c.preparer.prepare(pending)
         ocrSellerRaw = prepared.ocrSellerRaw
+        supplierKey = prepared.supplierKey
+        ocrPages = pending.rawLines
+        ocrWidths = pending.ocrWidths
         initialDraft = prepared.initialDraft
         _state.value = ReviewState(
             loading = false,
@@ -208,7 +218,23 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun setVatBasis(v: VatBasis) = editDraft { it.copy(vatBasis = v, vatBasisUncertain = false) }
     fun confirmVatBasis() = editDraft { it.copy(vatBasisUncertain = false) }
 
-    fun setItem(key: Long, field: ItemField, text: String) = editItem(key) { it.withField(field) { f -> f.confirmed(text) } }
+    fun setItem(key: Long, field: ItemField, text: String) = editItem(key) { item ->
+        val edited = item.withField(field) { f -> f.confirmed(text) }
+        // Typing the numbers by hand replaces the offered readings.
+        if (field in NUMBER_FIELDS) edited.copy(choices = emptyList()) else edited
+    }
+
+    /**
+     * The operator picked one reading of a line that added up several ways. Remembered for this supplier, so the
+     * same doubt is settled by itself next time.
+     */
+    fun pickChoice(key: Long, choice: LineChoice) {
+        editItem(key) { it.pick(choice) }
+        if (_state.value.isNew) {
+            c.learning.addRule(supplierKey, choice.rule)
+            c.log.event("CHOICE_PICKED", "rule" to choice.rule.encode())
+        }
+    }
     fun confirmItem(key: Long, field: ItemField) = editItem(key) { it.withField(field) { f -> f.confirmed() } }
 
     fun useComputedTotal(key: Long) = editItem(key) { item ->
@@ -240,6 +266,41 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
 
     private fun editItem(key: Long, f: (LineItemDraft) -> LineItemDraft) =
         editDraft { d -> d.copy(items = d.items.map { if (it.key == key) f(it) else it }) }
+
+    // ------------------------------------------------------------ where a value is on the photo
+
+    /** The part of the page photo a field was read from, with the value outlined; null when it cannot be found. */
+    suspend fun peek(source: String?, value: String): com.kitchenreceipts.app.ui.components.PeekImage? {
+        val path = storedFile?.relativePath ?: return null
+        val mime = storedFile?.mimeType ?: return null
+        val spot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.kitchenreceipts.core.FieldLocator.locate(ocrPages, source, value)
+        } ?: return null
+        val page = peekPage?.takeIf { it.first == spot.page }?.second ?: run {
+            val bmp = runCatching {
+                c.pageRenderer.renderForReading(path, mime, spot.page, com.kitchenreceipts.app.ocr.ImportProcessor.OCR_LONG_SIDE)
+            }.getOrNull() ?: return null
+            peekPage?.second?.recycle()
+            peekPage = spot.page to bmp
+            bmp
+        }
+        val scale = page.width.toFloat() / (ocrWidths.getOrNull(spot.page) ?: page.width).coerceAtLeast(1)
+        fun px(v: Int, max: Int) = (v * scale).toInt().coerceIn(0, max)
+        val l = px(spot.area.left, page.width - 1); val t = px(spot.area.top, page.height - 1)
+        val r = px(spot.area.right, page.width).coerceAtLeast(l + 1); val b = px(spot.area.bottom, page.height).coerceAtLeast(t + 1)
+        val crop = android.graphics.Bitmap.createBitmap(page, l, t, r - l, b - t)
+            .let { if (it === page) it.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else it }
+        fun fx(v: Int) = ((v * scale - l) / (r - l)).coerceIn(0f, 1f)
+        fun fy(v: Int) = ((v * scale - t) / (b - t)).coerceIn(0f, 1f)
+        return com.kitchenreceipts.app.ui.components.PeekImage(
+            crop, fx(spot.mark.left), fy(spot.mark.top), fx(spot.mark.right), fy(spot.mark.bottom), spot.exact,
+        )
+    }
+
+    override fun onCleared() {
+        peekPage?.second?.recycle()
+        peekPage = null
+    }
 
     // ------------------------------------------------------------ saving
 
@@ -294,6 +355,12 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 "auto" to auto, "priceChanges" to _state.value.priceChanges.size,
             )
             c.log.block("corrections", corrections)
+            if (documentId == null) {
+                // Confirmed lines of this supplier, shown to the AI as examples next time (corrected ones first).
+                val key = ocrText?.let { SupplierMemory.key(it, own, doc.sellerName) } ?: supplierKey
+                val corrected = initialDraft?.items.orEmpty().filter { it.uncertainCount > 0 || it.choices.isNotEmpty() }.map { it.key }.toSet()
+                runCatching { c.learning.addExamples(key, SupplierMemory.examplesFrom(finalDraft, corrected)) }
+            }
             _state.update { it.copy(saving = false, savedId = id, autoSaved = auto) }
         } catch (e: Exception) {
             c.log.error("save", e)
@@ -314,6 +381,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     }
 
     companion object {
+        private val NUMBER_FIELDS = setOf(ItemField.QUANTITY, ItemField.UNIT_PRICE, ItemField.LINE_TOTAL)
+
         fun itemErrorKey(itemKey: Long, field: String) = "item:$itemKey.$field"
     }
 }

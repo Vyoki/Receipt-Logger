@@ -21,6 +21,8 @@ import kotlinx.coroutines.launch
 import com.kitchenreceipts.app.jobs.DraftPreparer
 import com.kitchenreceipts.app.jobs.ImportQueue
 import com.kitchenreceipts.app.jobs.ReadingNotifier
+import com.kitchenreceipts.app.learning.LearningStore
+import com.kitchenreceipts.core.SupplierMemory
 
 /** Manual dependency container: small enough that a DI framework would add more than it saves. */
 class AppContainer(context: Context) {
@@ -33,13 +35,21 @@ class AppContainer(context: Context) {
     val repository = ReceiptRepository(database, fileStore)
     val importProcessor = ImportProcessor(pageRenderer)
     val aiModels = AiModelStore(context)
+    /** What the app learned from the operator's choices and confirmed lines, per supplier (phone only). */
+    val learning = LearningStore(context)
     private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir
 
     /** How the AI reader should help with the next import, from the settings and the installed model (null = not at all). */
     fun aiUse(): AiUse? {
         val mode = settings.aiMode
         if (mode == AppSettings.AiMode.OFF || !aiModels.installed || !aiModels.deviceSupport().nativeOk) return null
-        return AiUse(reader = { AiPageReader.open(aiModels, nativeLibDir) }, always = mode == AppSettings.AiMode.ALWAYS)
+        return AiUse(
+            reader = { AiPageReader.open(aiModels, nativeLibDir) },
+            always = mode == AppSettings.AiMode.ALWAYS,
+            examples = { parsed, text ->
+                learning.examples(SupplierMemory.key(text, settings.ownVatNumber.ifBlank { null }, parsed.sellerName?.value))
+            },
+        )
     }
 
     init {
@@ -55,7 +65,7 @@ class AppContainer(context: Context) {
     val appScope = CoroutineScope(SupervisorJob())
 
     val notifier = ReadingNotifier(context)
-    val preparer = DraftPreparer(repository, settings, log)
+    val preparer = DraftPreparer(repository, settings, log, learning)
 
     /** Documents read in the background, one after another; survives restarts. */
     val importQueue = ImportQueue(

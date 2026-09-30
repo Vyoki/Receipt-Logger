@@ -4,6 +4,16 @@ package com.kitchenreceipts.app.ui.review
 
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.runtime.CompositionLocalProvider
+import com.kitchenreceipts.app.ui.components.FieldPeekCard
+import com.kitchenreceipts.app.ui.components.FieldPeekDialog
+import com.kitchenreceipts.app.ui.components.LocalFieldPeek
+import com.kitchenreceipts.app.ui.components.PeekImage
+import com.kitchenreceipts.app.ui.components.PeekRequest
+import com.kitchenreceipts.core.LineChoice
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -111,10 +121,25 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
 
     LaunchedEffect(state.savedId) { state.savedId?.let { onSaved(it, state.autoSaved) } }
 
+    // The part of the photo behind the field being checked (tap a field to see it).
+    var peekRequest by remember { mutableStateOf<PeekRequest?>(null) }
+    var peekImage by remember { mutableStateOf<PeekImage?>(null) }
+    var peekClosed by remember { mutableStateOf(false) }
+    var enlarged by remember { mutableStateOf<Pair<String, PeekImage>?>(null) }
+    LaunchedEffect(peekRequest) {
+        val r = peekRequest
+        if (r == null) { peekImage = null; return@LaunchedEffect }
+        peekClosed = false
+        peekImage = runCatching { vm.peek(r.source, r.value) }.getOrNull()
+    }
+
     // Going back keeps a new document waiting on the home screen; throwing it away is its own button.
     val leave: () -> Unit = onBack
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
+    val onPeek: (PeekRequest?) -> Unit = remember { { r -> if (r != null) peekRequest = r else if (enlarged == null) peekRequest = null } }
+    CompositionLocalProvider(LocalFieldPeek provides onPeek) {
+    Box(Modifier.fillMaxSize()) {
     AppScaffold(
         title = title,
         onBack = leave,
@@ -206,6 +231,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                         onUseComputed = { vm.useComputedTotal(item.key) },
                         onPickProduct = { pickerFor = item.key },
                         onRemove = { vm.removeItem(item.key) },
+                        onPickChoice = { ch -> vm.pickChoice(item.key, ch) },
                     )
                 }
                 item("addItem") {
@@ -219,6 +245,20 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
             }
         }
     }
+    val shown = peekImage
+    val req = peekRequest
+    if (shown != null && req != null && !peekClosed) {
+        FieldPeekCard(
+            label = req.label,
+            img = shown,
+            onEnlarge = { enlarged = req.label to shown },
+            onClose = { peekClosed = true },
+            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 60.dp),
+        )
+    }
+    }
+    }
+    enlarged?.let { (label, img) -> FieldPeekDialog(label, img) { enlarged = null } }
 
     // ---------------------------------------------------------------- dialogs & sheets
 
@@ -448,6 +488,7 @@ private fun ItemCard(
     onUseComputed: () -> Unit,
     onPickProduct: () -> Unit,
     onRemove: () -> Unit,
+    onPickChoice: (LineChoice) -> Unit = {},
 ) {
     val status = LocalStatusColors.current
     Card {
@@ -499,6 +540,18 @@ private fun ItemCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT_PRICE, R.string.unit_price, Modifier.weight(1f), FieldKind.DECIMAL)
                 ItemInput(item, errors, onChange, onConfirm, ItemField.LINE_TOTAL, R.string.line_total, Modifier.weight(1f), FieldKind.DECIMAL)
+            }
+            // The numbers add up in more than one way: one tap picks the right reading (remembered for this supplier).
+            if (item.choices.size >= 2) {
+                Text(stringResource(R.string.choice_title), style = MaterialTheme.typography.bodyMedium, color = status.uncertainBorder)
+                item.choices.forEachIndexed { i, ch ->
+                    val qty = ItalianNumbers.formatDecimal(ch.quantity, maxScale = 4) + (ch.unit?.let { " $it" } ?: "")
+                    val text = stringResource(
+                        R.string.choice_option, qty, ItalianNumbers.formatDecimal(ch.unitPrice, minScale = 2, maxScale = 4),
+                        ItalianNumbers.formatCents(ch.lineTotalCents),
+                    ) + if (i == 0 && ItalianNumbers.parse(item.quantity.text)?.compareTo(ch.quantity) == 0) " · " + stringResource(R.string.choice_suggested) else ""
+                    OutlinedButton(onClick = { onPickChoice(ch) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(text) }
+                }
             }
             // qty x price hint: offered, never applied without a tap.
             val computed = item.computedTotalCents()

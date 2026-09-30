@@ -13,19 +13,51 @@ import java.io.File
  */
 class AiModelCheckTest {
 
+    private companion object {
+        const val FILETTO = "0 10000051 FILETTO B/A KG 3,5+ S/V -, CS KG 4,24 29,900 126,78"
+        const val CANDEGGINA = "O 10000032x3 CANDEGGINA NORMALE LT.5- MARCA C FL LT 5 6 1,790 10,74 22"
+        val FILETTO_CHOICES = listOf(
+            LineChoice(java.math.BigDecimal("3.5"), java.math.BigDecimal("36.223"), 12678L),
+            LineChoice(java.math.BigDecimal("4.24"), java.math.BigDecimal("29.900"), 12678L),
+        )
+    }
+
     private val ocrText: String get() = javaClass.classLoader!!.getResource("fixtures/ocr_mlkit_cash_and_carry.txt")!!.readText()
 
     @Test fun exportPrompt() {
         val dir = System.getenv("AI_EXPORT_DIR")
         assumeTrue(dir != null)
         File(dir!!).mkdirs()
-        File(dir, "instruction.txt").writeText(AiReader.instruction(ocrText))
-        File(dir, "instruction-no-ocr.txt").writeText(AiReader.instruction(""))
+        File(dir, "instruction.txt").writeText(AiReader.instruction(ocrText, AiReader.Lang.EN))
+        File(dir, "instruction-no-ocr.txt").writeText(AiReader.instruction("", AiReader.Lang.EN))
         File(dir, "grammar.gbnf").writeText(AiReader.GRAMMAR)
         val head = "CODICE COLLI DESCRIZIONE BENI TIPO CONF. TOT. PREZZ0 IMPORTO COD"
-        File(dir, "row-filetto.txt").writeText(AiReader.rowInstruction(head, "0 10000051 FILETTO B/A KG 3,5+ S/V -, CS KG 4,24 29,900 126,78"))
-        File(dir, "row-candeggina.txt").writeText(AiReader.rowInstruction(head, "O 10000032x3 CANDEGGINA NORMALE LT.5- MARCA C FL LT 5 6 1,790 10,74 22"))
+        File(dir, "row-filetto.txt").writeText(AiReader.rowInstruction(head, FILETTO, AiReader.Lang.EN))
+        File(dir, "row-candeggina.txt").writeText(AiReader.rowInstruction(head, CANDEGGINA, AiReader.Lang.EN))
         File(dir, "row.gbnf").writeText(AiReader.ROW_GRAMMAR)
+        // Same questions with the instructions in Italian, to measure which language reads better.
+        File(dir, "instruction-it.txt").writeText(AiReader.instruction(ocrText, AiReader.Lang.IT))
+        File(dir, "row-filetto-it.txt").writeText(AiReader.rowInstruction(head, FILETTO, AiReader.Lang.IT))
+        File(dir, "row-candeggina-it.txt").writeText(AiReader.rowInstruction(head, CANDEGGINA, AiReader.Lang.IT))
+        // Multiple choice: the right reading is B (the answer is one letter).
+        for (lang in AiReader.Lang.entries) {
+            File(dir, "choice-filetto-${lang.name.lowercase()}.txt").writeText(AiReader.choiceInstruction(head, FILETTO, FILETTO_CHOICES, lang))
+        }
+        File(dir, "choice.gbnf").writeText(AiReader.CHOICE_GRAMMAR)
+    }
+
+    /** The one-letter answers: B is right. */
+    @Test fun checkChoiceAnswers() {
+        val dir = System.getenv("AI_ANSWER_DIR")
+        assumeTrue(dir != null)
+        val report = StringBuilder()
+        File(dir!!).listFiles { f -> f.name.startsWith("choiceanswer-") }!!.sorted().forEach { f ->
+            val raw = f.readText().trim()
+            val pick = AiReader.decodeChoice(raw, FILETTO_CHOICES)
+            report.append("${f.name}: answer='$raw' ${if (pick == FILETTO_CHOICES[1]) "RIGHT" else "WRONG"}\n")
+        }
+        File(dir, "choice-report.txt").writeText(report.toString())
+        println(report)
     }
 
     /** The small questions: one line each, answered from a strip of headings + the line. */

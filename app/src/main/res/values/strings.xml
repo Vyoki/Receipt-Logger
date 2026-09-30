@@ -355,8 +355,8 @@
         <item quantity="other">%d purchases without quantity (not counted)</item>
     </plurals>
     <string name="reading_second_pass">Taking a closer look to get every number right…</string>
-    <string name="packages">Colli</string>
-    <string name="packages_value">Colli (packages): %s</string>
+    <string name="packages">Pkgs</string>
+    <string name="packages_value">Pkgs: %s</string>
 
     <!-- AI reader -->
     <string name="ai_reading_page">AI reader: page %1$d of %2$d</string>
@@ -539,4 +539,19 @@
     <string name="brand">Brand</string>
     <string name="brand_none">Not set</string>
     <string name="brand_value">Brand: %1$s</string>
+    <!-- photo crop while checking, line choices, learning -->
+    <string name="close">Close</string>
+    <string name="peek_title">%1$s on the photo</string>
+    <string name="peek_title_row">%1$s: its row on the photo</string>
+    <string name="peek_hint">Tap the picture to enlarge it.</string>
+    <string name="choice_title">These numbers add up in more than one way. Which is printed? (Remembered for this supplier.)</string>
+    <string name="choice_option">%1$s × %2$s = %3$s</string>
+    <string name="choice_suggested">AI suggests</string>
+    <string name="learned_title">Learned from you</string>
+    <plurals name="learned_stats">
+        <item quantity="one">%1$d supplier: %2$d remembered choices, %3$d example lines for the AI.</item>
+        <item quantity="other">%1$d suppliers: %2$d remembered choices, %3$d example lines for the AI.</item>
+    </plurals>
+    <string name="learned_hint">Kept on this phone only. The AI model itself is never changed.</string>
+    <string name="learned_clear">Forget what was learned</string>
 </resources>

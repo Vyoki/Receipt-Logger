@@ -26,6 +26,19 @@ class PageRenderer(private val files: FileStore) {
             if (mimeType == FileStore.MIME_PDF) renderPdfPage(f, pageIndex, targetWidth) else decodeImage(f, targetWidth)
         }
 
+    /**
+     * A page as it is read: a photo is flattened like a scanner does (see PageFlattener) when its sheet can be found
+     * safely; a PDF page is already flat. The OCR positions refer to this image.
+     */
+    suspend fun renderForReading(relativePath: String, mimeType: String, pageIndex: Int, targetWidth: Int): Bitmap {
+        val bmp = renderPage(relativePath, mimeType, pageIndex, targetWidth)
+        if (mimeType == FileStore.MIME_PDF) return bmp
+        val flat = withContext(Dispatchers.Default) { runCatching { com.kitchenreceipts.app.ocr.PageFlattener.flatten(bmp) }.getOrNull() }
+            ?: return bmp
+        bmp.recycle()
+        return flat
+    }
+
     /** Decodes a photo respecting its EXIF orientation, downsampled so its long side is about [maxSide]. */
     fun decodeImage(file: File, maxSide: Int): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
