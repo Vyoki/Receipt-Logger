@@ -49,7 +49,7 @@ enum class HeaderField(val key: String) {
 
 enum class ItemField(val key: String) {
     DESCRIPTION("description"), QUANTITY("quantity"), UNIT("unit"), UNIT_PRICE("unitPrice"),
-    LINE_TOTAL("lineTotal"), VAT_RATE("vatRate"), LOT("lot"), EXPIRY("expiry"), PACKAGES("packages"),
+    LINE_TOTAL("lineTotal"), VAT_RATE("vatRate"), LOT("lot"), EXPIRY("expiry"), PACKAGES("packages"), PACK_SIZE("packSize"),
 }
 
 data class ReviewState(
@@ -187,6 +187,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                     lot = DraftField(it.lotNumber ?: ""),
                     expiry = DraftField(it.expiryDate?.let(ItalianDates::format) ?: ""),
                     packages = DraftField(it.packages ?: ""),
+                    packSize = DraftField(it.packSize ?: ""),
                 )
             },
         )
@@ -417,6 +418,7 @@ fun LineItemDraft.field(field: ItemField): DraftField = when (field) {
     ItemField.LOT -> lot
     ItemField.EXPIRY -> expiry
     ItemField.PACKAGES -> packages
+    ItemField.PACK_SIZE -> packSize
 }
 
 private fun LineItemDraft.withField(field: ItemField, f: (DraftField) -> DraftField): LineItemDraft = when (field) {
@@ -429,4 +431,5 @@ private fun LineItemDraft.withField(field: ItemField, f: (DraftField) -> DraftFi
     ItemField.LOT -> copy(lot = f(lot))
     ItemField.EXPIRY -> copy(expiry = f(expiry))
     ItemField.PACKAGES -> copy(packages = f(packages))
+    ItemField.PACK_SIZE -> copy(packSize = f(packSize))
 }

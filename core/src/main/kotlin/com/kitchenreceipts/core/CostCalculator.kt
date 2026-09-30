@@ -161,8 +161,11 @@ object CostCalculator {
                 for ((y, _) in g[x].orEmpty()) if (component.add(y)) stack.addLast(y)
             }
             val used = component.filter { it in units }
+            // Packs of a known size ("1 pz = 500 g", from the pack size printed on the invoice) are reported per kg / l.
             val target = used.firstOrNull { it == "kg" || it == "l" }
-                ?: component.firstOrNull { it == "kg" || it == "l" }?.takeIf { used.any { u2 -> Units.dimension(u2) != null } }
+                ?: component.firstOrNull { it == "kg" || it == "l" }?.takeIf {
+                    used.any { u2 -> Units.dimension(u2) != null } || conversionTargets.any { t -> Units.dimension(t) != null }
+                }
                 ?: used.sortedWith(
                     compareByDescending<String> { usage[it] ?: 0 }
                         .thenByDescending { u2 -> conversionTargets.contains(u2) } // "1 conf = 6 pz" -> report per pz

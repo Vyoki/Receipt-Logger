@@ -156,9 +156,20 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                         quantity = it.quantity, unit = it.unit, unitPrice = it.unitPrice, lineTotalCents = it.lineTotalCents,
                         vatRate = it.vatRatePercent, lotNumber = it.lotNumber, expiryDate = it.expiryDate,
                         packages = it.packages,
+                        packSize = it.packSize,
                     )
                 },
             )
+            // The pack size printed on the invoice ("GR 500") tells how much one piece of this product holds: kept as the
+            // product's conversion (1 pz = 500 g), so inventory, averages and price comparisons can work in kg or litres.
+            for ((index, item) in doc.items.withIndex()) {
+                val pid = item.productId ?: createdProducts[index] ?: continue
+                val size = com.kitchenreceipts.core.PackSizes.fromText(item.packSize) ?: continue
+                val from = com.kitchenreceipts.core.Units.normalize(item.unit) ?: continue
+                if (from != "pz" || com.kitchenreceipts.core.Units.dimension(size.unit) == null) continue
+                if (products.conversionCountFrom(pid, from) > 0) continue
+                products.insertConversionIfAbsent(UnitConversionEntity(productId = pid, fromUnit = from, toUnit = size.unit, factor = size.amount))
+            }
             // Remember the assignments for this seller (description and article code).
             for ((index, item) in doc.items.withIndex()) {
                 val pid = item.productId ?: createdProducts[index] ?: continue

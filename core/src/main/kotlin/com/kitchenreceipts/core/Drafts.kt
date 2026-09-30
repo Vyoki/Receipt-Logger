@@ -37,7 +37,17 @@ data class LineItemDraft(
     val newProductName: String? = null,
     /** The line's numbers add up in more than one way: the operator picks (the first is the suggested one). */
     val choices: List<LineChoice> = emptyList(),
+    /** How much one pack holds ("500 g", "1 l"): the quantity counts packs of this size. */
+    val packSize: DraftField = DraftField(),
 ) {
+    /** "4 × 500 g = 2 kg": the total amount the packs hold, or null when there is no size or the unit is not a count. */
+    fun packTotal(): Pair<BigDecimal, String>? {
+        val size = PackSizes.fromText(packSize.text)?.base ?: return null
+        if (Units.normalize(unit.text).let { it != null && it != "pz" }) return null
+        val q = ItalianNumbers.parse(quantity.text) ?: return null
+        return q.multiply(size.first).stripTrailingZeros() to size.second
+    }
+
     /** Takes one reading of the line's numbers as confirmed. */
     fun pick(c: LineChoice): LineItemDraft = copy(
         quantity = quantity.confirmed(ItalianNumbers.toEditText(c.quantity)),
@@ -48,7 +58,7 @@ data class LineItemDraft(
     )
 
     val uncertainCount: Int
-        get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry, packages).count { it.uncertain }
+        get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry, packages, packSize).count { it.uncertain }
 
     /** qty x price, offered as a one-tap suggestion when the line total is missing. Never auto-applied. */
     fun computedTotalCents(): Long? {
@@ -84,6 +94,8 @@ data class DocumentDraft(
     val lotsPrinted: Boolean = true,
     /** VAT groups that do not add up (rate, printed taxable amount, lines' sum), to show the operator where to look. */
     val vatGroupProblems: List<VatSummary.Check> = emptyList(),
+    /** The AI's double-check, if it ran. */
+    val aiCheck: AiCheck? = null,
 ) {
     val uncertainCount: Int
         get() = listOf(seller, date, number, currency, subtotal, vat, total).count { it.uncertain } +
@@ -119,11 +131,13 @@ data class DocumentDraft(
                         packages = f(it.packages) { p -> p },
                         itemCode = it.itemCode,
                         choices = it.choices,
+                        packSize = f(it.packSize) { s -> s },
                     )
                 },
                 warnings = p.warnings,
                 lotsPrinted = p.lotsPrinted,
                 vatGroupProblems = p.vatChecks.filter { !it.ok },
+                aiCheck = p.aiCheck,
             )
         }
     }
@@ -148,6 +162,8 @@ data class ValidLineItem(
     /** Create this product on save and link the line to it (only when [productId] is null). */
     val newProductName: String? = null,
     val packages: String? = null,
+    /** "500 g": one pack's size (normalised, see PackSizes). */
+    val packSize: String? = null,
 )
 
 data class ValidDocument(
@@ -206,10 +222,15 @@ object DraftValidator {
             val expiry = optionalDate(it.expiry.text, "$p.expiry", errors)
             val packages = it.packages.text.trim().ifEmpty { null }
             if ((packages?.length ?: 0) > 20) errors += FieldError("$p.packages", ErrorCode.TOO_LONG)
+            val packSize = it.packSize.text.trim().ifEmpty { null }?.let { t ->
+                val s = PackSizes.fromText(t) ?: PackSizes.parse(t.split(' ').reversed()) ?: PackSizes.parse(t.split(' '))
+                if (s == null) { errors += FieldError("$p.packSize", ErrorCode.INVALID_NUMBER); null } else s.text
+            }
             ValidLineItem(
                 desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry, it.itemCode,
                 newProductName = it.newProductName?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null },
                 packages = packages,
+                packSize = packSize,
             )
         }
 

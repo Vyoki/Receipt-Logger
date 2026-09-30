@@ -260,6 +260,10 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 - several fit: they are offered as choices; the AI answers one letter (A/B, about 20 s) and the operator confirms with one tap;
 - the choice is remembered for that supplier and applied by itself next time.
 
+**AI double-check on every document** (AI mode "Double-check every document", the default when a model is installed): before a document is saved or shown, the AI reads again the header (supplier, number, date), the totals and up to 8 lines (quantities worked out by arithmetic first, then the largest amounts), each as a short question. A value it reads differently is highlighted with both readings and is never cleared by the arithmetic; the review says how many values were checked and which differ. About 1–2 minutes per document on the phone.
+
+**Pack sizes.** "BT LT 1 · 10" is ten 1-litre bottles, "NC GR 750 · 4" four 750 g packs: the count and price stay as printed and the size is kept in its own field (Pack size). On saving, the size becomes the product's unit conversion (1 pz = 750 g), so averages, inventory and group price comparisons are per kg or litre.
+
 **Learning per supplier** (Settings ▸ Learned from you, phone only): remembered choices, and up to 3 confirmed lines shown to the AI as examples with each line question. The AI model itself is never changed.
 
 **Checking a value:** tapping a field in the review shows the part of the photo it was read from, with the value outlined (new documents).

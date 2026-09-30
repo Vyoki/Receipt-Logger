@@ -361,8 +361,8 @@
     <string name="ai_phone_weak">Potrebbe essere troppo lento o esaurire la memoria.</string>
     <string name="ai_installed">Installato: %1$s (%2$s GB)</string>
     <string name="ai_when">Quando usarlo</string>
-    <string name="ai_mode_needed">Quando la lettura normale non torna (consigliato)</string>
-    <string name="ai_mode_always">Su ogni documento (più lento)</string>
+    <string name="ai_mode_needed">Ricontrolla ogni documento: intestazione, totali e righe principali (consigliato)</string>
+    <string name="ai_mode_always">Leggi ogni pagina per intero (molto più lento)</string>
     <string name="ai_mode_off">Disattivato</string>
     <string name="ai_test">Prova</string>
     <string name="ai_testing">Caricamento…</string>
@@ -483,7 +483,7 @@
         <item quantity="one">Lettura di %d documento</item>
         <item quantity="other">Lettura di %d documenti</item>
     </plurals>
-    <string name="ai_checking">L\'IA controlla la parte dubbia %1$d di %2$d</string>
+    <string name="ai_checking">L\'IA ricontrolla %1$d di %2$d</string>
     <!-- notifiche prezzi -->
     <string name="notif_channel_prices">Variazioni di prezzo</string>
     <string name="notif_price_line">%1$s %2$s (%3$s → %4$s €/%5$s)</string>
@@ -545,4 +545,11 @@
     <string name="warn_vat_group_mismatch">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA.</string>
     <string name="reason_vat_group">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA:</string>
     <string name="vat_group_line">%1$s%%: righe %2$s, riepilogo %3$s (differenza %4$s)</string>
+    <string name="pack_size">Formato</string>
+    <string name="pack_total">= %1$s %2$s in totale</string>
+    <plurals name="ai_check_ok">
+        <item quantity="one">Ricontrollo IA: %d valore riletto, corrisponde.</item>
+        <item quantity="other">Ricontrollo IA: %d valori riletti, corrispondono tutti.</item>
+    </plurals>
+    <string name="ai_check_disagree">Ricontrollo IA: %1$d valori su %2$d letti diversamente (evidenziati):</string>
 </resources>

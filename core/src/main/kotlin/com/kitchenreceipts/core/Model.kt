@@ -55,7 +55,12 @@ data class ParsedLineItem(
     val packages: Extracted<String>? = null,
     /** Several readings of this line's numbers add up equally well: the AI or the operator picks one. */
     val choices: List<LineChoice> = emptyList(),
+    /** How much one pack holds, as printed ("500 g" for "GR 500"): the quantity counts packs of this size. */
+    val packSize: Extracted<String>? = null,
 )
+
+/** The AI's double-check: how many values it read again, and where it read something else ("line 12 amount: 25,34 / AI 25,84"). */
+data class AiCheck(val checked: Int, val disagreements: List<String>)
 
 data class ParsedDocument(
     val sellerName: Extracted<String>?,
@@ -74,6 +79,8 @@ data class ParsedDocument(
     val vatChecks: List<VatSummary.Check> = emptyList(),
     /** The document prints lot numbers (a lot column or "lotto" anywhere): a line without one is worth a look. */
     val lotsPrinted: Boolean = true,
+    /** The AI's double-check of this reading, if it ran. */
+    val aiCheck: AiCheck? = null,
 ) {
     companion object {
         val EMPTY = ParsedDocument(

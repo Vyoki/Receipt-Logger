@@ -887,6 +887,7 @@ object ReceiptParser {
         // An item line must end in something that looks like money ("8,90"), not "Via Roma 12".
         if (nums.isEmpty() || !DECIMAL_AMOUNT.containsMatchIn(nums.last().raw)) return null
 
+        var packSize: PackSizes.Size? = null
         val unitTok = tail.filterIsInstance<Tok.UnitTok>().lastOrNull()
         var unit: String? = unitTok?.unit
         // Pack size between the unit and the quantity: "GR 800 · 1 · 3,450 · 3,45", "LT 5 · 6 · 1,790 · 10,74".
@@ -898,6 +899,7 @@ object ReceiptParser {
                 if (matches(q.value, pr.value, ItalianNumbers.toCents(t.value))) {
                     description = "$description ${unitTok.raw.uppercase()} ${pack.raw}"
                     unit = "pz"
+                    packSize = PackSizes.parse(listOf(unitTok.raw, pack.raw))
                     nums = listOf(q, pr, t)
                 }
             }
@@ -967,6 +969,7 @@ object ReceiptParser {
                 if (isWholeNumber(q) && q >= BigDecimal.ONE && q <= BigDecimal(500) && matches(q, p, ItalianNumbers.toCents(t))) {
                     description = "$description ${unitTok.raw.uppercase()} ${nums[0].raw}"
                     unit = "pz"
+                    packSize = PackSizes.parse(listOf(unitTok.raw, nums[0].raw))
                     qty = q.stripTrailingZeros(); price = p; totalCents = ItalianNumbers.toCents(t)
                     qtyWorkedOut = true
                 }
@@ -1010,6 +1013,7 @@ object ReceiptParser {
             warnings = warnings,
             itemCode = itemCode,
             packages = stripped.packages?.let { Extracted(normalizeColli(it), Confidence.HIGH, line) },
+            packSize = packSize?.let { Extracted(it.text, conf, line) },
         )
     }
 

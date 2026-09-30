@@ -92,9 +92,12 @@ object AutoAccept {
         if (!headerOk) return d
         val sum = d.items.sumOf { cents(it.lineTotal.text)!! }
         val tolerance = maxOf(2L, d.items.size.toLong())
-        fun settle(f: DraftField, provenBy: Boolean) = if (provenBy) f.copy(uncertain = false) else f
+        // A value the AI's double-check read differently stays highlighted, whatever the arithmetic says.
+        fun disputed(f: DraftField) = f.source?.contains(AiReader.DISAGREE) == true
+        fun settle(f: DraftField, provenBy: Boolean) = if (provenBy && !disputed(f)) f.copy(uncertain = false) else f
+        fun clear(f: DraftField) = if (disputed(f)) f else f.copy(uncertain = false)
         return d.copy(
-            items = d.items.map { it.copy(quantity = it.quantity.copy(uncertain = false), unitPrice = it.unitPrice.copy(uncertain = false), lineTotal = it.lineTotal.copy(uncertain = false)) },
+            items = d.items.map { it.copy(quantity = clear(it.quantity), unitPrice = clear(it.unitPrice), lineTotal = clear(it.lineTotal)) },
             subtotal = settle(d.subtotal, sub != null && kotlin.math.abs(sub - sum) <= tolerance),
             total = settle(d.total, tot != null && (kotlin.math.abs(tot - sum) <= tolerance || (sub != null && vat != null && kotlin.math.abs(sub + vat - tot) <= 1 && kotlin.math.abs(sub - sum) <= tolerance))),
             vat = settle(d.vat, vat != null && sub != null && tot != null && kotlin.math.abs(sub + vat - tot) <= 1 && kotlin.math.abs(sub - sum) <= tolerance),
