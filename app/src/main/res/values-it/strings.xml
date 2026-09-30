@@ -542,4 +542,7 @@
     </plurals>
     <string name="learned_hint">Conservato solo su questo telefono. Il modello di IA non viene mai modificato.</string>
     <string name="learned_clear">Dimentica ciò che è stato imparato</string>
+    <string name="warn_vat_group_mismatch">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA.</string>
+    <string name="reason_vat_group">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA:</string>
+    <string name="vat_group_line">%1$s%%: righe %2$s, riepilogo %3$s (differenza %4$s)</string>
 </resources>

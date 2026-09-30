@@ -24,7 +24,8 @@ object TableReader {
         val center: Double get() = (left + right) / 2
     }
 
-    data class Header(val columns: List<Column>, val hasLotColumn: Boolean = false)
+    /** [qtyPzOrKg]: the quantity heading says "PZ/KG" (pieces or kilos, depending on the product). */
+    data class Header(val columns: List<Column>, val hasLotColumn: Boolean = false, val qtyPzOrKg: Boolean = false)
 
     private data class Word(val text: String, val left: Double, val right: Double) {
         val center: Double get() = (left + right) / 2
@@ -33,29 +34,49 @@ object TableReader {
     // Heading words -> column kind. "cont" = continues the previous heading ("PREZZO UNIT.", "DESCRIZIONE BENI").
     private enum class H { CODE, ARTICOLO, PACKAGES, DESCRIPTION, UNIT, PACK_TYPE, PACK_SIZE, QUANTITY, TOT, PRICE, DISCOUNT, AMOUNT, VAT, LOT, EXPIRY, CONT, PERCENT }
 
+    /**
+     * Heading words and their synonyms, as suppliers print them. A word the OCR slightly misread ("DESCRIZTONE",
+     * "QUANTTTA", "TVA", "IMP0RTO") is recognised too: see [heading].
+     */
+    private val HEADINGS: Map<String, H> = buildMap {
+        fun put(h: H, vararg words: String) = words.forEach { put(it, h) }
+        put(H.CODE, "codice", "cod", "cod.art", "codart", "cod.articolo", "art", "cod. art", "codice articolo", "rif", "cod.prod", "codprod",
+            "ean", "sku", "cod.int", "codice prodotto", "cod.forn", "riferimento")
+        put(H.ARTICOLO, "articolo")
+        put(H.PACKAGES, "colli", "n.colli", "ncolli", "cartoni", "colli/pz", "imballi", "cartone", "cartoni/pz")
+        put(H.DESCRIPTION, "descrizione", "prodotto", "denominazione", "descr", "prodotti", "voce", "descrizioni", "beni/servizi")
+        put(H.CONT, "beni", "merce", "articoli", "unit", "unitario", "netto", "lordo", "doc", "cessione", "servizi")
+        put(H.UNIT, "u.m", "um", "u/m", "unita", "mis", "misura", "u.mis", "unita di misura", "udm", "u.d.m")
+        put(H.PACK_TYPE, "tipo", "imballo")
+        put(H.PACK_SIZE, "conf", "confez", "formato", "pezzatura", "peso", "confezione", "grammatura")
+        put(H.QUANTITY, "quantita", "q.ta", "qta", "qt", "quant", "q.tà", "qtà", "pezzi", "n.pz", "nr.pz", "q.ta'", "qty", "quantità")
+        put(H.TOT, "tot")
+        put(H.PRICE, "prezzo", "prz", "pr.unit", "p.unit", "p.u", "pu", "prezzi", "listino", "costo", "prezzo unitario", "pr.unitario", "p.zo")
+        put(H.DISCOUNT, "sconto", "sconti", "sc", "sc.%", "sc%", "%sc", "magg", "sconto%", "sc.1", "sc.2", "abbuono")
+        put(H.AMOUNT, "importo", "totale", "valore", "imponibile", "ammontare", "importi", "imp", "tot.riga", "totale riga")
+        put(H.VAT, "iva", "%iva", "aliq", "aliquota", "c.iva", "cod.iva", "ci", "ali", "c.i", "iva%")
+        put(H.LOT, "lotto", "lotti", "lot", "lott", "n.lotto", "batch", "l.to")
+        put(H.EXPIRY, "scadenza", "scad", "tmc", "data sc", "scadenze")
+        put(H.PERCENT, "%")
+    }
+
+    /** OCR slips in heading words: digits read for letters and a few look-alikes ("TVA" for "IVA"). */
+    private fun ocrNormal(w: String): String {
+        var t = if (w.count(Char::isLetter) >= 3) w.replace('0', 'o').replace('1', 'i') else w
+        if (t == "tva" || t == "lva" || t == "1va") t = "iva"
+        return t
+    }
+
     private fun heading(word: String): H? {
-        // "PREZZ0", "IMP0RTO": a zero in a heading word is the letter O.
-        val w = norm(word).trim('.', ':', ',', '\'', '’').let { if (it.count(Char::isLetter) >= 3) it.replace('0', 'o') else it }
-        return when (w) {
-            "codice", "cod", "cod.art", "codart", "cod.articolo", "art", "cod. art", "codice articolo", "rif" -> H.CODE
-            "articolo" -> H.ARTICOLO
-            "colli", "n.colli", "ncolli", "cartoni", "colli/pz" -> H.PACKAGES
-            "descrizione", "prodotto", "denominazione", "descr", "prodotti" -> H.DESCRIPTION
-            "beni", "merce", "articoli", "unit", "unitario", "netto", "lordo", "doc", "cessione" -> H.CONT
-            "u.m", "um", "u/m", "unita", "mis", "misura", "u.mis" -> H.UNIT
-            "tipo" -> H.PACK_TYPE
-            "conf", "confez", "formato", "pezzatura", "peso" -> H.PACK_SIZE
-            "quantita", "q.ta", "qta", "qt", "quant", "q.tà", "qtà", "pezzi", "n.pz", "nr.pz", "q.ta'" -> H.QUANTITY
-            "tot" -> H.TOT
-            "prezzo", "prz", "pr.unit", "p.unit", "p.u", "pu", "prezzi", "listino" -> H.PRICE
-            "sconto", "sconti", "sc", "sc.%", "sc%", "%sc", "magg", "sconto%" -> H.DISCOUNT
-            "importo", "totale", "valore", "imponibile", "ammontare", "importi" -> H.AMOUNT
-            "iva", "%iva", "aliq", "aliquota", "c.iva", "cod.iva", "ci" -> H.VAT
-            "lotto", "lotti" -> H.LOT
-            "scadenza", "scad", "tmc" -> H.EXPIRY
-            "%" -> H.PERCENT
-            else -> null
+        val w = ocrNormal(norm(word).trim('.', ':', ',', '\'', '’', '"', '|', '(', ')'))
+        if (w.isEmpty()) return null
+        HEADINGS[w]?.let { return it }
+        // A slightly misread long heading word ("descrizt one" -> "descriztone" -> descrizione): one letter off, same start.
+        if (w.length >= 6 && w.all { it.isLetter() }) {
+            val near = HEADINGS.entries.filter { (k, _) -> k.length >= 6 && k.all(Char::isLetter) && k[0] == w[0] && SmartMatcher.damerau(k, w, 1) <= 1 }
+            if (near.map { it.value }.distinct().size == 1) return near.first().value
         }
+        return null
     }
 
     private fun norm(s: String): String =
@@ -117,14 +138,20 @@ object TableReader {
             columns += Column(kind, r.left, r.right)
         }
         if (columns.none { it.kind == Kind.DESCRIPTION }) return null
-        return Header(columns.sortedBy { it.left }, hasLotColumn = columns.any { it.kind == Kind.LOT })
+        val pzKg = words.any { norm(it.text).trim('.', ':') in setOf("pz/kg", "kg/pz") }
+        return Header(columns.sortedBy { it.left }, hasLotColumn = columns.any { it.kind == Kind.LOT }, qtyPzOrKg = pzKg)
     }
 
     /** Words of an OCR line with deskewed x positions, OCR slips repaired ("PREZZ0", "l4,50"), glued code+colli split. */
     private fun words(line: OcrLine, slope: Double): List<Word> = rawWords(line, slope).flatMap { w ->
         val text = OcrCleanup.fixWordToken(OcrCleanup.fixNumericToken(w.text))
         val m = CODE_WITH_COLLI.find(text)
-        if (m != null) {
+        val g = GLUED_SIZE.matchEntire(text)
+        if (g != null && m == null) {
+            // "KG1", "GR400": pack size printed without a space.
+            val cut = w.left + (w.right - w.left) * g.groupValues[1].length / text.length
+            listOf(Word(g.groupValues[1], w.left, cut), Word(g.groupValues[2], cut, w.right))
+        } else if (m != null) {
             // "10000032x3": article code 1000003 and colli 2x3 printed without a space.
             val cut = w.left + (w.right - w.left) * m.groupValues[1].length / text.length
             listOf(Word(m.groupValues[1], w.left, cut), Word(m.groupValues[2], cut, w.right))
@@ -158,6 +185,12 @@ object TableReader {
     private val NUMBER = Regex("^-?\\d+(?:[.,]\\d+)*(?:%)?$")
     private val LONG_CODE = Regex("^\\d{4,}$")
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
+    private val VAT_RATES = setOf("0", "4", "5", "10", "22")
+    /** "111,4104": amount and VAT code printed without a space. */
+    private val AMOUNT_WITH_VAT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{2})(04|05|10|22|4|5)$")
+    /** An amount whose decimal comma the OCR lost ("753" for 7,53). */
+    private val DIGITS_ONLY = Regex("^\\d{3,6}$")
+    private val GLUED_SIZE = Regex("^(?i)(KG|GR|LT|ML|CL|PZ)(\\d+(?:[.,]\\d+)?)$")
     private val TWO_LETTER = Regex("^[A-Z]{1,2}$")
     private val NUMBER_KINDS = setOf(Kind.QUANTITY, Kind.PRICE, Kind.DISCOUNT, Kind.AMOUNT, Kind.PACKAGES)
 
@@ -177,16 +210,75 @@ object TableReader {
             if (hIdx < 0) continue
             any = true
             var header = headerOf(rows[hIdx])!!
-            // A second heading row ("ID LOTTO QTA.LOT."): lots are printed on the row under each item.
-            val second = rows.getOrNull(hIdx + 1)
             var start = hIdx + 1
+            // Headings printed on two or three lines ("TIPO / CONF.", "TOT. / PZ/KG", "CODICE" alone on its own line):
+            // the lines around the heading row are merged into it, column by column.
+            val stray = mutableListOf<Word>()
+            for (j in listOf(hIdx - 1, hIdx + 1, hIdx + 2)) {
+                val r = rows.getOrNull(j) ?: continue
+                if (!isHeadingLine(r)) { if (j > hIdx) break else continue }
+                header = mergeHeading(header, r)
+                if (j >= start) start = j + 1
+                // Numbers that landed on a heading line (a tilted photo): they belong to the first product row.
+                stray += r.filter { heading(it.text) == null && (isMoney(it.text) || isNumeric(it.text)) && it.left > (header.columns.firstOrNull { c -> c.kind == Kind.DESCRIPTION }?.right ?: 0.0) }
+            }
+            // A second heading row ("ID LOTTO QTA.LOT."): lots are printed on the row under each item.
+            val second = rows.getOrNull(start)
             if (second != null && second.none { isMoney(it.text) } && second.any { heading(it.text) == H.LOT }) {
                 header = header.copy(hasLotColumn = true)
                 start++
             }
-            items += readRows(rows.drop(start), header)
+            val body = rows.drop(start).toMutableList()
+            if (stray.isNotEmpty()) {
+                val firstItem = body.indexOfFirst { r -> r.any { it.text.count(Char::isDigit) >= 5 } }
+                if (firstItem >= 0 && body[firstItem].none { isMoney(it.text) && it.left > (header.columns.lastOrNull { c -> c.kind == Kind.PRICE }?.right ?: Double.MAX_VALUE) }) {
+                    body[firstItem] = (body[firstItem] + stray).sortedBy { it.left }
+                }
+            }
+            items += readRows(body, header)
         }
         return if (any) items else null
+    }
+
+    /** A line of headings under (or over) the main heading row: heading words, no article code, no product. */
+    private fun isHeadingLine(row: List<Word>): Boolean {
+        if (row.isEmpty()) return false
+        if (row.any { w -> w.text.count(Char::isDigit) >= 5 }) return false
+        val headings = row.count { heading(it.text) != null || norm(it.text).trim('.') in EXTRA_HEADING_WORDS }
+        return headings >= 1 && row.count { it.text.count(Char::isLetter) >= 4 && heading(it.text) == null && norm(it.text).trim('.', '(', ')') !in EXTRA_HEADING_WORDS } <= 3
+    }
+
+    private val EXTRA_HEADING_WORDS = setOf("pz/kg", "kg/pz", "n.xpz", "nxpz", "n.xxpz", "natura", "naturae", "qualita", "eur", "euro", "€")
+
+    /** Adds the heading words of [row] to [header]: a word under an existing column joins it, one on its own adds a column. */
+    private fun mergeHeading(header: Header, row: List<Word>): Header {
+        val cols = header.columns.toMutableList()
+        var pzKg = header.qtyPzOrKg
+        for (w in row) {
+            val n = norm(w.text).trim('.', ':')
+            if (n == "pz/kg" || n == "kg/pz") pzKg = true
+            val h = heading(w.text) ?: continue
+            val idx = cols.indexOfFirst { c -> w.right > c.left - 8 && w.left < c.right + 8 }
+            if (idx >= 0) {
+                val c = cols[idx]
+                // "TIPO" over "CONF.": the column holds packaging and pack size ("BT LT 1", "CS KG").
+                val kind = if (c.kind == Kind.PACK_TYPE && h == H.PACK_SIZE) Kind.PACK_SIZE else c.kind
+                cols[idx] = Column(kind, minOf(c.left, w.left), maxOf(c.right, w.right))
+            } else {
+                val kind = when (h) {
+                    H.CODE -> if (cols.none { it.kind == Kind.CODE } && cols.all { it.left > w.right }) Kind.CODE else null
+                    H.PACKAGES -> Kind.PACKAGES
+                    H.UNIT -> Kind.UNIT
+                    H.LOT -> Kind.LOT
+                    H.EXPIRY -> Kind.EXPIRY
+                    H.DISCOUNT -> Kind.DISCOUNT
+                    else -> null
+                } ?: continue
+                if (cols.none { it.kind == kind }) cols += Column(kind, w.left, w.right)
+            }
+        }
+        cols.sortBy { it.left }
+        return header.copy(columns = cols, hasLotColumn = header.hasLotColumn || cols.any { it.kind == Kind.LOT }, qtyPzOrKg = pzKg)
     }
 
     private fun readRows(rows: List<List<Word>>, header: Header): List<ParsedLineItem> {
@@ -264,6 +356,9 @@ object TableReader {
             val numeric = isNumeric(t) || ReceiptParser.COLLI_PATTERN.matches(t)
             val letters = t.count(Char::isLetter)
             kind = when {
+                // The first word of the name printed close to the code or Pkgs ("1x10 LATTE ARBOREA", "1 COPPA SUINO").
+                !numeric && letters >= 2 && kind in setOf(Kind.CODE, Kind.PACKAGES) && !(t.length == 1 && lastKind == null) &&
+                    Units.normalizeKnown(t.trimEnd('.')) == null -> Kind.DESCRIPTION
                 // A unit word under a number column ("NR 40,000" with no U.M. heading).
                 !numeric && Units.normalizeKnown(t.trimEnd('.')) != null && kind in NUMBER_KINDS -> Kind.UNIT
                 // Words spill over from the description into the columns on its right.
@@ -358,6 +453,7 @@ object TableReader {
         fun cell(k: Kind) = cells[k].orEmpty()
         val amountWord = cell(Kind.AMOUNT).lastOrNull { isMoney(it.text) }
         val amount = amountWord?.let { ItalianNumbers.parseCents(it.text.trim('€')) }
+        var amountRepaired = false
         var qty = cell(Kind.QUANTITY).mapNotNull { numberIn(it.text) }.lastOrNull()
         // Without a U.M. column, unit words come from neighbouring columns ("CF GR 0,48"): kg/g/l beat packaging codes.
         val units = cell(Kind.UNIT).mapNotNull { Units.normalizeKnown(it.text.trimEnd('.')) }
@@ -367,15 +463,18 @@ object TableReader {
         if (unit == null) cell(Kind.QUANTITY).firstNotNullOfOrNull { Regex("^[\\d.,]+([A-Za-z]{1,3})\\.?$").find(it.text)?.groupValues?.get(1)?.let(Units::normalizeKnown) }?.let { unit = it }
         var price = cell(Kind.PRICE).mapNotNull { numberIn(it.text) }.lastOrNull()
         val discount = discountOf(cell(Kind.DISCOUNT).joinToString("") { it.text })
-        val vat = cell(Kind.VAT).mapNotNull { numberIn(it.text) }.lastOrNull()?.takeIf { it.stripTrailingZeros().toPlainString() in setOf("0", "4", "5", "10", "22") }
+        var vat = cell(Kind.VAT).mapNotNull { numberIn(it.text) }.firstOrNull { it.stripTrailingZeros().toPlainString() in VAT_RATES }
 
         var code: String? = null
-        var packages: String? = cell(Kind.PACKAGES).joinToString("") { it.text }.ifEmpty { null }
+        // A long number under COLLI is the article code (a table without a CODICE heading, or a shifted photo).
+        val pkWords = cell(Kind.PACKAGES).toMutableList()
+        pkWords.firstOrNull { LONG_CODE.matches(it.text) && it.text.length >= 5 }?.let { code = it.text; pkWords.remove(it) }
+        var packages: String? = pkWords.joinToString("") { it.text }.ifEmpty { null }
         for (w in cell(Kind.CODE)) {
             val m = CODE_WITH_COLLI.find(w.text)
             when {
                 m != null -> { code = m.groupValues[1]; if (packages == null) packages = m.groupValues[2] }
-                LONG_CODE.matches(w.text) || (w.text.any(Char::isDigit) && w.text.length >= 4) -> if (code == null) code = w.text
+                LONG_CODE.matches(w.text) || (w.text.any(Char::isDigit) && w.text.length >= 4) -> if (code == null || code == w.text) code = w.text
                 ReceiptParser.COLLI_PATTERN.matches(w.text) -> if (packages == null) packages = w.text
             }
         }
@@ -392,7 +491,16 @@ object TableReader {
         val packUnits = packWords.mapNotNull { Units.normalizeKnown(it.trimEnd('.')) }
         val packUnit = packUnits.firstOrNull { Units.dimension(it) != null } ?: packUnits.firstOrNull()
         val packHasNumber = packWords.any { it.any(Char::isDigit) }
-        if (packWords.isNotEmpty() && packHasNumber) descWords = descWords + packWords.map { it.uppercase() }
+        if (packWords.isNotEmpty() && packHasNumber) {
+            // The pack size ("LT 1", "GR 500") is part of what the product is; the packaging code before it ("BT", "NC") is not.
+            var from = packWords.indexOfFirst { Units.normalizeKnown(it.trimEnd('.'))?.let(Units::dimension) != null || it.any(Char::isDigit) }
+            if (from > 0 && packWords[from].any(Char::isDigit) && Units.normalizeKnown(packWords[from - 1].trimEnd('.')) != null) from--
+            val size = if (from >= 0) packWords.drop(from) else packWords
+            // Not when the name already says it ("BURRO KG.1" + "KG 1", "LATTE LT.1" + "LT 1").
+            val named = SmartMatcher.signature(descWords.joinToString(" ")).sizes
+            val added = SmartMatcher.signature("X " + size.joinToString(" ")).sizes
+            if (added.isEmpty() || !named.containsAll(added)) descWords = descWords + size.map { it.uppercase() }
+        }
         val unitColumn = header.columns.any { it.kind == Kind.UNIT }
         if (packUnit != null && (unit == null || !unitColumn)) {
             // "GR 800" + TOT 1 = one 800 g pack; "KG" + TOT 4,45 = 4,45 kg weighed.
@@ -418,6 +526,26 @@ object TableReader {
                 }
             }
         }
+        // "111,4104" read as an amount with 4 decimals: amount 111,41 and VAT code 04, when quantity x price proves it.
+        if (vat == null && amountWord != null && qty != null && price != null) {
+            AMOUNT_WITH_VAT.matchEntire(amountWord.text)?.let { g ->
+                val cents = ItalianNumbers.parseCents(g.groupValues[1])
+                if (cents != null && ReceiptParser.matches(qty!!, price!!, cents)) { total = cents; vat = BigDecimal(g.groupValues[2]) }
+            }
+        }
+        // Amount and VAT code glued ("111,4104"), or the amount's comma lost ("753"): repaired only when quantity x price proves it.
+        if (qty != null && price != null && (total == null || !ReceiptParser.matches(qty!!, price!!, total!!))) {
+            for (w in cell(Kind.AMOUNT) + cell(Kind.VAT)) {
+                val glued = AMOUNT_WITH_VAT.matchEntire(w.text)
+                val cents = glued?.let { ItalianNumbers.parseCents(it.groupValues[1]) }
+                    ?: w.text.takeIf { DIGITS_ONLY.matches(it) }?.toLongOrNull()
+                if (cents != null && ReceiptParser.matches(qty!!, price!!, cents)) {
+                    total = cents
+                    if (glued != null) { if (vat == null) vat = BigDecimal(glued.groupValues[2]) } else amountRepaired = true
+                    break
+                }
+            }
+        }
         if (qty != null && price != null && total != null) {
             consistent = ReceiptParser.matches(qty, price, total) || discountMatches(qty, price, discount, total)
         }
@@ -431,12 +559,17 @@ object TableReader {
             else if (qty == null && price != null && price.signum() > 0) {
                 val q = ItalianNumbers.centsToDecimal(total).divide(price, 3, RoundingMode.HALF_UP)
                 if (q.stripTrailingZeros().scale() <= 0 && q >= BigDecimal.ONE && q <= BigDecimal(500) && ReceiptParser.matches(q, price, total)) {
-                    qty = q.stripTrailingZeros(); qtyWorkedOut = true
+                    // The quantity the OCR missed ("GR 400 · · 3,780 · 3,78"): amount / price, marked for a look.
+                    qty = q.stripTrailingZeros(); qtyWorkedOut = true; consistent = true
                 }
             }
         }
         if (total == null && qty != null && price != null) {
             total = null // never computed: the amount stays missing and the review offers qty x price
+        }
+        // "TOT. PZ/KG" heading and nothing else says: a whole number is pieces, decimals are kilos.
+        if (unit == null && header.qtyPzOrKg && qty != null) {
+            unit = if (qty!!.stripTrailingZeros().scale() <= 0) "pz" else "kg"
         }
         // "GR 0,48" on a weighed item means kilograms.
         val q0 = qty
@@ -453,13 +586,13 @@ object TableReader {
             unit = unit?.let { Extracted(it, conf, source) },
             // A repaired decimal comma adds up, but is shown for a look.
             unitPrice = price?.let { Extracted(it, if (priceRepaired) Confidence.LOW else conf, source) },
-            lineTotalCents = total?.let { Extracted(it, if (consistent || (qty == null && price == null)) Confidence.HIGH else Confidence.LOW, source) },
+            lineTotalCents = total?.let { Extracted(it, if (!amountRepaired && (consistent || (qty == null && price == null))) Confidence.HIGH else Confidence.LOW, source) },
             vatRatePercent = vat?.let { Extracted(it.stripTrailingZeros(), Confidence.HIGH, source) },
             lotNumber = lotWord?.let { Extracted(it.text, Confidence.LOW, source) },
             expiryDate = null,
             warnings = warnings,
             itemCode = code,
-            packages = packages?.let { p -> Extracted(p.map { c -> when (c) { 'l', 'I' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString(""), Confidence.HIGH, source) },
+            packages = packages?.let { p -> Extracted(p.map { c -> when (c) { 'l', 'I', 'L' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString(""), Confidence.HIGH, source) },
         )
     }
 

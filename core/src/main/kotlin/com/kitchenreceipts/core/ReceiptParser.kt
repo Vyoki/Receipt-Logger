@@ -32,7 +32,8 @@ object ReceiptParser {
     private val NOT_SELLER = Regex(
         "(?i)\\b(fattura|documento|ddt|d\\.d\\.t|scontrino|ricevuta|data|pagina|pag\\.|tel\\.?|telefono|fax|e-?mail|" +
             "p\\.?\\s?iva|partita|c\\.?f\\.?|cod\\.?\\s?fisc|via|viale|piazza|corso|cap|www\\.|pec|iban|rea|" +
-            "commerciale|vendita|prestazione|cassa|totale|numero)\\b|@|\\d{5}",
+            "commerciale|vendita|prestazione|cassa|totale|numero|soggett\\w*|direzione|coordinamento|unipersonale|capitale|" +
+            "sede\\s+legale|iscr\\w*|reg\\.?\\s*imp\\w*)\\b|@|\\d{5}",
     )
     private val DOC_NUMBER_LABELED = Regex(
         "(?i)\\b(?:fattura(?:\\s+(?:accompagnatoria|immediata|differita|elettronica))?|ft\\.?|documento(?:\\s+di\\s+trasporto)?|doc\\.?|" +
@@ -113,7 +114,7 @@ object ReceiptParser {
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
     private val COLLI = Regex("^(\\d{1,3}[xX×*]\\d{1,3}|\\d{1,2})$")
     /** "1x6", "2X1", "lx4" (OCR reads 1 as l): packages x pieces. Unambiguous even without a code before it. */
-    internal val COLLI_PATTERN = Regex("^[\\dlIO]{1,3}[xX×*][\\dlIO]{1,3}$")
+    internal val COLLI_PATTERN = Regex("^[\\dlIOL]{1,3}[xX×*][\\dlIO]{1,3}$")
     /** Two-letter packaging codes printed before the unit ("SK GR 800", "NC KG"); never part of a product name. */
     private val PACKAGING_CODE = Regex("^[A-Z]{2}$")
     private val SHORT_WORDS = setOf("DI", "DA", "AL", "IN", "LA", "IL", "UN", "DE", "EL", "LE", "LO", "SU", "ED", "OR", "NO", "BY")
@@ -178,8 +179,19 @@ object ReceiptParser {
     fun isConfident(d: ParsedDocument): Boolean {
         if (d.lineItems.isEmpty() || d.documentDate == null || d.totalCents == null) return false
         if (d.lineItems.any { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings || it.lineTotalCents == null }) return false
-        if (d.lineItems.any { it.quantity != null && it.quantity.confidence != Confidence.HIGH }) return false
-        return ParseWarning.ITEMS_SUM_MISMATCH !in d.warnings
+        // A quantity worked out as amount / price is fine when every VAT group adds up to the printed summary.
+        val provenByVat = d.vatChecks.isNotEmpty() && d.vatChecks.all { it.ok }
+        if (d.lineItems.any { it.quantity != null && it.quantity.confidence != Confidence.HIGH && !(provenByVat && workedOut(it)) }) return false
+        return ParseWarning.ITEMS_SUM_MISMATCH !in d.warnings && ParseWarning.VAT_GROUP_MISMATCH !in d.warnings
+    }
+
+    /** Quantity x price = amount with a whole quantity, price and amount read with confidence: the quantity was worked out. */
+    fun workedOut(it: ParsedLineItem): Boolean {
+        val q = it.quantity ?: return false
+        val p = it.unitPrice ?: return false
+        val t = it.lineTotalCents ?: return false
+        return q.confidence == Confidence.LOW && p.confidence == Confidence.HIGH && t.confidence == Confidence.HIGH &&
+            q.value.stripTrailingZeros().scale() <= 0 && matches(q.value, p.value, t.value)
     }
 
     fun parse(rawText: String, options: ParseOptions = ParseOptions(), tableItems: List<ParsedLineItem>? = null): ParsedDocument {
@@ -207,9 +219,9 @@ object ReceiptParser {
             p != null && q != null && p < q
         }
 
-        val docNumber = findDocumentNumber(lines, consumed)
+        val docNumber = findDocumentNumber(lines, consumed).let { first -> numberAcrossPages(first, pages) }
         val date = findDocumentDate(lines, consumed)
-        val seller = findSeller(lines, options)
+        val seller = findSellerOnPages(pages, options)
         val currency = CURRENCY.find(text)?.let { Extracted("EUR", Confidence.HIGH, it.value) }
 
         // ------------------------------------------------------------ totals
@@ -299,6 +311,17 @@ object ReceiptParser {
                     else if (total!!.value != t.amount) warnings += ParseWarning.MULTIPLE_TOTALS
                 4 -> weakTotals += t.amount to t.source
                 5 -> vatLines += t.amount to t.source
+            }
+        }
+        // "TOTALE DA PAGARE" alone on a later page, the VAT summary on the page before: take the taxable amount and
+        // VAT from there when they add up to that total.
+        val t0 = total
+        if (t0 != null && (subtotal == null || vat == null)) {
+            val subs = found.filter { it.kind == 1 }
+            val vats = found.filter { it.kind == 2 }
+            subs.firstNotNullOfOrNull { a -> vats.firstOrNull { b -> kotlin.math.abs(a.amount + b.amount - t0.value) <= 1 }?.let { a to it } }?.let { (a, b) ->
+                if (subtotal == null) subtotal = Extracted(a.amount, Confidence.HIGH, a.source)
+                if (vat == null) vat = Extracted(b.amount, Confidence.HIGH, b.source)
             }
         }
         if (vat == null && vatLines.isNotEmpty()) {
@@ -442,6 +465,7 @@ object ReceiptParser {
 
     private val CHECK_WARNINGS = setOf(
         ParseWarning.NO_ITEMS_FOUND, ParseWarning.LINE_TOTAL_MISMATCH, ParseWarning.TOTALS_INCONSISTENT, ParseWarning.ITEMS_SUM_MISMATCH,
+        ParseWarning.VAT_GROUP_MISMATCH,
     )
 
     /**
@@ -450,7 +474,7 @@ object ReceiptParser {
      */
     fun finish(doc: ParsedDocument, text: String): ParsedDocument {
         // Logic first: a line that does not add up is solved from its own printed numbers where only one reading fits.
-        val items = LineSolver.settle(doc.lineItems)
+        val items = DescriptionCleanup.apply(LineSolver.settle(doc.lineItems))
         val warnings = (doc.warnings - CHECK_WARNINGS).toMutableSet()
         var total = doc.totalCents
         var vat = doc.vatCents
@@ -486,7 +510,14 @@ object ReceiptParser {
                 Extracted(VatBasis.EXCLUSIVE, Confidence.LOW, "somma righe = imponibile")
             else -> null
         }
-        return doc.copy(lineItems = items, totalCents = total, vatCents = vat, vatBasis = vatBasis, warnings = warnings)
+        // Lines per VAT rate against the VAT summary: a group that does not add up points at the misread line.
+        val vatChecks = VatSummary.check(items, VatSummary.parse(text))
+        if (vatChecks.any { !it.ok }) warnings += ParseWarning.VAT_GROUP_MISMATCH
+        val lotsPrinted = items.any { it.lotNumber != null } || LOTS_WORD.containsMatchIn(text)
+        return doc.copy(
+            lineItems = items, totalCents = total, vatCents = vat, vatBasis = vatBasis, warnings = warnings,
+            vatChecks = vatChecks, lotsPrinted = lotsPrinted,
+        )
     }
 
     /** Number of leading lines of [next] that repeat the last lines of [prev] (at least 2 to count). */
@@ -536,6 +567,21 @@ object ReceiptParser {
     }
 
     // ---------------------------------------------------------------- header fields
+
+    /**
+     * The document number is printed on every page of a long invoice: the reading most pages agree on wins
+     * ("3SB/44240" on a blurred page 1, "38B/44240" on pages 2 and 3), and agreement makes it certain.
+     */
+    private fun numberAcrossPages(first: Extracted<String>?, pages: List<List<String>>): Extracted<String>? {
+        if (pages.size < 2) return first
+        val readings = pages.take(8).mapNotNull { findDocumentNumber(it, mutableSetOf()) }
+        fun key(v: String) = v.uppercase().replace(" ", "")
+        val counts = readings.groupingBy { key(it.value) }.eachCount()
+        val (bestKey, n) = counts.maxByOrNull { it.value } ?: return first
+        if (n < 2) return first
+        val best = readings.first { key(it.value) == bestKey }
+        return best.copy(confidence = Confidence.HIGH, source = best.source + " (same on $n pages)")
+    }
 
     private fun findDocumentNumber(lines: List<String>, consumed: MutableSet<Int>): Extracted<String>? {
         lines.forEachIndexed { i, line ->
@@ -638,6 +684,23 @@ object ReceiptParser {
     private fun isInsideExpiry(line: String, d: DateMatch): Boolean =
         LotExtractor.scan(line).consumed.any { d.range.first >= it.first && d.range.last <= it.last }
 
+    /** "GMF S.r" at the end of a line: a legal form the photo cut short. */
+    private val LOTS_WORD = Regex("(?i)\\b(lott[oi]|lot\\.?|l\\.\\s?n\\.?|batch)\\b")
+
+    private val TRUNCATED_SUFFIX = Regex("(?i)\\bs\\.\\s?r\\.?$")
+
+    /**
+     * The seller from the letterhead. On a document of several pages the letterhead is printed on each: the
+     * clearest reading wins (a complete legal form, "GMF S.r.l.", over one the photo cut short, "GMF S.r").
+     */
+    private fun findSellerOnPages(pages: List<List<String>>, options: ParseOptions): Extracted<String>? {
+        val found = pages.take(6).mapNotNull { findSeller(it, options) }
+        fun complete(e: Extracted<String>) = e.confidence == Confidence.HIGH && !TRUNCATED_SUFFIX.containsMatchIn(e.value)
+        return found.firstOrNull(::complete)
+            ?: found.firstOrNull { it.confidence == Confidence.HIGH }?.copy(confidence = Confidence.LOW)
+            ?: found.firstOrNull()
+    }
+
     private fun findSeller(lines: List<String>, options: ParseOptions): Extracted<String>? {
         val ownName = DuplicateDetector.normalizeSeller(options.ownBusinessName)
         val ownVat = options.ownVatNumber?.filter(Char::isDigit)?.takeIf { it.length >= 8 }
@@ -680,6 +743,12 @@ object ReceiptParser {
                 val namePart = candidate.substring(0, suffix.range.first)
                 if (namePart.count { it.isLetter() } >= 3 && !NOT_SELLER.containsMatchIn(namePart)) {
                     return Extracted(cleanSeller(candidate), Confidence.HIGH, rawLine)
+                }
+            }
+            TRUNCATED_SUFFIX.find(line)?.let { t ->
+                val namePart = line.substring(0, t.range.first)
+                if (namePart.count { it.isLetter() } >= 3 && !NOT_SELLER.containsMatchIn(namePart)) {
+                    return Extracted(cleanSeller(line), Confidence.HIGH, rawLine)
                 }
             }
             if (VAT_ID.containsMatchIn(line)) pivaSeen = true
@@ -945,7 +1014,7 @@ object ReceiptParser {
     }
 
     private fun normalizeColli(raw: String): String =
-        raw.map { c -> when (c) { 'l', 'I' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString("")
+        raw.map { c -> when (c) { 'l', 'I', 'L' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString("")
 
     private fun isWholeNumber(v: BigDecimal) = v.stripTrailingZeros().scale() <= 0
 

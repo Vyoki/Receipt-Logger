@@ -16,6 +16,8 @@ enum class ReviewReason {
     SUM_MISMATCH,
     /** Could not tell whether prices include VAT. */
     VAT_BASIS_UNKNOWN,
+    /** The lines of one VAT rate do not add up to the VAT summary (a line was misread or missed). */
+    VAT_GROUP_MISMATCH,
 }
 
 /**
@@ -40,6 +42,7 @@ object AutoAccept {
         if (d.items.isNotEmpty() && total != null && ReviewReason.INCOMPLETE_ITEMS !in out && !sumOk) {
             out += ReviewReason.SUM_MISMATCH
         }
+        if (d.vatGroupProblems.isNotEmpty()) out += ReviewReason.VAT_GROUP_MISMATCH
         if (d.vatBasis == VatBasis.UNKNOWN && inferVatBasis(d) == null && sumOk) {
             out += ReviewReason.VAT_BASIS_UNKNOWN
         }
