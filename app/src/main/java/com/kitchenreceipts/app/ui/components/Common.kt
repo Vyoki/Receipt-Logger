@@ -3,6 +3,7 @@
 package com.kitchenreceipts.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -183,6 +184,10 @@ fun ReviewField(
     highlightMissing: Boolean = true,
 ) {
     val status = LocalStatusColors.current
+    // Where this value was read on the photo, shown while the field is being checked (review screen only).
+    val peek = LocalFieldPeek.current
+    val currentField = androidx.compose.runtime.rememberUpdatedState(field)
+    val hadFocus = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
     val colors = when {
         error != null -> OutlinedTextFieldDefaults.colors()
         field.uncertain -> OutlinedTextFieldDefaults.colors(
@@ -229,7 +234,22 @@ fun ReviewField(
             trailing != null -> trailing
             else -> null
         },
-        modifier = modifier.fillMaxWidth(),
+        modifier = modifier.fillMaxWidth().let { m ->
+            if (peek == null) {
+                m
+            } else {
+                m.onFocusChanged { f ->
+                    // Only this field gaining or losing focus counts (fields also report "not focused" when first shown).
+                    if (f.isFocused) {
+                        hadFocus.value = true
+                        peek(PeekRequest(label, currentField.value.source, currentField.value.text))
+                    } else if (hadFocus.value) {
+                        hadFocus.value = false
+                        peek(null)
+                    }
+                }
+            }
+        },
     )
 }
 

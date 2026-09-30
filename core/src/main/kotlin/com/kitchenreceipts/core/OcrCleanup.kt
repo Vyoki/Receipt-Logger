@@ -7,6 +7,8 @@ package com.kitchenreceipts.core
  * - "2,5O" -> "2,50", "l4/03/2025" -> "14/03/2025", "1O%" -> "10%" (letter O / l / I / | inside numbers)
  * - "22 ,50" / "22, 50" -> "22,50" (space inside a decimal amount)
  * - "€22,50" / "22,50€" -> "22,50 €"
+ * - "11511122/09/2026" -> "115111 22/09/2026" (document number and date printed without a space)
+ * - "24,000c" -> "24,000 C" (quantity glued to the storage letter C/F/S/CN of the next column)
  */
 object OcrCleanup {
 
@@ -14,12 +16,38 @@ object OcrCleanup {
     private val EURO_GLUED = Regex("€(?=\\d)|(?<=\\d)€")
     private const val SEPARATORS = ".,/-:%"
 
+    /**
+     * A number glued to a date. The day is taken as wide as the month is printed ("22/09/2026", not "2/09/2026"):
+     * a document that zero-pads the month zero-pads the day too.
+     */
+    private val GLUED_DATE = Regex("(?<![\\d/.,-])(\\d{3,})(\\d{2})([/.-])(\\d{2})\\3(\\d{4})(?!\\d)")
+    private val GLUED_FLAG = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{2,3})(c|C|f|F|s|S|cn|CN)$")
+
+    private fun splitGluedDate(s: String): String = GLUED_DATE.replace(s) { m ->
+        val (num, day, sep, month, year) = m.destructured
+        val ok = day.toInt() in 1..31 && month.toInt() in 1..12 && year.toInt() in 1990..2099
+        if (ok) "$num $day$sep$month$sep$year" else m.value
+    }
+
+    /** "GR.12c0" -> "GR.1200": in a pack size, a c or o between digits is a zero. */
+    private val SIZE_TOKEN = Regex("^(?i)(gr|kg|lt|ml|cl|g|l)\\.?\\d[\\dcoO]*\\d$")
+
+    private fun fixSizeToken(token: String): String {
+        if (!SIZE_TOKEN.matches(token)) return token
+        val start = token.indexOfFirst { it.isDigit() }
+        return token.substring(0, start) + token.substring(start).map { if (it in "coO") '0' else it }.joinToString("")
+    }
+
+    private fun splitGluedFlag(token: String): String =
+        GLUED_FLAG.find(token)?.let { m -> m.groupValues[1] + " " + m.groupValues[2].uppercase() } ?: token
+
     fun clean(text: String): String = text.lines().joinToString("\n") { cleanLine(it) }
 
     fun cleanLine(line: String): String {
         var s = line.replace(' ', ' ').replace('\t', ' ')
         s = EURO_GLUED.replace(s) { m -> if (m.range.first > 0 && s[m.range.first - 1].isDigit()) " €" else "€ " }
-        s = s.split(' ').joinToString(" ") { fixWordToken(fixNumericToken(it)) }
+        s = s.split(' ').joinToString(" ") { splitGluedFlag(fixSizeToken(fixWordToken(fixNumericToken(it)))) }
+        s = splitGluedDate(s)
         s = SPLIT_DECIMAL.replace(s) { m ->
             val g = m.groupValues
             if (g[1].isNotEmpty()) "${g[1]},${g[2]}" else "${g[3]},${g[4]}"

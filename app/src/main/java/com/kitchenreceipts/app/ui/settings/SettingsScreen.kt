@@ -19,6 +19,8 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.SnackbarHostState
@@ -147,6 +149,21 @@ fun SettingsScreen(onBack: () -> Unit) {
                 priceAlerts = on
                 s.priceAlerts = on
                 c.log.event("SETTINGS", "priceAlerts" to on)
+            }
+
+            // ---------------------------------------------------------------- what was learned
+            var learned by remember { mutableStateOf(c.learning.stats()) }
+            SectionTitle(stringResource(R.string.learned_title))
+            Text(
+                pluralStringResource(R.plurals.learned_stats, learned.first, learned.first, learned.second, learned.third) + " " +
+                    stringResource(R.string.learned_hint),
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (learned.first > 0) {
+                OutlinedButton(
+                    onClick = { c.learning.clear(); learned = c.learning.stats(); c.log.event("SETTINGS", "learningCleared" to true) },
+                    modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                ) { Text(stringResource(R.string.learned_clear)) }
             }
 
             // ---------------------------------------------------------------- AI reader

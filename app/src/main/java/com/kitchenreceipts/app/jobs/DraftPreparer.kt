@@ -19,6 +19,9 @@ import com.kitchenreceipts.core.ReviewReason
 import com.kitchenreceipts.core.SellerMatchReason
 import com.kitchenreceipts.core.ValidationResult
 import com.kitchenreceipts.core.VatBasis
+import com.kitchenreceipts.core.LineSolver
+import com.kitchenreceipts.core.SupplierMemory
+import com.kitchenreceipts.app.learning.LearningStore
 
 /** A reading turned into a draft the operator can review (or the app can save by itself). */
 data class PreparedDraft(
@@ -29,6 +32,8 @@ data class PreparedDraft(
     val reasons: List<ReviewReason>,
     val priceChanges: List<PriceChange>,
     val ocrSellerRaw: String?,
+    /** The supplier's key in what the app learned (see LearningStore). */
+    val supplierKey: String? = null,
 )
 
 /**
@@ -36,7 +41,12 @@ data class PreparedDraft(
  * links lines to products, fixes swapped quantity/price from history, and checks what still needs the operator.
  * Shared by the review screen and the background reader (which saves by itself when everything checks out).
  */
-class DraftPreparer(private val repo: ReceiptRepository, private val settings: AppSettings, private val log: AppLog) {
+class DraftPreparer(
+    private val repo: ReceiptRepository,
+    private val settings: AppSettings,
+    private val log: AppLog,
+    private val learning: LearningStore? = null,
+) {
 
     suspend fun prepare(pending: PendingImport): PreparedDraft {
         var draft = DocumentDraft.fromParsed(pending.parsed)
@@ -76,10 +86,18 @@ class DraftPreparer(private val repo: ReceiptRepository, private val settings: A
             if (swapped > 0) log.event("QTY_PRICE_SWAPPED", "lines" to swapped)
             draft = draft.copy(items = fixed)
         }
+        // A line that adds up two ways, which the operator already settled once for this supplier: same choice.
+        val supplierKey = SupplierMemory.key(pending.ocrText, settings.ownVatNumber.ifBlank { null }, draft.seller.text)
+        learning?.rules(supplierKey)?.takeIf { it.isNotEmpty() }?.let { rules ->
+            val before = draft.items.count { it.choices.isNotEmpty() }
+            draft = draft.copy(items = LineSolver.applyRules(draft.items, rules))
+            val settled = before - draft.items.count { it.choices.isNotEmpty() }
+            if (settled > 0) log.event("CHOICE_REMEMBERED", "lines" to settled)
+        }
         val reasons = AutoAccept.reasons(draft)
         val changes = priceChanges(draft, null)
         logParsed(pending, draft, recognition, reasons, changes)
-        return PreparedDraft(draft, initial, recognition, reasons, changes, ocrSellerRaw)
+        return PreparedDraft(draft, initial, recognition, reasons, changes, ocrSellerRaw, supplierKey)
     }
 
     suspend fun priceChanges(d: DocumentDraft, excludeDocumentId: Long?): List<PriceChange> = runCatching {
@@ -99,6 +117,7 @@ class DraftPreparer(private val repo: ReceiptRepository, private val settings: A
             SellerLearning(pending.ocrText, p.ocrSellerRaw, settings.ownVatNumber.ifBlank { null }),
         )
         log.event("SAVED", "doc" to id, "new" to true, "auto" to true, "items" to valid.items.size, "priceChanges" to p.priceChanges.size)
+        learning?.addExamples(p.supplierKey, SupplierMemory.examplesFrom(p.draft))
         return id
     }
 

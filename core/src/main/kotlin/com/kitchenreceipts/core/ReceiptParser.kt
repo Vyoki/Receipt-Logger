@@ -58,7 +58,10 @@ object ReceiptParser {
 
     fun isSectionHeading(description: String): Boolean = SECTION_HEADING.containsMatchIn(description.trim())
 
-    private val COLLI_HEADING = Regex("(?i)\\b(colli|n\\.?\\s?colli|cartoni)\\b")
+    // "COD.ART.COLLIDESCRIZIONE": the OCR may glue the heading to the next one.
+    private val COLLI_HEADING = Regex("(?i)\\b(colli|n\\.?\\s?colli|cartoni)(\\b|(?=descr))")
+    /** Pkgs glued to the product name: "3TORTA", "1/CINGHIALE" (only after an article code, in a table with a COLLI column). */
+    private val GLUED_COLLI = Regex("^(\\d{1,2})/?([A-Za-z][A-Za-z].*)$")
     private val PRICE_HEADING = Regex("(?i)\\b(prezzo|prz\\.?|p\\.\\s?unit|pr\\.\\s?unit)")
     private val QTY_HEADING = Regex("(?i)(\\bq\\.?\\s?t[àa']?\\.?(?=\\W|$)|\\bquantit[àa]|\\btot\\.(?!\\w))")
     private val ITEM_COLUMN = Regex("(?i)\\b(descrizione|articolo|prodotto|q\\.?\\s?t[àa']?\\.?|quantit[àa]|prezzo|u\\.?\\s?m\\.?)(?=\\W|$)")
@@ -446,7 +449,8 @@ object ReceiptParser {
      * include VAT (printed wording first, then the arithmetic). Used for every reading (text, columns, AI).
      */
     fun finish(doc: ParsedDocument, text: String): ParsedDocument {
-        val items = doc.lineItems
+        // Logic first: a line that does not add up is solved from its own printed numbers where only one reading fits.
+        val items = LineSolver.settle(doc.lineItems)
         val warnings = (doc.warnings - CHECK_WARNINGS).toMutableSet()
         var total = doc.totalCents
         var vat = doc.vatCents
@@ -482,7 +486,7 @@ object ReceiptParser {
                 Extracted(VatBasis.EXCLUSIVE, Confidence.LOW, "somma righe = imponibile")
             else -> null
         }
-        return doc.copy(totalCents = total, vatCents = vat, vatBasis = vatBasis, warnings = warnings)
+        return doc.copy(lineItems = items, totalCents = total, vatCents = vat, vatBasis = vatBasis, warnings = warnings)
     }
 
     /** Number of leading lines of [next] that repeat the last lines of [prev] (at least 2 to count). */
@@ -1014,6 +1018,14 @@ object ReceiptParser {
                     t2.all(Char::isDigit) && t2.length <= 3 && tokens.size > i + 4 -> { packages = "${t0}x$t2"; i += 3 }
                 (code != null || colliColumn) && t0.all(Char::isDigit) && t0.length <= 3 && t1 != null && t1.any(Char::isLetter) &&
                     (code == null || COLLI.matches(t0)) -> { packages = t0; i++ }
+                code != null && colliColumn -> GLUED_COLLI.find(t0)?.let { m ->
+                    val word = m.groupValues[2]
+                    // Not a size or unit ("5KG", "6X400G"): the letters must be a word of the name.
+                    if (Units.normalizeKnown(word.trimEnd('.')) == null && !word[0].equals('x', ignoreCase = true)) {
+                        packages = m.groupValues[1]
+                        return Stripped(listOf(word) + tokens.drop(i + 1), code, packages)
+                    }
+                }
             }
         }
         return Stripped(tokens.drop(i), code, packages)

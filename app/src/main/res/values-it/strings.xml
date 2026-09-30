@@ -527,4 +527,19 @@
     <string name="brand">Marca</string>
     <string name="brand_none">Non indicata</string>
     <string name="brand_value">Marca: %1$s</string>
+    <!-- ritaglio della foto durante il controllo, scelte della riga, apprendimento -->
+    <string name="close">Chiudi</string>
+    <string name="peek_title">%1$s sulla foto</string>
+    <string name="peek_title_row">%1$s: la sua riga sulla foto</string>
+    <string name="peek_hint">Tocca l\'immagine per ingrandirla.</string>
+    <string name="choice_title">Questi numeri tornano in più di un modo. Quale è stampato? (Viene ricordato per questo fornitore.)</string>
+    <string name="choice_option">%1$s × %2$s = %3$s</string>
+    <string name="choice_suggested">suggerito dall\'IA</string>
+    <string name="learned_title">Imparato da te</string>
+    <plurals name="learned_stats">
+        <item quantity="one">%1$d fornitore: %2$d scelte ricordate, %3$d righe di esempio per l\'IA.</item>
+        <item quantity="other">%1$d fornitori: %2$d scelte ricordate, %3$d righe di esempio per l\'IA.</item>
+    </plurals>
+    <string name="learned_hint">Conservato solo su questo telefono. Il modello di IA non viene mai modificato.</string>
+    <string name="learned_clear">Dimentica ciò che è stato imparato</string>
 </resources>

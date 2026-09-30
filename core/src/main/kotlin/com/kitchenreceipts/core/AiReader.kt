@@ -21,32 +21,64 @@ import java.text.Normalizer
 object AiReader {
 
     /** Changes when the prompt or grammar change, so logged results can be compared. */
-    const val PROMPT_VERSION = 4
+    const val PROMPT_VERSION = 5
 
     private const val MAX_OCR_CHARS = 5000
 
+    /**
+     * Language the instructions are written in. The documents are Italian whatever the app language is; which
+     * instruction language reads them better is measured per model in CI (job ai-model-check).
+     */
+    enum class Lang { EN, IT }
+
+    /** Used when nothing else is said: the language that read best in CI (see README, "AI instruction language"). */
+    @Volatile var defaultLang: Lang = Lang.EN
+
     /** The instruction given with the photo. [ocrText] is what the regular OCR read on the same page. */
-    fun instruction(ocrText: String): String = buildString {
-        append("This photo shows an Italian supplier document for a restaurant (fattura, DDT or scontrino). ")
-        append("Read it and return JSON. Copy values exactly as printed: do not calculate, round, translate or guess. ")
-        append("Use null for anything that is not printed.\n")
-        append("- seller: the company that issued the document (letterhead at the top). Never the customer shown after ")
-        append("'Spett.le', 'Destinatario', 'Cliente' or 'Luogo di destinazione'.\n")
-        append("- seller_vat: the seller's Partita IVA.\n")
-        append("- number: the document number. date: the document date (not delivery, payment or expiry dates).\n")
-        append("- subtotal: taxable amount (imponibile). vat: total VAT (IVA). total: total of the document.\n")
-        append("- items: one entry per product line, top to bottom. Skip headings and totals. Lines such as 'Merce non deperibile - ")
-        append("Congelato', 'Merce non deperibile - Fresco' or 'Merce non alimentare' are section titles, never products: the product ")
-        append("is the line with the article code (e.g. 'CARTA FORNO ...' under 'Merce non alimentare'). For each: ")
-        append("code (article code), colli (the COLLI column: packages or cartons, e.g. '5' or '1x6'), ")
-        append("description (the product name only, without code, colli, quantity or prices), unit (U.M.), ")
-        append("quantity (QUANTITA'/QTA/TOT. column), price (unit price, PREZZO), discount (SCONTO %), ")
-        append("amount (line total, IMPORTO), vat_rate (% IVA or IVA code), lot (only when printed as lot/lotto; never a date).\n")
-        append("Write numbers with the Italian comma exactly as printed, e.g. \"1.234,50\" or \"2,384\".\n")
+    fun instruction(ocrText: String, lang: Lang = defaultLang): String = buildString {
+        if (lang == Lang.IT) {
+            append("La foto mostra un documento di un fornitore italiano per un ristorante (fattura, DDT o scontrino). ")
+            append("Leggilo e rispondi in JSON. Copia i valori esattamente come sono stampati: non calcolare, non arrotondare, ")
+            append("non tradurre e non indovinare. Usa null per ciò che non è stampato.\n")
+            append("- seller: l'azienda che ha emesso il documento (intestazione in alto). Mai il cliente indicato dopo ")
+            append("'Spett.le', 'Destinatario', 'Cliente' o 'Luogo di destinazione'.\n")
+            append("- seller_vat: la Partita IVA del fornitore.\n")
+            append("- number: il numero del documento. date: la data del documento (non di consegna, pagamento o scadenza).\n")
+            append("- subtotal: imponibile. vat: IVA totale. total: totale del documento.\n")
+            append("- items: una voce per ogni riga di prodotto, dall'alto in basso. Salta intestazioni e totali. Righe come ")
+            append("'Merce non deperibile - Congelato', 'Merce non deperibile - Fresco' o 'Merce non alimentare' sono titoli di ")
+            append("sezione, mai prodotti: il prodotto è la riga con il codice articolo. Per ciascuna: code (codice articolo), ")
+            append("colli (colonna COLLI, es. '5' o '1x6'), description (solo il nome del prodotto, senza codice, colli, quantità ")
+            append("o prezzi), unit (U.M.), quantity (colonna QUANTITA'/QTA/TOT.), price (prezzo unitario), discount (SC.%), ")
+            append("amount (IMPORTO della riga), vat_rate (% IVA o codice IVA), lot (solo se stampato come lotto; mai una data).\n")
+            append("Scrivi i numeri con la virgola, esattamente come stampati, es. \"1.234,50\" o \"2,384\".\n")
+        } else {
+            append("This photo shows an Italian supplier document for a restaurant (fattura, DDT or scontrino). ")
+            append("Read it and return JSON. Copy values exactly as printed: do not calculate, round, translate or guess. ")
+            append("Use null for anything that is not printed.\n")
+            append("- seller: the company that issued the document (letterhead at the top). Never the customer shown after ")
+            append("'Spett.le', 'Destinatario', 'Cliente' or 'Luogo di destinazione'.\n")
+            append("- seller_vat: the seller's Partita IVA.\n")
+            append("- number: the document number. date: the document date (not delivery, payment or expiry dates).\n")
+            append("- subtotal: taxable amount (imponibile). vat: total VAT (IVA). total: total of the document.\n")
+            append("- items: one entry per product line, top to bottom. Skip headings and totals. Lines such as 'Merce non deperibile - ")
+            append("Congelato', 'Merce non deperibile - Fresco' or 'Merce non alimentare' are section titles, never products: the product ")
+            append("is the line with the article code (e.g. 'CARTA FORNO ...' under 'Merce non alimentare'). For each: ")
+            append("code (article code), colli (the COLLI column: packages or cartons, e.g. '5' or '1x6'), ")
+            append("description (the product name only, without code, colli, quantity or prices), unit (U.M.), ")
+            append("quantity (QUANTITA'/QTA/TOT. column), price (unit price, PREZZO), discount (SCONTO %), ")
+            append("amount (line total, IMPORTO), vat_rate (% IVA or IVA code), lot (only when printed as lot/lotto; never a date).\n")
+            append("Write numbers with the Italian comma exactly as printed, e.g. \"1.234,50\" or \"2,384\".\n")
+        }
         val ocr = ocrText.trim()
         if (ocr.isNotEmpty()) {
-            append("\nText read from the same page by OCR (it may contain misread characters and rows split or merged; ")
-            append("use it to check digits, but trust the photo for which value is in which column):\n<<<\n")
+            if (lang == Lang.IT) {
+                append("\nTesto letto dall'OCR sulla stessa pagina (può contenere caratteri sbagliati e righe divise o unite; ")
+                append("usalo per controllare le cifre, ma per sapere quale valore sta in quale colonna fidati della foto):\n<<<\n")
+            } else {
+                append("\nText read from the same page by OCR (it may contain misread characters and rows split or merged; ")
+                append("use it to check digits, but trust the photo for which value is in which column):\n<<<\n")
+            }
             append(if (ocr.length > MAX_OCR_CHARS) ocr.take(MAX_OCR_CHARS) + "\n…" else ocr)
             append("\n>>>\n")
         }
@@ -85,26 +117,108 @@ object AiReader {
     val HEADER_GRAMMAR: String = grammarFor(listOf("seller", "seller_vat", "number", "date"))
     val TOTALS_GRAMMAR: String = grammarFor(listOf("subtotal", "vat", "total"))
 
-    fun rowInstruction(headerText: String, rowText: String): String = buildString {
-        append("The picture shows two strips of an Italian supplier document (fattura or DDT): on top the column headings of ")
-        append("the product table, below them one product line (its name or lot may continue on a second line). ")
-        append("Copy that product line, reading each value in the column under its heading. Copy values exactly as printed, ")
-        append("with the Italian comma; do not calculate or guess; null for an empty column.\n")
-        append("code = article code, colli = COLLI column, description = product name only, unit = U.M., quantity = QUANTITA'/QTA/TOT., ")
-        append("price = unit price (PREZZO), discount = SC.%, amount = line total (IMPORTO), vat_rate = % IVA, lot = lot number if printed.\n")
-        append("The regular OCR read the headings as: ").append(headerText.take(300)).append('\n')
-        append("and the line as: ").append(rowText.take(400)).append(" (it may be misread or mixed with a neighbouring line)\n")
+    /**
+     * One product line. [examples] are lines of the same supplier the operator confirmed before ("row text" to the
+     * right answer): the model follows the pattern, which is how it learns a supplier's layout without retraining.
+     */
+    fun rowInstruction(headerText: String, rowText: String, lang: Lang = defaultLang, examples: List<RowExample> = emptyList()): String = buildString {
+        if (lang == Lang.IT) {
+            append("L'immagine mostra due strisce di un documento di un fornitore italiano (fattura o DDT): sopra le intestazioni ")
+            append("delle colonne della tabella prodotti, sotto una riga di prodotto (nome o lotto possono continuare su una seconda riga). ")
+            append("Copia quella riga leggendo ogni valore nella colonna sotto la sua intestazione. Copia i valori esattamente come ")
+            append("stampati, con la virgola; non calcolare e non indovinare; null per una colonna vuota.\n")
+            append("code = codice articolo, colli = colonna COLLI, description = solo il nome del prodotto, unit = U.M., ")
+            append("quantity = QUANTITA'/QTA/TOT., price = prezzo unitario (PREZZO), discount = SC.%, amount = IMPORTO della riga, ")
+            append("vat_rate = % IVA, lot = numero di lotto se stampato.\n")
+            append("L'OCR ha letto le intestazioni come: ").append(headerText.take(300)).append('\n')
+            append("e la riga come: ").append(rowText.take(400)).append(" (può essere letta male o mescolata con una riga vicina)\n")
+            if (examples.isNotEmpty()) append("Righe già confermate dello stesso fornitore, con la risposta giusta:\n")
+        } else {
+            append("The picture shows two strips of an Italian supplier document (fattura or DDT): on top the column headings of ")
+            append("the product table, below them one product line (its name or lot may continue on a second line). ")
+            append("Copy that product line, reading each value in the column under its heading. Copy values exactly as printed, ")
+            append("with the Italian comma; do not calculate or guess; null for an empty column.\n")
+            append("code = article code, colli = COLLI column, description = product name only, unit = U.M., quantity = QUANTITA'/QTA/TOT., ")
+            append("price = unit price (PREZZO), discount = SC.%, amount = line total (IMPORTO), vat_rate = % IVA, lot = lot number if printed.\n")
+            append("The regular OCR read the headings as: ").append(headerText.take(300)).append('\n')
+            append("and the line as: ").append(rowText.take(400)).append(" (it may be misread or mixed with a neighbouring line)\n")
+            if (examples.isNotEmpty()) append("Lines of the same supplier already confirmed, with the right answer:\n")
+        }
+        examples.take(MAX_EXAMPLES).forEach { e -> append("- ").append(e.rowText.take(200)).append(" => ").append(e.answerJson()).append('\n') }
     }
 
-    fun headerInstruction(): String =
+    /** A line of a supplier's earlier document, as the OCR read it, and what the operator confirmed it to be. */
+    data class RowExample(
+        val rowText: String, val code: String?, val colli: String?, val description: String, val unit: String?,
+        val quantity: String?, val price: String?, val amount: String?, val vatRate: String?,
+    ) {
+        fun answerJson(): String {
+            fun v(x: String?) = if (x == null) "null" else "\"" + x.replace("\\", "").replace("\"", "") + "\""
+            return "{\"code\":${v(code)},\"colli\":${v(colli)},\"description\":${v(description)},\"unit\":${v(unit)}," +
+                "\"quantity\":${v(quantity)},\"price\":${v(price)},\"amount\":${v(amount)},\"vat_rate\":${v(vatRate)}}"
+        }
+    }
+
+    private const val MAX_EXAMPLES = 3
+
+    fun headerInstruction(lang: Lang = defaultLang): String = if (lang == Lang.IT) {
+        "L'immagine mostra la parte alta di un documento di un fornitore italiano (fattura, DDT o scontrino). Restituisci: " +
+            "seller = l'azienda che lo ha emesso (intestazione), mai il cliente dopo 'Spett.le'/'Destinatario'; seller_vat = la sua " +
+            "Partita IVA; number = numero del documento; date = data del documento (non di consegna o pagamento). Copia esattamente " +
+            "come stampato; null se assente.\n"
+    } else {
         "The picture shows the top of an Italian supplier document (fattura, DDT or scontrino). Return: seller = the company " +
             "that issued it (letterhead), never the customer after 'Spett.le'/'Destinatario'; seller_vat = its Partita IVA; " +
             "number = document number; date = document date (not delivery or payment dates). Copy exactly as printed; null if absent.\n"
+    }
 
-    fun totalsInstruction(): String =
+    fun totalsInstruction(lang: Lang = defaultLang): String = if (lang == Lang.IT) {
+        "L'immagine mostra la parte bassa di un documento di un fornitore italiano. Restituisci: subtotal = imponibile " +
+            "(colonna TOTALI del riepilogo IVA), vat = IVA totale (importo IVA), total = totale del documento (totale documento / " +
+            "da pagare). Copia esattamente come stampato, con la virgola; null se assente.\n"
+    } else {
         "The picture shows the bottom part of an Italian supplier document. Return: subtotal = taxable amount (imponibile, " +
             "TOTALI column of the VAT summary), vat = total VAT (importo IVA), total = total of the document (totale documento / " +
             "da pagare). Copy exactly as printed with the Italian comma; null if absent.\n"
+    }
+
+    // ------------------------------------------------------------------ multiple choice (a line that adds up two ways)
+
+    /** The answer is one letter: which reading is printed on the line, or X when none is. */
+    val CHOICE_GRAMMAR: String = "root ::= [A-DX]\n"
+
+    private val LETTERS = listOf("A", "B", "C", "D")
+
+    /** Asks which of [choices] (all adding up) is what the line shows: one letter to write instead of a whole line. */
+    fun choiceInstruction(headerText: String, rowText: String, choices: List<LineChoice>, lang: Lang = defaultLang): String = buildString {
+        fun n(v: BigDecimal) = ItalianNumbers.formatDecimal(v, maxScale = 4)
+        if (lang == Lang.IT) {
+            append("L'immagine mostra le intestazioni delle colonne di un documento di un fornitore italiano e, sotto, una riga ")
+            append("di prodotto. I numeri della riga tornano in più di un modo. Guarda sotto quale intestazione sta ciascun numero ")
+            append("e rispondi con una sola lettera: quale lettura è quella stampata (X se nessuna).\n")
+            append("Intestazioni (OCR): ").append(headerText.take(300)).append("\nRiga (OCR): ").append(rowText.take(400)).append('\n')
+            choices.take(4).forEachIndexed { i, c ->
+                append(LETTERS[i]).append(": QUANTITA' ").append(n(c.quantity)).append(", PREZZO ").append(n(c.unitPrice))
+                    .append(", IMPORTO ").append(ItalianNumbers.formatDecimal(ItalianNumbers.centsToDecimal(c.lineTotalCents), minScale = 2, maxScale = 2)).append('\n')
+            }
+        } else {
+            append("The picture shows the column headings of an Italian supplier document and, below them, one product line. ")
+            append("The line's numbers add up in more than one way. Look at which heading each number stands under and answer ")
+            append("with one letter: which reading is the one printed (X if none).\n")
+            append("Headings (OCR): ").append(headerText.take(300)).append("\nLine (OCR): ").append(rowText.take(400)).append('\n')
+            choices.take(4).forEachIndexed { i, c ->
+                append(LETTERS[i]).append(": QUANTITY ").append(n(c.quantity)).append(", PRICE ").append(n(c.unitPrice))
+                    .append(", AMOUNT ").append(ItalianNumbers.formatDecimal(ItalianNumbers.centsToDecimal(c.lineTotalCents), minScale = 2, maxScale = 2)).append('\n')
+            }
+        }
+    }
+
+    /** The choice the AI picked, or null (no clear answer, "X", or a letter with no choice behind it). */
+    fun decodeChoice(raw: String, choices: List<LineChoice>): LineChoice? {
+        val letter = raw.trim().trim('"').uppercase().take(1)
+        val i = LETTERS.indexOf(letter)
+        return if (i >= 0) choices.getOrNull(i) else null
+    }
 
     private fun obj(json: String): Map<*, *>? = runCatching { Json.parse(json.trim()) }.getOrNull() as? Map<*, *>
     private fun str(m: Map<*, *>, k: String): String? = (m[k] as? String)?.trim()?.takeIf { it.isNotEmpty() && it.lowercase() != "null" }
@@ -147,6 +261,18 @@ object AiReader {
                     } else if (doc.lineItems.none { it.lineTotalCents?.value == new.lineTotalCents?.value && it.originalDescription == new.originalDescription }) {
                         inserts += target.insertAfter to new
                     }
+                }
+                is AiTarget.Choice -> {
+                    val idx = target.itemIndex
+                    val old = items[idx] ?: continue
+                    val pick = decodeChoice(raw, target.choices) ?: continue
+                    // Both readings add up, so the AI's pick is a suggestion: shown first, still for the operator to confirm.
+                    items[idx] = old.copy(
+                        quantity = Extracted(pick.quantity, Confidence.LOW, target.rowText),
+                        unitPrice = Extracted(pick.unitPrice, Confidence.LOW, target.rowText),
+                        lineTotalCents = Extracted(pick.lineTotalCents, Confidence.LOW, target.rowText),
+                        choices = listOf(pick) + old.choices.filter { it != pick },
+                    )
                 }
                 is AiTarget.Header -> {
                     val m = obj(raw) ?: continue

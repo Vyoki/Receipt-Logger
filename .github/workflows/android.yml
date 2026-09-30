@@ -201,11 +201,25 @@ jobs:
           run 2b instruction.txt 2b-full invoice
           run 2b instruction.txt 2b-crop invoice-crop
           run 4b instruction.txt 4b-crop invoice-crop
+          # Same pages with the instructions in Italian (which language reads better, per model).
+          run 2b instruction-it.txt 2b-crop-it invoice-crop
+          run 4b instruction-it.txt 4b-crop-it invoice-crop
           runrow() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/row-$2.ppm ai-run/row-$2.txt ai-run/row.gbnf > ai-run/rowanswer-$1-$2.json 2> ai-run/row-$1-$2.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/row-$1-$2.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/row-$1-$2.log; }
           runrow 2b filetto
           runrow 2b candeggina
           runrow 4b filetto
           runrow 4b candeggina
+          runrowit() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/row-$2.ppm ai-run/row-$2-it.txt ai-run/row.gbnf > ai-run/rowanswer-$1-$2-it.json 2> ai-run/row-$1-$2-it.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/row-$1-$2-it.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/row-$1-$2-it.log; }
+          runrowit 2b filetto
+          runrowit 2b candeggina
+          runrowit 4b filetto
+          runrowit 4b candeggina
+          # Multiple choice (one letter to write): how much faster than a whole line, and is it right?
+          runchoice() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/row-filetto.ppm ai-run/choice-filetto-$2.txt ai-run/choice.gbnf > ai-run/choiceanswer-$1-$2.txt 2> ai-run/choice-$1-$2.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/choice-$1-$2.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/choice-$1-$2.log; }
+          runchoice 2b en
+          runchoice 2b it
+          runchoice 4b en
+          runchoice 4b it
       - name: Check the answers
         run: AI_ANSWER_DIR=$PWD/ai-run ./gradlew :core:test --tests '*AiModelCheckTest.check*' --rerun --quiet
       - name: Publish results
@@ -217,6 +231,8 @@ jobs:
           def note(title, text):
               text = text[:3800].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
               print(f'::notice title={title}::{text}')
+          if os.path.exists('ai-run/choice-report.txt'):
+              note('AI multiple choice report', open('ai-run/choice-report.txt').read())
           if os.path.exists('ai-run/row-report.txt'):
               note('AI line check report', open('ai-run/row-report.txt').read())
           if os.path.exists('ai-run/report.txt'):

@@ -64,8 +64,15 @@ data class PendingImport(
 /** Progress of an import: which page of how many, and which reading (1 = photo, 2 = enhanced photo, 3 = AI whole page, 4 = AI checks). */
 data class ImportProgress(val page: Int, val of: Int, val pass: Int, val aiStage: Int = 0, val aiCount: Int = 0)
 
-/** How the on-phone AI reader should be used for this import (null = not at all). */
-class AiUse(val reader: suspend () -> AiPageReader, val always: Boolean)
+/**
+ * How the on-phone AI reader should be used for this import (null = not at all). [examples]: lines of the same
+ * supplier the operator confirmed before, shown to the AI with each line question.
+ */
+class AiUse(
+    val reader: suspend () -> AiPageReader,
+    val always: Boolean,
+    val examples: (ParsedDocument, String) -> List<AiReader.RowExample> = { _, _ -> emptyList() },
+)
 
 class ImportProcessor(private val renderer: PageRenderer) {
 
@@ -112,10 +119,11 @@ class ImportProcessor(private val renderer: PageRenderer) {
             // First choice: ask only about the doubtful parts (seconds each). Whole pages only when the regular
             // reading failed too broadly for that, or when the operator asked the AI to always read everything.
             val targets = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed) }
-            aiNote = if (!targets.isNullOrEmpty()) {
-                runTargets(file, best, ai, targets, onProgress, aiTargeted)
-            } else {
-                runAi(file, best, ai, options, onProgress, aiRaw, parsed)
+            aiNote = when {
+                targets == null -> runAi(file, best, ai, options, onProgress, aiRaw, parsed)
+                // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
+                targets.isEmpty() -> "nothing to ask"
+                else -> runTargets(file, best, ai, targets, onProgress, aiTargeted, ai.examples(parsed, best.text))
             }
         }
         return rebuild(
@@ -133,6 +141,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         targets: List<AiTarget>,
         onProgress: (ImportProgress) -> Unit,
         answers: MutableList<String>,
+        examples: List<AiReader.RowExample> = emptyList(),
     ): String {
         onProgress(ImportProgress(1, targets.size, 4))
         val reader = try {
@@ -143,16 +152,22 @@ class ImportProcessor(private val renderer: PageRenderer) {
             return "not started: ${e.message}"
         }
         val notes = mutableListOf("checks ${targets.size} (" + targets.joinToString(",") { t ->
-            when (t) { is AiTarget.Row -> t.itemIndex?.let { "line${it + 1}" } ?: "missed"; is AiTarget.Header -> "header"; is AiTarget.Totals -> "totals" }
-        } + ") " + reader.systemInfo)
+            when (t) {
+                is AiTarget.Row -> t.itemIndex?.let { "line${it + 1}" } ?: "missed"
+                is AiTarget.Choice -> "choice${t.itemIndex + 1}"
+                is AiTarget.Header -> "header"
+                is AiTarget.Totals -> "totals"
+            }
+        } + ") lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
         val started = System.currentTimeMillis()
         val pageCache = mutableMapOf<Int, android.graphics.Bitmap>()
         try {
             targets.forEachIndexed { i, t ->
                 onProgress(ImportProgress(i + 1, targets.size, 4))
-                val bmp = pageCache.getOrPut(t.page) { renderer.renderPage(file.relativePath, file.mimeType, t.page, OCR_LONG_SIDE) }
+                val bmp = pageCache.getOrPut(t.page) { renderer.renderForReading(file.relativePath, file.mimeType, t.page, OCR_LONG_SIDE) }
                 val (instruction, grammar) = when (t) {
-                    is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText) to AiReader.ROW_GRAMMAR
+                    is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText, examples = examples) to AiReader.ROW_GRAMMAR
+                    is AiTarget.Choice -> AiReader.choiceInstruction(t.headerText, t.rowText, t.choices) to AiReader.CHOICE_GRAMMAR
                     is AiTarget.Header -> AiReader.headerInstruction() to AiReader.HEADER_GRAMMAR
                     is AiTarget.Totals -> AiReader.totalsInstruction() to AiReader.TOTALS_GRAMMAR
                 }
@@ -200,7 +215,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val notes = mutableListOf("pages ${selected.joinToString(",") { "${it + 1}" }} of $pages")
         try {
             for (i in selected) {
-                val bmp = renderer.renderPage(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
+                val bmp = renderer.renderForReading(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
                 val r = try {
                     reader.read(bmp, best.lines[i], best.widths.getOrElse(i) { bmp.width }, LayoutRows.toText(best.lines[i]), options) { stage, count ->
                         onProgress(ImportProgress(i + 1, pages, 3, stage, count))
@@ -240,7 +255,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         for (i in 0 until pages) {
             onProgress(i + 1, pages)
             try {
-                val bmp = renderer.renderPage(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
+                val bmp = renderer.renderForReading(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
                 try {
                     if (pass == 1) {
                         raw += engine.recognize(bmp)

@@ -25,6 +25,16 @@ sealed interface AiTarget {
         val headerText: String,
     ) : AiTarget
 
+    /** A line whose numbers add up in several ways ([choices]): the answer is one letter. */
+    data class Choice(
+        override val page: Int,
+        override val boxes: List<PageBox>,
+        val itemIndex: Int,
+        val choices: List<LineChoice>,
+        val rowText: String,
+        val headerText: String,
+    ) : AiTarget
+
     /** Supplier, number and date (top of the first page). */
     data class Header(override val page: Int, override val boxes: List<PageBox>) : AiTarget
 
@@ -102,7 +112,9 @@ object AiTargets {
         val targets = mutableListOf<AiTarget>()
         for (i in doubtful) {
             val r = itemRow[i] ?: continue
-            targets += AiTarget.Row(r.page, strip(r), i, i, r.text, headerRows.getValue(r.page).text)
+            val choices = doc.lineItems[i].choices
+            targets += if (choices.size >= 2) AiTarget.Choice(r.page, strip(r), i, choices, r.text, headerRows.getValue(r.page).text)
+            else AiTarget.Row(r.page, strip(r), i, i, r.text, headerRows.getValue(r.page).text)
         }
         for (r in missed) {
             val after = itemRow.withIndex().filter { (_, row) -> row != null && (row.page < r.page || (row.page == r.page && row.index < r.index)) }

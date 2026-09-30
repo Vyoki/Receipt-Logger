@@ -35,7 +35,18 @@ data class LineItemDraft(
     val productSource: ProductSource? = null,
     /** No product matched: a new product with this name is created when the document is saved. */
     val newProductName: String? = null,
+    /** The line's numbers add up in more than one way: the operator picks (the first is the suggested one). */
+    val choices: List<LineChoice> = emptyList(),
 ) {
+    /** Takes one reading of the line's numbers as confirmed. */
+    fun pick(c: LineChoice): LineItemDraft = copy(
+        quantity = quantity.confirmed(ItalianNumbers.toEditText(c.quantity)),
+        unitPrice = unitPrice.confirmed(ItalianNumbers.toEditText(c.unitPrice)),
+        lineTotal = lineTotal.confirmed(ItalianNumbers.centsToEditText(c.lineTotalCents)),
+        unit = if (c.unit != null) unit.confirmed(c.unit) else unit,
+        choices = emptyList(),
+    )
+
     val uncertainCount: Int
         get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry, packages).count { it.uncertain }
 
@@ -103,6 +114,7 @@ data class DocumentDraft(
                         expiry = f(it.expiryDate) { d -> ItalianDates.format(d) },
                         packages = f(it.packages) { p -> p },
                         itemCode = it.itemCode,
+                        choices = it.choices,
                     )
                 },
                 warnings = p.warnings,

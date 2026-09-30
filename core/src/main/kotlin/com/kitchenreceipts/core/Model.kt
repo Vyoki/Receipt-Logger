@@ -51,6 +51,8 @@ data class ParsedLineItem(
     val itemCode: String? = null,
     /** "Colli": number of packages/cartons as printed ("5", "1x6"). Never part of the description or the quantity. */
     val packages: Extracted<String>? = null,
+    /** Several readings of this line's numbers add up equally well: the AI or the operator picks one. */
+    val choices: List<LineChoice> = emptyList(),
 )
 
 data class ParsedDocument(
