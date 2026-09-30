@@ -80,6 +80,10 @@ data class DocumentDraft(
     val vatBasisUncertain: Boolean = false,
     val items: List<LineItemDraft> = emptyList(),
     val warnings: Set<ParseWarning> = emptySet(),
+    /** False when the document prints no lots at all: an empty lot is then normal, not something to fill in. */
+    val lotsPrinted: Boolean = true,
+    /** VAT groups that do not add up (rate, printed taxable amount, lines' sum), to show the operator where to look. */
+    val vatGroupProblems: List<VatSummary.Check> = emptyList(),
 ) {
     val uncertainCount: Int
         get() = listOf(seller, date, number, currency, subtotal, vat, total).count { it.uncertain } +
@@ -118,6 +122,8 @@ data class DocumentDraft(
                     )
                 },
                 warnings = p.warnings,
+                lotsPrinted = p.lotsPrinted,
+                vatGroupProblems = p.vatChecks.filter { !it.ok },
             )
         }
     }

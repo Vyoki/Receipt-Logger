@@ -155,6 +155,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             when (t) {
                 is AiTarget.Row -> t.itemIndex?.let { "line${it + 1}" } ?: "missed"
                 is AiTarget.Choice -> "choice${t.itemIndex + 1}"
+                is AiTarget.Number -> "qty${t.itemIndex + 1}"
                 is AiTarget.Header -> "header"
                 is AiTarget.Totals -> "totals"
             }
@@ -168,6 +169,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 val (instruction, grammar) = when (t) {
                     is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText, examples = examples) to AiReader.ROW_GRAMMAR
                     is AiTarget.Choice -> AiReader.choiceInstruction(t.headerText, t.rowText, t.choices) to AiReader.CHOICE_GRAMMAR
+                    is AiTarget.Number -> AiReader.numberInstruction(t.column, t.headerText, t.rowText) to AiReader.NUMBER_GRAMMAR
                     is AiTarget.Header -> AiReader.headerInstruction() to AiReader.HEADER_GRAMMAR
                     is AiTarget.Totals -> AiReader.totalsInstruction() to AiReader.TOTALS_GRAMMAR
                 }

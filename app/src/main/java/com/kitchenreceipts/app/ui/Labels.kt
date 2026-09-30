@@ -28,6 +28,7 @@ fun warningText(w: ParseWarning): String = stringResource(
         ParseWarning.TOTALS_INCONSISTENT -> R.string.warn_totals_inconsistent
         ParseWarning.LOT_LOOKS_LIKE_DATE -> R.string.warn_lot_looks_like_date
         ParseWarning.MULTIPLE_TOTALS -> R.string.warn_multiple_totals
+        ParseWarning.VAT_GROUP_MISMATCH -> R.string.warn_vat_group_mismatch
     },
 )
 
@@ -108,6 +109,7 @@ fun reviewReasonText(r: ReviewReason): String = stringResource(
         ReviewReason.INCOMPLETE_ITEMS -> R.string.reason_incomplete
         ReviewReason.SUM_MISMATCH -> R.string.reason_sum
         ReviewReason.VAT_BASIS_UNKNOWN -> R.string.reason_vat_basis
+        ReviewReason.VAT_GROUP_MISMATCH -> R.string.reason_vat_group
     },
 )
 

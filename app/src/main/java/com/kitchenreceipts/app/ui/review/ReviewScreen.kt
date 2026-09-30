@@ -225,6 +225,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                 items(state.draft.items, key = { it.key }) { item ->
                     ItemCard(
                         item = item,
+                        lotsPrinted = state.draft.lotsPrinted,
                         errors = state.errors,
                         onChange = { f, t -> vm.setItem(item.key, f, t) },
                         onConfirm = { f -> vm.confirmItem(item.key, f) },
@@ -343,6 +344,19 @@ private fun ReasonsCard(state: ReviewState) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(stringResource(R.string.reasons_title), fontWeight = FontWeight.SemiBold)
             state.reviewReasons.forEach { Text("• " + reviewReasonText(it), style = MaterialTheme.typography.bodyMedium) }
+            // Which VAT group does not add up, and by how much: that is where the misread line is.
+            state.draft.vatGroupProblems.forEach { g ->
+                Text(
+                    "   " + stringResource(
+                        R.string.vat_group_line,
+                        ItalianNumbers.formatDecimal(g.ratePercent),
+                        ItalianNumbers.formatCents(g.linesCents),
+                        ItalianNumbers.formatCents(g.printedCents),
+                        ItalianNumbers.formatCents(kotlin.math.abs(g.differenceCents)),
+                    ),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
         }
     }
 }
@@ -482,6 +496,7 @@ private fun HeaderSection(
 @Composable
 private fun ItemCard(
     item: LineItemDraft,
+    lotsPrinted: Boolean,
     errors: Map<String, com.kitchenreceipts.core.ErrorCode>,
     onChange: (ItemField, String) -> Unit,
     onConfirm: (ItemField) -> Unit,
@@ -568,7 +583,11 @@ private fun ItemCard(
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ItemInput(item, errors, onChange, onConfirm, ItemField.LOT, R.string.lot, Modifier.weight(1f), FieldKind.CODE, missingHint = stringResource(R.string.lot_missing_hint))
+                // A document that prints no lots at all: an empty lot is normal, not something to fill in.
+                ItemInput(
+                    item, errors, onChange, onConfirm, ItemField.LOT, R.string.lot, Modifier.weight(1f), FieldKind.CODE,
+                    missingHint = stringResource(R.string.lot_missing_hint), optional = !lotsPrinted,
+                )
                 ItemInput(item, errors, onChange, onConfirm, ItemField.VAT_RATE, R.string.vat_rate, Modifier.weight(0.6f), FieldKind.DECIMAL, optional = true)
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

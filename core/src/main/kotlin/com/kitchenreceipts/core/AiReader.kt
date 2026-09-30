@@ -182,6 +182,21 @@ object AiReader {
             "da pagare). Copy exactly as printed with the Italian comma; null if absent.\n"
     }
 
+    // ------------------------------------------------------------------ one number (a quantity the OCR missed)
+
+    /** The answer is one number as printed ("1", "2,50") or X when the column is empty. */
+    val NUMBER_GRAMMAR: String = "root ::= [0-9]{1,5} ([,.] [0-9]{1,3})? | \"X\"\n"
+
+    fun numberInstruction(column: String, headerText: String, rowText: String, lang: Lang = defaultLang): String = if (lang == Lang.IT) {
+        "L'immagine mostra le intestazioni delle colonne di un documento di un fornitore italiano e, sotto, una riga di prodotto. " +
+            "Scrivi solo il numero stampato in quella riga nella colonna \"$column\" (X se la colonna è vuota). Non calcolare.\n" +
+            "Intestazioni (OCR): ${headerText.take(300)}\nRiga (OCR): ${rowText.take(400)}\n"
+    } else {
+        "The picture shows the column headings of an Italian supplier document and, below them, one product line. " +
+            "Write only the number printed on that line in the column \"$column\" (X if the column is empty). Do not calculate.\n" +
+            "Headings (OCR): ${headerText.take(300)}\nLine (OCR): ${rowText.take(400)}\n"
+    }
+
     // ------------------------------------------------------------------ multiple choice (a line that adds up two ways)
 
     /** The answer is one letter: which reading is printed on the line, or X when none is. */
@@ -273,6 +288,15 @@ object AiReader {
                         lineTotalCents = Extracted(pick.lineTotalCents, Confidence.LOW, target.rowText),
                         choices = listOf(pick) + old.choices.filter { it != pick },
                     )
+                }
+                is AiTarget.Number -> {
+                    val idx = target.itemIndex
+                    val old = items[idx] ?: continue
+                    val read = ItalianNumbers.parse(raw.trim().trim('"')) ?: continue
+                    // The AI read the same number the arithmetic gives: two independent sources agree, the line is proven.
+                    if (read.compareTo(target.expected) == 0 && old.quantity != null) {
+                        items[idx] = old.copy(quantity = old.quantity.copy(confidence = Confidence.HIGH, source = old.quantity.source + " (AI read ${raw.trim()})"))
+                    }
                 }
                 is AiTarget.Header -> {
                     val m = obj(raw) ?: continue

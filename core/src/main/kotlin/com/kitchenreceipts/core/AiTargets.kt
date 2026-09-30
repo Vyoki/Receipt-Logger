@@ -35,6 +35,21 @@ sealed interface AiTarget {
         val headerText: String,
     ) : AiTarget
 
+    /**
+     * One number the OCR missed, worked out from the others ([expected] = amount / price): the AI reads just that
+     * column ([column], e.g. "TOT. PZ/KG") and answers a number. Agreement proves it; a different number leaves it
+     * highlighted for the operator.
+     */
+    data class Number(
+        override val page: Int,
+        override val boxes: List<PageBox>,
+        val itemIndex: Int,
+        val column: String,
+        val expected: java.math.BigDecimal,
+        val rowText: String,
+        val headerText: String,
+    ) : AiTarget
+
     /** Supplier, number and date (top of the first page). */
     data class Header(override val page: Int, override val boxes: List<PageBox>) : AiTarget
 
@@ -78,13 +93,20 @@ object AiTargets {
         val tableRows = allRows.filter(::inTable)
         if (tableRows.isEmpty()) return null
 
-        // Which row each line of the document came from (best word overlap with its source text).
+        // Which row each line of the document came from (best word overlap with its source text), each row used once:
+        // ten identical "IMPASTO SALSICCIA" lines are ten rows, not one row and nine "missed" lines.
+        val taken = mutableSetOf<RowInfo>()
         val itemRow = doc.lineItems.map { item ->
             val source = item.lineTotalCents?.source ?: item.quantity?.source ?: item.originalDescription
-            tableRows.maxByOrNull { similarity(it.text, source) }?.takeIf { similarity(it.text, source) >= 0.5 }
+            val best = tableRows.filter { it !in taken }.maxByOrNull { similarity(it.text, source) }
+                ?.takeIf { similarity(it.text, source) >= 0.5 }
+            best?.also { taken += it }
         }
+        // Quantities worked out as amount / price are proven when every VAT group of the summary adds up: nothing to ask.
+        val provenByVat = doc.vatChecks.isNotEmpty() && doc.vatChecks.all { it.ok }
         val doubtful = doc.lineItems.indices.filter { i ->
             val it = doc.lineItems[i]
+            if (provenByVat && ReceiptParser.workedOut(it)) return@filter false
             ParseWarning.LINE_TOTAL_MISMATCH in it.warnings || it.lineTotalCents == null ||
                 it.quantity?.confidence == Confidence.LOW || it.unitPrice?.confidence == Confidence.LOW ||
                 ReceiptParser.isSectionHeading(it.originalDescription)
@@ -112,9 +134,15 @@ object AiTargets {
         val targets = mutableListOf<AiTarget>()
         for (i in doubtful) {
             val r = itemRow[i] ?: continue
-            val choices = doc.lineItems[i].choices
-            targets += if (choices.size >= 2) AiTarget.Choice(r.page, strip(r), i, choices, r.text, headerRows.getValue(r.page).text)
-            else AiTarget.Row(r.page, strip(r), i, i, r.text, headerRows.getValue(r.page).text)
+            val item = doc.lineItems[i]
+            val choices = item.choices
+            val head = headerRows.getValue(r.page).text
+            targets += when {
+                choices.size >= 2 -> AiTarget.Choice(r.page, strip(r), i, choices, r.text, head)
+                // Only the quantity is in doubt (worked out): ask for that one number.
+                ReceiptParser.workedOut(item) -> AiTarget.Number(r.page, strip(r), i, quantityHeading(head), item.quantity!!.value, r.text, head)
+                else -> AiTarget.Row(r.page, strip(r), i, i, r.text, head)
+            }
         }
         for (r in missed) {
             val after = itemRow.withIndex().filter { (_, row) -> row != null && (row.page < r.page || (row.page == r.page && row.index < r.index)) }
@@ -122,7 +150,7 @@ object AiTargets {
             targets += AiTarget.Row(r.page, strip(r), null, after, r.text, headerRows.getValue(r.page).text)
         }
         val first = headerRows[0]
-        if (doc.sellerName == null || doc.documentDate == null || doc.documentDate.confidence == Confidence.LOW) {
+        if (doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW || doc.documentDate == null || doc.documentDate.confidence == Confidence.LOW) {
             val rows0 = allRows.filter { it.page == 0 }
             val bottom = first?.box?.top ?: rows0.getOrNull(rows0.size * 2 / 5)?.box?.bottom
             if (bottom != null && rows0.isNotEmpty()) targets += AiTarget.Header(0, listOf(bounds(rows0.filter { it.box.bottom <= bottom }.map { it.box })))
@@ -136,6 +164,12 @@ object AiTargets {
             if (area.isNotEmpty()) targets += AiTarget.Totals(last, listOf(bounds(area)))
         }
         return targets
+    }
+
+    /** The quantity column's heading as printed ("TOT. PZ/KG", "QUANTITA'", "QTA"), for the question. */
+    private fun quantityHeading(header: String): String {
+        val m = Regex("(?i)\\b(tot\\.?\\s*(pz/kg)?|quantit\\S*|q\\.?t[aà]\\S*|qta\\S*|pezzi)").find(header)
+        return m?.value?.trim() ?: "QUANTITA'"
     }
 
     private fun bounds(b: List<PageBox>) = PageBox(b.minOf { it.left }, b.minOf { it.top }, b.maxOf { it.right }, b.maxOf { it.bottom })

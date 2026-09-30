@@ -220,6 +220,12 @@ jobs:
           runchoice 2b it
           runchoice 4b en
           runchoice 4b it
+          # One number (a quantity the OCR missed): the answer is a few characters.
+          runnumber() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/row-filetto.ppm ai-run/number-filetto-$2.txt ai-run/number.gbnf > ai-run/numberanswer-$1-$2.txt 2> ai-run/number-$1-$2.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/number-$1-$2.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/number-$1-$2.log; }
+          runnumber 2b en
+          runnumber 2b it
+          runnumber 4b en
+          runnumber 4b it
       - name: Check the answers
         run: AI_ANSWER_DIR=$PWD/ai-run ./gradlew :core:test --tests '*AiModelCheckTest.check*' --rerun --quiet
       - name: Publish results
@@ -231,6 +237,8 @@ jobs:
           def note(title, text):
               text = text[:3800].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
               print(f'::notice title={title}::{text}')
+          if os.path.exists('ai-run/number-report.txt'):
+              note('AI one-number report', open('ai-run/number-report.txt').read())
           if os.path.exists('ai-run/choice-report.txt'):
               note('AI multiple choice report', open('ai-run/choice-report.txt').read())
           if os.path.exists('ai-run/row-report.txt'):

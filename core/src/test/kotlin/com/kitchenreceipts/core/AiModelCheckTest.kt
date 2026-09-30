@@ -44,6 +44,25 @@ class AiModelCheckTest {
             File(dir, "choice-filetto-${lang.name.lowercase()}.txt").writeText(AiReader.choiceInstruction(head, FILETTO, FILETTO_CHOICES, lang))
         }
         File(dir, "choice.gbnf").writeText(AiReader.CHOICE_GRAMMAR)
+        // One number: the TOT. column of the FILETTO line (4,24).
+        for (lang in AiReader.Lang.entries) {
+            File(dir, "number-filetto-${lang.name.lowercase()}.txt").writeText(AiReader.numberInstruction("TOT.", head, FILETTO, lang))
+        }
+        File(dir, "number.gbnf").writeText(AiReader.NUMBER_GRAMMAR)
+    }
+
+    /** The one-number answers: 4,24 is right. */
+    @Test fun checkNumberAnswers() {
+        val dir = System.getenv("AI_ANSWER_DIR")
+        assumeTrue(dir != null)
+        val report = StringBuilder()
+        File(dir!!).listFiles { f -> f.name.startsWith("numberanswer-") }!!.sorted().forEach { f ->
+            val raw = f.readText().trim()
+            val ok = ItalianNumbers.parse(raw)?.compareTo(java.math.BigDecimal("4.24")) == 0
+            report.append("${f.name}: answer='$raw' ${if (ok) "RIGHT" else "WRONG"}\n")
+        }
+        File(dir, "number-report.txt").writeText(report.toString())
+        println(report)
     }
 
     /** The one-letter answers: B is right. */

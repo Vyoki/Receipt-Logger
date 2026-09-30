@@ -33,6 +33,8 @@ enum class ParseWarning {
     LOT_LOOKS_LIKE_DATE,
     /** Several different total-like amounts were found. */
     MULTIPLE_TOTALS,
+    /** The lines of one VAT rate do not add up to that rate's taxable amount in the VAT summary. */
+    VAT_GROUP_MISMATCH,
 }
 
 data class ParsedLineItem(
@@ -68,6 +70,10 @@ data class ParsedDocument(
     val warnings: Set<ParseWarning>,
     /** How the line items were read: "columns" (table layout from word positions) or "text". */
     val itemsReadBy: String = "text",
+    /** Lines per VAT rate against the printed VAT summary (empty when there is no summary to check). */
+    val vatChecks: List<VatSummary.Check> = emptyList(),
+    /** The document prints lot numbers (a lot column or "lotto" anywhere): a line without one is worth a look. */
+    val lotsPrinted: Boolean = true,
 ) {
     companion object {
         val EMPTY = ParsedDocument(
