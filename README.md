@@ -253,6 +253,17 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 4. **Pass 2 (only if needed).** If something still does not add up (a line, the total, a missing date), the photo is read again after removing shadows and boosting faint print, and the better reading is kept. This takes a few extra seconds.
 5. **History.** If a product's price history shows that quantity and price were read the wrong way round (the "quantity" is what it usually costs), they are swapped back.
 
+**Before reading: page flattening.** A photo is flattened like a scanner does: the sheet's corners are found (the largest bright area, clearly brighter than the table) and the sheet is straightened into a rectangle. When that is not clearly safe (white table, page filling the photo, odd shape) the photo is read as it is.
+
+**Logic first.** Common OCR slips are repaired before anything else: a number glued to the date (`11511122/09/2026`), a storage letter glued to the quantity (`24,000c`), Pkgs glued to the name (`3TORTA`), `c`/`o` read inside a pack size (`GR.12c0`). A line that still does not add up is solved from its own printed numbers (every way they can be quantity × price = amount):
+- one reading fits: the line is proven, no AI and no question;
+- several fit: they are offered as choices; the AI answers one letter (A/B, about 20 s) and the operator confirms with one tap;
+- the choice is remembered for that supplier and applied by itself next time.
+
+**Learning per supplier** (Settings ▸ Learned from you, phone only): remembered choices, and up to 3 confirmed lines shown to the AI as examples with each line question. The AI model itself is never changed.
+
+**Checking a value:** tapping a field in the review shows the part of the photo it was read from, with the value outlined (new documents).
+
 ## 7c. Less typing, price changes and inventory
 
 - **Automatic save.** After a scan the app checks:
@@ -335,6 +346,8 @@ A line is replaced only when the AI's version adds up and its digits were seen b
 - With the OCR text, both 2B and 4B got all 12 lines right: amounts, quantity, price, header and totals.
 - Without the OCR text, 2B got 11 of 12, which is why both are used together.
 - Time on a 4-core cloud computer: 2B about 7 min per page, 4B about 13 min. A recent phone with 8 fast cores should be faster, but this has not been measured on a real phone.
+
+**AI instruction language** (measured in CI, same synthetic documents): whole-page reading was equally right with English and Italian instructions (2B: 12/12 both), and took the same time. On single-line questions 2B did worse in Italian (0/2 vs 1/2), 4B was right in both (2/2). The one-letter question was right in both languages on both models. The instructions stay in English; both are kept in the code (`AiReader.Lang`) and measured on every CI run.
 
 **Build:** `third_party/llama.cpp` is cloned automatically (pinned tag `b11242`, Gradle task `:app:fetchLlamaCpp`). This needs `git`, and the NDK/CMake from Android Studio's SDK Manager.
 
