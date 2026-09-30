@@ -191,6 +191,15 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                     }
                 }
                 item("status") { StatusBanner(state) }
+                state.draft.aiCheck?.takeIf { it.disagreements.isEmpty() && state.isNew }?.let { c ->
+                    item("aiCheck") {
+                        Text(
+                            pluralStringResource(R.plurals.ai_check_ok, c.checked, c.checked),
+                            color = LocalStatusColors.current.ok,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
+                }
                 if (state.isNew && state.reviewReasons.isNotEmpty()) {
                     item("reasons") { ReasonsCard(state) }
                 }
@@ -344,6 +353,10 @@ private fun ReasonsCard(state: ReviewState) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(stringResource(R.string.reasons_title), fontWeight = FontWeight.SemiBold)
             state.reviewReasons.forEach { Text("• " + reviewReasonText(it), style = MaterialTheme.typography.bodyMedium) }
+            state.draft.aiCheck?.takeIf { it.disagreements.isNotEmpty() }?.let { c ->
+                Text(stringResource(R.string.ai_check_disagree, c.disagreements.size, c.checked), style = MaterialTheme.typography.bodyMedium)
+                c.disagreements.forEach { Text("   $it", style = MaterialTheme.typography.bodyMedium) }
+            }
             // Which VAT group does not add up, and by how much: that is where the misread line is.
             state.draft.vatGroupProblems.forEach { g ->
                 Text(
@@ -550,6 +563,17 @@ private fun ItemCard(
                     listOf("kg", "pz", "conf", "l").forEach { u ->
                         AssistChip(onClick = { onChange(ItemField.UNIT, u) }, label = { Text(u) })
                     }
+                }
+            }
+            // "4 pz × 500 g = 2 kg": what the packs hold, for inventory and price comparisons.
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                ItemInput(item, errors, onChange, onConfirm, ItemField.PACK_SIZE, R.string.pack_size, Modifier.weight(1f), FieldKind.TEXT, optional = true)
+                item.packTotal()?.let { (amount, u) ->
+                    Text(
+                        stringResource(R.string.pack_total, ItalianNumbers.formatDecimal(amount, maxScale = 3), u),
+                        style = MaterialTheme.typography.bodyMedium,
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

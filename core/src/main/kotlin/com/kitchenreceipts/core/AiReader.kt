@@ -249,11 +249,21 @@ object AiReader {
      * only when it proves itself; header and totals only fill what was missing or uncertain, and only with values
      * the OCR also saw. Everything is then cross-checked again.
      */
+    /** Put in a value's source when the AI's double-check read it differently: the value stays highlighted. */
+    const val DISAGREE = "⚠ AI read"
+
     fun applyTargets(doc: ParsedDocument, answers: List<Pair<AiTarget, String>>, text: String, options: ParseOptions = ParseOptions()): ParsedDocument {
         val items = doc.lineItems.toMutableList<ParsedLineItem?>()
         val inserts = mutableListOf<Pair<Int, ParsedLineItem>>()
         var d = doc
         val ev = Evidence(text)
+        // The double-check: how many values the AI looked at again, and where it read something else.
+        var checked = 0
+        val disagreements = mutableListOf<String>()
+        fun <T> flag(e: Extracted<T>, what: String, aiRead: String): Extracted<T> {
+            disagreements += "$what: ${e.value.let { if (it is java.time.LocalDate) ItalianDates.format(it) else it.toString() }} / AI $aiRead"
+            return e.copy(confidence = Confidence.LOW, source = "${e.source} ($DISAGREE $aiRead)")
+        }
         for ((target, raw) in answers) {
             when (target) {
                 is AiTarget.Row -> {
@@ -292,28 +302,52 @@ object AiReader {
                 is AiTarget.Number -> {
                     val idx = target.itemIndex
                     val old = items[idx] ?: continue
-                    val read = ItalianNumbers.parse(raw.trim().trim('"')) ?: continue
-                    // The AI read the same number the arithmetic gives: two independent sources agree, the line is proven.
-                    if (read.compareTo(target.expected) == 0 && old.quantity != null) {
-                        items[idx] = old.copy(quantity = old.quantity.copy(confidence = Confidence.HIGH, source = old.quantity.source + " (AI read ${raw.trim()})"))
+                    val answer = raw.trim().trim('"')
+                    val read = ItalianNumbers.parse(answer) ?: continue
+                    checked++
+                    val agrees = read.compareTo(target.expected) == 0
+                    val line = "line ${idx + 1}"
+                    items[idx] = when (target.field) {
+                        // The AI read the same number the arithmetic gives: two independent sources agree, the line is proven.
+                        AiTarget.Field.QUANTITY -> old.quantity?.let { q ->
+                            old.copy(quantity = if (agrees) q.copy(confidence = Confidence.HIGH, source = q.source + " (AI read $answer)") else flag(q, "$line quantity", answer))
+                        } ?: old
+                        AiTarget.Field.AMOUNT -> old.lineTotalCents?.let { t ->
+                            if (agrees) old else old.copy(lineTotalCents = flag(t, "$line amount", answer))
+                        } ?: old
                     }
                 }
                 is AiTarget.Header -> {
                     val m = obj(raw) ?: continue
                     val parsed = toParsed(AiAnswer(str(m, "seller"), str(m, "seller_vat"), str(m, "number"), str(m, "date"), null, null, null, emptyList()), text, options)
                     fun <T> better(old: Extracted<T>?, new: Extracted<T>?) = if (new != null && new.confidence == Confidence.HIGH && (old == null || old.confidence == Confidence.LOW)) new else old
+                    // Double-check of values read with confidence: a different reading highlights them.
+                    fun <T> check(old: Extracted<T>?, new: Extracted<T>?, what: String, same: (T, T) -> Boolean): Extracted<T>? {
+                        if (old == null || new == null || old.confidence != Confidence.HIGH) return better(old, new)
+                        checked++
+                        return if (same(old.value, new.value)) old else flag(old, what, new.value.let { if (it is java.time.LocalDate) ItalianDates.format(it) else it.toString() })
+                    }
                     d = d.copy(
-                        sellerName = better(d.sellerName, parsed.sellerName),
-                        documentNumber = better(d.documentNumber, parsed.documentNumber),
-                        documentDate = better(d.documentDate, parsed.documentDate),
+                        sellerName = check(d.sellerName, parsed.sellerName, "supplier") { a, b -> sameName(a, b) },
+                        documentNumber = check(d.documentNumber, parsed.documentNumber, "number") { a, b -> docNumberKey(a) == docNumberKey(b) },
+                        documentDate = check(d.documentDate, parsed.documentDate, "date") { a, b -> a == b },
                     )
                 }
                 is AiTarget.Totals -> {
                     val m = obj(raw) ?: continue
                     fun money(k: String): Extracted<Long>? = str(m, k)?.let(::number)?.takeIf { ev.hasNumber(it) }
                         ?.let { Extracted(ItalianNumbers.toCents(it), Confidence.HIGH, "AI $k: ${str(m, k)}") }
-                    fun <T> better(old: Extracted<T>?, new: Extracted<T>?) = if (new != null && (old == null || old.confidence == Confidence.LOW)) new else old
-                    d = d.copy(subtotalCents = better(d.subtotalCents, money("subtotal")), vatCents = better(d.vatCents, money("vat")), totalCents = better(d.totalCents, money("total")))
+                    fun check(old: Extracted<Long>?, new: Extracted<Long>?, what: String): Extracted<Long>? {
+                        if (new != null && (old == null || old.confidence == Confidence.LOW)) return new
+                        if (old == null || new == null) return old
+                        checked++
+                        return if (old.value == new.value) old else flag(old, what, ItalianNumbers.formatCents(new.value))
+                    }
+                    d = d.copy(
+                        subtotalCents = check(d.subtotalCents, money("subtotal"), "taxable amount"),
+                        vatCents = check(d.vatCents, money("vat"), "VAT"),
+                        totalCents = check(d.totalCents, money("total"), "total"),
+                    )
                 }
             }
         }
@@ -323,8 +357,19 @@ object AiReader {
             if (it != null) out += it
             inserts.filter { ins -> ins.first == i }.forEach { ins -> out += ins.second }
         }
-        return ReceiptParser.finish(d.copy(lineItems = out, itemsReadBy = if (answers.isEmpty()) d.itemsReadBy else d.itemsReadBy + "+ai"), text)
+        val aiCheck = if (checked > 0) AiCheck(checked, disagreements) else d.aiCheck
+        return ReceiptParser.finish(
+            d.copy(lineItems = out, itemsReadBy = if (answers.isEmpty()) d.itemsReadBy else d.itemsReadBy + "+ai", aiCheck = aiCheck), text,
+        )
     }
+
+    private fun sameName(a: String, b: String): Boolean {
+        val x = DuplicateDetector.normalizeSeller(a) ?: return false
+        val y = DuplicateDetector.normalizeSeller(b) ?: return false
+        return x == y || x.contains(y) || y.contains(x) || SmartMatcher.damerau(x, y, 2) <= 2
+    }
+
+    private fun docNumberKey(s: String) = s.uppercase().filter { it.isLetterOrDigit() }
 
     // ------------------------------------------------------------------ parsing the answer
 

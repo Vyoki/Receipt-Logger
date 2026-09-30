@@ -373,8 +373,8 @@
     <string name="ai_phone_weak">May be too slow or run out of memory.</string>
     <string name="ai_installed">Installed: %1$s (%2$s GB)</string>
     <string name="ai_when">When to use it</string>
-    <string name="ai_mode_needed">When the normal reading does not add up (recommended)</string>
-    <string name="ai_mode_always">On every document (slower)</string>
+    <string name="ai_mode_needed">Double-check every document: header, totals and key lines (recommended)</string>
+    <string name="ai_mode_always">Read every page in full (much slower)</string>
     <string name="ai_mode_off">Off</string>
     <string name="ai_test">Test</string>
     <string name="ai_testing">Loading…</string>
@@ -495,7 +495,7 @@
         <item quantity="one">Reading %d document</item>
         <item quantity="other">Reading %d documents</item>
     </plurals>
-    <string name="ai_checking">AI checking doubtful part %1$d of %2$d</string>
+    <string name="ai_checking">AI double-checking %1$d of %2$d</string>
     <!-- price notifications -->
     <string name="notif_channel_prices">Price changes</string>
     <string name="notif_price_line">%1$s %2$s (%3$s → %4$s €/%5$s)</string>
@@ -557,4 +557,11 @@
     <string name="warn_vat_group_mismatch">The lines of one VAT rate do not add up to the VAT summary.</string>
     <string name="reason_vat_group">The lines of one VAT rate do not add up to the VAT summary:</string>
     <string name="vat_group_line">%1$s%%: lines %2$s, summary %3$s (difference %4$s)</string>
+    <string name="pack_size">Pack size</string>
+    <string name="pack_total">= %1$s %2$s in all</string>
+    <plurals name="ai_check_ok">
+        <item quantity="one">AI double-check: %d value read again, it agrees.</item>
+        <item quantity="other">AI double-check: %d values read again, all agree.</item>
+    </plurals>
+    <string name="ai_check_disagree">AI double-check: %1$d of %2$d values read differently (highlighted):</string>
 </resources>

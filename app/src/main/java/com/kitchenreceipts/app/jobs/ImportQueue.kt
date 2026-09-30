@@ -260,6 +260,7 @@ class ImportQueue(
         p["ocrMillis"] = pending.ocrMillis.toString()
         p["aiPages"] = pending.aiRaw.size.toString()
         p["aiChecks"] = pending.aiTargeted.size.toString()
+        p["aiSpot"] = pending.aiSpot.toString()
         File(d, "reading.properties").outputStream().use { p.store(it, null) }
         pending.aiRaw.forEachIndexed { i, raw -> File(d, "ai-$i.json").writeText(raw) }
         pending.aiTargeted.forEachIndexed { i, raw -> File(d, "ai-check-$i.json").writeText(raw) }
@@ -276,6 +277,7 @@ class ImportQueue(
         ImportProcessor.rebuild(
             job.file, lines, widths, p.getProperty("ocrError"), p.getProperty("engine", ""), aiRaw, p.getProperty("aiNote"), aiChecks,
             p.getProperty("readingNote", ""), settings.parseOptions(), p.getProperty("ocrMillis")?.toLongOrNull() ?: 0,
+            p.getProperty("aiSpot") == "true",
         )
     }
 }

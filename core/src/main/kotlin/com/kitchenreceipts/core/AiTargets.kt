@@ -48,13 +48,18 @@ sealed interface AiTarget {
         val expected: java.math.BigDecimal,
         val rowText: String,
         val headerText: String,
+        val field: Field = Field.QUANTITY,
+        /** A spot check of a value already read with confidence (see [AiTargets.plan] with spotCheck). */
+        val verify: Boolean = false,
     ) : AiTarget
 
+    enum class Field { QUANTITY, AMOUNT }
+
     /** Supplier, number and date (top of the first page). */
-    data class Header(override val page: Int, override val boxes: List<PageBox>) : AiTarget
+    data class Header(override val page: Int, override val boxes: List<PageBox>, val verify: Boolean = false) : AiTarget
 
     /** Taxable amount, VAT and total (bottom of the last page). */
-    data class Totals(override val page: Int, override val boxes: List<PageBox>) : AiTarget
+    data class Totals(override val page: Int, override val boxes: List<PageBox>, val verify: Boolean = false) : AiTarget
 }
 
 /**
@@ -68,8 +73,14 @@ sealed interface AiTarget {
 object AiTargets {
 
     private const val MAX_ROW_TARGETS = 8
+    private const val MAX_SPOT_LINES = 8
 
-    fun plan(pages: List<List<OcrLine>>, doc: ParsedDocument): List<AiTarget>? {
+    /**
+     * [spotCheck]: the AI also double-checks what was read with confidence, before the operator is involved: the
+     * header (supplier, number, date), the totals, and up to 8 lines (quantities worked out by arithmetic first, then
+     * the largest amounts). Each is a short question; a value the AI reads differently is highlighted with both.
+     */
+    fun plan(pages: List<List<OcrLine>>, doc: ParsedDocument, spotCheck: Boolean = false): List<AiTarget>? {
         if (pages.isEmpty() || doc.lineItems.isEmpty()) return null
         val layouts = pages.map { LayoutRows.layout(it) }
         data class RowInfo(val page: Int, val index: Int, val text: String, val box: PageBox)
@@ -150,21 +161,50 @@ object AiTargets {
             targets += AiTarget.Row(r.page, strip(r), null, after, r.text, headerRows.getValue(r.page).text)
         }
         val first = headerRows[0]
-        if (doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW || doc.documentDate == null || doc.documentDate.confidence == Confidence.LOW) {
+        fun headerArea(): PageBox? {
             val rows0 = allRows.filter { it.page == 0 }
-            val bottom = first?.box?.top ?: rows0.getOrNull(rows0.size * 2 / 5)?.box?.bottom
-            if (bottom != null && rows0.isNotEmpty()) targets += AiTarget.Header(0, listOf(bounds(rows0.filter { it.box.bottom <= bottom }.map { it.box })))
+            val bottom = first?.box?.top ?: rows0.getOrNull(rows0.size * 2 / 5)?.box?.bottom ?: return null
+            val area = rows0.filter { it.box.bottom <= bottom }.map { it.box }
+            return if (area.isEmpty()) null else bounds(area)
         }
-        if (doc.totalCents == null || doc.totalCents.confidence == Confidence.LOW) {
-            val last = pages.lastIndex
+        fun totalsArea(): Pair<Int, PageBox>? {
+            // The page with the totals under its table (a later page may only say "TOTALE DA PAGARE" or loyalty points).
+            val last = footerRows.keys.maxOrNull() ?: pages.lastIndex
             val rowsL = allRows.filter { it.page == last }
             val footer = footerRows[last]
-            val from = if (footer != null) footer else (rowsL.size * 3 / 5)
+            val from = footer ?: (rowsL.size * 3 / 5)
             val area = rowsL.filter { it.index >= from }.map { it.box }
-            if (area.isNotEmpty()) targets += AiTarget.Totals(last, listOf(bounds(area)))
+            return if (area.isEmpty()) null else last to bounds(area)
+        }
+        val headerDoubt = doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW || doc.documentDate == null || doc.documentDate.confidence == Confidence.LOW
+        if (headerDoubt || spotCheck) headerArea()?.let { targets += AiTarget.Header(0, listOf(it), verify = !headerDoubt) }
+        val totalsDoubt = doc.totalCents == null || doc.totalCents.confidence == Confidence.LOW
+        if (totalsDoubt || spotCheck) totalsArea()?.let { (p, box) -> targets += AiTarget.Totals(p, listOf(box), verify = !totalsDoubt) }
+
+        if (spotCheck) {
+            val asked = targets.mapNotNull { t ->
+                when (t) { is AiTarget.Row -> t.itemIndex; is AiTarget.Choice -> t.itemIndex; is AiTarget.Number -> t.itemIndex; else -> null }
+            }.toSet()
+            val candidates = doc.lineItems.indices.filter { i -> i !in asked && itemRow[i] != null && doc.lineItems[i].lineTotalCents != null }
+            val worked = candidates.filter { ReceiptParser.workedOut(doc.lineItems[it]) }
+            val largest = (candidates - worked.toSet()).sortedByDescending { doc.lineItems[it].lineTotalCents!!.value }
+            for (i in (worked + largest).take(MAX_SPOT_LINES)) {
+                val r = itemRow[i]!!
+                val head = headerRows.getValue(r.page).text
+                val item = doc.lineItems[i]
+                targets += if (i in worked) {
+                    AiTarget.Number(r.page, strip(r), i, quantityHeading(head), item.quantity!!.value, r.text, head, AiTarget.Field.QUANTITY, verify = true)
+                } else {
+                    AiTarget.Number(r.page, strip(r), i, amountHeading(head), ItalianNumbers.centsToDecimal(item.lineTotalCents!!.value), r.text, head, AiTarget.Field.AMOUNT, verify = true)
+                }
+            }
         }
         return targets
     }
+
+    /** The amount column's heading as printed ("IMPORTO", "TOTALE", "VALORE"). */
+    private fun amountHeading(header: String): String =
+        Regex("(?i)\\b(importo|totale|valore|imponibile|ammontare)\\b").find(header)?.value ?: "IMPORTO"
 
     /** The quantity column's heading as printed ("TOT. PZ/KG", "QUANTITA'", "QTA"), for the question. */
     private fun quantityHeading(header: String): String {

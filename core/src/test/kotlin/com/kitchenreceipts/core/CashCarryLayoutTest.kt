@@ -93,6 +93,29 @@ class CashCarryLayoutTest {
         assertFalse(item("LATTE").originalDescription.endsWith("LT 1")) // the size is not repeated
     }
 
+    @Test fun packSizeKeptApartFromTheCount() {
+        // "BT LT 1 · 10": ten 1-litre bottles; "NC GR 750 · 4": four 750 g packs. The count and price stay as printed.
+        assertEquals("1 l", item("LATTE").packSize?.value)
+        assertEquals("750 g", item("LIMONI").packSize?.value)
+        assertEquals("250 g", item("PASTA").packSize?.value)
+        assertNull(item("COPPA").packSize) // weighed: "CS KG 2,88" is 2,88 kg
+        val draft = DocumentDraft.fromParsed(d).items.first { it.description.text.startsWith("LIMONI") }
+        val (amount, unit) = draft.packTotal()!!
+        eq("3", amount) // 4 x 750 g
+        assertEquals("kg", unit)
+    }
+
+    @Test fun averagesPerKiloFromPackSize() {
+        // 4 packs of 750 g for 5,56 and 2 packs of 750 g for 2,90: 8,46 / 4,5 kg = 1,88 per kg.
+        val records = listOf(
+            PurchaseRecord(1, 1, null, "ABC", BigDecimal(4), "pz", null, 556, VatBasis.EXCLUSIVE, null),
+            PurchaseRecord(2, 2, null, "ABC", BigDecimal(2), "pz", null, 290, VatBasis.EXCLUSIVE, null),
+        )
+        val avg = CostCalculator.summarize(records, listOf(UnitConversion("pz", "g", BigDecimal(750)))).averages.single()
+        assertEquals("kg", avg.unit)
+        eq("1.88", avg.averageUnitCost)
+    }
+
     @Test fun ocrSlipsRepairedWhenTheArithmeticProvesThem() {
         val pecorino = item("PECORINO") // "111,4104"
         assertEquals(11141L, pecorino.lineTotalCents?.value)
@@ -117,6 +140,44 @@ class CashCarryLayoutTest {
         assertNull(item("LATTE").lotNumber)
         // Nothing left for the AI: every line and VAT group adds up.
         assertTrue(AiTargets.plan(listOf(page1, page2, page3), d).orEmpty().none { it is AiTarget.Row || it is AiTarget.Number })
+    }
+
+    @Test fun aiDoubleChecksEvenWhenEverythingAddsUp() {
+        val pages = listOf(page1, page2, page3)
+        val t = AiTargets.plan(pages, d, spotCheck = true)!!
+        assertTrue(t.any { it is AiTarget.Header && it.verify })
+        assertTrue(t.any { it is AiTarget.Totals && it.verify })
+        val numbers = t.filterIsInstance<AiTarget.Number>()
+        assertTrue(numbers.size in 3..8)
+        // Quantities worked out by arithmetic are checked first, then the largest amounts.
+        assertEquals(AiTarget.Field.QUANTITY, numbers[0].field)
+        assertTrue(numbers.any { it.field == AiTarget.Field.AMOUNT && it.expected.compareTo(BigDecimal("111.41")) == 0 })
+        // Same targets when the reading is rebuilt after a restart (the answers are paired with them in order).
+        assertEquals(t, AiTargets.plan(pages, d, spotCheck = true))
+
+        // The AI agrees with everything except one amount: that value is highlighted with both readings.
+        val text = pages.joinToString("\n") { p -> p.joinToString("\n") { it.text } }
+        val answers = t.map { target ->
+            target to when (target) {
+                is AiTarget.Header -> "{\"seller\":\"ABC S.r.l.\",\"seller_vat\":\"01234567897\",\"number\":\"38B/12345\",\"date\":\"30/09/2026\"}"
+                is AiTarget.Totals -> "{\"subtotal\":\"226,74\",\"vat\":\"14,40\",\"total\":\"241,14\"}"
+                is AiTarget.Number -> if (target.field == AiTarget.Field.AMOUNT && target.expected.compareTo(BigDecimal("111.41")) == 0) "111,47"
+                    else ItalianNumbers.formatDecimal(target.expected, maxScale = 3)
+                else -> ""
+            }
+        }
+        val checked = AiReader.applyTargets(d, answers, text, ParseOptions(ownVatNumber = "09876543217"))
+        val check = checked.aiCheck!!
+        assertEquals(1, check.disagreements.size)
+        assertTrue(check.disagreements.single().contains("111,47"))
+        assertEquals(Confidence.LOW, checked.lineItems.first { it.originalDescription.startsWith("PECORINO") }.lineTotalCents?.confidence)
+        assertEquals(Confidence.HIGH, checked.sellerName?.confidence)
+        assertEquals(Confidence.HIGH, checked.totalCents?.confidence)
+        eq("1", checked.lineItems.first { it.originalDescription.startsWith("UOVA") }.quantity?.value)
+        assertEquals(Confidence.HIGH, checked.lineItems.first { it.originalDescription.startsWith("UOVA") }.quantity?.confidence)
+        // The arithmetic does not clear what the AI disputed.
+        val draft = AutoAccept.settleProven(DocumentDraft.fromParsed(checked))
+        assertTrue(draft.items.first { it.description.text.startsWith("PECORINO") }.lineTotal.uncertain)
     }
 
     @Test fun vatGroupThatDoesNotAddUpIsNamed() {

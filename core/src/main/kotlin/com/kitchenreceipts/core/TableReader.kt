@@ -501,6 +501,7 @@ object TableReader {
             val added = SmartMatcher.signature("X " + size.joinToString(" ")).sizes
             if (added.isEmpty() || !named.containsAll(added)) descWords = descWords + size.map { it.uppercase() }
         }
+        val packSize = if (packHasNumber) PackSizes.parse(packWords) else null
         val unitColumn = header.columns.any { it.kind == Kind.UNIT }
         if (packUnit != null && (unit == null || !unitColumn)) {
             // "GR 800" + TOT 1 = one 800 g pack; "KG" + TOT 4,45 = 4,45 kg weighed.
@@ -592,6 +593,7 @@ object TableReader {
             expiryDate = null,
             warnings = warnings,
             itemCode = code,
+            packSize = packSize?.takeIf { unit == "pz" || unit == null }?.let { Extracted(it.text, conf, source) },
             packages = packages?.let { p -> Extracted(p.map { c -> when (c) { 'l', 'I', 'L' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString(""), Confidence.HIGH, source) },
         )
     }

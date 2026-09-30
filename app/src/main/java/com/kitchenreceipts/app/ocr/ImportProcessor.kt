@@ -38,6 +38,8 @@ data class PendingImport(
     val aiTargeted: List<String> = emptyList(),
     /** Width of the image each page was read from (the OCR boxes are in its pixels). */
     val ocrWidths: List<Int> = emptyList(),
+    /** The AI's questions included the double-check. */
+    val aiSpot: Boolean = false,
 ) {
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
@@ -46,6 +48,10 @@ data class PendingImport(
         if (readingNote.isNotEmpty()) append("Reading: ").append(readingNote).append('\n')
         ocrError?.let { append("Error: ").append(it).append('\n') }
         aiNote?.let { append("AI reader: ").append(it).append('\n') }
+        parsed.aiCheck?.let { c ->
+            append("AI double-check: ").append(c.checked).append(" values, ").append(c.disagreements.size).append(" different\n")
+            c.disagreements.forEach { append("  ").append(it).append('\n') }
+        }
         append("\n=== Rows ===\n").append(ocrText).append('\n')
         aiRaw.forEachIndexed { p, raw -> if (raw.isNotBlank()) append("\n=== AI answer, page ").append(p + 1).append(" ===\n").append(raw).append('\n') }
         aiTargeted.forEachIndexed { i, raw -> append("\n=== AI answer, check ").append(i + 1).append(" ===\n").append(raw).append('\n') }
@@ -115,10 +121,13 @@ class ImportProcessor(private val renderer: PageRenderer) {
         var aiNote: String? = null
         val aiRaw = mutableListOf<String>()
         val aiTargeted = mutableListOf<String>()
-        if (ai != null && best.error == null && best.lines.isNotEmpty() && (ai.always || !ReceiptParser.isConfident(parsed))) {
-            // First choice: ask only about the doubtful parts (seconds each). Whole pages only when the regular
-            // reading failed too broadly for that, or when the operator asked the AI to always read everything.
-            val targets = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed) }
+        var aiSpot = false
+        if (ai != null && best.error == null && best.lines.isNotEmpty()) {
+            // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
+            // totals and key lines of every document before the operator sees it. Whole pages only when the regular
+            // reading failed too broadly for that, or when the operator asked the AI to read everything.
+            val targets = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed, spotCheck = true) }
+            aiSpot = targets != null
             aiNote = when {
                 targets == null -> runAi(file, best, ai, options, onProgress, aiRaw, parsed)
                 // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
@@ -129,7 +138,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         return rebuild(
             file, best.lines, best.widths, best.error, engine.displayName, aiRaw, aiNote, aiTargeted,
             "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else ""),
-            options, System.currentTimeMillis() - started,
+            options, System.currentTimeMillis() - started, aiSpot,
         )
     }
 
@@ -155,9 +164,9 @@ class ImportProcessor(private val renderer: PageRenderer) {
             when (t) {
                 is AiTarget.Row -> t.itemIndex?.let { "line${it + 1}" } ?: "missed"
                 is AiTarget.Choice -> "choice${t.itemIndex + 1}"
-                is AiTarget.Number -> "qty${t.itemIndex + 1}"
-                is AiTarget.Header -> "header"
-                is AiTarget.Totals -> "totals"
+                is AiTarget.Number -> (if (t.verify) "check-" else "") + (if (t.field == AiTarget.Field.AMOUNT) "amount" else "qty") + "${t.itemIndex + 1}"
+                is AiTarget.Header -> if (t.verify) "check-header" else "header"
+                is AiTarget.Totals -> if (t.verify) "check-totals" else "totals"
             }
         } + ") lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
         val started = System.currentTimeMillis()
@@ -296,13 +305,15 @@ class ImportProcessor(private val renderer: PageRenderer) {
             readingNote: String,
             options: ParseOptions,
             ocrMillis: Long,
+            /** The AI's questions included the double-check (so they are planned the same way again). */
+            aiSpot: Boolean = false,
         ): PendingImport = withContext(Dispatchers.Default) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
             var parsed = if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options)
             if (aiTargeted.isNotEmpty()) {
                 // The questions are worked out again from the same reading, so they pair up with the stored answers.
-                val targets = AiTargets.plan(lines, parsed)
+                val targets = AiTargets.plan(lines, parsed, spotCheck = aiSpot)
                 if (targets != null && targets.size == aiTargeted.size) {
                     parsed = AiReader.applyTargets(parsed, targets.zip(aiTargeted).filter { it.second.isNotBlank() }, text, options)
                 }
@@ -325,6 +336,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 aiRaw = aiRaw,
                 aiTargeted = aiTargeted,
                 ocrWidths = widths,
+                aiSpot = aiSpot,
             )
         }
 

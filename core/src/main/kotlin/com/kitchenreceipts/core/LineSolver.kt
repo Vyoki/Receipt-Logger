@@ -99,6 +99,8 @@ object LineSolver {
         val doubtful = ParseWarning.LINE_TOTAL_MISMATCH in item.warnings || item.quantity == null || item.unitPrice == null ||
             item.quantity.confidence == Confidence.LOW || item.unitPrice.confidence == Confidence.LOW
         if (!doubtful || ReceiptParser.isSectionHeading(item.originalDescription)) return@map item
+        // The AI's double-check read a number differently: that stays for the operator.
+        if (listOf(item.quantity?.source, item.unitPrice?.source, item.lineTotalCents?.source).any { it?.contains(AiReader.DISAGREE) == true }) return@map item
         val source = item.lineTotalCents?.source ?: item.quantity?.source ?: return@map item
         val readings = solve(source)
         // The amount already read with confidence must be kept.

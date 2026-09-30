@@ -141,6 +141,8 @@ data class LineItemEntity(
     @ColumnInfo(name = "expiry_date") val expiryDate: LocalDate?,
     /** v5: "colli" as printed ("5", "1x6"). */
     val packages: String? = null,
+    /** v7: how much one pack holds ("500 g", "1 l"), when the quantity counts packs. */
+    @ColumnInfo(name = "pack_size") val packSize: String? = null,
 )
 
 /**

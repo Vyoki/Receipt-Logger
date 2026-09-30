@@ -310,6 +310,13 @@ interface ProductDao {
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun insertConversion(c: UnitConversionEntity)
 
+    /** Adds a conversion only if the product has none for that pair of units (the operator's own ones win). */
+    @Insert(onConflict = OnConflictStrategy.IGNORE)
+    fun insertConversionIfAbsent(c: UnitConversionEntity): Long
+
+    @Query("SELECT COUNT(*) FROM unit_conversions WHERE product_id = :productId AND from_unit = :fromUnit")
+    fun conversionCountFrom(productId: Long, fromUnit: String): Int
+
     @Query("DELETE FROM unit_conversions WHERE id = :id")
     suspend fun deleteConversion(id: Long)
 
