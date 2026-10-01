@@ -241,6 +241,11 @@ jobs:
           runnumber 2b it
           runnumber 4b en
           runnumber 4b it
+          # The column headings (one letter per heading): what each column holds, for a layout the app does not know.
+          runlayout() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/layout.ppm ai-run/layout-$2.txt ai-run/layout.gbnf > ai-run/layoutanswer-$1-$2.txt 2> ai-run/layout-$1-$2.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/layout-$1-$2.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/layout-$1-$2.log; }
+          runlayout 2b en
+          runlayout 2b it
+          runlayout 4b en
       - name: Check the answers
         run: AI_ANSWER_DIR=$PWD/ai-run ./gradlew :core:test --tests '*AiModelCheckTest.check*' --rerun --quiet
       - name: Publish results
@@ -252,6 +257,8 @@ jobs:
           def note(title, text):
               text = text[:3800].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
               print(f'::notice title={title}::{text}')
+          if os.path.exists('ai-run/layout-report.txt'):
+              note('AI column headings report', open('ai-run/layout-report.txt').read())
           if os.path.exists('ai-run/number-report.txt'):
               note('AI one-number report', open('ai-run/number-report.txt').read())
           if os.path.exists('ai-run/choice-report.txt'):

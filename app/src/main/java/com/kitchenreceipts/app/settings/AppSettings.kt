@@ -28,6 +28,11 @@ class AppSettings(context: Context) {
         get() = prefs.getString("own_vat", "") ?: ""
         set(v) = prefs.edit().putString("own_vat", v.filter(Char::isDigit)).apply()
 
+    /** Product categories stored by the old guesser were handed back to the new rules (done once, October 2026). */
+    var categoriesRegrouped: Boolean
+        get() = prefs.getBoolean("categories_regrouped_v2", false)
+        set(v) = prefs.edit().putBoolean("categories_regrouped_v2", v).apply()
+
     var logEnabled: Boolean
         get() = prefs.getBoolean("log_enabled", true)
         set(v) = prefs.edit().putBoolean("log_enabled", v).apply()
@@ -71,7 +76,10 @@ class AppSettings(context: Context) {
         get() = readLanguage(prefs.getString("report_language", null)).takeIf { it != Language.SYSTEM } ?: Language.ITALIAN
         set(v) = prefs.edit().putString("report_language", v.name).apply()
 
-    fun parseOptions() = ParseOptions(ownBusinessName.ifBlank { null }, ownVatNumber.ifBlank { null })
+    /** Finds what was learned about a supplier's documents (set by the app container; see LearningStore). */
+    @Volatile var layoutLookup: ((String) -> com.kitchenreceipts.core.SupplierLayout?)? = null
+
+    fun parseOptions() = ParseOptions(ownBusinessName.ifBlank { null }, ownVatNumber.ifBlank { null }, layoutLookup = layoutLookup)
 
     companion object {
         const val FILE = "settings"

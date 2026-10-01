@@ -53,6 +53,8 @@ class AppContainer(context: Context) {
     }
 
     init {
+        // Documents of a supplier seen before are read with what its confirmed documents taught (phone only).
+        settings.layoutLookup = { key -> learning.layout(key) }
         repository.onSharedVatNumber = { vat ->
             log.event("OWN_VAT_DETECTED", "vat" to vat)
             if (settings.ownVatNumber.isBlank()) settings.ownVatNumber = vat
@@ -106,6 +108,13 @@ class KitchenReceiptsApp : Application() {
         runCatching { c.importQueue.restore() }.onFailure { c.log.error("restoreQueue", it) }
         container.appScope.launch {
             runCatching { container.repository.cleanupOrphanFiles(c.importQueue.filePaths()) }
+        }
+        if (!c.settings.categoriesRegrouped) {
+            container.appScope.launch {
+                runCatching { container.repository.regroupGuessedCategories() }
+                    .onSuccess { n -> c.settings.categoriesRegrouped = true; c.log.event("CATEGORIES_REGROUPED", "products" to n) }
+                    .onFailure { c.log.error("regroupCategories", it) }
+            }
         }
     }
 }

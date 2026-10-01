@@ -261,6 +261,7 @@ class ImportQueue(
         p["aiPages"] = pending.aiRaw.size.toString()
         p["aiChecks"] = pending.aiTargeted.size.toString()
         p["aiSpot"] = pending.aiSpot.toString()
+        pending.aiLayout?.let { File(d, "ai-layout.txt").writeText(it) }
         File(d, "reading.properties").outputStream().use { p.store(it, null) }
         pending.aiRaw.forEachIndexed { i, raw -> File(d, "ai-$i.json").writeText(raw) }
         pending.aiTargeted.forEachIndexed { i, raw -> File(d, "ai-check-$i.json").writeText(raw) }
@@ -278,6 +279,7 @@ class ImportQueue(
             job.file, lines, widths, p.getProperty("ocrError"), p.getProperty("engine", ""), aiRaw, p.getProperty("aiNote"), aiChecks,
             p.getProperty("readingNote", ""), settings.parseOptions(), p.getProperty("ocrMillis")?.toLongOrNull() ?: 0,
             p.getProperty("aiSpot") == "true",
+            File(d, "ai-layout.txt").takeIf { it.exists() }?.readText(),
         )
     }
 }

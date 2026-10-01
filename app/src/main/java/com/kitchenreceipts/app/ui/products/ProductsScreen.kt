@@ -1,5 +1,12 @@
 package com.kitchenreceipts.app.ui.products
 
+import androidx.compose.ui.Alignment
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import com.kitchenreceipts.core.Categories
+import com.kitchenreceipts.core.Category
+import com.kitchenreceipts.app.ui.components.CategoryIcon
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -156,7 +163,11 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
             items(rows.orEmpty(), key = { it.product.id }) { p ->
                 ClickCard(onClick = { onOpen(p.product.id) }) {
                     Column {
-                        Text(p.product.name, style = MaterialTheme.typography.titleMedium)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            CategoryIcon(Category.fromKey(p.product.category) ?: Categories.guess(p.product.name))
+                            Spacer(Modifier.width(8.dp))
+                            Text(p.product.name, style = MaterialTheme.typography.titleMedium)
+                        }
                         p.product.familyId?.let { fid -> families.firstOrNull { it.id == fid } }?.let { f ->
                             Text(stringResource(R.string.family_value, f.name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
                         }

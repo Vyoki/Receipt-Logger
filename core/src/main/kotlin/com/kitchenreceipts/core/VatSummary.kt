@@ -32,6 +32,8 @@ object VatSummary {
         val out = mutableListOf<Group>()
         for (line in text.lines()) {
             val clean = DOT_DECIMAL.replace(OcrCleanup.cleanLine(line)) { m -> "${m.groupValues[1]},${m.groupValues[2]}" }
+            // A unit price with three decimals ("10,210") makes it a product line, never a VAT summary row.
+            if (UNIT_PRICE.containsMatchIn(clean)) continue
             val money = MONEY.findAll(clean).toList()
             if (money.size < 2) continue
             val rates = RATE_TOKEN.findAll(clean).filter { r -> money.none { m -> r.range.first in m.range } }.map { BigDecimal(it.value) }.toList()
@@ -48,8 +50,18 @@ object VatSummary {
                 }
             }
         }
+        // Several rows for one rate: the ones worded like a VAT summary ("ALIQUOTA 10%", "IVA", "IMPONIBILE") win;
+        // a product line that happens to fit (4,90 and 0,49 at 10%) must not become a second 10% group.
         return out.distinctBy { it.ratePercent to it.taxableCents }
+            .groupBy { it.ratePercent }
+            .flatMap { (_, g) ->
+                if (g.size == 1) g
+                else g.filter { SUMMARY_WORDS.containsMatchIn(it.source) }.ifEmpty { listOf(g.maxBy { it.taxableCents }) }.take(1)
+            }
     }
+
+    private val UNIT_PRICE = Regex("(?<![\\d,.])\\d{1,3},\\d{3}(?![\\d,])")
+    private val SUMMARY_WORDS = Regex("(?i)(aliquota|\\biva\\b|imponibil|imposta|esente|%)")
 
     /**
      * Lines without a VAT rate (the rate was printed out of place) get the one rate that makes every VAT group add up,

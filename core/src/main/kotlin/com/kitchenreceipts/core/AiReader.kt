@@ -197,6 +197,57 @@ object AiReader {
             "Headings (OCR): ${headerText.take(300)}\nLine (OCR): ${rowText.take(400)}\n"
     }
 
+    // ------------------------------------------------------------------ layout (column headings the reading did not know)
+
+    /** What each answer letter means, in order: A code ... K anything else. */
+    private val LAYOUT_KINDS: List<TableReader.Kind?> = listOf(
+        TableReader.Kind.CODE, TableReader.Kind.PACKAGES, TableReader.Kind.DESCRIPTION, TableReader.Kind.UNIT,
+        TableReader.Kind.QUANTITY, TableReader.Kind.PRICE, TableReader.Kind.DISCOUNT, TableReader.Kind.AMOUNT,
+        TableReader.Kind.VAT, TableReader.Kind.LOT, null,
+    )
+
+    /** One letter per heading, in order, separated by commas ("A,C,D,E,F,H,I"). */
+    fun layoutGrammar(headings: Int): String =
+        "root ::= l" + " \",\" l".repeat((headings - 1).coerceAtLeast(0)) + "\nl ::= [A-K]\n"
+
+    fun layoutInstruction(headings: List<String>, lang: Lang = defaultLang): String = buildString {
+        if (lang == Lang.IT) {
+            append("L'immagine mostra la riga delle intestazioni di colonna di un documento di un fornitore italiano e le prime righe ")
+            append("di prodotti sotto. Le intestazioni, da sinistra a destra, sono:\n")
+            headings.forEachIndexed { i, h -> append(i + 1).append(") ").append(h.take(40)).append('\n') }
+            append("Per ciascuna intestazione, guardando i valori sotto, rispondi con una lettera per cosa contiene la colonna: ")
+            append("A codice articolo, B colli, C descrizione, D unità di misura, E quantità, F prezzo unitario, G sconto, ")
+            append("H importo, I aliquota IVA, J lotto, K altro. Scrivi le lettere in ordine, separate da virgole.\n")
+        } else {
+            append("The picture shows the column heading row of an Italian supplier document and the first product lines under it. ")
+            append("The headings, left to right, are:\n")
+            headings.forEachIndexed { i, h -> append(i + 1).append(") ").append(h.take(40)).append('\n') }
+            append("For each heading, looking at the values under it, answer one letter for what its column holds: ")
+            append("A article code, B packages (colli), C description, D unit of measure, E quantity, F unit price, G discount, ")
+            append("H amount, I VAT rate, J lot, K something else. Write the letters in order, separated by commas.\n")
+        }
+    }
+
+    /**
+     * The AI's answer about the headings, as headings to learn: the words of each heading the app did not know
+     * mapped to what the column holds. Null when the answer does not describe an item table (no description column,
+     * no price or amount column) or teaches nothing new.
+     */
+    fun decodeLayout(raw: String, q: LayoutQuestion): SupplierLayout? {
+        val letters = raw.uppercase().split(',').map { it.trim().trim('"') }
+        if (letters.size != q.headings.size) return null
+        val kinds = letters.map { l -> l.singleOrNull()?.let { c -> LAYOUT_KINDS.getOrNull(c - 'A') } }
+        if (TableReader.Kind.DESCRIPTION !in kinds) return null
+        if (TableReader.Kind.AMOUNT !in kinds && TableReader.Kind.PRICE !in kinds) return null
+        val learned = mutableMapOf<String, TableReader.Kind>()
+        q.headings.zip(kinds).forEach { (heading, kind) ->
+            if (kind == null) return@forEach
+            heading.split(' ').filter { it.any(Char::isLetter) && !TableReader.isKnownHeading(it) }
+                .forEach { w -> learned[SupplierLayouts.headingKey(w)] = kind }
+        }
+        return if (learned.isEmpty()) null else SupplierLayout(headings = learned)
+    }
+
     // ------------------------------------------------------------------ multiple choice (a line that adds up two ways)
 
     /** The answer is one letter: which reading is printed on the line, or X when none is. */

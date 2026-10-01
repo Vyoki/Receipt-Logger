@@ -51,10 +51,19 @@ object SellerProfiles {
     }
 
     /** Valid Italian VAT numbers printed in [text], in order of appearance, without duplicates. */
-    fun vatNumbers(text: String): List<String> =
+    /** "O1234567897": letters the OCR reads for digits inside an 11-character number (the checksum still decides). */
+    private val DIGITS_WITH_SLIPS = Regex("(?<![A-Za-z0-9])[0-9OoIlS]{11}(?![A-Za-z0-9])")
+
+    internal fun repairDigits(text: String): String = DIGITS_WITH_SLIPS.replace(text) { m ->
+        val v = m.value
+        if (v.count(Char::isDigit) < 9 || v.all(Char::isDigit)) v
+        else v.map { c -> when (c) { 'O', 'o' -> '0'; 'I', 'l' -> '1'; 'S' -> '5'; else -> c } }.joinToString("")
+    }
+
+    fun vatNumbers(rawText: String): List<String> =
         // Labelled numbers ("P.IVA 01234567897") first, then bare 11-digit numbers that pass the checksum.
-        (VAT_LABELED.findAll(text).map { it.groupValues[1].replace(" ", "") } + VAT_BARE.findAll(text).map { it.groupValues[1] })
-            .filter { isValidPartitaIva(it) }.distinct().toList()
+        repairDigits(rawText).let { text -> (VAT_LABELED.findAll(text).map { it.groupValues[1].replace(" ", "") } + VAT_BARE.findAll(text).map { it.groupValues[1] })
+            .filter { isValidPartitaIva(it) }.distinct().toList() }
 
     /** Distinctive words from the top of the document (the supplier's letterhead). */
     fun headerTokens(text: String, maxLines: Int = 12): Set<String> =
@@ -157,7 +166,7 @@ object SellerProfiles {
         return tx.intersect(ty).size.toDouble() / minOf(tx.size, ty.size) >= 0.5
     }
 
-    private val LETTERHEAD_HINT = Regex("(?i)(reg\\.?\\s*imp|iscr|\\brea\\b|cap\\.?\\s*soc|capitale|sede|c\\.\\s?f\\.\\s*(e|-|/)\\s*p\\.?\\s?iva|codice fiscale e partita)")
+    private val LETTERHEAD_HINT = Regex("(?i)(reg\\.?\\s*imp|\\breg\\.\\s|iscr|\\brea\\b|\\brea\\s?n\\b|cap\\.?\\s*soc|capitale|sede|c\\.\\s?f\\.\\s*(e|-|/)\\s*p\\.?\\s?iva|codice fiscale e partita)")
     private val CUSTOMER_HINT = Regex("(?i)(spett|destinatario|cliente|intestatario|codice\\s+fiscale\\s*$)")
 
     /**
@@ -169,7 +178,7 @@ object SellerProfiles {
      */
     fun supplierVatNumber(documentText: String, ownVatNumber: String?): String? {
         val own = ownVatNumber?.filter(Char::isDigit)
-        val lines = documentText.lines()
+        val lines = repairDigits(documentText).lines()
         val candidates = vatNumbers(documentText).filter { it != own }
         if (candidates.isEmpty()) return null
         val scored = candidates.mapIndexed { order, v ->

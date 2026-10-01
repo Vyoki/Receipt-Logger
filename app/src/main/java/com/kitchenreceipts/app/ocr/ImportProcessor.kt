@@ -6,11 +6,13 @@ import com.kitchenreceipts.app.ai.AiPageReader
 import com.kitchenreceipts.core.AiReader
 import com.kitchenreceipts.core.AiTarget
 import com.kitchenreceipts.core.AiTargets
+import com.kitchenreceipts.core.LayoutQuestion
 import com.kitchenreceipts.core.LayoutRows
 import com.kitchenreceipts.core.OcrLine
 import com.kitchenreceipts.core.ParseOptions
 import com.kitchenreceipts.core.ParsedDocument
 import com.kitchenreceipts.core.ReceiptParser
+import com.kitchenreceipts.core.SupplierLayout
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -40,6 +42,8 @@ data class PendingImport(
     val ocrWidths: List<Int> = emptyList(),
     /** The AI's questions included the double-check. */
     val aiSpot: Boolean = false,
+    /** The AI's answer about column headings the app did not know (encoded SupplierLayout), if it was used. */
+    val aiLayout: String? = null,
 ) {
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
@@ -115,7 +119,9 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 best = second
             }
         }
-        val parsed = best.parsed(options)
+        var parsed = best.parsed(options)
+        var aiLayout: String? = null
+        var layoutNote: String? = null
         // The on-phone AI reader: only once every page has been read, and only when asked to always help or when
         // the regular readings still do not check out.
         var aiNote: String? = null
@@ -126,6 +132,21 @@ class ImportProcessor(private val renderer: PageRenderer) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
             // totals and key lines of every document before the operator sees it. Whole pages only when the regular
             // reading failed too broadly for that, or when the operator asked the AI to read everything.
+            // Column headings the app does not know, of a supplier not seen before: one short question first, so the
+            // rest of the reading (and the AI's other questions) use the answer. Kept only if it reads the document better.
+            if (!ai.always) {
+                val q = withContext(Dispatchers.Default) { AiTargets.layoutQuestion(best.lines, parsed) }
+                if (q != null) {
+                    val (raw, note) = askLayout(file, best, ai, q, onProgress)
+                    val answer = raw?.let { AiReader.decodeLayout(it, q) }
+                    val better = answer?.let { a -> withContext(Dispatchers.Default) { withAiLayout(best.lines, options, parsed, a) } }
+                    if (better != null && answer != null) {
+                        parsed = better
+                        aiLayout = answer.encode()
+                    }
+                    layoutNote = "headings: $note" + (if (better != null) " (used)" else if (answer != null) " (not better)" else " (no answer)")
+                }
+            }
             val targets = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed, spotCheck = true) }
             aiSpot = targets != null
             aiNote = when {
@@ -134,12 +155,46 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 targets.isEmpty() -> "nothing to ask"
                 else -> runTargets(file, best, ai, targets, onProgress, aiTargeted, ai.examples(parsed, best.text))
             }
+            layoutNote?.let { aiNote = "$it; $aiNote" }
         }
         return rebuild(
             file, best.lines, best.widths, best.error, engine.displayName, aiRaw, aiNote, aiTargeted,
             "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else ""),
-            options, System.currentTimeMillis() - started, aiSpot,
+            options, System.currentTimeMillis() - started, aiSpot, aiLayout,
         )
+    }
+
+    /** Asks the AI what each column heading of [q] holds; returns its answer (null on failure) and a note for the log. */
+    private suspend fun askLayout(
+        file: StoredFile,
+        best: Reading,
+        ai: AiUse,
+        q: LayoutQuestion,
+        onProgress: (ImportProgress) -> Unit,
+    ): Pair<String?, String> {
+        onProgress(ImportProgress(1, 1, 4))
+        val reader = try {
+            ai.reader()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return null to "not started: ${e.message}"
+        }
+        try {
+            val bmp = renderer.renderForReading(file.relativePath, file.mimeType, q.page, OCR_LONG_SIDE)
+            try {
+                val r = reader.readRegions(
+                    bmp, best.lines[q.page], best.widths.getOrElse(q.page) { bmp.width }, q.boxes,
+                    AiReader.layoutInstruction(q.headings), AiReader.layoutGrammar(q.headings.size),
+                ) { stage, count -> onProgress(ImportProgress(1, 1, 4, stage, count)) }
+                if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
+                return (if (r.error == null) r.raw else null) to "${q.headings.size} headings, ${r.millis / 100 / 10.0}s answer='${r.raw.take(40)}'" + (r.error?.let { " error=$it" } ?: "")
+            } finally {
+                bmp.recycle()
+            }
+        } finally {
+            reader.close()
+        }
     }
 
     /** Asks the AI the small questions of [targets], collecting its answers in [answers]; returns a note for the log. */
@@ -307,10 +362,13 @@ class ImportProcessor(private val renderer: PageRenderer) {
             ocrMillis: Long,
             /** The AI's questions included the double-check (so they are planned the same way again). */
             aiSpot: Boolean = false,
+            /** The AI's answer about the column headings, when it was used (see [withAiLayout]). */
+            aiLayout: String? = null,
         ): PendingImport = withContext(Dispatchers.Default) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
             var parsed = if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options)
+            SupplierLayout.decode(aiLayout)?.let { a -> withAiLayout(lines, options, parsed, a)?.let { parsed = it } }
             if (aiTargeted.isNotEmpty()) {
                 // The questions are worked out again from the same reading, so they pair up with the stored answers.
                 val targets = AiTargets.plan(lines, parsed, spotCheck = aiSpot)
@@ -331,13 +389,26 @@ class ImportProcessor(private val renderer: PageRenderer) {
             }
             PendingImport(
                 file, text, parsed, engineName, lines.size, error, lines, ocrMillis,
-                readingNote = "$readingNote, items read by ${parsed.itemsReadBy}",
+                readingNote = "$readingNote, items read by ${parsed.itemsReadBy}" +
+                    (parsed.layout?.takeIf { it.documents > 0 }?.let { ", supplier layout learned from ${it.documents} document(s)" } ?: "") +
+                    (if (aiLayout != null) ", column headings from the AI" else ""),
                 aiNote = aiNote,
                 aiRaw = aiRaw,
                 aiTargeted = aiTargeted,
                 ocrWidths = widths,
                 aiSpot = aiSpot,
+                aiLayout = aiLayout,
             )
+        }
+
+        /**
+         * The reading with the AI's answer about the column headings added to what is known of the supplier, or null
+         * when it does not read the document better than [base].
+         */
+        fun withAiLayout(lines: List<List<OcrLine>>, options: ParseOptions, base: ParsedDocument, answer: SupplierLayout): ParsedDocument? {
+            val layout = (base.layout ?: SupplierLayout()).let { it.copy(headings = it.headings + answer.headings) }
+            val p = ReceiptParser.parsePages(lines, options.copy(layout = layout, layoutLookup = null))
+            return if (ReceiptParser.quality(p) > ReceiptParser.quality(base)) p else null
         }
 
         const val MAX_OCR_PAGES = 20

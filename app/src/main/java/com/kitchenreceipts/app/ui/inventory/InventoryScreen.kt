@@ -2,6 +2,11 @@
 
 package com.kitchenreceipts.app.ui.inventory
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import com.kitchenreceipts.app.ui.components.CategoryBadge
+import com.kitchenreceipts.app.ui.components.CategoryIcon
+
 import com.kitchenreceipts.app.ui.components.Panel
 
 import androidx.compose.foundation.layout.Arrangement
@@ -179,6 +184,7 @@ private fun InventoryTab(vm: InventoryViewModel, onOpenProduct: (Long) -> Unit) 
                             selected = filter == c.category.key,
                             onClick = { filter = if (filter == c.category.key) null else c.category.key },
                             label = { Text(categoryLabel(c.category)) },
+                            leadingIcon = { CategoryIcon(c.category) },
                         )
                     }
                 }
@@ -208,14 +214,18 @@ private fun InventoryTab(vm: InventoryViewModel, onOpenProduct: (Long) -> Unit) 
         lines.groupBy { it.category }.forEach { (category, group) ->
             item("h-${category.key}") {
                 val total = r.categories.firstOrNull { it.category == category }
-                Column(Modifier.padding(top = 8.dp)) {
-                    Text(categoryLabel(category), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-                    if (total != null) {
-                        Text(
-                            pluralStringResource(R.plurals.products_count, total.productCount, total.productCount) + " · " + spendText(total.spend),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                Row(Modifier.padding(top = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    CategoryBadge(category)
+                    Spacer(Modifier.width(12.dp))
+                    Column {
+                        Text(categoryLabel(category), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                        if (total != null) {
+                            Text(
+                                pluralStringResource(R.plurals.products_count, total.productCount, total.productCount) + " · " + spendText(total.spend),
+                                style = MaterialTheme.typography.bodyMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        }
                     }
                 }
             }
