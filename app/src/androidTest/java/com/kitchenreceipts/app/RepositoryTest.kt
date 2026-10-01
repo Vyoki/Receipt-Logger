@@ -163,7 +163,9 @@ class RepositoryTest {
         val first = ValidLineItem("SALE MARINO GROSSO GR.1000", null, BigDecimal("10"), "pz", null, 422, null, null, null, newProductName = "Sale marino grosso gr.1000")
         repo.saveDocument(doc("Grossista Uno", "1", listOf(first)), StoredFile("documents/n1.jpg", "image/jpeg", 1, "sha-n1"), null, null)
         val created = repo.productsOnce().single()
-        assertEquals(Category.DRY_GOODS.key, created.category)
+        // Stored as "guessed from the name" (null), so better rules apply later; the guess is dry goods.
+        assertEquals(null, created.category)
+        assertEquals(Category.DRY_GOODS, Category.fromKey(created.category) ?: com.kitchenreceipts.core.Categories.guess(created.name))
         assertEquals(created.id, repo.itemsOnce(1).single().item.productId)
 
         // Another supplier, a misreading: the same product, not a new one.
