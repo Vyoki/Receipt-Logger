@@ -20,7 +20,6 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -48,7 +47,7 @@ fun RecognisedTextCard(text: String, modifier: Modifier = Modifier) {
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val shareTitle = stringResource(R.string.share_recognised_text)
-    Card(modifier.fillMaxWidth()) {
+    Panel(modifier) {
         Column(Modifier.padding(horizontal = 12.dp, vertical = 4.dp)) {
             TextButton(onClick = { open = !open }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                 Text(stringResource(R.string.recognised_text), modifier = Modifier.weight(1f))

@@ -19,8 +19,10 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Warehouse
-import androidx.compose.material.icons.automirrored.filled.Send
-import androidx.compose.material3.ElevatedCard
+import androidx.compose.foundation.layout.width
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
+import com.kitchenreceipts.app.ui.components.Button
+import com.kitchenreceipts.app.ui.theme.Palette
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -42,7 +44,6 @@ import com.kitchenreceipts.app.data.ReceiptRepository
 import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.ui.appViewModel
 import com.kitchenreceipts.app.ui.components.AppScaffold
-import com.kitchenreceipts.app.ui.components.BigButton
 import com.kitchenreceipts.app.ui.components.ClickCard
 import com.kitchenreceipts.app.ui.components.EmptyState
 import com.kitchenreceipts.app.ui.components.SectionTitle
@@ -83,34 +84,22 @@ fun HomeScreen(
     ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(16.dp),
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item("jobs") { JobsSection(onReview = onReviewJob, onOpenDocument = onOpenDocument) }
-            item {
-                BigButton(
-                    text = stringResource(R.string.scan_document),
-                    icon = Icons.Filled.CameraAlt,
-                    onClick = onScan,
-                    modifier = Modifier.heightIn(min = 80.dp),
-                )
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Tile(stringResource(R.string.inventory), Icons.Filled.Warehouse, onInventory, Modifier.weight(1f))
-                    Tile(stringResource(R.string.rep_home_tile), Icons.AutoMirrored.Filled.Send, onReports, Modifier.weight(1f))
-                }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Tile(stringResource(R.string.documents), Icons.Filled.Description, onDocuments, Modifier.weight(1f))
-                    Tile(stringResource(R.string.sellers), Icons.Filled.Storefront, onSellers, Modifier.weight(1f))
-                }
-            }
-            item {
-                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Tile(stringResource(R.string.products), Icons.Filled.Inventory2, onProducts, Modifier.weight(1f))
-                    Tile(stringResource(R.string.monthly_reports), Icons.Filled.BarChart, onReports, Modifier.weight(1f))
+            item("scan") { ScanButton(onScan) }
+            item("menu") {
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Tile(stringResource(R.string.inventory), Icons.Filled.Warehouse, onInventory, Modifier.weight(1f))
+                        Tile(stringResource(R.string.products), Icons.Filled.Inventory2, onProducts, Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Tile(stringResource(R.string.documents), Icons.Filled.Description, onDocuments, Modifier.weight(1f))
+                        Tile(stringResource(R.string.sellers), Icons.Filled.Storefront, onSellers, Modifier.weight(1f))
+                    }
+                    WideTile(stringResource(R.string.monthly_reports), stringResource(R.string.rep_home_tile), Icons.Filled.BarChart, onReports)
                 }
             }
             item { SectionTitle(stringResource(R.string.recent_documents)) }
@@ -123,16 +112,39 @@ fun HomeScreen(
     }
 }
 
+/** The main action: tall phthalo green button with a lighter border. */
+@Composable
+private fun ScanButton(onClick: () -> Unit) {
+    Button(onClick = onClick, modifier = Modifier.fillMaxWidth().heightIn(min = 92.dp)) {
+        Icon(Icons.Filled.CameraAlt, contentDescription = null, modifier = Modifier.size(32.dp))
+        Spacer(Modifier.width(16.dp))
+        Column(Modifier.weight(1f)) {
+            Text(stringResource(R.string.scan_document), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            Text(stringResource(R.string.scan_hint), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
+        }
+    }
+}
+
 @Composable
 private fun Tile(label: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
-    ElevatedCard(onClick = onClick, modifier = modifier.heightIn(min = 96.dp)) {
-        Column(
-            Modifier.fillMaxWidth().padding(16.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp),
-        ) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(32.dp), tint = MaterialTheme.colorScheme.primary)
+    ClickCard(onClick = onClick, modifier = modifier.heightIn(min = 104.dp)) {
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp), tint = Palette.PhthaloBright)
             Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        }
+    }
+}
+
+@Composable
+private fun WideTile(label: String, note: String, icon: ImageVector, onClick: () -> Unit) {
+    ClickCard(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp), tint = Palette.PhthaloBright)
+            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                Text(label, style = MaterialTheme.typography.titleMedium)
+                Text(note, style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
         }
     }
 }
@@ -144,7 +156,7 @@ fun DocumentRow(row: DocumentListRow, onClick: () -> Unit) {
             Icon(
                 if (row.mimeType == FileStore.MIME_PDF) Icons.Filled.PictureAsPdf else Icons.Filled.Description,
                 contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
+                tint = Palette.PhthaloBright,
             )
             Spacer(Modifier.size(12.dp))
             Column(Modifier.weight(1f)) {
@@ -154,7 +166,7 @@ fun DocumentRow(row: DocumentListRow, onClick: () -> Unit) {
                     row.documentNumber?.let { add("n. $it") }
                     add(pluralItems(row.itemCount))
                 }.joinToString(" · ")
-                Text(details, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(details, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             }
             Text(fmtMoney(row.totalCents, row.currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
         }

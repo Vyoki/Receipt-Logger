@@ -1,5 +1,10 @@
 package com.kitchenreceipts.app.ui.home
 
+import androidx.compose.foundation.BorderStroke
+import com.kitchenreceipts.app.ui.components.Button
+import com.kitchenreceipts.app.ui.components.OutlinedButton
+import com.kitchenreceipts.app.ui.theme.Palette
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -54,13 +59,19 @@ fun JobsSection(onReview: (String) -> Unit, onOpenDocument: (Long) -> Unit) {
 
 @Composable
 private fun JobCard(job: ImportJob, onReview: () -> Unit, onOpen: () -> Unit, onDismiss: () -> Unit, onRetry: () -> Unit, onDiscard: () -> Unit) {
-    val container = when (job.status) {
-        JobStatus.READY -> MaterialTheme.colorScheme.tertiaryContainer
-        JobStatus.FAILED -> MaterialTheme.colorScheme.errorContainer
-        else -> MaterialTheme.colorScheme.secondaryContainer
+    // Black panel, border in the colour of the state: green while reading, orange to check, red when it failed.
+    val accent = when (job.status) {
+        JobStatus.READY -> Palette.Orange
+        JobStatus.FAILED -> Palette.Error
+        JobStatus.SAVED -> Palette.Ok
+        else -> Palette.PhthaloBorder
     }
-    Card(colors = CardDefaults.cardColors(containerColor = container)) {
-        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Card(
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = Palette.Panel, contentColor = MaterialTheme.colorScheme.onSurface),
+        border = BorderStroke(1.dp, accent),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     when (job.status) {
@@ -70,10 +81,11 @@ private fun JobCard(job: ImportJob, onReview: () -> Unit, onOpen: () -> Unit, on
                         JobStatus.FAILED -> Icons.Filled.ErrorOutline
                     },
                     contentDescription = null,
+                    tint = accent,
                 )
-                Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                    Text(title(job), fontWeight = FontWeight.SemiBold)
-                    Text(subtitle(job), style = MaterialTheme.typography.bodyMedium)
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(title(job), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    Text(subtitle(job), style = MaterialTheme.typography.bodySmall, color = if (job.status == JobStatus.READING) Palette.Orange else Palette.TextDim)
                 }
             }
             if (job.status == JobStatus.READING) {
@@ -84,20 +96,20 @@ private fun JobCard(job: ImportJob, onReview: () -> Unit, onOpen: () -> Unit, on
                     LinearProgressIndicator(Modifier.fillMaxWidth())
                 }
             }
-            Row(horizontalArrangement = Arrangement.End, modifier = Modifier.fillMaxWidth()) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.End), modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 when (job.status) {
                     JobStatus.QUEUED, JobStatus.READING -> TextButton(onClick = onDiscard, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.job_stop)) }
                     JobStatus.READY -> {
                         TextButton(onClick = onDiscard, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.discard)) }
-                        TextButton(onClick = onReview, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.job_check)) }
+                        Button(onClick = onReview, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.job_check)) }
                     }
                     JobStatus.SAVED -> {
                         TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.job_hide)) }
-                        TextButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.job_open)) }
+                        OutlinedButton(onClick = onOpen, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.job_open)) }
                     }
                     JobStatus.FAILED -> {
                         TextButton(onClick = onDiscard, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.discard)) }
-                        TextButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.job_retry)) }
+                        OutlinedButton(onClick = onRetry, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.job_retry)) }
                     }
                 }
             }

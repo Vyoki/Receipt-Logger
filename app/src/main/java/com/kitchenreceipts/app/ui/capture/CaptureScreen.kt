@@ -41,7 +41,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.FilledIconButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.kitchenreceipts.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -226,7 +226,7 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
                     onClick = { launchError = null; vm.clearError(); ensureNotificationPermission(); pickPdf.launch(arrayOf("application/pdf")) },
                     primary = false,
                 )
-                Text(stringResource(R.string.capture_tips), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.capture_tips), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
             } else {
                 Text(stringResource(R.string.photos_taken, photos.size), style = MaterialTheme.typography.titleMedium)
                 LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -252,7 +252,7 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
                         modifier = Modifier.weight(1f),
                     )
                 }
-                Text(stringResource(R.string.multi_photo_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.multi_photo_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
             }
         }
     }
@@ -264,7 +264,7 @@ private fun PhotoThumb(path: String, index: Int, onRemove: () -> Unit) {
     val bmp by produceState<android.graphics.Bitmap?>(null, path) {
         value = withContext(Dispatchers.IO) { runCatching { renderer.decodeImage(File(path), 400) }.getOrNull() }
     }
-    Card(Modifier.width(120.dp).height(160.dp)) {
+    Panel(Modifier.width(120.dp).height(160.dp)) {
         Box(Modifier.fillMaxSize()) {
             bmp?.let {
                 Image(it.asImageBitmap(), contentDescription = stringResource(R.string.original_page, index), contentScale = ContentScale.Crop, modifier = Modifier.fillMaxSize())

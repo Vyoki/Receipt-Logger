@@ -552,4 +552,5 @@
         <item quantity="other">Ricontrollo IA: %d valori riletti, corrispondono tutti.</item>
     </plurals>
     <string name="ai_check_disagree">Ricontrollo IA: %1$d valori su %2$d letti diversamente (evidenziati):</string>
+    <string name="scan_hint">Foto, galleria o PDF · più pagine</string>
 </resources>

@@ -2,6 +2,8 @@
 
 package com.kitchenreceipts.app.ui.inventory
 
+import com.kitchenreceipts.app.ui.components.Panel
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -184,7 +186,7 @@ private fun InventoryTab(vm: InventoryViewModel, onOpenProduct: (Long) -> Unit) 
         }
         if (duplicates.isNotEmpty()) {
             item("dups") {
-                Card {
+                Panel {
                     Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         Text(stringResource(R.string.possible_duplicates_title), fontWeight = FontWeight.SemiBold)
                         Text(stringResource(R.string.possible_duplicates_hint), style = MaterialTheme.typography.bodyMedium)
@@ -291,9 +293,9 @@ private fun PriceChangesTab(vm: InventoryViewModel, onOpenProduct: (Long) -> Uni
         list == null -> LoadingBox()
         list.isEmpty() -> EmptyState(stringResource(R.string.no_price_changes), Modifier.padding(16.dp))
         else -> LazyColumn(contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            item { Text(stringResource(R.string.price_changes_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            item { Text(stringResource(R.string.price_changes_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange) }
             items(list) { c ->
-                Card { Column(Modifier.padding(horizontal = 12.dp)) { PriceChangeRow(c) { onOpenProduct(c.productId) } } }
+                Panel { Column(Modifier.padding(horizontal = 12.dp)) { PriceChangeRow(c) { onOpenProduct(c.productId) } } }
             }
         }
     }

@@ -2,6 +2,8 @@
 
 package com.kitchenreceipts.app.ui.review
 
+import com.kitchenreceipts.app.ui.components.Panel
+
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -38,7 +40,7 @@ import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AssistChip
-import androidx.compose.material3.Button
+import com.kitchenreceipts.app.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -46,7 +48,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.kitchenreceipts.app.ui.components.OutlinedButton
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
@@ -180,7 +182,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                     val path = state.filePath
                     val mime = state.mimeType
                     if (path != null && mime != null) {
-                        Card {
+                        Panel {
                             DocumentPages(path, mime, state.pageCount, Modifier.fillMaxWidth().height(260.dp), onClick = onViewOriginal)
                             TextButton(onClick = onViewOriginal, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                                 Icon(Icons.Filled.OpenInFull, contentDescription = null)
@@ -349,7 +351,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
 @Composable
 private fun ReasonsCard(state: ReviewState) {
     val status = LocalStatusColors.current
-    Surface(color = status.uncertainContainer, contentColor = status.onUncertain, shape = MaterialTheme.shapes.medium) {
+    Surface(color = status.uncertainContainer, contentColor = status.onUncertain, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, com.kitchenreceipts.app.ui.theme.Palette.OrangeDim)) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(stringResource(R.string.reasons_title), fontWeight = FontWeight.SemiBold)
             state.reviewReasons.forEach { Text("• " + reviewReasonText(it), style = MaterialTheme.typography.bodyMedium) }
@@ -397,7 +399,7 @@ private fun StatusBanner(state: ReviewState) {
                 SellerMatchReason.LAYOUT -> R.string.recognised_by_layout
             },
         )
-        Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = MaterialTheme.shapes.medium) {
+        Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, com.kitchenreceipts.app.ui.theme.Palette.PhthaloBorder)) {
             Text(
                 stringResource(R.string.recognised_supplier, r.match.name, how, r.documentCount) +
                     (if (r.usualVatBasis != null) " " + stringResource(R.string.usual_vat_basis, vatBasisLabel(r.usualVatBasis)) else ""),
@@ -409,7 +411,7 @@ private fun StatusBanner(state: ReviewState) {
     val uncertain = state.draft.uncertainCount
     if (uncertain > 0) {
         val status = LocalStatusColors.current
-        Surface(color = status.uncertainContainer, contentColor = status.onUncertain, shape = MaterialTheme.shapes.medium) {
+        Surface(color = status.uncertainContainer, contentColor = status.onUncertain, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, com.kitchenreceipts.app.ui.theme.Palette.OrangeDim)) {
             Text(
                 pluralStringResource(R.plurals.values_to_check, uncertain, uncertain),
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
@@ -519,7 +521,7 @@ private fun ItemCard(
     onPickChoice: (LineChoice) -> Unit = {},
 ) {
     val status = LocalStatusColors.current
-    Card {
+    Panel {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.Top) {
                 ItemInput(item, errors, onChange, onConfirm, ItemField.DESCRIPTION, R.string.description_on_document, Modifier.weight(1f))
@@ -624,7 +626,9 @@ private fun ItemCard(
 
 @Composable
 private fun SaveBar(uncertain: Int, errors: Int, saving: Boolean, onSave: () -> Unit) {
-    Surface(tonalElevation = 3.dp, shadowElevation = 6.dp) {
+    // Black bar with a hairline on top: the save button stands out on its own.
+    Surface(color = MaterialTheme.colorScheme.background) { Column {
+        androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
         Row(
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -642,7 +646,7 @@ private fun SaveBar(uncertain: Int, errors: Int, saving: Boolean, onSave: () -> 
                 Text(stringResource(R.string.save), style = MaterialTheme.typography.titleMedium)
             }
         }
-    }
+    } }
 }
 
 @Composable

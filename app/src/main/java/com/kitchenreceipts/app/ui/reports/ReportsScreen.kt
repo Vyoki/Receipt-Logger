@@ -125,7 +125,7 @@ fun ReportsScreen(onBack: () -> Unit) {
                         pendingKind = ExportKind.PURCHASES
                         createFile.launch("acquisti_$today.csv")
                     })
-                    Text(stringResource(R.string.report_totals_note), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.report_totals_note), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
                 }
             }
             val data = rows
@@ -133,7 +133,7 @@ fun ReportsScreen(onBack: () -> Unit) {
             val byMonth = data.orEmpty().groupBy { it.month }
             byMonth.forEach { (month, sellers) ->
                 item(key = "m-$month") {
-                    Card {
+                    Panel {
                         Column(Modifier.padding(16.dp)) {
                             Row(verticalAlignment = Alignment.CenterVertically) {
                                 Text(month?.let { fmtMonth(it) } ?: stringResource(R.string.no_date), style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))

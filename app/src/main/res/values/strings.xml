@@ -564,4 +564,5 @@
         <item quantity="other">AI double-check: %d values read again, all agree.</item>
     </plurals>
     <string name="ai_check_disagree">AI double-check: %1$d of %2$d values read differently (highlighted):</string>
+    <string name="scan_hint">Photo, gallery or PDF · several pages</string>
 </resources>

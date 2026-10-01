@@ -82,7 +82,7 @@ fun FieldPeekCard(label: String, img: PeekImage, onEnlarge: () -> Unit, onClose:
                 IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) { Icon(Icons.Filled.Close, stringResource(R.string.close)) }
             }
             PeekPicture(img, Modifier.fillMaxWidth().heightIn(max = 140.dp).clickable(onClick = onEnlarge))
-            Text(stringResource(R.string.peek_hint), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.peek_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
         }
     }
 }
@@ -90,7 +90,7 @@ fun FieldPeekCard(label: String, img: PeekImage, onEnlarge: () -> Unit, onClose:
 @Composable
 fun FieldPeekDialog(label: String, img: PeekImage, onDismiss: () -> Unit) {
     Dialog(onDismissRequest = onDismiss, properties = DialogProperties(usePlatformDefaultWidth = false)) {
-        Card(Modifier.fillMaxWidth().padding(8.dp)) {
+        Panel(Modifier.fillMaxWidth().padding(8.dp)) {
             Column(Modifier.padding(12.dp)) {
                 Text(stringResource(if (img.exact) R.string.peek_title else R.string.peek_title_row, label), style = MaterialTheme.typography.titleMedium)
                 PeekPicture(img, Modifier.fillMaxWidth().padding(vertical = 8.dp))

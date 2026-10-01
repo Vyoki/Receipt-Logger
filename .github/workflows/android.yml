@@ -67,6 +67,8 @@ jobs:
   instrumented-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: write # screenshots are published to the ci-screens branch
     steps:
       - uses: actions/checkout@v5
       - name: Fetch llama.cpp (pinned)
@@ -97,7 +99,7 @@ jobs:
           target: default
           disable-animations: true
           emulator-boot-timeout: 1200
-          script: chmod +x gradlew && adb shell mkdir -p /data/local/tmp/ai-test && adb push ai-test/model.gguf /data/local/tmp/ai-test/model.gguf && adb push ai-test/mmproj.gguf /data/local/tmp/ai-test/mmproj.gguf && (./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.build.abi=x86_64 -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > inst.log 2>&1; rc=$?; adb shell run-as com.kitchenreceipts.app cat files/ocr-e2e.txt > ocr-e2e.txt 2>/dev/null; adb shell run-as com.kitchenreceipts.app cat files/ai-e2e.txt > ai-e2e.txt 2>/dev/null; exit $rc)
+          script: chmod +x gradlew && adb shell mkdir -p /data/local/tmp/ai-test && adb push ai-test/model.gguf /data/local/tmp/ai-test/model.gguf && adb push ai-test/mmproj.gguf /data/local/tmp/ai-test/mmproj.gguf && (./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.build.abi=x86_64 -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > inst.log 2>&1; rc=$?; adb shell run-as com.kitchenreceipts.app cat files/ocr-e2e.txt > ocr-e2e.txt 2>/dev/null; adb shell run-as com.kitchenreceipts.app cat files/ai-e2e.txt > ai-e2e.txt 2>/dev/null; adb exec-out run-as com.kitchenreceipts.app tar -cf - -C files/screens . > screens.tar 2>/dev/null; exit $rc)
       # The emulator sometimes fails to boot on a busy runner: one more attempt before calling it a failure.
       - name: Run instrumented tests on emulator (second attempt)
         if: steps.emu1.outcome == 'failure'
@@ -108,7 +110,21 @@ jobs:
           target: default
           disable-animations: true
           emulator-boot-timeout: 1200
-          script: chmod +x gradlew && adb shell mkdir -p /data/local/tmp/ai-test && adb push ai-test/model.gguf /data/local/tmp/ai-test/model.gguf && adb push ai-test/mmproj.gguf /data/local/tmp/ai-test/mmproj.gguf && (./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.build.abi=x86_64 -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > inst.log 2>&1; rc=$?; adb shell run-as com.kitchenreceipts.app cat files/ocr-e2e.txt > ocr-e2e.txt 2>/dev/null; adb shell run-as com.kitchenreceipts.app cat files/ai-e2e.txt > ai-e2e.txt 2>/dev/null; exit $rc)
+          script: chmod +x gradlew && adb shell mkdir -p /data/local/tmp/ai-test && adb push ai-test/model.gguf /data/local/tmp/ai-test/model.gguf && adb push ai-test/mmproj.gguf /data/local/tmp/ai-test/mmproj.gguf && (./gradlew :app:connectedDebugAndroidTest -Pandroid.injected.build.abi=x86_64 -Pandroid.injected.androidTest.leaveApksInstalledAfterRun=true --stacktrace > inst.log 2>&1; rc=$?; adb shell run-as com.kitchenreceipts.app cat files/ocr-e2e.txt > ocr-e2e.txt 2>/dev/null; adb shell run-as com.kitchenreceipts.app cat files/ai-e2e.txt > ai-e2e.txt 2>/dev/null; adb exec-out run-as com.kitchenreceipts.app tar -cf - -C files/screens . > screens.tar 2>/dev/null; exit $rc)
+      - name: Publish screenshots to the ci-screens branch
+        if: always() && github.event_name == 'push'
+        shell: bash
+        run: |
+          # Screenshots of the main screens with invented data (ScreenshotTest), for checking the look.
+          [ -s screens.tar ] || { echo "no screenshots"; exit 0; }
+          mkdir -p shots && tar -xf screens.tar -C shots || exit 0
+          ls -la shots
+          cd shots
+          git init -q -b ci-screens
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add . && git commit -qm "Screenshots of ${GITHUB_SHA::7}"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-screens
       - name: Publish OCR end-to-end output
         if: always()
         shell: bash
