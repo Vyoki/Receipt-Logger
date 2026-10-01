@@ -94,6 +94,6 @@ class SellerProfilesTest {
 
     @Test fun sameCompanyComparison() {
         assertTrue(SellerProfiles.sameCompany("Caseificio Valverde S.r.l.", "CASEIFICIO VALVERDE SRL"))
-        assertFalse(SellerProfiles.sameCompany("ABC S.r.l.", "PRONTO VERDE S.p.A."))
+        assertFalse(SellerProfiles.sameCompany("ABC S.r.l.", "VERDE FRESCO S.p.A."))
     }
 }

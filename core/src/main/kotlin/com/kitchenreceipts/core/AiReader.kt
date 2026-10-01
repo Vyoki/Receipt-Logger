@@ -439,7 +439,8 @@ object AiReader {
         val date = answer.date?.let { ItalianDates.findDates(it).firstOrNull()?.date }?.let {
             Extracted(it, if (it in ev.dates) Confidence.HIGH else Confidence.LOW, "AI date: ${answer.date}")
         }
-        val number = answer.number?.let { cleanText(it) }?.takeIf { it.any(Char::isDigit) && it.length <= 40 }
+        // The same checks as the regular reading: never a postcode and town ("00100 ROMA"), an address or a VAT number.
+        val number = answer.number?.let { cleanText(it) }?.takeIf { ReceiptParser.plausibleDocNumber(it) }
             ?.takeUnless { ownVat != null && it.filter(Char::isDigit) == ownVat }
             ?.let { Extracted(it, if (ev.hasText(it)) Confidence.HIGH else Confidence.LOW, "AI number") }
 

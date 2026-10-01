@@ -1,6 +1,7 @@
 package com.kitchenreceipts.app.ui.components
 
 import android.graphics.Bitmap
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
@@ -14,11 +15,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -31,11 +32,13 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.theme.LocalStatusColors
+import com.kitchenreceipts.app.ui.theme.Palette
 
 /** A field of the review screen got focus ([label], the row it was read from and its value), or lost it (null). */
 data class PeekRequest(val label: String, val source: String?, val value: String)
@@ -65,24 +68,38 @@ fun PeekPicture(img: PeekImage, modifier: Modifier = Modifier) {
     }
 }
 
-/** Floating card over the review screen: what the photo shows for the field being checked. Tap to enlarge. */
+/**
+ * Small strip over the top of the review screen: the part of the photo behind the field being checked, with the
+ * value outlined. Kept low (one row of the photo) so it covers as little of the form as possible; tap it to enlarge.
+ */
 @Composable
 fun FieldPeekCard(label: String, img: PeekImage, onEnlarge: () -> Unit, onClose: () -> Unit, modifier: Modifier = Modifier) {
-    Card(
-        modifier = modifier.fillMaxWidth().padding(horizontal = 8.dp),
-        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp),
+    val title = stringResource(if (img.exact) R.string.peek_title else R.string.peek_title_row, label)
+    Surface(
+        modifier = modifier.fillMaxWidth().padding(horizontal = 12.dp),
+        shape = MaterialTheme.shapes.small,
+        color = Palette.Panel,
+        border = BorderStroke(1.dp, Palette.OrangeDim),
+        shadowElevation = 6.dp,
     ) {
-        Column(Modifier.padding(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    stringResource(if (img.exact) R.string.peek_title else R.string.peek_title_row, label),
-                    style = MaterialTheme.typography.labelLarge,
-                    modifier = Modifier.weight(1f),
-                )
-                IconButton(onClick = onClose, modifier = Modifier.size(40.dp)) { Icon(Icons.Filled.Close, stringResource(R.string.close)) }
+        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.padding(start = 8.dp)) {
+            Column(
+                Modifier.weight(1f).padding(vertical = 4.dp)
+                    .clickable(onClickLabel = stringResource(R.string.peek_hint), onClick = onEnlarge),
+            ) {
+                Text(title, style = MaterialTheme.typography.labelSmall, color = Palette.Orange, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                Box(Modifier.fillMaxWidth().heightIn(max = 72.dp), contentAlignment = Alignment.CenterStart) {
+                    PeekPicture(img)
+                }
             }
-            PeekPicture(img, Modifier.fillMaxWidth().heightIn(max = 140.dp).clickable(onClick = onEnlarge))
-            Text(stringResource(R.string.peek_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
+            Column {
+                IconButton(onClick = onClose, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Filled.Close, stringResource(R.string.close), modifier = Modifier.size(20.dp))
+                }
+                IconButton(onClick = onEnlarge, modifier = Modifier.size(44.dp)) {
+                    Icon(Icons.Filled.OpenInFull, stringResource(R.string.peek_hint), modifier = Modifier.size(18.dp), tint = Palette.PhthaloBright)
+                }
+            }
         }
     }
 }

@@ -30,12 +30,21 @@ object FieldLocator {
         val hit = if (v.isEmpty()) null else words.filter { same(it.text, v) }.let { hits -> hits.firstOrNull { it.text.contains(',') } ?: hits.firstOrNull() }
             ?: words.firstOrNull { contains(it.text, v) }
         val rowBox = PageBox(row.pieces.minOf { it.left }, row.pieces.minOf { it.top }, row.pieces.maxOf { it.right }, row.pieces.maxOf { it.bottom })
-        val h = rowBox.height.coerceAtLeast(10)
-        val area = PageBox(
-            (rowBox.left - h).coerceAtLeast(0), (rowBox.top - 2 * h).coerceAtLeast(0),
-            rowBox.right + h, rowBox.bottom + 2 * h,
-        )
+        // One line of print (a tilted photo makes the row's box much taller than a line).
+        val h = words.map { it.bottom - it.top }.sorted().let { it[it.size / 2] }.coerceAtLeast(10)
         val mark = hit?.let { PageBox(it.left, it.top, it.right, it.bottom) } ?: rowBox
+        // A low strip (the line and a little above and below), and around the value only, so that on a phone the
+        // print stays readable at the height of a small strip: about six line heights each side of the value.
+        val area = if (hit != null) {
+            PageBox(
+                maxOf(rowBox.left - h, mark.left - 6 * h).coerceAtLeast(0), (mark.top - h - h / 2).coerceAtLeast(0),
+                minOf(rowBox.right + h, mark.right + 6 * h), mark.bottom + h + h / 2,
+            )
+        } else {
+            val mid = (rowBox.top + rowBox.bottom) / 2
+            val half = minOf(rowBox.height / 2, 2 * h) + h
+            PageBox((rowBox.left - h).coerceAtLeast(0), (mid - half).coerceAtLeast(0), rowBox.right + h, mid + half)
+        }
         return Spot(row.page, area, mark, hit != null)
     }
 

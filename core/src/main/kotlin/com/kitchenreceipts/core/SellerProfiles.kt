@@ -119,7 +119,7 @@ object SellerProfiles {
             if (ocrSellerReliable && ocrSellerName != null && !sameCompany(c.name, ocrSellerName) &&
                 DuplicateDetector.normalizeSeller(ocrSellerName) !in c.aliasKeys
             ) {
-                suspect = v // "VERDE FRESCO S.p.A." clearly printed, but the VAT number was learned for ABC
+                suspect = v // "VERDE FRESCO S.p.A." clearly printed, but the VAT number was learned for "ABC S.r.l."
                 continue
             }
             return Identification(SellerMatch(c.id, c.name, SellerMatchReason.VAT_NUMBER, 1.0))

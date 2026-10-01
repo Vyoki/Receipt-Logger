@@ -67,8 +67,8 @@ sealed interface AiTarget {
  * regular reading could not prove: each line where quantity x price does not give the amount (or the amount is
  * missing), each line with an amount that was not read as a product, and the header or totals area when those are
  * missing. Each is a small picture with the column headings on top, answered in seconds.
- * Returns null when the regular reading failed too broadly for that to help (no table found, most lines wrong):
- * then whole pages are read.
+ * Returns null only when the regular reading failed too broadly for that to help (most lines wrong or not found on
+ * the page): then whole pages are read, as a last resort.
  */
 object AiTargets {
 
@@ -96,12 +96,24 @@ object AiTargets {
                 else if (headerRows[p] != null && footerRows[p] == null && ReceiptParser.isFooterRow(text)) footerRows[p] = r
             }
         }
+        // Column headings the layout reader did not recognise (glued or misread words): the text still says it is a
+        // heading row ("COD.ART. COLLI/DESCRIZIONE BENI U.M. QUANTITA PREZZO ... IMPORTO IVA").
+        for (p in layouts.indices) {
+            if (headerRows[p] != null) continue
+            val pageRows = allRows.filter { it.page == p }
+            val h = pageRows.firstOrNull { ReceiptParser.isTableHeader(it.text) } ?: continue
+            headerRows[p] = h
+            pageRows.firstOrNull { it.index > h.index && ReceiptParser.isFooterRow(it.text) }?.let { footerRows[p] = it.index }
+        }
         // Rows of the item table on each page (between the column headings and the totals).
         fun inTable(r: RowInfo): Boolean {
             val h = headerRows[r.page] ?: return false
             return r.index > h.index && r.index < (footerRows[r.page] ?: Int.MAX_VALUE)
         }
-        val tableRows = allRows.filter(::inTable)
+        // A page without any headings: its lines are still found by their text; only the "missed line" search needs
+        // the table's limits, so there it is limited to the rows between the first and last line found.
+        val headless = layouts.indices.filter { headerRows[it] == null }.toSet()
+        val tableRows = allRows.filter { inTable(it) || it.page in headless }
         if (tableRows.isEmpty()) return null
 
         // Which row each line of the document came from (best word overlap with its source text), each row used once:
@@ -112,6 +124,12 @@ object AiTargets {
             val best = tableRows.filter { it !in taken }.maxByOrNull { similarity(it.text, source) }
                 ?.takeIf { similarity(it.text, source) >= 0.5 }
             best?.also { taken += it }
+        }
+        // Too few lines found on the page: the page is not understood well enough for small questions.
+        if (headless.isNotEmpty() && itemRow.count { it != null } < (doc.lineItems.size + 1) / 2) return null
+        val headlessSpan = headless.associateWith { p ->
+            val found = itemRow.filterNotNull().filter { it.page == p }.map { it.index }
+            if (found.isEmpty()) IntRange.EMPTY else found.min()..found.max()
         }
         // Quantities worked out as amount / price are proven when every VAT group of the summary adds up: nothing to ask.
         val provenByVat = doc.vatChecks.isNotEmpty() && doc.vatChecks.all { it.ok }
@@ -124,30 +142,33 @@ object AiTargets {
         }
         val usedRows = itemRow.filterNotNull().toSet()
         val missed = tableRows.filter { r ->
-            r !in usedRows && r.text.count(Char::isLetter) >= 3 && hasMoney(r.text) &&
+            r !in usedRows && (r.page !in headless || r.index in headlessSpan.getValue(r.page)) && r.text.count(Char::isLetter) >= 3 && hasMoney(r.text) &&
                 !ReceiptParser.isNotAnItemRow(r.text) && LotExtractor.scan(r.text).lot == null
         }
         if (doubtful.size + missed.size > maxOf(MAX_ROW_TARGETS, doc.lineItems.size / 2)) return null
 
         fun strip(r: RowInfo): List<PageBox> {
-            val h = headerRows.getValue(r.page)
+            val h = headerRows[r.page]
             val lineH = (r.box.height).coerceAtLeast(12)
-            val left = minOf(h.box.left, r.box.left)
-            val right = maxOf(h.box.right, r.box.right)
-            val header = PageBox(left, h.box.top - lineH / 3, right, h.box.bottom + lineH / 3)
-            // The line and the one below it (a name or lot may continue there).
+            val left = minOf(h?.box?.left ?: r.box.left, r.box.left)
+            val right = maxOf(h?.box?.right ?: r.box.right, r.box.right)
+            // The line and the one below it (a name, a lot, or an amount printed one row lower may be there).
             val next = allRows.firstOrNull { it.page == r.page && it.index == r.index + 1 }
-            val bottom = if (next != null && inTable(next) && !hasMoney(next.text)) next.box.bottom else r.box.bottom
+            val nextFits = next != null && (inTable(next) || r.page in headless) && next.text.count(Char::isLetter) < 3
+            val bottom = if (nextFits) next!!.box.bottom else r.box.bottom
             val line = PageBox(left, r.box.top - lineH / 2, right, bottom + lineH / 2)
+            if (h == null) return listOf(line)
+            val header = PageBox(left, h.box.top - lineH / 3, right, h.box.bottom + lineH / 3)
             return listOf(header, line)
         }
+        fun head(page: Int) = headerRows[page]?.text ?: ""
 
         val targets = mutableListOf<AiTarget>()
         for (i in doubtful) {
             val r = itemRow[i] ?: continue
             val item = doc.lineItems[i]
             val choices = item.choices
-            val head = headerRows.getValue(r.page).text
+            val head = head(r.page)
             targets += when {
                 choices.size >= 2 -> AiTarget.Choice(r.page, strip(r), i, choices, r.text, head)
                 // Only the quantity is in doubt (worked out): ask for that one number.
@@ -158,7 +179,7 @@ object AiTargets {
         for (r in missed) {
             val after = itemRow.withIndex().filter { (_, row) -> row != null && (row.page < r.page || (row.page == r.page && row.index < r.index)) }
                 .maxOfOrNull { it.index } ?: -1
-            targets += AiTarget.Row(r.page, strip(r), null, after, r.text, headerRows.getValue(r.page).text)
+            targets += AiTarget.Row(r.page, strip(r), null, after, r.text, head(r.page))
         }
         val first = headerRows[0]
         fun headerArea(): PageBox? {
@@ -190,7 +211,7 @@ object AiTargets {
             val largest = (candidates - worked.toSet()).sortedByDescending { doc.lineItems[it].lineTotalCents!!.value }
             for (i in (worked + largest).take(MAX_SPOT_LINES)) {
                 val r = itemRow[i]!!
-                val head = headerRows.getValue(r.page).text
+                val head = head(r.page)
                 val item = doc.lineItems[i]
                 targets += if (i in worked) {
                     AiTarget.Number(r.page, strip(r), i, quantityHeading(head), item.quantity!!.value, r.text, head, AiTarget.Field.QUANTITY, verify = true)
