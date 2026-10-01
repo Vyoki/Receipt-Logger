@@ -1,5 +1,7 @@
 package com.kitchenreceipts.app.ui.products
 
+import com.kitchenreceipts.app.ui.components.Panel
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
