@@ -266,6 +266,10 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 
 **Learning per supplier** (Settings ▸ Learned from you, phone only): remembered choices, and up to 3 confirmed lines shown to the AI as examples with each line question. The AI model itself is never changed.
 
+**Supplier layout** (phone only, from documents you confirm): how each supplier prints its documents — the shape of its document numbers (`99A/99999`: a number in that shape is certain, and found even when the label is misread), lots printed on the row under each item, whether its table reads best by columns, and column headings the app did not know. The next document of that supplier (recognised by its VAT number, or its name) is read with it; the reading without it is kept if it explains the document better.
+
+**Headings the app does not know:** when a supplier is new, its item table was not recognised and the reading does not check out, the AI is asked one short question about the heading row: what each column holds (one letter per heading). The answer is used only if it reads the document better, and is learned for that supplier once you confirm a document read with it. Measured on every CI run (job ai-model-check, "AI column headings report").
+
 **Checking a value:** tapping a field in the review shows the part of the photo it was read from, with the value outlined (new documents).
 
 ## 7c. Less typing, price changes and inventory
@@ -289,7 +293,7 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
   - grouped by category (fruit & veg, meat, fish, cured meats, dairy & eggs, bakery, dry goods, frozen, drinks, cleaning, packaging, other);
   - with the quantity bought (kg and l added together, other units kept apart unless you defined a conversion), the spend (kept apart by VAT basis), the number of purchases, and the **usual amount per period** (average of up to 6 earlier periods).
 
-  Categories are guessed from an Italian keyword dictionary; change one on the product screen.
+  Categories are guessed from an Italian keyword dictionary, reading the product name first ("PAT.SACCHI" is potatoes, not bags) and supplier abbreviations ("BISC.", "CIP.", "PARM."); each category has its own icon. Change one on the product screen: a category you chose is never changed by the app.
 
 ## 7c-2. Reading in the background
 

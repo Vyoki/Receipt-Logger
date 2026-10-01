@@ -2,6 +2,12 @@ package com.kitchenreceipts.core
 
 import java.text.Normalizer
 
+/**
+ * A question about a column heading row the regular reading did not understand: [headings] as the OCR read them,
+ * left to right; [boxes] the heading row and the first lines under it. See [AiReader.layoutInstruction].
+ */
+data class LayoutQuestion(val page: Int, val boxes: List<PageBox>, val headings: List<String>)
+
 /** A rectangle on a page photo, in the coordinates of the OCR boxes. */
 data class PageBox(val left: Int, val top: Int, val right: Int, val bottom: Int) {
     val width: Int get() = right - left
@@ -73,6 +79,37 @@ sealed interface AiTarget {
 object AiTargets {
 
     private const val MAX_ROW_TARGETS = 8
+
+    /**
+     * When the item table was not recognised (read as text) and no headings are known for this supplier, but a row
+     * looks like column headings: one question to the AI about what each heading's column holds. Null otherwise.
+     */
+    fun layoutQuestion(pages: List<List<OcrLine>>, doc: ParsedDocument): LayoutQuestion? {
+        if (doc.itemsReadBy != "text" || !doc.layout?.headings.isNullOrEmpty() || ReceiptParser.isConfident(doc)) return null
+        pages.take(3).forEachIndexed { p, lines ->
+            val layout = LayoutRows.layout(lines)
+            layout.rows.forEachIndexed { r, row ->
+                val text = row.joinToString(" ") { it.text.trim() }
+                if (!ReceiptParser.isTableHeader(text) || hasMoney(text)) return@forEachIndexed
+                if (TableReader.header(row, layout.slope) != null) return null // recognised: nothing to ask
+                val words = row.flatMap { l -> l.words.ifEmpty { listOf(l) } }.filter { it.text.isNotBlank() }.sortedBy { it.left }
+                if (words.size < 3) return@forEachIndexed
+                // Heading cells: words close together belong to one heading ("PREZZO UNIT.", "DESCRIZIONE BENI").
+                val h = words.map { it.height }.sorted()[words.size / 2].coerceAtLeast(8)
+                val cells = mutableListOf(mutableListOf(words.first()))
+                // A known heading word starts a new heading even when printed close to the previous one ("U.M. QUANTITA'").
+                for (w in words.drop(1)) {
+                    if (w.left - cells.last().last().right > h * 3 / 5 || TableReader.startsHeading(w.text)) cells += mutableListOf(w) else cells.last() += w
+                }
+                if (cells.size !in 3..12) return@forEachIndexed
+                val below = layout.rows.drop(r + 1).take(3).filter { it.isNotEmpty() }
+                val area = (row + below.flatten())
+                val box = PageBox(area.minOf { it.left }, area.minOf { it.top } - h / 2, area.maxOf { it.right }, area.maxOf { it.bottom } + h / 2)
+                return LayoutQuestion(p, listOf(box), cells.map { c -> c.joinToString(" ") { it.text.trim() } })
+            }
+        }
+        return null
+    }
     private const val MAX_SPOT_LINES = 8
 
     /**
@@ -92,7 +129,7 @@ object AiTargets {
                 val text = row.joinToString(" ") { it.text.trim() }
                 val info = RowInfo(p, r, text, PageBox(row.minOf { it.left }, row.minOf { it.top }, row.maxOf { it.right }, row.maxOf { it.bottom }))
                 allRows += info
-                if (headerRows[p] == null && TableReader.header(row, layout.slope) != null) headerRows[p] = info
+                if (headerRows[p] == null && TableReader.header(row, layout.slope, doc.layout?.headings.orEmpty()) != null) headerRows[p] = info
                 else if (headerRows[p] != null && footerRows[p] == null && ReceiptParser.isFooterRow(text)) footerRows[p] = r
             }
         }

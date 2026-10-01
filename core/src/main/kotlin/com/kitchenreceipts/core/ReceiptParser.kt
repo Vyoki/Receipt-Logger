@@ -17,12 +17,19 @@ import java.time.LocalDate
  *   amount is printed on the line below the label.
  */
 /** What the parser should know about the operator's own business. */
-data class ParseOptions(val ownBusinessName: String? = null, val ownVatNumber: String? = null)
+data class ParseOptions(
+    val ownBusinessName: String? = null,
+    val ownVatNumber: String? = null,
+    /** How this supplier prints its documents, when known (learned, or the AI's answer about the headings). */
+    val layout: SupplierLayout? = null,
+    /** Finds a supplier's learned layout by its key ([SupplierMemory.key]); used when [layout] is not given. */
+    val layoutLookup: ((String) -> SupplierLayout?)? = null,
+)
 
 object ReceiptParser {
 
     private val COMPANY_SUFFIX = Regex(
-        "(?i)(\\bs\\.?\\s?r\\.?\\s?[l1]\\.?\\s?s?\\.?(?=\\s|$|,|\\)|-)|\\bs\\.?\\s?p\\.?\\s?a\\.?(?=\\s|$|,|\\)|-)|" +
+        "(?i)(\\bs\\.?\\s?r\\.?\\s?[l1]\\.?\\s?s?\\.?(?=\\s|$|,|\\)|-)|\\bs\\.\\s?rl[e.]?(?=\\s|$)|\\bs\\.?\\s?p\\.?\\s?a\\.?(?=\\s|$|,|\\)|-)|" +
             "\\bs\\.?\\s?n\\.?\\s?c\\.?(?=\\s|$|,|\\)|-)|\\bs\\.?\\s?a\\.?\\s?s\\.?(?=\\s|$|,|\\)|-)|\\bsoc\\.?\\s?coop\\S*|" +
             "\\bcooperativa\\b|\\bs\\.?\\s?c\\.?\\s?a\\.?\\s?r\\.?\\s?l\\.?)",
     )
@@ -138,8 +145,18 @@ object ReceiptParser {
         val layouts = pages.map { LayoutRows.layout(it) }
         val text = layouts.joinToString("\n$PAGE_BREAK\n") { it.text }
         if (text.isBlank()) return ParsedDocument.EMPTY
-        val table = runCatching { TableReader.read(layouts) }.getOrNull()
-        return parse(text, options, table)
+        fun read(o: ParseOptions): ParsedDocument {
+            val table = runCatching { TableReader.read(layouts, o.layout?.headings.orEmpty()) }.getOrNull()
+            return parse(text, o, table)
+        }
+        val plain = read(options.copy(layoutLookup = null))
+        if (options.layout != null || options.layoutLookup == null) return plain
+        // A supplier seen before: read again with what was learned from its confirmed documents, and keep that
+        // reading unless it explains the document worse.
+        val key = SupplierMemory.key(text, options.ownVatNumber, plain.sellerName?.value) ?: return plain
+        val learned = runCatching { options.layoutLookup.invoke(key) }.getOrNull() ?: return plain
+        val withLayout = read(options.copy(layout = learned, layoutLookup = null))
+        return if (quality(withLayout) >= quality(plain)) withLayout else plain
     }
 
     /** A row that ends the item table: totals, VAT summary, carry-over to the next page. */
@@ -220,6 +237,7 @@ object ReceiptParser {
         }
 
         val docNumber = findDocumentNumber(lines, consumed).let { first -> numberAcrossPages(first, pages) }
+            .let { found -> options.layout?.numberShape?.let { shape -> numberOfShape(found, pages, shape) } ?: found }
         val date = findDocumentDate(lines, consumed)
         val seller = findSellerOnPages(pages, options)
         val currency = CURRENCY.find(text)?.let { Extracted("EUR", Confidence.HIGH, it.value) }
@@ -343,12 +361,13 @@ object ReceiptParser {
         val start = if (headerIdx >= 0 && headerIdx < firstTotalsLine) headerIdx + 1 else 0
         // A lot column: "LOTTO" in the table heading (or the heading's second row, "ID LOTTO QTA.LOT."), also when that
         // heading was not recognised as a table header: a heading row above the first amount, without amounts itself.
-        val lotColumn = (headerIdx >= 0 && (LOT_COLUMN.containsMatchIn(lines[headerIdx]) || LOT_COLUMN.containsMatchIn(lines.getOrElse(headerIdx + 1) { "" }))) ||
+        val lotColumn = options.layout?.lotsUnderItems == true || (headerIdx >= 0 && (LOT_COLUMN.containsMatchIn(lines[headerIdx]) || LOT_COLUMN.containsMatchIn(lines.getOrElse(headerIdx + 1) { "" }))) ||
             run {
                 val firstAmount = (start until firstTotalsLine).firstOrNull { lastAmountCents(lines[it]) != null } ?: firstTotalsLine
                 (start until firstAmount).any { k -> LOT_COLUMN.containsMatchIn(lines[k]) && lastAmountCents(lines[k]) == null && LotExtractor.scan(lines[k]).lot == null }
             }
         val items = mutableListOf<ParsedLineItem>()
+        var lotRowsUsed = 0
         var lotRejected = false
         var pendingQty: QtyLine? = null
         var i = start
@@ -385,6 +404,7 @@ object ReceiptParser {
                 if (prev != null && prev.lotNumber == null) {
                     val code = lotRow.substringBefore(' ')
                     items[items.lastIndex] = prev.copy(lotNumber = Extracted(code, Confidence.LOW, line))
+                    lotRowsUsed++
                 }
                 continue
             }
@@ -417,6 +437,7 @@ object ReceiptParser {
                     val merged = if (lotAndAmount != null) {
                         parseItemLine("$rest ${lotAndAmount.groupValues[2]}", colliColumn, priceFirst)?.let { m ->
                             if (ItalianDates.findDates(lotAndAmount.groupValues[1]).isEmpty() && lotAndAmount.groupValues[1].any(Char::isDigit)) {
+                                lotRowsUsed++
                                 m.copy(lotNumber = Extracted(lotAndAmount.groupValues[1], Confidence.LOW, next))
                             } else m
                         }
@@ -459,9 +480,10 @@ object ReceiptParser {
             items += item.copy(lotNumber = scan.lot ?: item.lotNumber, expiryDate = scan.expiry ?: item.expiryDate)
         }
         var itemsReadBy = "text"
-        if (!tableItems.isNullOrEmpty() &&
-            itemScore(tableItems, subtotal?.value, total?.value) > itemScore(items, subtotal?.value, total?.value)
-        ) {
+        val columnsFirst = options.layout?.readByColumns == true // this supplier's tables were read best by columns
+        val tableScore = if (tableItems.isNullOrEmpty()) Int.MIN_VALUE else itemScore(tableItems, subtotal?.value, total?.value)
+        val textScore = itemScore(items, subtotal?.value, total?.value)
+        if (!tableItems.isNullOrEmpty() && (tableScore > textScore || (columnsFirst && tableScore == textScore))) {
             items.clear()
             items += tableItems
             itemsReadBy = "columns"
@@ -480,6 +502,8 @@ object ReceiptParser {
                 lineItems = items,
                 warnings = warnings,
                 itemsReadBy = itemsReadBy,
+                layout = options.layout,
+                lotsUnderItems = itemsReadBy == "text" && lotRowsUsed >= 2,
             ),
             text,
         )
@@ -623,6 +647,27 @@ object ReceiptParser {
         if (SellerProfiles.isValidPartitaIva(s.filter(Char::isDigit)) && s.filter(Char::isDigit).length == 11) return false
         if (ItalianDates.findDates(s).isNotEmpty()) return false
         return true
+    }
+
+    /**
+     * The supplier's numbers always look the same ("99A/99999"): a number read in that shape is certain; one in
+     * another shape is replaced by the only value in the header that has the shape, if there is exactly one.
+     */
+    private fun numberOfShape(found: Extracted<String>?, pages: List<List<String>>, shape: String): Extracted<String>? {
+        // Digits only ("99999") says too little: postcodes, codes and phone numbers look the same.
+        if (shape.all { it == '9' }) return found
+        if (found != null && SupplierLayouts.matchesShape(found.value, shape)) return found.copy(confidence = Confidence.HIGH)
+        val head = pages.firstOrNull().orEmpty().take(40)
+        val candidates = head.flatMap { line ->
+            val tokens = line.split(' ').filter { it.isNotBlank() }
+            // A single token, or two side by side ("B26 204177").
+            (tokens.indices.map { tokens[it] } + (0 until tokens.size - 1).map { "${tokens[it]} ${tokens[it + 1]}" })
+                .map { it.trim(',', ';', ':', '|') }
+                .filter { it.any(Char::isDigit) && SupplierLayouts.matchesShape(it, shape) && plausibleDocNumber(it) && ItalianDates.findDates(it).isEmpty() }
+                .map { it to line }
+        }.distinctBy { it.first }
+        val only = candidates.singleOrNull() ?: return found
+        return Extracted(only.first, Confidence.HIGH, only.second)
     }
 
     private fun findDocumentNumber(lines: List<String>, consumed: MutableSet<Int>): Extracted<String>? {
@@ -782,6 +827,17 @@ object ReceiptParser {
             return ownName != null && ownName.length >= 4 && n.contains(ownName)
         }
         val head = lines.take(15)
+        // The customer's block: a name followed within a few lines by the operator's own VAT number, with no other
+        // VAT number in between ("FOOD ... SAS" / address / "PARTITA IVA <own>").
+        fun beforeOwnVat(i: Int): Boolean {
+            if (ownVat == null) return false
+            for (k in i + 1..minOf(i + 5, lines.lastIndex)) {
+                val digits = SellerProfiles.repairDigits(lines[k]).filter(Char::isDigit)
+                if (digits.contains(ownVat)) return true
+                if (Regex("\\d{11}").findAll(SellerProfiles.repairDigits(lines[k])).any { SellerProfiles.isValidPartitaIva(it.value) }) return false
+            }
+            return false
+        }
         var skipUntil = -1
         var firstPlausible: String? = null
         var firstBeforePiva: String? = null
@@ -796,8 +852,9 @@ object ReceiptParser {
                     line = line.substring(0, customer.range.first).trim()
                     skipUntil = i + 1
                 } else {
-                    // "Spett.le" alone -> the customer's name is on the next line; otherwise it is on this line.
-                    val rest = line.substring(customer.range.last + 1)
+                    // "Spett.le" alone (or "DESTINAZIONE MERCE  SPETTABILE": labels only) -> the customer's name is on
+                    // the next line; otherwise it is on this line.
+                    val rest = CUSTOMER_LABEL.replace(line.substring(customer.range.last + 1), " ").replace(Regex("(?i)\\bmerce\\b"), " ")
                     skipUntil = if (rest.count { it.isLetter() } >= 3) i else i + 1
                     return@forEachIndexed
                 }
@@ -806,6 +863,7 @@ object ReceiptParser {
             }
             if (line.count { it.isLetter() } < 3) return@forEachIndexed
             if (isOwn(line)) return@forEachIndexed
+            if (beforeOwnVat(i)) return@forEachIndexed
 
             val suffix = COMPANY_SUFFIX.find(line)
             if (suffix != null) {
@@ -842,6 +900,8 @@ object ReceiptParser {
     }
 
     private fun cleanSeller(line: String): String = line.trim().trim('*', '-', '=', '_', '|', ' ', ',', ':')
+        // "ABC S.rle": the legal form misread at the end of the name.
+        .replace(Regex("(?i)\\bs\\.\\s?rl[e.]?$"), "S.r.l.")
 
     // ---------------------------------------------------------------- amounts
 
@@ -1043,6 +1103,7 @@ object ReceiptParser {
                     packSize = PackSizes.parse(listOf(unitTok.raw, nums[0].raw))
                     qty = q.stripTrailingZeros(); price = p; totalCents = ItalianNumbers.toCents(t)
                     qtyWorkedOut = true
+                    consistent = true // the line adds up; only the quantity stays marked (worked out, not read)
                 }
             }
         }

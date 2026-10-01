@@ -81,6 +81,10 @@ data class ParsedDocument(
     val lotsPrinted: Boolean = true,
     /** The AI's double-check of this reading, if it ran. */
     val aiCheck: AiCheck? = null,
+    /** What was used from the supplier's learned layout (or the AI's answer about the headings); null = nothing. */
+    val layout: SupplierLayout? = null,
+    /** Lot numbers were found on the row under each item. */
+    val lotsUnderItems: Boolean = false,
 ) {
     companion object {
         val EMPTY = ParsedDocument(

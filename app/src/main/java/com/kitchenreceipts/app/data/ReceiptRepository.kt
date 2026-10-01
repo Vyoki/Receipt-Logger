@@ -251,7 +251,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         val normalized = ProductMatching.aliasKey(clean)
         products.findByNormalizedBlocking(normalized)?.let { return it.id }
         return products.insertBlocking(
-            ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis(), category = Categories.guess(clean).key),
+            ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis()),
         )
     }
 
@@ -295,7 +295,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         require(clean.isNotEmpty())
         val normalized = ProductMatching.aliasKey(clean)
         products.findByNormalized(normalized)?.let { throw ProductNameTakenException(it) }
-        val entity = ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis(), category = Categories.guess(clean).key)
+        val entity = ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis())
         return entity.copy(id = products.insert(entity))
     }
 
@@ -411,6 +411,18 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         )
 
     suspend fun setCategory(productId: Long, category: Category) = products.setCategory(productId, category.key)
+
+    /**
+     * Products whose category was stored by the old guesser (not chosen by the operator) go back to "guessed from the
+     * name", so the better rules apply to them too (e.g. every biscuit in one category). Run once after the update.
+     */
+    suspend fun regroupGuessedCategories(): Int = withContext(Dispatchers.IO) {
+        var n = 0
+        for (p in products.allOnce()) {
+            if (Categories.wasGuessedByOldRules(p.name, p.category)) { products.setCategory(p.id, null); n++ }
+        }
+        n
+    }
 
     /**
      * Merges [from] into [into] (the operator's choice): its purchases, remembered descriptions and unit

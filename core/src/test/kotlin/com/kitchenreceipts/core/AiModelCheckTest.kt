@@ -14,6 +14,7 @@ import java.io.File
 class AiModelCheckTest {
 
     private companion object {
+        val LAYOUT_HEADINGS = listOf("CODICE", "COLLI", "DESCRIZIONE BENI", "TIPO CONF.", "TOT.", "PREZZO", "IMPORTO", "COD")
         const val FILETTO = "0 10000051 FILETTO B/A KG 3,5+ S/V -, CS KG 4,24 29,900 126,78"
         const val CANDEGGINA = "O 10000032x3 CANDEGGINA NORMALE LT.5- MARCA C FL LT 5 6 1,790 10,74 22"
         val FILETTO_CHOICES = listOf(
@@ -49,6 +50,28 @@ class AiModelCheckTest {
             File(dir, "number-filetto-${lang.name.lowercase()}.txt").writeText(AiReader.numberInstruction("TOT.", head, FILETTO, lang))
         }
         File(dir, "number.gbnf").writeText(AiReader.NUMBER_GRAMMAR)
+        // The column headings: what each column holds (one letter per heading).
+        for (lang in AiReader.Lang.entries) {
+            File(dir, "layout-${lang.name.lowercase()}.txt").writeText(AiReader.layoutInstruction(LAYOUT_HEADINGS, lang))
+        }
+        File(dir, "layout.gbnf").writeText(AiReader.layoutGrammar(LAYOUT_HEADINGS.size))
+    }
+
+    /** The heading answers: code, colli, description, (pack: unit or other), quantity, price, amount, VAT. */
+    @Test fun checkLayoutAnswers() {
+        val dir = System.getenv("AI_ANSWER_DIR")
+        assumeTrue(dir != null)
+        val right = listOf(setOf("A"), setOf("B"), setOf("C"), setOf("D", "K"), setOf("E"), setOf("F"), setOf("H"), setOf("I"))
+        val report = StringBuilder()
+        File(dir!!).listFiles { f -> f.name.startsWith("layoutanswer-") }!!.sorted().forEach { f ->
+            val raw = f.readText().trim()
+            val letters = raw.uppercase().split(',').map { it.trim() }
+            val ok = letters.size == right.size && letters.zip(right).all { (l, r) -> l in r }
+            val wrong = letters.zip(right).withIndex().filter { (_, p) -> p.first !in p.second }.joinToString(" ") { (i, p) -> "${LAYOUT_HEADINGS[i]}=${p.first}" }
+            report.append("${f.name}: answer='$raw' ${if (ok) "RIGHT" else "WRONG $wrong"}\n")
+        }
+        File(dir, "layout-report.txt").writeText(report.toString())
+        println(report)
     }
 
     /** The one-number answers: 4,24 is right. */

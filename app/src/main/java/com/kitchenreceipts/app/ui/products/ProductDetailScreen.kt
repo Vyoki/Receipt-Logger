@@ -1,5 +1,9 @@
 package com.kitchenreceipts.app.ui.products
 
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.Spacer
+import com.kitchenreceipts.app.ui.components.CategoryIcon
+import com.kitchenreceipts.app.ui.components.CategoryBadge
 import com.kitchenreceipts.app.ui.components.Panel
 
 import androidx.compose.foundation.layout.Arrangement
@@ -162,6 +166,8 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
                     val category = Category.fromKey(d.product.category) ?: Categories.guess(d.product.name)
                     ClickCard(onClick = { choosingCategory = true }) {
                         Row(verticalAlignment = Alignment.CenterVertically) {
+                            CategoryBadge(category)
+                            Spacer(Modifier.width(12.dp))
                             Column(Modifier.weight(1f)) {
                                 Text(stringResource(R.string.category), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                                 Text(categoryLabel(category), style = MaterialTheme.typography.titleMedium)
@@ -305,6 +311,8 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
                 LazyColumn {
                     items(Category.entries) { c ->
                         TextButton(onClick = { vm.setCategory(c); choosingCategory = false }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                            CategoryIcon(c)
+                            Spacer(Modifier.width(12.dp))
                             Text(categoryLabel(c), modifier = Modifier.fillMaxWidth())
                         }
                     }

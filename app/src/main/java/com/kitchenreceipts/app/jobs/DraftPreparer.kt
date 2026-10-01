@@ -118,6 +118,7 @@ class DraftPreparer(
         )
         log.event("SAVED", "doc" to id, "new" to true, "auto" to true, "items" to valid.items.size, "priceChanges" to p.priceChanges.size)
         learning?.addExamples(p.supplierKey, SupplierMemory.examplesFrom(p.draft))
+        runCatching { learning?.addLayout(p.supplierKey, com.kitchenreceipts.core.SupplierLayouts.learn(pending.parsed, p.draft)) }
         return id
     }
 

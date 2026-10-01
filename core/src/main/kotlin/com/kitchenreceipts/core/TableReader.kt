@@ -67,6 +67,30 @@ object TableReader {
         return t
     }
 
+    /**
+     * Headings learned for the supplier being read (see [SupplierLayout.headings]); only consulted for words the
+     * built-in list does not know. Set for the duration of one [read] or [header] call.
+     */
+    private val learned = ThreadLocal<Map<String, Kind>>()
+
+    private fun <T> withLearned(headings: Map<String, Kind>, block: () -> T): T {
+        val before = learned.get()
+        learned.set(headings)
+        try { return block() } finally { learned.set(before) }
+    }
+
+    private fun hOf(k: Kind): H = when (k) {
+        Kind.CODE -> H.CODE; Kind.PACKAGES -> H.PACKAGES; Kind.DESCRIPTION -> H.DESCRIPTION; Kind.UNIT -> H.UNIT
+        Kind.PACK_TYPE -> H.PACK_TYPE; Kind.PACK_SIZE -> H.PACK_SIZE; Kind.QUANTITY -> H.QUANTITY; Kind.PRICE -> H.PRICE
+        Kind.DISCOUNT -> H.DISCOUNT; Kind.AMOUNT -> H.AMOUNT; Kind.VAT -> H.VAT; Kind.LOT -> H.LOT; Kind.EXPIRY -> H.EXPIRY
+    }
+
+    /** Whether [word] begins a heading the app knows by itself ("PREZZO", not "UNIT." which continues one). */
+    fun startsHeading(word: String): Boolean = withLearned(emptyMap()) { heading(word).let { it != null && it != H.CONT && it != H.PERCENT } }
+
+    /** Whether [word] is a heading the app knows by itself (without anything learned). */
+    fun isKnownHeading(word: String): Boolean = withLearned(emptyMap()) { heading(word) != null }
+
     private fun heading(word: String): H? {
         val w = ocrNormal(norm(word).trim('.', ':', ',', '\'', '’', '"', '|', '(', ')'))
         if (w.isEmpty()) return null
@@ -76,6 +100,7 @@ object TableReader {
             val near = HEADINGS.entries.filter { (k, _) -> k.length >= 6 && k.all(Char::isLetter) && k[0] == w[0] && SmartMatcher.damerau(k, w, 1) <= 1 }
             if (near.map { it.value }.distinct().size == 1) return near.first().value
         }
+        learned.get()?.let { m -> (m[w] ?: m[SupplierLayouts.headingKey(word)])?.let { return hOf(it) } }
         return null
     }
 
@@ -83,7 +108,8 @@ object TableReader {
         Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase().trim()
 
     /** Finds the column layout in a heading row, or null if the row is not an item table heading. */
-    fun header(rowWords: List<OcrLine>, slope: Double = 0.0): Header? = headerOf(rowWords.flatMap { words(it, slope) }.sortedBy { it.left })
+    fun header(rowWords: List<OcrLine>, slope: Double = 0.0, headings: Map<String, Kind> = emptyMap()): Header? =
+        withLearned(headings) { headerOf(rowWords.flatMap { words(it, slope) }.sortedBy { it.left }) }
 
     private fun headerOf(words: List<Word>): Header? {
         if (words.size < 3) return null
@@ -201,7 +227,10 @@ object TableReader {
      * Reads the items of every page that has an item table heading. Returns null when no page has one
      * (the text reading is then used).
      */
-    fun read(pages: List<LayoutRows.Layout>): List<ParsedLineItem>? {
+    fun read(pages: List<LayoutRows.Layout>, headings: Map<String, Kind> = emptyMap()): List<ParsedLineItem>? =
+        withLearned(headings) { readPages(pages) }
+
+    private fun readPages(pages: List<LayoutRows.Layout>): List<ParsedLineItem>? {
         var any = false
         val items = mutableListOf<ParsedLineItem>()
         for (layout in pages) {

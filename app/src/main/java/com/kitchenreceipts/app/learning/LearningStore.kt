@@ -3,6 +3,8 @@ package com.kitchenreceipts.app.learning
 import android.content.Context
 import com.kitchenreceipts.core.AiReader
 import com.kitchenreceipts.core.ChoiceRule
+import com.kitchenreceipts.core.SupplierLayout
+import com.kitchenreceipts.core.SupplierLayouts
 import com.kitchenreceipts.core.SupplierMemory
 import org.json.JSONArray
 import org.json.JSONObject
@@ -18,13 +20,28 @@ class LearningStore(context: Context) {
     private val file = File(context.filesDir, "learning.json")
     private val lock = Any()
 
-    private data class Entry(val rules: MutableSet<ChoiceRule> = mutableSetOf(), var examples: List<AiReader.RowExample> = emptyList())
+    private data class Entry(
+        val rules: MutableSet<ChoiceRule> = mutableSetOf(),
+        var examples: List<AiReader.RowExample> = emptyList(),
+        /** How the supplier prints its documents (see core SupplierLayout). */
+        var layout: SupplierLayout? = null,
+    )
 
     private val entries: MutableMap<String, Entry> by lazy { load() }
 
     fun rules(key: String?): Set<ChoiceRule> = synchronized(lock) { key?.let { entries[it]?.rules?.toSet() }.orEmpty() }
 
     fun examples(key: String?): List<AiReader.RowExample> = synchronized(lock) { key?.let { entries[it]?.examples }.orEmpty() }
+
+    fun layout(key: String?): SupplierLayout? = synchronized(lock) { key?.let { entries[it]?.layout } }
+
+    /** Adds what one more confirmed document of the supplier taught about its layout. */
+    fun addLayout(key: String?, learned: SupplierLayout) = synchronized(lock) {
+        if (key == null) return@synchronized
+        val e = entries.getOrPut(key) { Entry() }
+        e.layout = SupplierLayouts.merge(e.layout, learned)
+        save()
+    }
 
     fun addRule(key: String?, rule: ChoiceRule) = synchronized(lock) {
         if (key == null) return@synchronized
@@ -65,7 +82,7 @@ class LearningStore(context: Context) {
                     )
                 }
             }.orEmpty()
-            out[key] = Entry(rules.toMutableSet(), examples)
+            out[key] = Entry(rules.toMutableSet(), examples, SupplierLayout.decode(o.optString("layout", "")))
         }
         return out
     }
@@ -82,6 +99,7 @@ class LearningStore(context: Context) {
                     put("price", x.price ?: JSONObject.NULL); put("amount", x.amount ?: JSONObject.NULL); put("vat", x.vatRate ?: JSONObject.NULL)
                 }
             }))
+            e.layout?.let { o.put("layout", it.encode()) }
             root.put(key, o)
         }
         val tmp = File(file.parentFile, file.name + ".tmp")

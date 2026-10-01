@@ -27,43 +27,53 @@ enum class Category(val key: String) {
  * Guesses the category of a product from its name with an Italian keyword dictionary.
  * The operator can always change it; a guess never changes a category the operator chose.
  *
- * Keywords are word beginnings ("mozzarell" matches mozzarella/mozzarelle). Keywords of 4 letters
- * or less must match the whole word (so "sale" does not match "salame").
- * Rules are checked in order: "pomodori pelati" is a tin (dry goods) before it is a vegetable,
- * "aceto di vino" is a condiment before it is a wine, anything "surgelato" is frozen.
+ * How a name is read:
+ * 1. Words that decide whatever else the name says: frozen ("surgelato"), preserved ("pelati", "passata",
+ *    "concentrato", "sott'olio") and phrases ("fette biscottate", "piatti mano", "torta al testo").
+ * 2. Otherwise the first word that names a product wins: on a supplier's line the product comes first and the brand,
+ *    pack and details follow ("PAT.SACCHI KG4X5" is potatoes in sacks, not bags; "FILETTI DI TONNO" is fish).
+ * Abbreviations as suppliers print them ("BISC.", "PAT.", "CIP.", "PARM.", "INS.") count when they can only be the
+ * beginning of words of one category. Keywords are word beginnings ("mozzarell" matches mozzarella/mozzarelle);
+ * keywords of 4 letters or less must match the whole word (so "sale" does not match "salame").
  */
 object Categories {
 
-    private val RULES: List<Pair<Category, List<String>>> = listOf(
+    /** Step 1: decide whatever the rest of the name says. Phrases of every category are added to these. */
+    private val OVERRIDES: List<Pair<Category, List<String>>> = listOf(
         Category.FROZEN to listOf("surgelat", "congelat", "surg", "cong", "gelato", "gelati", "ghiaccio"),
+        Category.DRY_GOODS to listOf("pelat", "passata", "concentrat", "conserv", "sottolio", "sottaceto", "sott olio"),
+    )
+
+    /** Step 2: what a word names, checked in this order for the same word. */
+    private val RULES: List<Pair<Category, List<String>>> = listOf(
         Category.CLEANING to listOf(
             "detersiv", "sgrassator", "candeggin", "igienizz", "disinfett", "sapone", "brillantant", "anticalcar",
-            "lavastoviglie", "lavapiatti", "spugn", "detergent", "ammorbident", "varechina", "sanificant",
+            "lavastoviglie", "lavapiatti", "spugn", "detergent", "ammorbident", "varechina", "sanificant", "piatti mano",
+            "lavatric", "bucato", "lavapavimenti", "pavimenti", "alcool etilico", "alcol etilico", "alcool", "candeggina",
+            "sciampagna", "fairy", "svelto", "chanteclair", "smacchiat", "deodorant", "insetticid",
         ),
         Category.DISPOSABLES to listOf(
             "carta", "tovagliol", "bicchier", "piatti", "posate", "forchett", "cucchiai", "coltell", "pellicol",
             "alluminio", "vaschett", "sacchett", "sacchi", "shopper", "guanti", "cannucc", "contenitor", "coperchi",
-            "rotolo", "rotoli", "scatol", "busta", "buste", "stuzzicadent", "tovagli",
-        ),
-        Category.DRY_GOODS to listOf(
-            "pelat", "passata", "polpa", "concentrat", "conserv", "sottolio", "sottaceto", "aceto", "balsamic",
-            "olio", "extravergine", "evo",
+            "rotolo", "rotoli", "scatol", "busta", "buste", "stuzzicadent", "tovagli", "carbone", "carbonell",
+            "diavolin", "accendifuoco", "accendin", "fiammifer",
         ),
         Category.BEVERAGES to listOf(
             "acqua", "vino", "vini", "birra", "birre", "bibit", "succo", "succhi", "aranciat", "limonat", "chinotto",
             "cola", "coca", "tonica", "spremut", "liquor", "grappa", "amaro", "prosecco", "spumant", "spritz",
-            "aperol", "campari", "vodka", "whisky", "rum", "gin", "caffe", "caffè", "tè", "tisan", "bevand",
-            "sciropp", "energy", "lambrusco", "chianti", "sangiovese", "montepulciano",
+            "aperol", "campari", "vodka", "whisky", "rum", "gin", "caffe", "tè", "the", "tisan", "bevand",
+            "sciropp", "energy", "lambrusco", "chianti", "sangiovese", "montepulciano", "minerale", "frizzante",
         ),
         Category.CURED_MEATS to listOf(
             "prosciutt", "salame", "salami", "mortadell", "bresaola", "speck", "pancett", "guancial", "coppa",
-            "lonza", "culatell", "nduja", "wurstel", "salumi", "porchetta", "lardo",
+            "lonza", "culatell", "nduja", "wurstel", "salumi", "porchetta", "lardo", "salamin", "cotechin", "zampone",
         ),
         Category.DAIRY_EGGS to listOf(
             "latte", "mozzarell", "fiordilatte", "burrata", "stracciatell", "ricotta", "formagg", "parmigian",
             "grana", "pecorin", "gorgonzol", "mascarpon", "stracchin", "scamorz", "provol", "fontina", "asiago",
             "taleggi", "emmental", "caciocavall", "burro", "panna", "yogurt", "uova", "uovo", "caprin", "robiola",
-            "crescenza", "squacquerone", "brie", "feta", "cheddar", "philadelphia", "besciamell",
+            "crescenza", "squacquerone", "brie", "feta", "cheddar", "philadelphia", "besciamell", "parmigiano reggiano",
+            "reggiano", "caciott", "primo sale", "edamer",
         ),
         Category.FISH to listOf(
             "pesce", "salmon", "tonno", "merluzz", "baccal", "stoccafiss", "orata", "orate", "spigol", "branzin",
@@ -72,50 +82,92 @@ object Categories {
             "mazzancoll", "astice", "aragost", "ostric", "frutti di mare", "surimi", "bottarg",
         ),
         Category.MEAT to listOf(
-            "carne", "carni", "manzo", "bovin", "vitell", "vitellon", "maial", "suin", "pollo", "polli", "petto",
-            "coscia", "cosce", "tacchin", "agnell", "ovin", "coniglio", "anatra", "salsicc", "hamburger", "macinat",
-            "bistecc", "filetto", "controfilett", "entrecote", "fiorentin", "costat", "costine", "arrosto", "spezzatin",
-            "fegato", "trippa", "ossobuc", "scottadit", "arrost", "fesa", "girello", "lombat", "noce", "cinghial",
-            "chianina", "capocoll",
+            "carne", "carni", "manzo", "bovin", "vitell", "vitellon", "maiale", "maiali", "suino", "suini", "suina",
+            "pollo", "polli", "petto", "coscia", "cosce", "tacchin", "agnell", "ovino", "ovini", "coniglio", "anatra",
+            "salsicc", "hamburger", "macinat", "bistecc", "filetto", "controfilett", "entrecote", "fiorentin", "costat",
+            "costine", "arrosto", "spezzatin", "fegato", "trippa", "ossobuc", "scottadit", "arrost", "fesa", "girello",
+            "lombat", "noce", "cinghial", "chianina", "capocoll", "filone", "polpa", "lombo", "braciol", "cappello del prete",
         ),
         Category.BAKERY to listOf(
             "pane", "pani", "panin", "focacc", "piadin", "crescia", "torta al testo", "grissin", "crackers", "cracker",
             "fette biscottate", "tramezzin", "baguette", "ciabatt", "brioche", "cornett", "croissant", "pizza",
-            "sfoglia", "pangrattat",
+            "sfoglia", "pangrattat", "biscott", "frollin", "wafer", "merendin", "savoiard", "pan di spagna", "taralli",
+            "tarallin", "fette", "galletti", "plumcake",
         ),
         Category.FRUIT_VEG to listOf(
-            "pomodor", "patat", "cipoll", "aglio", "carot", "zucchin", "melanzan", "peperon", "insalat", "lattug",
-            "rucola", "spinac", "bietol", "cavol", "broccol", "cavolfior", "finocch", "sedano", "carciof", "asparag",
-            "funghi", "fungo", "porcin", "champignon", "zucca", "piselli", "fagiolin", "cetriol", "radicchi", "indivia",
-            "scarola", "prezzemol", "basilico", "rosmarin", "salvia", "menta", "timo", "erba", "limon", "arance",
-            "arancia", "mela", "mele", "pera", "pere", "banan", "fragol", "uva", "pesca", "pesche", "albicocc",
-            "ciliegi", "anguri", "melone", "meloni", "kiwi", "ananas", "frutta", "verdur", "ortagg", "mirtill",
-            "lampon", "avocado", "zenzero", "porri", "porro", "scalogn", "rape", "rapa", "valerian", "songino",
+            "pomodor", "patat", "cipoll", "aglio", "carot", "zucchin", "zucche", "zucca", "melanzan", "peperon",
+            "insalat", "lattug", "rucola", "spinac", "bietol", "cavol", "broccol", "cavolfior", "finocch", "sedano",
+            "carciof", "asparag", "funghi", "fungo", "porcin", "champignon", "piselli", "fagiolin", "cetriol",
+            "radicchi", "indivia", "scarola", "prezzemol", "basilico", "rosmarin", "salvia", "menta", "timo", "erba",
+            "erbe", "aromi", "aromatich", "limon", "arance", "arancia", "mela", "mele", "pera", "pere", "banan",
+            "fragol", "uva", "pesca", "pesche", "albicocc", "ciliegi", "anguri", "melone", "meloni", "kiwi", "ananas",
+            "frutta", "verdur", "ortagg", "mirtill", "lampon", "avocado", "zenzero", "porri", "porro", "scalogn",
+            "rape", "rapa", "valerian", "songino", "cicori", "gentilin", "lollo", "catalogn", "friariell", "agrumi",
+            "pompelm", "mandarin", "clementin", "castagn", "cuore di sedano",
         ),
         Category.DRY_GOODS to listOf(
             "pasta", "spaghett", "penne", "rigaton", "fusill", "linguin", "tagliatell", "lasagn", "gnocch", "farina",
             "semola", "riso", "zucchero", "sale", "pepe", "spezie", "origano", "legumi", "lenticchi", "ceci",
-            "fagioli", "biscott", "cacao", "cioccolat", "lievito", "amido", "fecola", "pan grattato", "mais",
+            "fagioli", "cacao", "cioccolat", "lievito", "amido", "fecola", "pan grattato", "mais",
             "polenta", "orzo", "farro", "cous", "brodo", "dado", "maionese", "ketchup", "senape", "salsa", "sugo",
             "pesto", "miele", "marmellat", "confettur", "nutella", "crema", "frutta secca", "noci", "mandorl",
             "nocciol", "pinoli", "pistacch", "uvetta", "capperi", "olive", "tonno in scatola", "caffe in grani",
+            "aceto", "balsamic", "olio", "extravergine", "evo", "bicarbonat", "peperoncino", "paprika", "cannell",
+            "vaniglia", "noce moscata", "pomodori secchi", "polpa di pomodoro", "pangrattato",
         ),
     )
 
+    /** Phrases are checked before single words, in the order of [RULES]. */
+    private val PHRASES: List<Pair<Category, List<String>>> =
+        OVERRIDES + RULES.map { (c, ks) -> c to ks.filter { it.contains(' ') } }
+
+    private class Word(val text: String, val abbreviation: Boolean)
+
     fun guess(name: String): Category {
-        val text = normalize(name)
-        val words = text.split(' ').filter { it.isNotEmpty() }
-        for ((category, keywords) in RULES) {
-            for (k in keywords) if (matches(k, text, words)) return category
+        val words = words(name)
+        val text = words.joinToString(" ") { it.text }
+        val plain = words.map { it.text }
+        for ((category, keywords) in PHRASES) {
+            for (k in keywords) if (matches(k, text, plain)) return category
         }
+        for (w in words) categoryOf(w)?.let { return it }
         return Category.OTHER
+    }
+
+    /** True when [storedKey] is what versions before October 2026 guessed for [name] (not chosen by the operator). */
+    fun wasGuessedByOldRules(name: String, storedKey: String?): Boolean =
+        storedKey != null && CategoriesV1.guess(name).key == storedKey
+
+    private fun categoryOf(w: Word): Category? {
+        for ((category, keywords) in RULES) {
+            for (k in keywords) if (!k.contains(' ') && matches(k, w.text, listOf(w.text))) return category
+        }
+        // "BISC." / "PAT." / "PARM.": the beginning of a known word, when only one category has words starting so.
+        if (w.abbreviation && w.text.length >= 3 && w.text.any(Char::isLetter)) {
+            val found = RULES.flatMap { (c, keywords) ->
+                keywords.filter { k -> !k.contains(' ') && k.length > w.text.length && normalize(k).startsWith(w.text) }.map { c to normalize(it) }
+            }
+            if (found.map { it.first }.distinct().size == 1) return found.first().first
+            // "LIM." could be "limoni" or "limonata": the shorter word, when the others only continue it, wins.
+            val shortest = found.minByOrNull { it.second.length }
+            if (shortest != null && found.all { it.second.startsWith(shortest.second) }) return shortest.first
+        }
+        return null
+    }
+
+    /** Words of the name; a word printed with a dot after it ("BISC.", "M.B.", or "CIP," misread) is an abbreviation. */
+    private fun words(name: String): List<Word> {
+        val folded = Normalizer.normalize(name, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase()
+        return Regex("([a-z0-9]+)([.,](?=[a-z\\s]|$))?").findAll(folded).map { m ->
+            Word(m.groupValues[1], m.groupValues[2].isNotEmpty() && m.groupValues[1].none(Char::isDigit))
+        }.toList()
     }
 
     /** Whether [word] is a food/supply word the app knows; two different known words are never "typos" of each other. */
     fun isKnownWord(word: String): Boolean {
         val w = normalize(word)
         if (w.length < 3) return false
-        return RULES.any { (_, keywords) -> keywords.any { k -> !k.contains(' ') && matches(k, w, listOf(w)) } }
+        return (OVERRIDES + RULES).any { (_, keywords) -> keywords.any { k -> !k.contains(' ') && matches(k, w, listOf(w)) } }
     }
 
     private fun matches(keyword: String, text: String, words: List<String>): Boolean {

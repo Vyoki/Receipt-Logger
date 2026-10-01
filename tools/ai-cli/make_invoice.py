@@ -117,3 +117,5 @@ def stack(parts, name):
 head = strip(195, 236)
 stack([head, strip(245 + 4 * 36 - 10, 245 + 4 * 36 + 34)], "row-filetto")
 stack([head, strip(245 + 2 * 36 - 10, 245 + 2 * 36 + 34)], "row-candeggina")
+# The layout question: the heading row and the first product lines under it.
+stack([strip(195, 245 + 3 * 36)], "layout")

@@ -97,6 +97,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     /** What the OCR proposed, to log the operator's corrections on save. */
     private var initialDraft: DocumentDraft? = null
     private var ocrSellerRaw: String? = null
+    /** The document as the app read it (to learn the supplier's layout from what the operator confirms). */
+    private var readParsed: com.kitchenreceipts.core.ParsedDocument? = null
     private var supplierKey: String? = null
     /** What the OCR found where, for showing the part of the photo behind a field (new documents only). */
     private var ocrPages: List<List<com.kitchenreceipts.core.OcrLine>> = emptyList()
@@ -124,6 +126,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         ocrSellerRaw = prepared.ocrSellerRaw
         supplierKey = prepared.supplierKey
         ocrPages = pending.rawLines
+        readParsed = pending.parsed
         ocrWidths = pending.ocrWidths
         initialDraft = prepared.initialDraft
         _state.value = ReviewState(
@@ -361,6 +364,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 val key = ocrText?.let { SupplierMemory.key(it, own, doc.sellerName) } ?: supplierKey
                 val corrected = initialDraft?.items.orEmpty().filter { it.uncertainCount > 0 || it.choices.isNotEmpty() }.map { it.key }.toSet()
                 runCatching { c.learning.addExamples(key, SupplierMemory.examplesFrom(finalDraft, corrected)) }
+                // How this supplier prints its documents (number format, lots, headings), for next time.
+                readParsed?.let { read -> runCatching { c.learning.addLayout(key, com.kitchenreceipts.core.SupplierLayouts.learn(read, finalDraft)) } }
             }
             _state.update { it.copy(saving = false, savedId = id, autoSaved = auto) }
         } catch (e: Exception) {
