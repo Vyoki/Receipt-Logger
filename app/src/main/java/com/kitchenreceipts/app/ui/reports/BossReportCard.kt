@@ -86,7 +86,10 @@ fun BossReportCard() {
         }
     }
 
-    Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer)) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primaryContainer),
+        border = androidx.compose.foundation.BorderStroke(1.dp, com.kitchenreceipts.app.ui.theme.Palette.PhthaloBorder),
+    ) {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             Text(stringResource(R.string.rep_card_title), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
             Text(stringResource(R.string.rep_card_hint), style = MaterialTheme.typography.bodyMedium)

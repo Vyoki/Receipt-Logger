@@ -23,11 +23,9 @@ import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -54,6 +52,10 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.theme.LocalStatusColors
+import com.kitchenreceipts.app.ui.theme.Palette
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.material3.HorizontalDivider
+import androidx.compose.material3.TopAppBarDefaults
 import com.kitchenreceipts.core.DraftField
 
 @Composable
@@ -67,18 +69,29 @@ fun AppScaffold(
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
+        containerColor = MaterialTheme.colorScheme.background,
         topBar = {
-            TopAppBar(
-                title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis) },
-                navigationIcon = {
-                    if (onBack != null) {
-                        IconButton(onClick = onBack, modifier = Modifier.size(56.dp)) {
-                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+            Column {
+                TopAppBar(
+                    title = { Text(title, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.titleLarge) },
+                    navigationIcon = {
+                        if (onBack != null) {
+                            IconButton(onClick = onBack, modifier = Modifier.size(56.dp)) {
+                                Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                            }
                         }
-                    }
-                },
-                actions = actions,
-            )
+                    },
+                    actions = actions,
+                    colors = TopAppBarDefaults.topAppBarColors(
+                        containerColor = MaterialTheme.colorScheme.background,
+                        scrolledContainerColor = MaterialTheme.colorScheme.background,
+                        navigationIconContentColor = MaterialTheme.colorScheme.primary,
+                        actionIconContentColor = MaterialTheme.colorScheme.primary,
+                        titleContentColor = MaterialTheme.colorScheme.onBackground,
+                    ),
+                )
+                HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+            }
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = bottomBar,
@@ -109,21 +122,47 @@ fun BigButton(
     else FilledTonalButton(onClick = onClick, modifier = m, enabled = enabled, content = inner)
 }
 
+/** A tappable panel: slightly lighter than the black background, with a hairline border. */
 @Composable
 fun ClickCard(onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
-    Card(onClick = onClick, modifier = modifier.fillMaxWidth().heightIn(min = 64.dp)) {
-        Box(Modifier.padding(horizontal = 16.dp, vertical = 12.dp)) { content() }
+    Card(
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth().heightIn(min = 64.dp),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = Palette.Panel, contentColor = MaterialTheme.colorScheme.onSurface),
+        border = BorderStroke(1.dp, Palette.Hairline),
+    ) {
+        Box(Modifier.padding(horizontal = 16.dp, vertical = 14.dp)) { content() }
     }
 }
 
+/** A plain panel (not tappable), same look as [ClickCard]. */
+@Composable
+fun Panel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+    Card(
+        modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = Palette.Panel, contentColor = MaterialTheme.colorScheme.onSurface),
+        border = BorderStroke(1.dp, Palette.Hairline),
+        content = content,
+    )
+}
+
+/** Section label: small, spaced capitals in dark orange. */
 @Composable
 fun SectionTitle(text: String, modifier: Modifier = Modifier) {
     Text(
-        text,
-        style = MaterialTheme.typography.titleMedium,
-        fontWeight = FontWeight.SemiBold,
-        modifier = modifier.padding(top = 16.dp, bottom = 8.dp),
+        text.uppercase(),
+        style = MaterialTheme.typography.labelMedium,
+        color = Palette.Orange,
+        modifier = modifier.padding(top = 20.dp, bottom = 6.dp),
     )
+}
+
+/** An explanation or hint under a control: dark orange, smaller. */
+@Composable
+fun Annotation(text: String, modifier: Modifier = Modifier) {
+    Text(text, style = MaterialTheme.typography.bodySmall, color = Palette.Orange, modifier = modifier)
 }
 
 @Composable
@@ -146,7 +185,9 @@ fun WarningCard(lines: List<String>, modifier: Modifier = Modifier) {
     val status = LocalStatusColors.current
     Card(
         modifier = modifier.fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = status.uncertainContainer, contentColor = status.onUncertain),
+        border = BorderStroke(1.dp, Palette.OrangeDim),
     ) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             lines.forEach { line ->
@@ -188,18 +229,25 @@ fun ReviewField(
     val peek = LocalFieldPeek.current
     val currentField = androidx.compose.runtime.rememberUpdatedState(field)
     val hadFocus = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // Black field, hairline border, green when focused; orange when the value needs a look.
+    @Composable
+    fun base(border: androidx.compose.ui.graphics.Color, container: androidx.compose.ui.graphics.Color, label: androidx.compose.ui.graphics.Color) =
+        OutlinedTextFieldDefaults.colors(
+            unfocusedBorderColor = border,
+            focusedBorderColor = if (border == Palette.HairlineStrong) Palette.PhthaloBright else border,
+            unfocusedContainerColor = container,
+            focusedContainerColor = container,
+            unfocusedLabelColor = label,
+            focusedLabelColor = if (label == Palette.TextDim) Palette.PhthaloBright else label,
+            cursorColor = Palette.PhthaloBright,
+            unfocusedSupportingTextColor = Palette.Orange,
+            focusedSupportingTextColor = Palette.Orange,
+        )
     val colors = when {
-        error != null -> OutlinedTextFieldDefaults.colors()
-        field.uncertain -> OutlinedTextFieldDefaults.colors(
-            unfocusedBorderColor = status.uncertainBorder,
-            focusedBorderColor = status.uncertainBorder,
-            unfocusedContainerColor = status.uncertainContainer,
-            focusedContainerColor = status.uncertainContainer,
-        )
-        field.isMissing && highlightMissing -> OutlinedTextFieldDefaults.colors(
-            unfocusedContainerColor = status.missingContainer,
-        )
-        else -> OutlinedTextFieldDefaults.colors()
+        error != null -> OutlinedTextFieldDefaults.colors(focusedContainerColor = Palette.Black, unfocusedContainerColor = Palette.Black)
+        field.uncertain -> base(status.uncertainBorder, status.uncertainContainer, Palette.Orange)
+        field.isMissing && highlightMissing -> base(Palette.OrangeDim, status.missingContainer, status.onMissing)
+        else -> base(Palette.HairlineStrong, Palette.Black, Palette.TextDim)
     }
     val keyboard = when (kind) {
         FieldKind.DECIMAL -> KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)

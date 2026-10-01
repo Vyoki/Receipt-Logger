@@ -1,38 +1,87 @@
 package com.kitchenreceipts.app.ui.theme
 
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Shapes
 import androidx.compose.material3.Typography
 import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
-private val Green = Color(0xFF1E5B4F)
-private val GreenLight = Color(0xFF8FD3C1)
-private val Amber = Color(0xFFE0A526)
+/**
+ * The app's look: pitch black, phthalo green for everything you press (with a lighter green border), dark orange for
+ * annotations (hints, section labels, values to check). Always dark: it is used in a kitchen at all hours, and black
+ * also saves battery on an OLED phone.
+ */
+object Palette {
+    val Black = Color(0xFF000000)
+    /** Panels on the black background: just lighter, with a hairline border. */
+    val Panel = Color(0xFF0C0F0E)
+    val PanelRaised = Color(0xFF121615)
+    val Hairline = Color(0xFF1F2725)
+    val HairlineStrong = Color(0xFF2C3734)
 
-private val LightColors = lightColorScheme(
-    primary = Green,
-    onPrimary = Color.White,
-    primaryContainer = Color(0xFFCDEDE4),
-    onPrimaryContainer = Color(0xFF00201A),
-    secondary = Color(0xFF4A635C),
-    tertiary = Amber,
-    background = Color(0xFFF8FAF8),
-    surface = Color(0xFFF8FAF8),
-)
+    /** Phthalo green (the pigment, PG7) for buttons; a lighter tint of the same hue for borders, icons and links. */
+    val Phthalo = Color(0xFF123524)
+    val PhthaloPressed = Color(0xFF0B2418)
+    val PhthaloBorder = Color(0xFF2F8F62)
+    val PhthaloBright = Color(0xFF4CC48C)
+    val OnPhthalo = Color(0xFFE3F5EB)
 
-private val DarkColors = darkColorScheme(
-    primary = GreenLight,
-    onPrimary = Color(0xFF00382E),
-    primaryContainer = Color(0xFF0E4A3E),
-    onPrimaryContainer = Color(0xFFCDEDE4),
-    secondary = Color(0xFFB1CCC3),
-    tertiary = Amber,
+    /** Dark orange for annotations. */
+    val Orange = Color(0xFFFF8C00)
+    val OrangeDim = Color(0xFFC96F00)
+    val OrangeContainer = Color(0xFF1E1102)
+    val OnOrangeContainer = Color(0xFFFFC37A)
+
+    val Text = Color(0xFFF0F2F1)
+    val TextDim = Color(0xFF98A39F)
+    val Error = Color(0xFFFF5A4E)
+    val Ok = Color(0xFF4CC48C)
+}
+
+private val Colors = darkColorScheme(
+    primary = Palette.PhthaloBright,
+    onPrimary = Palette.Black,
+    primaryContainer = Palette.Phthalo,
+    onPrimaryContainer = Palette.OnPhthalo,
+    secondary = Palette.PhthaloBright,
+    onSecondary = Palette.Black,
+    secondaryContainer = Palette.Phthalo,
+    onSecondaryContainer = Palette.OnPhthalo,
+    tertiary = Palette.Orange,
+    onTertiary = Palette.Black,
+    tertiaryContainer = Palette.OrangeContainer,
+    onTertiaryContainer = Palette.OnOrangeContainer,
+    background = Palette.Black,
+    onBackground = Palette.Text,
+    surface = Palette.Black,
+    onSurface = Palette.Text,
+    surfaceVariant = Palette.PanelRaised,
+    onSurfaceVariant = Palette.TextDim,
+    surfaceTint = Palette.Black,
+    surfaceBright = Palette.PanelRaised,
+    surfaceDim = Palette.Black,
+    surfaceContainerLowest = Palette.Black,
+    surfaceContainerLow = Palette.Panel,
+    surfaceContainer = Palette.Panel,
+    surfaceContainerHigh = Palette.PanelRaised,
+    surfaceContainerHighest = Palette.Panel,
+    inverseSurface = Palette.Text,
+    inverseOnSurface = Palette.Black,
+    inversePrimary = Palette.Phthalo,
+    outline = Palette.HairlineStrong,
+    outlineVariant = Palette.Hairline,
+    error = Palette.Error,
+    onError = Palette.Black,
+    errorContainer = Color(0xFF2A0906),
+    onErrorContainer = Color(0xFFFFB4AB),
+    scrim = Palette.Black,
 )
 
 /** Colours for the review states: missing and uncertain must stand out during a busy shift. */
@@ -46,37 +95,42 @@ data class StatusColors(
     val ok: Color,
 )
 
-private val LightStatus = StatusColors(
-    missingContainer = Color(0xFFFFF1CC), onMissing = Color(0xFF5C4300),
-    uncertainBorder = Color(0xFFE06C00), uncertainContainer = Color(0xFFFFE3CC), onUncertain = Color(0xFF5A2600),
-    ok = Color(0xFF1B7F3B),
-)
-private val DarkStatus = StatusColors(
-    missingContainer = Color(0xFF4A3A10), onMissing = Color(0xFFFFE3A0),
-    uncertainBorder = Color(0xFFFFA25C), uncertainContainer = Color(0xFF4F2A0C), onUncertain = Color(0xFFFFD2B0),
-    ok = Color(0xFF7ED99A),
+private val Status = StatusColors(
+    missingContainer = Color(0xFF171006),
+    onMissing = Color(0xFFE9B26A),
+    uncertainBorder = Palette.Orange,
+    uncertainContainer = Palette.OrangeContainer,
+    onUncertain = Palette.OnOrangeContainer,
+    ok = Palette.Ok,
 )
 
-val LocalStatusColors = staticCompositionLocalOf { LightStatus }
+val LocalStatusColors = staticCompositionLocalOf { Status }
 
-private val BaseTypography = Typography()
+private val Base = Typography()
 
-// Slightly larger body text: read at arm's length in a kitchen.
-private val AppTypography = BaseTypography.copy(
-    bodyLarge = BaseTypography.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp),
-    bodyMedium = BaseTypography.bodyMedium.copy(fontSize = 16.sp, lineHeight = 22.sp),
-    labelLarge = BaseTypography.labelLarge.copy(fontSize = 16.sp),
-    titleMedium = BaseTypography.titleMedium.copy(fontSize = 18.sp),
+// Larger body text (read at arm's length in a kitchen), firmer titles, spaced-out small labels.
+private val AppTypography = Base.copy(
+    headlineSmall = Base.headlineSmall.copy(fontWeight = FontWeight.SemiBold, letterSpacing = (-0.2).sp),
+    titleLarge = Base.titleLarge.copy(fontWeight = FontWeight.SemiBold, fontSize = 21.sp, letterSpacing = (-0.1).sp),
+    titleMedium = Base.titleMedium.copy(fontSize = 18.sp, fontWeight = FontWeight.Medium),
+    bodyLarge = Base.bodyLarge.copy(fontSize = 18.sp, lineHeight = 26.sp),
+    bodyMedium = Base.bodyMedium.copy(fontSize = 16.sp, lineHeight = 22.sp),
+    bodySmall = Base.bodySmall.copy(fontSize = 14.sp, lineHeight = 19.sp),
+    labelLarge = Base.labelLarge.copy(fontSize = 16.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 0.3.sp),
+    labelMedium = Base.labelMedium.copy(fontSize = 13.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
+)
+
+private val AppShapes = Shapes(
+    extraSmall = RoundedCornerShape(6.dp),
+    small = RoundedCornerShape(10.dp),
+    medium = RoundedCornerShape(14.dp),
+    large = RoundedCornerShape(18.dp),
+    extraLarge = RoundedCornerShape(24.dp),
 )
 
 @Composable
 fun KitchenReceiptsTheme(content: @Composable () -> Unit) {
-    val dark = isSystemInDarkTheme()
-    androidx.compose.runtime.CompositionLocalProvider(LocalStatusColors provides if (dark) DarkStatus else LightStatus) {
-        MaterialTheme(
-            colorScheme = if (dark) DarkColors else LightColors,
-            typography = AppTypography,
-            content = content,
-        )
+    androidx.compose.runtime.CompositionLocalProvider(LocalStatusColors provides Status) {
+        MaterialTheme(colorScheme = Colors, typography = AppTypography, shapes = AppShapes, content = content)
     }
 }

@@ -107,7 +107,7 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
             if (unassigned.isNotEmpty()) {
                 item {
                     SectionTitle(pluralStringResource(R.plurals.unassigned_title, unassigned.size, unassigned.size))
-                    Text(stringResource(R.string.unassigned_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.unassigned_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
                 }
                 val shown = if (showAllUnassigned) unassigned else unassigned.take(5)
                 items(shown, key = { "u${it.sellerId}-${it.aliasKey}" }) { g ->
@@ -130,7 +130,7 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
             if (suggestions.isNotEmpty()) {
                 item {
                     SectionTitle(stringResource(R.string.family_suggestions))
-                    Text(stringResource(R.string.family_suggestions_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.family_suggestions_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
                 }
                 val names = products.associate { it.id to it.name }
                 items(suggestions.take(5), key = { "s${it.name}" }) { s ->

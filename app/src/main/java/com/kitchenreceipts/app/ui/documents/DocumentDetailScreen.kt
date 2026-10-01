@@ -25,7 +25,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.kitchenreceipts.app.ui.components.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -156,7 +156,7 @@ fun DocumentDetailScreen(
                         item("prices") { PriceChangesCard(priceChanges, onOpenProduct = onOpenProduct) }
                     }
                     item {
-                        Card {
+                        Panel {
                             DocumentPages(d.filePath, d.mimeType, d.pageCount, Modifier.fillMaxWidth().height(300.dp), onClick = onViewOriginal)
                             Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                                 OutlinedButton(onClick = onViewOriginal, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
@@ -185,7 +185,7 @@ fun DocumentDetailScreen(
                         }
                     }
                     item {
-                        Card {
+                        Panel {
                             Column(Modifier.padding(16.dp)) {
                                 KeyValue(stringResource(R.string.seller), doc.sellerName, emphasize = true)
                                 KeyValue(stringResource(R.string.date), fmtDate(d.documentDate))
@@ -226,7 +226,7 @@ fun DocumentDetailScreen(
 @Composable
 private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (Long) -> Unit) {
     val it = row.item
-    Card {
+    Panel {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(it.originalDescription, style = MaterialTheme.typography.titleMedium)
             val pid = it.productId

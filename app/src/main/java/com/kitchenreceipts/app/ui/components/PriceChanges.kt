@@ -75,7 +75,7 @@ fun PriceChangeRow(c: PriceChange, showProduct: Boolean = true, onClick: (() -> 
 @Composable
 fun PriceChangesCard(changes: List<PriceChange>, modifier: Modifier = Modifier, onOpenProduct: ((Long) -> Unit)? = null) {
     if (changes.isEmpty()) return
-    Card(modifier.fillMaxWidth()) {
+    Panel(modifier) {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             Text(
                 stringResource(R.string.price_changes_title, changes.size),

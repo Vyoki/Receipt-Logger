@@ -12,11 +12,11 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
-import androidx.compose.material3.Button
+import com.kitchenreceipts.app.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.kitchenreceipts.app.ui.components.OutlinedButton
 import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -89,8 +89,8 @@ fun AiSettingsSection(c: AppContainer) {
     }
 
     SectionTitle(stringResource(R.string.ai_reader))
-    Text(stringResource(R.string.ai_reader_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    Card {
+    Text(stringResource(R.string.ai_reader_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
+    Panel {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Text(
                 stringResource(R.string.ai_this_phone, String.format(Locale.ROOT, "%.0f", support.ramGb)) + " " +
@@ -170,7 +170,7 @@ fun AiSettingsSection(c: AppContainer) {
                     onClick = { picker.launch(arrayOf("*/*")) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
                 ) { Text(stringResource(R.string.ai_load_files)) }
-                Text(stringResource(R.string.ai_download_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.ai_download_note), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
             }
             copying?.let { p ->
                 Text(stringResource(R.string.ai_copying))

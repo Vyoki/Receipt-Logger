@@ -19,7 +19,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.Card
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.kitchenreceipts.app.ui.components.OutlinedButton
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.RadioButton
@@ -80,7 +80,7 @@ fun SettingsScreen(onBack: () -> Unit) {
         ) {
             // ---------------------------------------------------------------- language
             SectionTitle(stringResource(R.string.language))
-            Card {
+            Panel {
                 Column(Modifier.padding(vertical = 4.dp)) {
                     listOf(
                         AppSettings.Language.SYSTEM to stringResource(R.string.language_system),
@@ -111,7 +111,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             // ---------------------------------------------------------------- own business
             SectionTitle(stringResource(R.string.your_business))
-            Text(stringResource(R.string.your_business_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.your_business_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
             OutlinedTextField(
                 value = ownName,
                 onValueChange = { ownName = it; s.ownBusinessName = it },
@@ -171,7 +171,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             // ---------------------------------------------------------------- privacy & security
             SectionTitle(stringResource(R.string.privacy_security))
-            Card {
+            Panel {
                 Text(
                     stringResource(R.string.privacy_statement),
                     modifier = Modifier.padding(16.dp),
@@ -197,7 +197,7 @@ fun SettingsScreen(onBack: () -> Unit) {
 
             // ---------------------------------------------------------------- operation log
             SectionTitle(stringResource(R.string.operation_log))
-            Text(stringResource(R.string.operation_log_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(stringResource(R.string.operation_log_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
             SwitchRow(stringResource(R.string.log_enabled), null, logEnabled) { on ->
                 if (!on) c.log.event("SETTINGS", "log" to false)
                 logEnabled = on
@@ -245,7 +245,7 @@ private fun SwitchRow(title: String, subtitle: String?, checked: Boolean, onChan
     ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(title, style = MaterialTheme.typography.bodyLarge)
-            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            if (subtitle != null) Text(subtitle, style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
         }
         Switch(checked = checked, onCheckedChange = onChange)
     }

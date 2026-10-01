@@ -20,7 +20,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.kitchenreceipts.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
@@ -204,7 +204,7 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
                     item { EmptyState(stringResource(if (d.purchases.isEmpty()) R.string.no_purchases else R.string.no_average_yet)) }
                 }
                 items(d.summary.averages, key = { "${it.unit}-${it.vatBasis}" }) { a ->
-                    Card {
+                    Panel {
                         Column(Modifier.padding(16.dp)) {
                             Text(
                                 "${ItalianNumbers.formatDecimal(a.averageUnitCost, minScale = 2, maxScale = 4)} €/${a.unit}",
@@ -226,7 +226,7 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
                     }
                 }
                 if (d.summary.averages.size > 1) {
-                    item { Text(stringResource(R.string.separate_averages_note), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                    item { Text(stringResource(R.string.separate_averages_note), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange) }
                 }
                 if (d.summary.excluded.isNotEmpty()) {
                     item {
@@ -239,7 +239,7 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
                 }
 
                 item { SectionTitle(stringResource(R.string.unit_conversions)) }
-                item { Text(stringResource(R.string.conversions_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { Text(stringResource(R.string.conversions_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange) }
                 items(d.conversions, key = { "c${it.id}" }) { c ->
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("1 ${c.fromUnit} = ${fmtDecimal(c.factor, 6)} ${c.toUnit}", modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)

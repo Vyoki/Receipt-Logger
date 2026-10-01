@@ -13,14 +13,14 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
+import com.kitchenreceipts.app.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedButton
+import com.kitchenreceipts.app.ui.components.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -186,7 +186,7 @@ fun FamilyScreen(familyId: Long, onBack: () -> Unit, onOpenProduct: (Long) -> Un
             else -> LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                 item { SectionTitle(stringResource(R.string.family_prices)) }
                 item {
-                    Text(stringResource(R.string.family_prices_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Text(stringResource(R.string.family_prices_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
                 }
                 if (rows.isEmpty()) item { EmptyState(stringResource(R.string.no_purchases)) }
                 items(rows, key = { "v${it.productId}-${it.sellerName}" }) { r -> VariantPriceCard(r) { onOpenProduct(r.productId) } }
@@ -203,7 +203,7 @@ fun FamilyScreen(familyId: Long, onBack: () -> Unit, onOpenProduct: (Long) -> Un
                         IconButton(onClick = { vm.remove(p.id) }) { Icon(Icons.Filled.Delete, stringResource(R.string.family_remove)) }
                     }
                 }
-                item { Text(stringResource(R.string.family_add_hint), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                item { Text(stringResource(R.string.family_add_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange) }
             }
         }
     }
@@ -262,7 +262,7 @@ private fun VariantPriceCard(r: ProductFamilies.VariantPrice, onClick: () -> Uni
                 )
             }
             if (r.perBase == null) {
-                Text(stringResource(R.string.family_size_unknown), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Text(stringResource(R.string.family_size_unknown), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
             }
             val who = listOfNotNull(r.brand?.let { stringResource(R.string.brand_value, it) }, r.sellerName, fmtDate(r.date)).joinToString(" · ")
             Text(who, style = MaterialTheme.typography.bodyMedium)
