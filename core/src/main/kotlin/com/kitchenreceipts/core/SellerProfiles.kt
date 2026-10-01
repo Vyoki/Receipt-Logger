@@ -119,7 +119,7 @@ object SellerProfiles {
             if (ocrSellerReliable && ocrSellerName != null && !sameCompany(c.name, ocrSellerName) &&
                 DuplicateDetector.normalizeSeller(ocrSellerName) !in c.aliasKeys
             ) {
-                suspect = v // "PRONTO GREEN S.p.A." clearly printed, but the VAT number was learned for GMF
+                suspect = v // "VERDE FRESCO S.p.A." clearly printed, but the VAT number was learned for "ABC S.r.l."
                 continue
             }
             return Identification(SellerMatch(c.id, c.name, SellerMatchReason.VAT_NUMBER, 1.0))
@@ -146,7 +146,7 @@ object SellerProfiles {
         )
     }
 
-    /** "Caseificio Valverde S.r.l." and "CASEIFICIO VALVERDE SRL" are the same; "GMF S.r.l." and "Pronto Green S.p.A." are not. */
+    /** "Caseificio Valverde S.r.l." and "CASEIFICIO VALVERDE SRL" are the same; "ABC S.r.l." and "Verde Fresco S.p.A." are not. */
     fun sameCompany(a: String, b: String): Boolean {
         val x = DuplicateDetector.normalizeSeller(a) ?: return false
         val y = DuplicateDetector.normalizeSeller(b) ?: return false

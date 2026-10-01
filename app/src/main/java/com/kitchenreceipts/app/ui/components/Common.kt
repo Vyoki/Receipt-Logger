@@ -229,6 +229,12 @@ fun ReviewField(
     val peek = LocalFieldPeek.current
     val currentField = androidx.compose.runtime.rememberUpdatedState(field)
     val hadFocus = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    // A focused field removed from the screen (its line deleted, the list recycled it) closes its photo strip too.
+    if (peek != null) {
+        androidx.compose.runtime.DisposableEffect(Unit) {
+            onDispose { if (hadFocus.value) { hadFocus.value = false; peek(null) } }
+        }
+    }
     // Black field, hairline border, green when focused; orange when the value needs a look.
     @Composable
     fun base(border: androidx.compose.ui.graphics.Color, container: androidx.compose.ui.graphics.Color, label: androidx.compose.ui.graphics.Color) =

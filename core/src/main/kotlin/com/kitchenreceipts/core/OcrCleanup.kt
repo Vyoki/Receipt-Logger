@@ -7,7 +7,7 @@ package com.kitchenreceipts.core
  * - "2,5O" -> "2,50", "l4/03/2025" -> "14/03/2025", "1O%" -> "10%" (letter O / l / I / | inside numbers)
  * - "22 ,50" / "22, 50" -> "22,50" (space inside a decimal amount)
  * - "€22,50" / "22,50€" -> "22,50 €"
- * - "11511122/09/2026" -> "115111 22/09/2026" (document number and date printed without a space)
+ * - "20417722/09/2026" -> "204177 22/09/2026" (document number and date printed without a space)
  * - "24,000c" -> "24,000 C" (quantity glued to the storage letter C/F/S/CN of the next column)
  */
 object OcrCleanup {

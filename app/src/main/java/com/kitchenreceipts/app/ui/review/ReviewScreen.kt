@@ -28,6 +28,7 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -66,6 +67,7 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -133,6 +135,17 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
         if (r == null) { peekImage = null; return@LaunchedEffect }
         peekClosed = false
         peekImage = runCatching { vm.peek(r.source, r.value) }.getOrNull()
+    }
+    // Scrolling the form by hand means the operator moved on: close the photo strip (and the keyboard), so it never
+    // stays on screen over other fields. Scrolls the screen makes by itself (to show the focused field) do not count.
+    val focusManager = LocalFocusManager.current
+    LaunchedEffect(listState) {
+        listState.interactionSource.interactions.collect { i ->
+            if (i is DragInteraction.Start && (peekRequest != null || peekImage != null)) {
+                peekRequest = null
+                focusManager.clearFocus()
+            }
+        }
     }
 
     // Going back keeps a new document waiting on the home screen; throwing it away is its own button.
@@ -265,7 +278,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
             img = shown,
             onEnlarge = { enlarged = req.label to shown },
             onClose = { peekClosed = true },
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 60.dp),
+            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
         )
     }
     }

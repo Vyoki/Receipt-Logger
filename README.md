@@ -255,7 +255,7 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 
 **Before reading: page flattening.** A photo is flattened like a scanner does: the sheet's corners are found (the largest bright area, clearly brighter than the table) and the sheet is straightened into a rectangle. When that is not clearly safe (white table, page filling the photo, odd shape) the photo is read as it is.
 
-**Logic first.** Common OCR slips are repaired before anything else: a number glued to the date (`11511122/09/2026`), a storage letter glued to the quantity (`24,000c`), Pkgs glued to the name (`3TORTA`), `c`/`o` read inside a pack size (`GR.12c0`). A line that still does not add up is solved from its own printed numbers (every way they can be quantity × price = amount):
+**Logic first.** Common OCR slips are repaired before anything else: a number glued to the date (`20417722/09/2026`), a storage letter glued to the quantity (`24,000c`), Pkgs glued to the name (`3TORTA`), `c`/`o` read inside a pack size (`GR.12c0`). A line that still does not add up is solved from its own printed numbers (every way they can be quantity × price = amount):
 - one reading fits: the line is proven, no AI and no question;
 - several fit: they are offered as choices; the AI answers one letter (A/B, about 20 s) and the operator confirms with one tap;
 - the choice is remembered for that supplier and applied by itself next time.
@@ -330,7 +330,7 @@ A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the norma
 - the top of the first page, if the supplier or date is missing;
 - the bottom of the last page, if the total is missing.
 
-A line is replaced only when the AI's version adds up and its digits were seen by the OCR. Whole pages are read only when the regular reading failed broadly (no table found, most lines wrong) or when *Always* is chosen.
+A line is replaced only when the AI's version adds up and its digits were seen by the OCR. Column headings the layout reader does not recognise are found by their words; a page with no headings at all still gets small questions for the lines found on it. Whole pages are read only as a last resort, when the regular reading failed broadly (most lines wrong or not found on the page), or when *Always* is chosen. The second OCR pass (enhanced image) is skipped when the first reading already adds up.
 
 **No confirmation for proven numbers:** when every line has quantity × price = amount, the lines add up to the printed taxable amount or total, and taxable amount + VAT = total, those numbers are not highlighted for checking.
 

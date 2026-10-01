@@ -83,7 +83,7 @@ class LineSolverTest {
     }
 
     @Test fun ocrRepairs() {
-        assertEquals("B26 115111 22/09/2026 1/1", OcrCleanup.cleanLine("B26 11511122/09/2026 1/1"))
+        assertEquals("B26 204177 22/09/2026 1/1", OcrCleanup.cleanLine("B26 20417722/09/2026 1/1"))
         assertEquals("NR 24,000 C 2,384", OcrCleanup.cleanLine("NR 24,000c 2,384"))
         assertEquals("SECCHIELLO GR.1200", OcrCleanup.cleanLine("SECCHIELLO GR.12c0"))
         assertEquals("GIALLO 12,50", OcrCleanup.cleanLine("GIALLO 12,50")) // words untouched

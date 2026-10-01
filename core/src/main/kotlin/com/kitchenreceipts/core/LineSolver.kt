@@ -84,6 +84,23 @@ object LineSolver {
             .values.map { same -> same.firstOrNull { isWhole(it.quantity) } ?: same.first() }
     }
 
+    /**
+     * The quantity read with one wrong digit ("4,900" for 4,000): amount / price gives a quantity that differs from the
+     * one read in a single digit. Taken only then (any other difference is a real doubt), and marked as worked out.
+     */
+    private fun oneDigitOff(item: ParsedLineItem): LineChoice? {
+        val q = item.quantity?.value ?: return null
+        val p = item.unitPrice?.value ?: return null
+        val t = item.lineTotalCents?.value ?: return null
+        if (p.signum() <= 0) return null
+        val worked = ItalianNumbers.centsToDecimal(t).divide(p, q.scale().coerceAtLeast(0).coerceAtMost(3), RoundingMode.HALF_UP)
+        if (worked.signum() <= 0 || !ReceiptParser.matches(worked, p, t)) return null
+        val a = q.setScale(3, RoundingMode.HALF_UP).toPlainString()
+        val b = worked.setScale(3, RoundingMode.HALF_UP).toPlainString()
+        if (a.length != b.length || a.zip(b).count { (x, y) -> x != y } != 1) return null
+        return LineChoice(worked.setScale(q.scale().coerceAtLeast(0), RoundingMode.HALF_UP), p, t, item.unit?.value)
+    }
+
     private fun discounted(q: BigDecimal, p: BigDecimal, d: BigDecimal, cents: Long): Boolean {
         val net = q.multiply(p).multiply(BigDecimal(100).subtract(d)).divide(BigDecimal(100))
         return kotlin.math.abs(net.setScale(2, RoundingMode.HALF_UP).movePointRight(2).toLong() - cents) <= 1
@@ -102,7 +119,7 @@ object LineSolver {
         // The AI's double-check read a number differently: that stays for the operator.
         if (listOf(item.quantity?.source, item.unitPrice?.source, item.lineTotalCents?.source).any { it?.contains(AiReader.DISAGREE) == true }) return@map item
         val source = item.lineTotalCents?.source ?: item.quantity?.source ?: return@map item
-        val readings = solve(source)
+        val readings = solve(source).ifEmpty { listOfNotNull(oneDigitOff(item)) }
         // The amount already read with confidence must be kept.
         val total = item.lineTotalCents
         val fitting = if (total != null && total.confidence == Confidence.HIGH) readings.filter { it.lineTotalCents == total.value } else readings
@@ -116,6 +133,9 @@ object LineSolver {
     }
 
     private fun apply(item: ParsedLineItem, r: LineChoice, source: String): ParsedLineItem {
+        // A quantity that was not printed as such (one digit repaired by amount / price): proven, but shown as worked out.
+        val printed = source.contains(ItalianNumbers.formatDecimal(r.quantity, minScale = r.quantity.scale().coerceAtLeast(0), maxScale = 3)) ||
+            source.split(' ').any { tok -> ItalianNumbers.parse(tok.trimEnd('c', 'C', 'f', 'F'))?.compareTo(r.quantity) == 0 }
         // The description must not keep the numbers ("... GR.500 NR 24,000c"): cut it where the quantity starts.
         var desc = item.originalDescription
         val qtyRaw = source.split(' ').firstOrNull { ItalianNumbers.parse(it.take(it.indexOfLast(Char::isDigit) + 1))?.compareTo(r.quantity) == 0 && it.contains(',') }
@@ -127,7 +147,7 @@ object LineSolver {
         val unit = r.unit ?: item.unit?.value
         return item.copy(
             originalDescription = desc.ifBlank { item.originalDescription },
-            quantity = Extracted(r.quantity, Confidence.HIGH, source),
+            quantity = Extracted(r.quantity, if (printed) Confidence.HIGH else Confidence.LOW, if (printed) source else "$source (amount / price)"),
             unitPrice = Extracted(r.unitPrice, Confidence.HIGH, source),
             lineTotalCents = Extracted(r.lineTotalCents, Confidence.HIGH, source),
             unit = unit?.let { Extracted(it, Confidence.HIGH, source) },
