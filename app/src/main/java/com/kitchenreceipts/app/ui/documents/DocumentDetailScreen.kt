@@ -1,5 +1,7 @@
 package com.kitchenreceipts.app.ui.documents
 
+import com.kitchenreceipts.app.ui.components.Panel
+
 import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
