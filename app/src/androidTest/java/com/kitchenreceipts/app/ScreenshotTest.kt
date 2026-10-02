@@ -40,7 +40,7 @@ class ScreenshotTest {
         fun item(d: String, q: String, u: String, p: String, cents: Long, size: String? = null) =
             ValidLineItem(d, null, BigDecimal(q), u, BigDecimal(p), cents, BigDecimal(10), null, null, newProductName = d, packSize = size)
         val doc = ValidDocument(
-            "Alfa Ingrosso S.r.l.", LocalDate.of(2026, 9, 30), "12A/345", "EUR", 4840, 484, 5324, VatBasis.EXCLUSIVE,
+            "Alfa Ingrosso S.r.l.", LocalDate.now(), "12A/345", "EUR", 4840, 484, 5324, VatBasis.EXCLUSIVE,
             listOf(
                 item("PASSATA DI POMODORO 700G", "12", "pz", "1.05", 1260, "700 g"),
                 item("MOZZARELLA FIOR DI LATTE", "2.5", "kg", "8.90", 2225),
