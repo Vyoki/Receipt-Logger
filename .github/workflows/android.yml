@@ -116,15 +116,20 @@ jobs:
         shell: bash
         run: |
           # Screenshots of the main screens with invented data (ScreenshotTest), for checking the look.
-          [ -s screens.tar ] || { echo "no screenshots"; exit 0; }
-          mkdir -p shots && tar -xf screens.tar -C shots || exit 0
+          # The outcome is reported as a notice, since the job log is not always reachable.
+          [ -s screens.tar ] || { echo "::notice title=Screenshots::none (screens.tar $(stat -c %s screens.tar 2>/dev/null || echo missing) bytes)"; exit 0; }
+          mkdir -p shots && tar -xf screens.tar -C shots || { echo "::notice title=Screenshots::tar could not be read"; exit 0; }
           ls -la shots
           cd shots
           git init -q -b ci-screens
           git config user.name "github-actions"
           git config user.email "github-actions@users.noreply.github.com"
           git add . && git commit -qm "Screenshots of ${GITHUB_SHA::7}"
-          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-screens
+          if git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-screens; then
+            echo "::notice title=Screenshots::published $(ls | wc -l) files for ${GITHUB_SHA::7}"
+          else
+            echo "::notice title=Screenshots::push failed"
+          fi
       - name: Publish OCR end-to-end output
         if: always()
         shell: bash
