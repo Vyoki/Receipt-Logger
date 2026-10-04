@@ -137,6 +137,7 @@
     <string name="document_not_found">This document no longer exists.</string>
     <string name="full_screen">Full screen</string>
     <string name="open_pdf">Open PDF</string>
+    <string name="open_xml">Open the e-invoice XML</string>
     <string name="open_image">Open image</string>
     <string name="no_viewer_app">No app on this phone can open this file.</string>
     <string name="line_items_count">Line items (%1$d)</string>
@@ -461,7 +462,7 @@
 
     <!-- background reading -->
     <string name="pick_photos">Choose photos from the gallery</string>
-    <string name="import_pdf">Import a PDF</string>
+    <string name="import_pdf">Import a PDF or e-invoice</string>
     <string name="add_from_gallery">From gallery</string>
     <string name="notif_channel_progress">Reading documents</string>
     <string name="notif_channel_results">Documents ready</string>
@@ -556,6 +557,8 @@
     <string name="learned_clear">Forget what was learned</string>
     <string name="warn_vat_group_mismatch">The lines of one VAT rate do not add up to the VAT summary.</string>
     <string name="reason_vat_group">The lines of one VAT rate do not add up to the VAT summary:</string>
+    <string name="warn_other_buyer">This e-invoice is addressed to another company (the buyer\'s VAT number is not yours).</string>
+    <string name="reason_other_buyer">Addressed to another company.</string>
     <string name="reason_lots_missing">Some lines have no lot number, but this document prints lots.</string>
     <string name="vat_group_line">%1$s%%: lines %2$s, summary %3$s (difference %4$s)</string>
     <string name="pack_size">Pack size</string>
@@ -568,4 +571,8 @@
     <string name="scan_hint">Photo, gallery or PDF · several pages</string>
     <string name="brand_is">Brand: %1$s</string>
     <string name="name_unknown">Not understood in the name: %1$s. Tap the product to write the name; the app learns it.</string>
+    <plurals name="shared_queued">
+        <item quantity="one">%d document queued for reading</item>
+        <item quantity="other">%d documents queued for reading</item>
+    </plurals>
 </resources>

@@ -35,6 +35,8 @@ enum class ParseWarning {
     MULTIPLE_TOTALS,
     /** The lines of one VAT rate do not add up to that rate's taxable amount in the VAT summary. */
     VAT_GROUP_MISMATCH,
+    /** An e-invoice addressed to another company (the buyer's VAT number is not this restaurant's). */
+    OTHER_BUYER,
 }
 
 data class ParsedLineItem(

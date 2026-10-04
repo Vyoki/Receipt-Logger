@@ -23,8 +23,44 @@ class PageRenderer(private val files: FileStore) {
     suspend fun renderPage(relativePath: String, mimeType: String, pageIndex: Int, targetWidth: Int): Bitmap =
         withContext(Dispatchers.IO) {
             val f = files.file(relativePath)
-            if (mimeType == FileStore.MIME_PDF) renderPdfPage(f, pageIndex, targetWidth) else decodeImage(f, targetWidth)
+            when (mimeType) {
+                FileStore.MIME_PDF -> renderPdfPage(f, pageIndex, targetWidth)
+                FileStore.MIME_XML -> renderInvoiceText(f, pageIndex, targetWidth)
+                else -> decodeImage(f, targetWidth)
+            }
         }
+
+    /** The stored file's bytes (an e-invoice is read from its XML, not from pictures). */
+    fun bytes(relativePath: String): ByteArray = files.file(relativePath).readBytes()
+
+    /** An e-invoice page: the invoice laid out as text on a white sheet (A4 proportions). */
+    private fun renderInvoiceText(f: File, pageIndex: Int, targetWidth: Int): Bitmap {
+        val text = runCatching { com.kitchenreceipts.core.EInvoice.read(f.readBytes()).text }.getOrElse { "E-invoice could not be read: ${it.message}" }
+        val pages = FileStore.textPages(text)
+        val lines = pages.getOrElse(pageIndex) { emptyList() }
+        val w = targetWidth.coerceIn(400, 2400)
+        val h = (w * 1.414f).toInt()
+        val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
+        val canvas = android.graphics.Canvas(bmp)
+        canvas.drawColor(Color.WHITE)
+        val margin = w / 24f
+        val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG).apply {
+            color = Color.BLACK
+            typeface = android.graphics.Typeface.MONOSPACE
+        }
+        // Font size so 90 characters fit the width, and the page's lines fit the height.
+        paint.textSize = 10f
+        val charW = paint.measureText("M") / 10f
+        paint.textSize = minOf((w - 2 * margin) / (90 * charW), (h - 2 * margin) / (FileStore.TEXT_LINES_PER_PAGE * 1.25f))
+        val step = paint.textSize * 1.25f
+        var y = margin + paint.textSize
+        lines.forEachIndexed { i, l ->
+            paint.isFakeBoldText = pageIndex == 0 && i < 2
+            canvas.drawText(l, margin, y, paint)
+            y += step
+        }
+        return bmp
+    }
 
     /**
      * A page as it is read: a photo is flattened like a scanner does (see PageFlattener) when its sheet can be found
@@ -32,7 +68,7 @@ class PageRenderer(private val files: FileStore) {
      */
     suspend fun renderForReading(relativePath: String, mimeType: String, pageIndex: Int, targetWidth: Int): Bitmap {
         val bmp = renderPage(relativePath, mimeType, pageIndex, targetWidth)
-        if (mimeType == FileStore.MIME_PDF) return bmp
+        if (mimeType == FileStore.MIME_PDF || mimeType == FileStore.MIME_XML) return bmp
         val flat = withContext(Dispatchers.Default) { runCatching { com.kitchenreceipts.app.ocr.PageFlattener.flatten(bmp) }.getOrNull() }
             ?: return bmp
         bmp.recycle()

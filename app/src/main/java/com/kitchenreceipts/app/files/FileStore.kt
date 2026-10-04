@@ -6,6 +6,7 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.pdf.PdfDocument
+import com.kitchenreceipts.core.EInvoice
 import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
@@ -48,19 +49,56 @@ class FileStore(private val context: Context) {
 
     fun uriForSharing(relativePath: String): Uri = FileProvider.getUriForFile(context, authority(), file(relativePath))
 
-    /** Copies a picked image or PDF (content:// Uri from the system picker) into private storage. */
-    suspend fun importUri(uri: Uri, resolver: ContentResolver = context.contentResolver): StoredFile = withContext(Dispatchers.IO) {
+    /**
+     * Copies a picked or shared file (content:// Uri) into private storage: an image, a PDF, or e-invoices
+     * (FatturaPA .xml, signed .p7m, or a .zip of several), each invoice stored as its own XML document.
+     */
+    suspend fun importUri(uri: Uri, resolver: ContentResolver = context.contentResolver): List<StoredFile> = withContext(Dispatchers.IO) {
         val declared = resolver.getType(uri)
         val tmp = File(documentsDir, "import_${UUID.randomUUID()}.tmp")
         try {
             val input = resolver.openInputStream(uri) ?: throw IOException("Cannot open the selected file")
             val sha = input.use { copyWithHash(it, tmp) }
+            if (!isPhotoOrPdf(tmp)) {
+                val stored = storeEInvoices(tmp.readBytes())
+                tmp.delete()
+                return@withContext stored
+            }
             val mime = detectMime(tmp, declared)
-            finish(tmp, mime, sha)
+            listOf(finish(tmp, mime, sha))
         } catch (e: Throwable) {
             tmp.delete()
             throw e
         }
+    }
+
+    /** The invoices in an e-invoice file, one stored XML each. Credit notes are refunds, not purchases: left out. */
+    private fun storeEInvoices(bytes: ByteArray): List<StoredFile> {
+        val xmls = try {
+            EInvoice.invoices(bytes)
+        } catch (_: Exception) {
+            throw UnsupportedFileException("Unsupported file type. Use a JPEG or PNG photo, a PDF, or an e-invoice (.xml, .p7m, .zip).")
+        }
+        if (xmls.isEmpty()) throw UnsupportedFileException("No e-invoice found in this file.")
+        val reads = xmls.mapNotNull { x -> runCatching { x to EInvoice.read(x) }.getOrNull() }
+        if (reads.isEmpty()) throw UnsupportedFileException("The e-invoice could not be read (it may be damaged).")
+        val purchases = reads.filter { !it.second.creditNote }
+        if (purchases.isEmpty()) throw UnsupportedFileException("This is a credit note (money back). Credit notes are not imported as purchases.")
+        return purchases.map { (xml, read) ->
+            val target = File(documentsDir, "${UUID.randomUUID()}.xml")
+            target.writeBytes(xml)
+            val sha = target.inputStream().use { sha256(it) }
+            StoredFile("$DOCUMENTS_DIR/${target.name}", MIME_XML, textPages(read.text).size, sha)
+        }
+    }
+
+    private fun isPhotoOrPdf(f: File): Boolean {
+        val head = ByteArray(4)
+        val n = f.inputStream().use { it.read(head) }
+        if (n < 3) return false
+        return (head[0] == '%'.code.toByte() && head[1] == 'P'.code.toByte() && head[2] == 'D'.code.toByte()) ||
+            (head[0] == 0xFF.toByte() && head[1] == 0xD8.toByte() && head[2] == 0xFF.toByte()) ||
+            (n >= 4 && head[0] == 0x89.toByte() && head[1] == 'P'.code.toByte() && head[2] == 'N'.code.toByte() && head[3] == 'G'.code.toByte())
     }
 
     /**
@@ -197,6 +235,15 @@ class FileStore(private val context: Context) {
         const val MIME_PDF = "application/pdf"
         const val MIME_JPEG = "image/jpeg"
         const val MIME_PNG = "image/png"
+        /** An e-invoice, stored as its XML; shown as the invoice laid out as text. */
+        const val MIME_XML = "application/xml"
+        const val TEXT_LINES_PER_PAGE = 60
+
+        /** The e-invoice text split into pages for display (long descriptions wrapped). */
+        fun textPages(text: String, width: Int = 90): List<List<String>> {
+            val lines = text.lines().flatMap { l -> if (l.length <= width) listOf(l) else l.chunked(width) }
+            return lines.chunked(TEXT_LINES_PER_PAGE).ifEmpty { listOf(emptyList()) }
+        }
         const val MAX_BYTES = 50L * 1024 * 1024
     }
 }

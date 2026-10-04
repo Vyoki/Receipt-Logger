@@ -94,7 +94,7 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
     val state: StateFlow<CaptureState> = _state.asStateFlow()
 
     /** A PDF (it has all its pages already) goes straight to the reader. */
-    fun importPdf(uri: Uri) = queue("file") { c.fileStore.importUri(uri) }
+    fun importPdf(uri: Uri) = queueAll("file") { c.fileStore.importUri(uri) }
 
     /** All the pages collected in the tray become one document, read once they are all there. */
     fun usePages(paths: List<String>) = queue("pages:${paths.size}") {
@@ -114,14 +114,16 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    private fun queue(source: String, store: suspend () -> StoredFile) {
+    private fun queue(source: String, store: suspend () -> StoredFile) = queueAll(source) { listOf(store()) }
+
+    private fun queueAll(source: String, store: suspend () -> List<StoredFile>) {
         if (_state.value.busy) return
         c.log.event("IMPORT_START", "source" to source)
         viewModelScope.launch {
             _state.value = CaptureState(busy = true)
             try {
                 val stored = store()
-                c.importQueue.enqueue(stored, source)
+                stored.forEach { c.importQueue.enqueue(it, if (it.mimeType == com.kitchenreceipts.app.files.FileStore.MIME_XML) "e-invoice" else source) }
                 withContext(Dispatchers.IO) { c.fileStore.deleteCaptures() }
                 _state.value = CaptureState(queued = true)
             } catch (e: CancellationException) {
@@ -225,7 +227,7 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
                 BigButton(
                     stringResource(R.string.import_pdf),
                     Icons.Filled.UploadFile,
-                    onClick = { launchError = null; vm.clearError(); ensureNotificationPermission(); pickPdf.launch(arrayOf("application/pdf")) },
+                    onClick = { launchError = null; vm.clearError(); ensureNotificationPermission(); pickPdf.launch(IMPORTABLE_TYPES) },
                     primary = false,
                 )
                 Text(stringResource(R.string.capture_tips), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
@@ -280,3 +282,9 @@ private fun PhotoThumb(path: String, index: Int, onRemove: () -> Unit) {
         }
     }
 }
+
+/** What the file picker offers: PDFs and e-invoices (.xml, signed .p7m, .zip). Some apps label .p7m as binary. */
+val IMPORTABLE_TYPES = arrayOf(
+    "application/pdf", "text/xml", "application/xml", "application/pkcs7-mime", "application/x-pkcs7-mime",
+    "application/zip", "application/x-zip-compressed", "application/octet-stream",
+)

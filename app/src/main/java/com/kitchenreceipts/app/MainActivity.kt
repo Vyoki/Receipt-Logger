@@ -2,7 +2,14 @@ package com.kitchenreceipts.app
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
+import android.widget.Toast
+import androidx.core.content.IntentCompat
+import kotlinx.coroutines.Dispatchers
+import com.kitchenreceipts.app.files.FileStore
+import kotlinx.coroutines.launch
+import kotlin.coroutines.cancellation.CancellationException
 import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -38,6 +45,7 @@ class MainActivity : FragmentActivity() {
         )
         applySecureScreen()
         handleRoute(intent)
+        if (savedInstanceState == null) importShared(intent)
         setContent {
             KitchenReceiptsTheme {
                 if (locked.value) LockScreen(onUnlock = ::authenticate) else AppNavHost()
@@ -48,6 +56,49 @@ class MainActivity : FragmentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleRoute(intent)
+        importShared(intent)
+    }
+
+    /**
+     * Files opened with or shared to the app (a PDF from mail, an e-invoice .xml/.p7m/.zip, a photo): copied in while
+     * the sender's permission lasts, then read in the background like any import.
+     */
+    private fun importShared(intent: Intent?) {
+        intent ?: return
+        val uris: List<Uri> = when (intent.action) {
+            Intent.ACTION_VIEW -> listOfNotNull(intent.data)
+            Intent.ACTION_SEND -> listOfNotNull(IntentCompat.getParcelableExtra(intent, Intent.EXTRA_STREAM, Uri::class.java))
+            Intent.ACTION_SEND_MULTIPLE -> IntentCompat.getParcelableArrayListExtra(intent, Intent.EXTRA_STREAM, Uri::class.java).orEmpty()
+            else -> emptyList()
+        }
+        if (uris.isEmpty()) return
+        setIntent(Intent(this, MainActivity::class.java)) // not again after a rotation
+        val c = container
+        val app = applicationContext
+        val res = resources // in the operator's chosen language
+        c.appScope.launch(Dispatchers.Main) {
+            var queued = 0
+            val errors = mutableListOf<String>()
+            for (uri in uris) {
+                try {
+                    val stored = c.fileStore.importUri(uri)
+                    stored.forEach { c.importQueue.enqueue(it, if (it.mimeType == FileStore.MIME_XML) "e-invoice" else "shared") }
+                    queued += stored.size
+                } catch (e: CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    c.log.error("importShared", e)
+                    errors += e.message ?: e.javaClass.simpleName
+                }
+            }
+            c.log.event("IMPORT_SHARED", "files" to uris.size, "queued" to queued, "errors" to errors.size)
+            if (queued > 0) com.kitchenreceipts.app.jobs.ReadingService.ensureRunning(app)
+            val msg = buildList {
+                if (queued > 0) add(res.getQuantityString(R.plurals.shared_queued, queued, queued))
+                addAll(errors.distinct())
+            }.joinToString("\n")
+            if (msg.isNotEmpty()) Toast.makeText(app, msg, Toast.LENGTH_LONG).show()
+        }
     }
 
     /** Opens the screen a notification points to. */
