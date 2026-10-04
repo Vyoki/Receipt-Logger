@@ -272,6 +272,42 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 
 **Checking a value:** tapping a field in the review shows the part of the photo it was read from, with the value outlined (new documents).
 
+## 7b-3. Measured, not tuned: the test bench
+
+Every change to the reading is measured on a **test bench** (`core/src/test/kotlin/.../bench`): 440 invented documents
+(invoices, delivery notes, cash & carry invoices, shop receipts) in many layouts — supplier left or right of the
+customer box or under it, number and date in a heading table or after a label, different column sets and heading
+words, lots under items — read clean, with light and with heavy scanner noise (tilt, letters for digits, comma for
+dot, lost small numbers), plus invented copies of real documents. Each field is scored the way the operator meets it:
+
+- **sure**: right and not highlighted; **check**: right but highlighted; **fixed**: wrong or missing, and highlighted;
+- **SILENT**: wrong and not highlighted — the error that ends up in the books;
+- documents the app would **save without review although something is wrong**.
+
+`core/src/test/resources/bench/baseline.txt` holds the floor: a change that makes the totals worse fails the build,
+even if it fixes the document it was written for. CI shows the report as "Reading scorecard".
+
+| | before (2 Oct 2026) | now |
+|---|---|---|
+| fields right | 94.2% | 99.2% |
+| fields silently wrong | 0.53% | 0.06% |
+| saved without review with an error | 7.2% | 0.2% |
+| supplier right | 91% | 100% |
+| document number right | 88% | 99.8% |
+| lots found | 80% | 100% |
+
+How the reading decides (general rules, no supplier-specific code):
+- **Supplier and number by evidence** (`HeaderEvidence`): every candidate is scored (legal form, heads the block that
+  ends with its VAT number, outside the customer box, repeated on every page; for numbers: next to or under a
+  "numero / n." label, same on every page, not a postcode, phone, VAT number, amount or date). Certain only when the
+  evidence is strong and no rival comes close.
+- **Scanner slips repaired only with proof** (`LineSolver.slipVariants`): one table of slips (O/0, I/l/1, S/5, B/8,
+  7/1, dot for comma, lost comma), tried only when a line does not add up; a repaired value is shown for checking
+  unless the VAT summary proves it.
+- **Totals checked by arithmetic**: taxable + VAT = total; when one of the three is misread, the lines and the VAT
+  summary say which, otherwise all three are shown for checking.
+- **Never invented**: a quantity not printed (a shop receipt line with only its amount) stays empty for the operator.
+
 ## 7c. Less typing, price changes and inventory
 
 - **Automatic save.** After a scan the app checks:
@@ -293,7 +329,7 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
   - grouped by category (fruit & veg, meat, fish, cured meats, dairy & eggs, bakery, dry goods, frozen, drinks, cleaning, packaging, other);
   - with the quantity bought (kg and l added together, other units kept apart unless you defined a conversion), the spend (kept apart by VAT basis), the number of purchases, and the **usual amount per period** (average of up to 6 earlier periods).
 
-  Categories are guessed from an Italian keyword dictionary, reading the product name first ("PAT.SACCHI" is potatoes, not bags) and supplier abbreviations ("BISC.", "CIP.", "PARM."); each category has its own icon. Change one on the product screen: a category you chose is never changed by the app.
+  Categories are guessed from an Italian keyword dictionary, reading the product name first ("PAT.SACCHI" is potatoes, not bags) and supplier abbreviations ("BISC.", "CIP.", "PARM."); each category has its own icon. Change one on the product screen: a category you chose is never changed by the app, and the app learns from it — the word of the name the guess hinged on now means your category for every product with that word, from any supplier (phone only; cleared with *Learned from you*).
 
 ## 7c-2. Reading in the background
 

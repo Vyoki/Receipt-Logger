@@ -123,15 +123,35 @@ object Categories {
 
     private class Word(val text: String, val abbreviation: Boolean)
 
+    /**
+     * What the operator taught: a word of a product name and the category they chose for it, when the app had guessed
+     * differently ("RITORNELLI" -> bakery). Applies to every product with that word, from any supplier, before the
+     * built-in dictionary. Set by the app from what it stored on the phone.
+     */
+    @Volatile var learned: Map<String, Category> = emptyMap()
+
     fun guess(name: String): Category {
         val words = words(name)
         val text = words.joinToString(" ") { it.text }
         val plain = words.map { it.text }
+        val taught = learned
+        if (taught.isNotEmpty()) for (w in words) taught[w.text]?.let { return it }
         for ((category, keywords) in PHRASES) {
             for (k in keywords) if (matches(k, text, plain)) return category
         }
         for (w in words) categoryOf(w)?.let { return it }
         return Category.OTHER
+    }
+
+    /**
+     * The word to learn when the operator puts [name] in [chosen] although the app guessed otherwise: the word the
+     * guess was based on, or the first word of the name (the product) when nothing was recognised. Null when the
+     * guess was already right.
+     */
+    fun wordToLearn(name: String, chosen: Category): String? {
+        if (guess(name) == chosen) return null
+        val words = words(name).filter { w -> w.text.count(Char::isLetter) >= 3 && Units.normalizeKnown(w.text) == null }
+        return (words.firstOrNull { categoryOf(it) != null } ?: words.firstOrNull())?.text
     }
 
     /** True when [storedKey] is what versions before October 2026 guessed for [name] (not chosen by the operator). */

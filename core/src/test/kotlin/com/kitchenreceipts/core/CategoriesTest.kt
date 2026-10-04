@@ -62,4 +62,19 @@ class CategoriesTest {
         assertEquals(false, Categories.wasGuessedByOldRules("BISC.RITORNELLI 700", Category.BAKERY.key))
         assertEquals(false, Categories.wasGuessedByOldRules("BISC.RITORNELLI 700", null))
     }
+
+    @Test fun learnedFromTheOperator() {
+        // The operator puts an unknown product in bakery: every product with that word follows, from any supplier.
+        val word = Categories.wordToLearn("RITORNELLI ESEMPIO 700", Category.BAKERY)
+        assertEquals("ritornelli", word)
+        try {
+            Categories.learned = mapOf(word!! to Category.BAKERY)
+            assertEquals(Category.BAKERY, Categories.guess("RITORNELLI CACAO 500G"))
+            assertEquals(Category.DAIRY_EGGS, Categories.guess("MOZZARELLA 125G")) // nothing else changes
+        } finally {
+            Categories.learned = emptyMap()
+        }
+        // Already guessed right: nothing to learn.
+        assertEquals(null, Categories.wordToLearn("MOZZARELLA 125G", Category.DAIRY_EGGS))
+    }
 }
