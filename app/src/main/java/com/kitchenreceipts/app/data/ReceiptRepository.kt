@@ -2,6 +2,7 @@ package com.kitchenreceipts.app.data
 
 import androidx.room.withTransaction
 import com.kitchenreceipts.app.files.FileStore
+import com.kitchenreceipts.core.OfficeExport
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.core.Categories
 import com.kitchenreceipts.core.Category
@@ -565,24 +566,23 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
 
     /** The owner's report for [period], from everything saved (computed on the phone). */
     /** Everything recorded, for the office copy (see core OfficeExport). Files (photos, PDFs, XML) are not included. */
-    suspend fun officeSnapshot(business: String?): com.kitchenreceipts.core.OfficeExport.Snapshot = withContext(Dispatchers.Default) {
-        val e = com.kitchenreceipts.core.OfficeExport
+    suspend fun officeSnapshot(business: String?): OfficeExport.Snapshot = withContext(Dispatchers.Default) {
         val lines = documents.allItemsOnce().groupBy { it.documentId }
-        e.Snapshot(
+        OfficeExport.Snapshot(
             business = business?.ifBlank { null },
             exportedAt = java.time.LocalDateTime.now(),
-            sellers = sellers.allOnce().map { e.Seller(it.id, it.name, it.vatNumber) },
-            families = products.familiesOnce().map { e.Family(it.id, it.name) },
+            sellers = sellers.allOnce().map { OfficeExport.Seller(it.id, it.name, it.vatNumber) },
+            families = products.familiesOnce().map { OfficeExport.Family(it.id, it.name) },
             products = products.allOnce().map { p ->
                 val chosen = com.kitchenreceipts.core.Category.fromKey(p.category)
-                e.Product(p.id, p.name, p.brand, (chosen ?: com.kitchenreceipts.core.Categories.guess(p.name)).key, chosen != null, p.familyId)
+                OfficeExport.Product(p.id, p.name, p.brand, (chosen ?: com.kitchenreceipts.core.Categories.guess(p.name)).key, chosen != null, p.familyId)
             },
             documents = documents.allDocumentsOnce().map { d ->
-                e.Document(
+                OfficeExport.Document(
                     d.id, d.sellerId, d.documentDate, d.documentNumber, d.currency, d.subtotalCents, d.vatCents, d.totalCents, d.vatBasis,
                     when (d.mimeType) { FileStore.MIME_XML -> "e-invoice"; FileStore.MIME_PDF -> "pdf"; else -> "photo" },
                     lines[d.id].orEmpty().map { l ->
-                        e.Line(l.originalDescription, l.productId, l.quantity, l.unit, l.unitPrice, l.lineTotalCents, l.vatRate, l.lotNumber, l.expiryDate, l.packages, l.packSize)
+                        OfficeExport.Line(l.originalDescription, l.productId, l.quantity, l.unit, l.unitPrice, l.lineTotalCents, l.vatRate, l.lotNumber, l.expiryDate, l.packages, l.packSize)
                     },
                 )
             },
