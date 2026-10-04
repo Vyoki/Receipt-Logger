@@ -27,7 +27,18 @@ jobs:
         run: git clone --depth 1 --branch b11242 https://github.com/ggml-org/llama.cpp third_party/llama.cpp
 
       - name: Core unit tests
-        run: ./gradlew :core:test --stacktrace
+        run: BENCH_REPORT=$PWD/bench-report.txt ./gradlew :core:test --stacktrace
+      - name: Publish the reading scorecard
+        if: always()
+        shell: bash
+        run: |
+          # The test bench (BenchTest): every field of hundreds of invented documents, right / flagged / silently wrong.
+          [ -s bench-report.txt ] || { echo "::notice title=Reading scorecard::no report"; exit 0; }
+          python3 - <<'PY'
+          t = open('bench-report.txt', encoding='utf-8').read()
+          head = t.split('\n== invented')[0][:3800]
+          print('::notice title=Reading scorecard::' + head.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
+          PY
 
       - name: Build debug APK
         shell: bash

@@ -14,6 +14,8 @@ data class LineChoice(
     /** Where quantity and price were on the line: how many numbers come after each (for [ChoiceRule]). */
     val qtyFromEnd: Int = -1,
     val priceFromEnd: Int = -1,
+    /** A number read with a scanner slip, repaired to make the line add up ("1.392 → 1,392"). */
+    val repaired: String? = null,
 ) {
     val rule: ChoiceRule get() = ChoiceRule(qtyFromEnd, priceFromEnd)
 }
@@ -47,8 +49,54 @@ object LineSolver {
 
     private data class Num(val index: Int, val raw: String, val value: BigDecimal)
 
-    fun solve(line: String): List<LineChoice> {
+    fun solve(line: String): List<LineChoice> = solveTokens(OcrCleanup.cleanLine(line).split(' ').filter { it.isNotBlank() })
+
+    /**
+     * The scanner's usual slips in a number, all in one table: letters for digits (O/0, I/l/1, S/5, B/8, Z/2, G/6),
+     * a dot read for the decimal comma ("1.392", "4.02"), 7 and 1 confused, a lost decimal comma ("753" for 7,53).
+     */
+    private val LETTER_DIGIT = mapOf('O' to '0', 'o' to '0', 'D' to '0', 'Q' to '0', 'I' to '1', 'l' to '1', 'i' to '1', '|' to '1', 'S' to '5', 's' to '5', 'B' to '8', 'Z' to '2', 'G' to '6')
+
+    fun slipVariants(t: String): List<String> {
+        if (t.none(Char::isDigit)) return emptyList()
+        val out = mutableListOf<String>()
+        if (t.length >= 2 && t.count { it.isDigit() || it in ".," } >= t.length - 2 && t.any { it in LETTER_DIGIT }) {
+            out += t.map { LETTER_DIGIT[it] ?: it }.joinToString("")
+        }
+        if (Regex("^\\d{1,4}\\.\\d{2,3}$").matches(t)) out += t.replace('.', ',')
+        if (t.all { it.isDigit() || it in ".," }) {
+            for (i in t.indices) {
+                if (t[i] == '7') out += t.substring(0, i) + '1' + t.substring(i + 1)
+                if (t[i] == '1') out += t.substring(0, i) + '7' + t.substring(i + 1)
+            }
+        }
+        if (Regex("^\\d{3,6}$").matches(t)) out += t.dropLast(2) + "," + t.takeLast(2)
+        return out.distinct().filter { it != t }
+    }
+
+    /**
+     * When no reading of the printed numbers adds up: the same with one number's scanner slip repaired (see
+     * [slipVariants]). Only readings that use the repaired number are kept; each says what was repaired, and the
+     * repaired value is shown for checking unless something else (the VAT summary) proves it.
+     */
+    fun solveWithSlips(line: String): List<LineChoice> {
         val tokens = OcrCleanup.cleanLine(line).split(' ').filter { it.isNotBlank() }
+        val found = LinkedHashMap<Triple<BigDecimal, BigDecimal, Long>, LineChoice>()
+        tokens.forEachIndexed { i, t ->
+            for (v in slipVariants(t)) {
+                val alt = tokens.toMutableList().also { it[i] = v }
+                val value = ItalianNumbers.parse(v) ?: continue
+                for (r in solveTokens(alt)) {
+                    val uses = r.quantity.compareTo(value) == 0 || r.unitPrice.compareTo(value) == 0 || ItalianNumbers.toCents(value) == r.lineTotalCents
+                    if (!uses || r.discountPercent != null) continue
+                    found.putIfAbsent(Triple(r.quantity.stripTrailingZeros(), r.unitPrice.stripTrailingZeros(), r.lineTotalCents), r.copy(repaired = "$t → $v"))
+                }
+            }
+        }
+        return found.values.toList()
+    }
+
+    private fun solveTokens(tokens: List<String>): List<LineChoice> {
         val nums = tokens.mapIndexedNotNull { i, t ->
             if (!NUMBER.matches(t)) return@mapIndexedNotNull null
             // An article code at the start ("04411") or a long code is not a quantity or a price.
@@ -119,7 +167,7 @@ object LineSolver {
         // The AI's double-check read a number differently: that stays for the operator.
         if (listOf(item.quantity?.source, item.unitPrice?.source, item.lineTotalCents?.source).any { it?.contains(AiReader.DISAGREE) == true }) return@map item
         val source = item.lineTotalCents?.source ?: item.quantity?.source ?: return@map item
-        val readings = solve(source).ifEmpty { listOfNotNull(oneDigitOff(item)) }
+        val readings = solve(source).ifEmpty { solveWithSlips(source) }.ifEmpty { listOfNotNull(oneDigitOff(item)) }
         // The amount already read with confidence must be kept.
         val total = item.lineTotalCents
         val fitting = if (total != null && total.confidence == Confidence.HIGH) readings.filter { it.lineTotalCents == total.value } else readings
@@ -145,11 +193,15 @@ object LineSolver {
             if (desc.contains(' ') && Units.normalizeKnown(last) != null) desc = desc.substringBeforeLast(' ').trim()
         }
         val unit = r.unit ?: item.unit?.value
+        // A value repaired from a scanner slip is shown for checking (with what was printed), unless proven later.
+        val fixed = r.repaired?.substringAfter("→ ")?.let { ItalianNumbers.parse(it) }
+        fun conf(v: BigDecimal, ok: Boolean) = if (!ok || (fixed != null && v.compareTo(fixed) == 0)) Confidence.LOW else Confidence.HIGH
+        val note = r.repaired?.let { "$source (read ${it.substringBefore(" →")}, repaired: ${it.substringAfter("→ ")})" } ?: source
         return item.copy(
             originalDescription = desc.ifBlank { item.originalDescription },
-            quantity = Extracted(r.quantity, if (printed) Confidence.HIGH else Confidence.LOW, if (printed) source else "$source (amount / price)"),
-            unitPrice = Extracted(r.unitPrice, Confidence.HIGH, source),
-            lineTotalCents = Extracted(r.lineTotalCents, Confidence.HIGH, source),
+            quantity = Extracted(r.quantity, conf(r.quantity, printed || fixed?.compareTo(r.quantity) == 0), if (printed || r.repaired != null) note else "$source (amount / price)"),
+            unitPrice = Extracted(r.unitPrice, conf(r.unitPrice, true), note),
+            lineTotalCents = Extracted(r.lineTotalCents, conf(ItalianNumbers.centsToDecimal(r.lineTotalCents), true), note),
             unit = unit?.let { Extracted(it, Confidence.HIGH, source) },
             warnings = item.warnings - ParseWarning.LINE_TOTAL_MISMATCH,
             choices = emptyList(),

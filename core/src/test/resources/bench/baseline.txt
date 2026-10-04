@@ -1,0 +1,5 @@
+# Reading scorecard floor (see BenchTest): a change may not make these worse.
+# Before the bench (2026-10-02): right=94.20 silent=0.53 autoWrong=7.24
+right=99.20
+silent=0.06
+autoWrong=0.23
