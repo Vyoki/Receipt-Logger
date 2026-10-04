@@ -407,15 +407,49 @@ The app then:
 
 The PDF opens natively on an iPhone. Nothing leaves the phone until you pick where to send it.
 
+## 7f. E-invoices (FatturaPA)
+
+Most suppliers also send the invoice as an e-invoice: the XML file that goes through the SdI. Reading that file is exact, so no photo, OCR or AI is needed. The app takes it in any of the usual forms:
+- the plain `.xml`, the signed `.xml.p7m` (DER, chunked BER, or base64), or a `.zip` with many invoices. SdI receipts inside a zip are skipped, and a file with several invoices is split into one document each;
+- from the **Import a PDF or e-invoice** button, or with *Open with* / *Share to* Kitchen Receipts from Mail, Files, Drive or WhatsApp. Photos and PDFs can be shared to the app the same way.
+
+What is read: the supplier and its VAT number, number, date, every line (the supplier's article code, description, quantity, unit, the price actually paid after line discounts, amount, VAT rate, lot and expiry date), the VAT summary and the total. Values come from the standard's element names, so any supplier's software works.
+
+The usual rules still apply:
+- A value the XML does not contain stays empty. For example, a transport charge without a quantity goes to review and nothing is invented.
+- Reference-only lines ("Rif. DDT … del …", zero amount) are not items.
+- An invoice addressed to another VAT number is held for review.
+- Credit notes (TD04, TD08) are money back, not purchases, so they are not imported. The app says so instead of adding stock.
+- The document page shows the invoice laid out as text, and the original XML can be opened from the document.
+
+## 7g. Office copy for a computer (the owner's Mac)
+
+Reports ▸ *Office copy for a computer*: choose a password (at least 8 characters), then tap **Create and share**. The phone makes one `.html` file with everything recorded: suppliers, products, documents with every line, prices and lots. Photos and PDFs are not included. Send it by Mail, Quick Share, Drive, WhatsApp or similar.
+
+On the Mac, double-click the file. It opens in Safari (or any modern browser) and asks for the password. It then shows:
+- **Overview:** spend for the period against the previous one, spend per month, by category (amounts with and without VAT are never added together), top suppliers, and the biggest price increases.
+- **Suppliers, Products** (quantities, spend, last price, min–max, price history chart), **Price changes** (same unit and same VAT basis only), **Documents** (every line), **Lots** (search a lot for traceability).
+- Any period, Italian or English, sortable tables, CSV export (Excel-ready), and printing.
+- E-invoice files (.xml, .p7m, .zip) dropped on the page join the data for that session. The page also works without an office copy as a plain e-invoice viewer.
+
+How the data is protected:
+- The data is compressed and encrypted with AES-256-GCM, using a key derived from the password with PBKDF2-SHA256 (600,000 rounds). The browser's built-in Web Crypto opens it.
+- The password is never stored. Without it the file cannot be read, so give it in person or by phone, not in the same message as the file.
+- The page's security policy forbids every network connection. It runs offline, loads nothing from the internet and sends nothing. Closing the tab forgets the data, and nothing typed on the page is saved.
+- The copy is read-only. Corrections are made on the phone, and a new copy is shared when needed.
+
+CI opens a sample copy (invented data) in Chrome with the network cut off. It checks a wrong and the right password, every tab, the detail windows, CSV export, dropping an e-invoice (including a duplicate), English, dark mode and phone width, and that no connection was attempted. Screenshots go to the `ci-office` branch.
+
 ## 8. MVP assumptions and limits
 
 - Main target: Italian supplier documents in EUR. Other currencies can be typed as a 3-letter code, but no conversion is done.
 - A seller name is required to save a document, because everything is organised by seller. All other fields are optional and simply stay missing.
 - The review draft lives in memory. If Android kills the app while you are on the review screen, the draft is lost and you need to scan again; the orphaned file is cleaned up after an hour.
 - Up to 20 pages per document are OCR'd. All pages are always stored and viewable.
-- Files over 50 MB are rejected. Supported formats are JPEG, PNG and PDF; password-protected PDFs cannot be opened.
+- Files over 50 MB are rejected. Supported formats are JPEG, PNG, PDF and e-invoices (.xml, .p7m, .zip). Password-protected PDFs cannot be opened.
+- The signature of a .p7m is not verified (the SdI verified it before delivering the file); only the invoice inside is read.
 - Product averages are recomputed in memory from all purchases, which is fine for thousands of line items. A very large history would need pre-aggregated tables.
-- No cloud sync or multi-user support.
+- No cloud sync or live multi-user access. Sharing with the office is a file made on request (see 7g), not a live connection.
 
 ## 9. What was verified
 

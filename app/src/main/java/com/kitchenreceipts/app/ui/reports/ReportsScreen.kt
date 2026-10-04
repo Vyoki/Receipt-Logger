@@ -112,6 +112,7 @@ fun ReportsScreen(onBack: () -> Unit) {
     AppScaffold(title = stringResource(R.string.monthly_reports), onBack = onBack, snackbarHostState = snackbar) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item("boss") { BossReportCard() }
+            item("office") { OfficeCopyCard() }
             item {
                 Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

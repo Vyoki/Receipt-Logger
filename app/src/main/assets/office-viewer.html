@@ -1,0 +1,896 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<!-- Nothing leaves this computer: no connections of any kind are allowed, only this file's own code runs. -->
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; connect-src 'none'; form-action 'none'; base-uri 'none'">
+<meta name="referrer" content="no-referrer">
+<title>Kitchen Receipts – Office</title>
+<style>
+:root {
+  --bg: #f6f5f2; --surface: #ffffff; --surface-2: #f0eee9; --line: #e2dfd8; --text: #1d1c1a; --muted: #6b675f;
+  --accent: #1f6f5c; --accent-soft: #e2f0eb; --up: #b3401f; --up-soft: #f8e6df; --down: #1f6f5c; --down-soft: #e2f0eb;
+  --warn: #8a5a00; --warn-soft: #fbf0d9; --shadow: 0 1px 2px rgba(0,0,0,.05), 0 2px 8px rgba(0,0,0,.04);
+  --radius: 10px; --mono: ui-monospace, "SF Mono", Menlo, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #151514; --surface: #1e1e1c; --surface-2: #262624; --line: #34332f; --text: #edebe6; --muted: #a29e95;
+    --accent: #5fbfa3; --accent-soft: #1d3530; --up: #ef8a68; --up-soft: #3a2219; --down: #5fbfa3; --down-soft: #1d3530;
+    --warn: #e6b44c; --warn-soft: #3a2f17; --shadow: none; color-scheme: dark;
+  }
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+button, input, select { font: inherit; color: inherit; }
+button { cursor: pointer; }
+.hidden { display: none !important; }
+.muted { color: var(--muted); }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.mono { font-family: var(--mono); font-size: 12.5px; }
+
+/* lock screen */
+#lock { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.lock-card { width: min(420px, 100%); background: var(--surface); border: 1px solid var(--line); border-radius: 16px; padding: 28px; box-shadow: var(--shadow); }
+.lock-card h1 { font-size: 20px; margin: 0 0 4px; }
+.lock-card p { margin: 0 0 18px; color: var(--muted); }
+.field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 14px; }
+.field input { padding: 10px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+.field input:focus, .search:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+.btn { padding: 9px 14px; border-radius: 8px; border: 1px solid var(--line); background: var(--surface); }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.btn.primary:hover { filter: brightness(1.08); }
+.btn.small { padding: 5px 10px; font-size: 13px; }
+.error { color: var(--up); min-height: 20px; margin: 4px 0 0; font-size: 13px; }
+.or { text-align: center; color: var(--muted); margin: 18px 0 10px; font-size: 13px; }
+.drop { border: 1.5px dashed var(--line); border-radius: 10px; padding: 16px; text-align: center; color: var(--muted); font-size: 13px; }
+body.dragging .drop, body.dragging #dropHint { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+
+/* app */
+header.top { position: sticky; top: 0; z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top-row { display: flex; align-items: center; gap: 12px; padding: 10px 20px; flex-wrap: wrap; }
+.brand { font-weight: 700; font-size: 16px; }
+.brand small { display: block; font-weight: 400; font-size: 12px; color: var(--muted); }
+.spacer { flex: 1; }
+.period { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.period select, .period input { padding: 6px 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); }
+nav.tabs { display: flex; gap: 2px; padding: 0 14px; overflow-x: auto; }
+nav.tabs button { border: 0; background: none; padding: 10px 12px; border-bottom: 2px solid transparent; color: var(--muted); white-space: nowrap; }
+nav.tabs button[aria-selected="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+main { padding: 20px; max-width: 1280px; margin: 0 auto; }
+.grid { display: grid; gap: 16px; }
+.kpis { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+.two { grid-template-columns: repeat(auto-fit, minmax(380px, 1fr)); }
+.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.three .span2 { grid-column: span 2; }
+@media (max-width: 1000px) { .three { grid-template-columns: 1fr; } .three .span2 { grid-column: auto; } }
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: var(--shadow); padding: 16px; min-width: 0; }
+.card h2 { font-size: 14px; margin: 0 0 12px; display: flex; align-items: center; gap: 8px; }
+.card h2 .spacer { flex: 1; }
+.kpi .label { color: var(--muted); font-size: 12.5px; }
+.kpi .value { font-size: 24px; font-weight: 700; margin-top: 2px; font-variant-numeric: tabular-nums; }
+.kpi .sub { font-size: 12.5px; margin-top: 2px; }
+.chip { display: inline-block; padding: 1px 7px; border-radius: 99px; font-size: 12px; font-weight: 600; white-space: nowrap; }
+.chip.up { background: var(--up-soft); color: var(--up); }
+.chip.down { background: var(--down-soft); color: var(--down); }
+.chip.neutral { background: var(--surface-2); color: var(--muted); }
+.chip.warn { background: var(--warn-soft); color: var(--warn); }
+.toolbar { display: flex; gap: 8px; align-items: center; margin-bottom: 12px; flex-wrap: wrap; }
+.search { padding: 8px 12px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); min-width: 240px; flex: 1; max-width: 420px; }
+.table-wrap { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; }
+th, td { padding: 8px 10px; border-bottom: 1px solid var(--line); text-align: left; vertical-align: top; }
+th { font-size: 12px; color: var(--muted); font-weight: 600; position: sticky; top: 0; background: var(--surface); cursor: pointer; user-select: none; white-space: nowrap; }
+th[data-sort]::after { content: " ↕"; opacity: .35; }
+th.sorted-asc::after { content: " ↑"; opacity: 1; }
+th.sorted-desc::after { content: " ↓"; opacity: 1; }
+tbody tr.clickable { cursor: pointer; }
+tbody tr.clickable:hover { background: var(--surface-2); }
+.bars .row { display: grid; grid-template-columns: minmax(120px, 1.3fr) 2fr auto; gap: 10px; align-items: center; margin: 6px 0; }
+.bar { height: 10px; border-radius: 5px; background: var(--accent); min-width: 2px; }
+.bar.alt { background: var(--muted); opacity: .55; }
+.bar-track { background: var(--surface-2); border-radius: 5px; overflow: hidden; display: flex; }
+.chart svg { width: 100%; height: auto; display: block; }
+.chart text { fill: var(--muted); font-size: 12px; }
+.empty { color: var(--muted); padding: 24px 0; text-align: center; }
+.note { font-size: 12.5px; color: var(--muted); margin-top: 8px; }
+dialog { border: 1px solid var(--line); border-radius: 14px; padding: 0; width: min(980px, calc(100vw - 32px)); max-height: calc(100vh - 48px); background: var(--surface); color: var(--text); box-shadow: 0 10px 40px rgba(0,0,0,.25); }
+dialog::backdrop { background: rgba(0,0,0,.35); }
+.dlg-head { display: flex; align-items: flex-start; gap: 12px; padding: 16px 20px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--surface); }
+.dlg-head h3 { margin: 0; font-size: 17px; }
+.dlg-body { padding: 16px 20px 20px; }
+.kv { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin-bottom: 14px; font-size: 13.5px; }
+.kv dt { color: var(--muted); }
+.kv dd { margin: 0; }
+#toast { position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%); background: var(--text); color: var(--bg); padding: 10px 16px; border-radius: 10px; font-size: 13.5px; z-index: 20; max-width: calc(100vw - 32px); }
+#dropHint { margin: 0 0 16px; padding: 8px 12px; font-size: 12.5px; }
+footer { padding: 24px 20px 40px; color: var(--muted); font-size: 12px; text-align: center; }
+@media (max-width: 640px) {
+  .top-row, main { padding-left: 16px; padding-right: 16px; }
+  .two { grid-template-columns: 1fr; }
+  .search { min-width: 0; }
+  .bars .row { grid-template-columns: 1fr 2fr auto; }
+}
+@media print {
+  header.top nav, .toolbar, .period, #dropHint, .no-print { display: none !important; }
+  body { background: #fff; }
+  .card { box-shadow: none; break-inside: avoid; }
+}
+</style>
+</head>
+<body>
+<!-- The phone puts the encrypted data here. Without data, the page reads e-invoices dropped on it. -->
+<script id="kr-data" type="text/plain">/*KR-DATA*/null/*KR-END*/</script>
+
+<section id="lock" class="hidden">
+  <div class="lock-card">
+    <h1 data-i18n="lockTitle"></h1>
+    <p id="lockSub" data-i18n="lockSub"></p>
+    <form id="unlockForm" autocomplete="off">
+      <div class="field">
+        <label for="pw" data-i18n="password"></label>
+        <input id="pw" type="password" autocomplete="current-password" required>
+      </div>
+      <button class="btn primary" type="submit" id="unlockBtn" data-i18n="open"></button>
+      <p class="error" id="pwError" role="alert"></p>
+    </form>
+    <div class="or" data-i18n="orDrop"></div>
+    <div class="drop" data-i18n="dropHere"></div>
+  </div>
+</section>
+
+<section id="app" class="hidden">
+  <header class="top">
+    <div class="top-row">
+      <div class="brand"><span id="bizName">Kitchen Receipts</span><small id="asOf"></small></div>
+      <div class="spacer"></div>
+      <div class="period">
+        <label for="periodSel" class="muted" data-i18n="period"></label>
+        <select id="periodSel"></select>
+        <input type="date" id="fromDate" class="hidden" aria-label="from">
+        <input type="date" id="toDate" class="hidden" aria-label="to">
+      </div>
+      <button class="btn small" id="addFiles" data-i18n="addInvoices"></button>
+      <button class="btn small" id="langBtn"></button>
+      <input type="file" id="fileInput" multiple class="hidden" accept=".xml,.p7m,.zip,.html,application/xml,text/xml,application/zip">
+    </div>
+    <nav class="tabs" role="tablist" id="tabs"></nav>
+  </header>
+  <main id="view"></main>
+  <footer id="foot"></footer>
+</section>
+
+<dialog id="dlg"><div class="dlg-head"><div style="flex:1" id="dlgTitle"></div><button class="btn small" id="dlgClose" data-i18n="close"></button></div><div class="dlg-body" id="dlgBody"></div></dialog>
+<div id="toast" class="hidden" role="status"></div>
+
+<script>
+"use strict";
+// ============================================================== words
+const T = {
+  en: {
+    lockTitle: "Kitchen Receipts – office copy", lockSub: "Enter the password chosen on the phone when this copy was made.",
+    password: "Password", open: "Open", opening: "Opening…", wrongPw: "Wrong password, or the file is damaged.",
+    orDrop: "or", dropHere: "Drop e-invoices here (.xml, .p7m, .zip) to look at them without an office copy.",
+    noCrypto: "This browser cannot open the copy. Use a recent Safari, Chrome or Firefox.",
+    period: "Period", addInvoices: "Add e-invoices", close: "Close",
+    p_month: "This month", p_lastMonth: "Last month", p_3m: "Last 3 months", p_year: "This year", p_lastYear: "Last year", p_12m: "Last 12 months", p_all: "All", p_custom: "Custom…",
+    t_overview: "Overview", t_suppliers: "Suppliers", t_products: "Products", t_prices: "Price changes", t_documents: "Documents", t_lots: "Lots",
+    spend: "Spend", documents: "Documents", suppliers: "Suppliers", lines: "Lines", vsPrev: "vs previous period", noPrev: "no previous period",
+    perMonth: "Spend per month", byCategory: "By category (line amounts)", topSuppliers: "Top suppliers", priceUps: "Biggest price increases",
+    netNote: "Without VAT where the document's prices exclude VAT; with VAT where they include it. The two are never added together.",
+    totalNote: "Document totals as printed (normally VAT included).",
+    noVat: "without VAT", withVat: "with VAT", unknownBasis: "VAT basis unknown",
+    search: "Search…", csv: "Export CSV", print: "Print",
+    name: "Name", vatNo: "VAT no.", share: "Share", last: "Last purchase", change: "Change",
+    product: "Product", brand: "Brand", category: "Category", bought: "Bought", purchases: "Purchases", lastPrice: "Last price", range: "Min – max", supplier: "Supplier",
+    date: "Date", number: "Number", total: "Total", source: "Source", items: "items",
+    before: "Before", now: "Now", when: "When",
+    lot: "Lot", expiry: "Expiry", description: "Description", qty: "Qty", unit: "Unit", price: "Price", amount: "Amount", vat: "VAT",
+    nothing: "Nothing in this period.", priceHistory: "Price history", purchasesOf: "Purchases",
+    src_photo: "photo", src_pdf: "PDF", src_einvoice: "e-invoice", src_dropped: "e-invoice (added here)",
+    added: n => `${n} e-invoice${n === 1 ? "" : "s"} added`, dupes: n => `${n} already there`, failed: n => `${n} file${n === 1 ? "" : "s"} not readable`,
+    creditSkipped: n => `${n} credit note${n === 1 ? "" : "s"} skipped`,
+    asOf: d => `Data from the phone, ${d}`, droppedOnly: "E-invoices added on this computer (not saved anywhere)",
+    readOnly: "Read-only copy. Corrections are made on the phone; nothing typed here is saved. Closing this tab forgets the data.",
+    lotSearch: "Search a lot, product or supplier…", lotsNote: "Every lot recorded on the documents of the period, for traceability.",
+    notClassified: "Not classified", unassigned: "not linked to a product", sameBasis: "Compared within the same unit and VAT basis.",
+    noDate: "no date", perUnit: u => `per ${u}`, prevCount: n => `${n} in the previous period`,
+    cat: { fruit_veg: "Fruit & vegetables", meat: "Meat", fish: "Fish", cured_meats: "Cured meats", dairy_eggs: "Dairy & eggs", bakery: "Bakery", dry_goods: "Dry goods", frozen: "Frozen", beverages: "Beverages", cleaning: "Cleaning", disposables: "Disposables", other: "Other" },
+  },
+  it: {
+    lockTitle: "Kitchen Receipts – copia per l'ufficio", lockSub: "Inserisci la password scelta sul telefono quando è stata creata questa copia.",
+    password: "Password", open: "Apri", opening: "Apertura…", wrongPw: "Password errata, oppure il file è danneggiato.",
+    orDrop: "oppure", dropHere: "Trascina qui fatture elettroniche (.xml, .p7m, .zip) per consultarle senza una copia per l'ufficio.",
+    noCrypto: "Questo browser non può aprire la copia. Usa Safari, Chrome o Firefox aggiornati.",
+    period: "Periodo", addInvoices: "Aggiungi fatture elettroniche", close: "Chiudi",
+    p_month: "Questo mese", p_lastMonth: "Mese scorso", p_3m: "Ultimi 3 mesi", p_year: "Quest'anno", p_lastYear: "Anno scorso", p_12m: "Ultimi 12 mesi", p_all: "Tutto", p_custom: "Personalizzato…",
+    t_overview: "Panoramica", t_suppliers: "Fornitori", t_products: "Prodotti", t_prices: "Variazioni prezzi", t_documents: "Documenti", t_lots: "Lotti",
+    spend: "Spesa", documents: "Documenti", suppliers: "Fornitori", lines: "Righe", vsPrev: "rispetto al periodo precedente", noPrev: "nessun periodo precedente",
+    perMonth: "Spesa per mese", byCategory: "Per categoria (importi delle righe)", topSuppliers: "Fornitori principali", priceUps: "Aumenti di prezzo maggiori",
+    netNote: "Senza IVA dove i prezzi del documento sono IVA esclusa; con IVA dove sono IVA inclusa. I due importi non vengono mai sommati.",
+    totalNote: "Totali dei documenti come stampati (di norma IVA inclusa).",
+    noVat: "senza IVA", withVat: "con IVA", unknownBasis: "IVA non indicata",
+    search: "Cerca…", csv: "Esporta CSV", print: "Stampa",
+    name: "Nome", vatNo: "P.IVA", share: "Quota", last: "Ultimo acquisto", change: "Variazione",
+    product: "Prodotto", brand: "Marca", category: "Categoria", bought: "Acquistato", purchases: "Acquisti", lastPrice: "Ultimo prezzo", range: "Min – max", supplier: "Fornitore",
+    date: "Data", number: "Numero", total: "Totale", source: "Origine", items: "righe",
+    before: "Prima", now: "Ora", when: "Quando",
+    lot: "Lotto", expiry: "Scadenza", description: "Descrizione", qty: "Q.tà", unit: "U.M.", price: "Prezzo", amount: "Importo", vat: "IVA",
+    nothing: "Niente in questo periodo.", priceHistory: "Andamento del prezzo", purchasesOf: "Acquisti",
+    src_photo: "foto", src_pdf: "PDF", src_einvoice: "fattura elettronica", src_dropped: "fattura elettronica (aggiunta qui)",
+    added: n => `${n} fattur${n === 1 ? "a elettronica aggiunta" : "e elettroniche aggiunte"}`, dupes: n => `${n} già present${n === 1 ? "e" : "i"}`, failed: n => `${n} file non leggibil${n === 1 ? "e" : "i"}`,
+    creditSkipped: n => `${n} not${n === 1 ? "a" : "e"} di credito saltat${n === 1 ? "a" : "e"}`,
+    asOf: d => `Dati dal telefono, ${d}`, droppedOnly: "Fatture elettroniche aggiunte su questo computer (non salvate da nessuna parte)",
+    readOnly: "Copia in sola lettura. Le correzioni si fanno sul telefono; qui non si salva nulla. Chiudendo la scheda i dati vengono dimenticati.",
+    lotSearch: "Cerca un lotto, un prodotto o un fornitore…", lotsNote: "Tutti i lotti registrati sui documenti del periodo, per la tracciabilità.",
+    notClassified: "Non classificato", unassigned: "non collegato a un prodotto", sameBasis: "Confronto con la stessa unità e la stessa base IVA.",
+    noDate: "senza data", perUnit: u => `al ${u}`, prevCount: n => `${n} nel periodo precedente`,
+    cat: { fruit_veg: "Frutta e verdura", meat: "Carne", fish: "Pesce", cured_meats: "Salumi", dairy_eggs: "Latticini e uova", bakery: "Panetteria", dry_goods: "Dispensa", frozen: "Surgelati", beverages: "Bevande", cleaning: "Pulizia", disposables: "Monouso", other: "Altro" },
+  },
+};
+let lang = (navigator.language || "en").toLowerCase().startsWith("it") ? "it" : "en";
+const t = (k, ...a) => { const v = (T[lang][k] ?? T.en[k]); return typeof v === "function" ? v(...a) : v; };
+
+// ============================================================== small helpers
+const $ = id => document.getElementById(id);
+function h(tag, attrs, ...kids) {
+  const e = document.createElement(tag);
+  if (attrs) for (const [k, v] of Object.entries(attrs)) {
+    if (v == null || v === false) continue;
+    if (k === "class") e.className = v;
+    else if (k.startsWith("on")) e.addEventListener(k.slice(2), v);
+    else if (k === "style") e.setAttribute("style", v);
+    else e.setAttribute(k, v === true ? "" : v);
+  }
+  for (const c of kids.flat(Infinity)) if (c != null && c !== false) e.append(c instanceof Node ? c : String(c));
+  return e;
+}
+const svgNS = "http://www.w3.org/2000/svg";
+function s(tag, attrs, ...kids) {
+  const e = document.createElementNS(svgNS, tag);
+  for (const [k, v] of Object.entries(attrs || {})) e.setAttribute(k, v);
+  for (const c of kids.flat()) if (c != null) e.append(c instanceof Node ? c : String(c));
+  return e;
+}
+const loc = () => (lang === "it" ? "it-IT" : "en-GB");
+function money(cents, cur) {
+  if (cents == null) return "—";
+  try { return new Intl.NumberFormat(loc(), { style: "currency", currency: cur || "EUR" }).format(cents / 100); }
+  catch { return (cents / 100).toFixed(2) + " " + (cur || ""); }
+}
+const dec = (v, max = 3) => v == null ? "—" : new Intl.NumberFormat(loc(), { maximumFractionDigits: max }).format(Number(v));
+const pct = v => (v > 0 ? "+" : "") + new Intl.NumberFormat(loc(), { maximumFractionDigits: 1, minimumFractionDigits: 1 }).format(v) + "%";
+function fmtDate(iso) { if (!iso) return t("noDate"); const [y, m, d] = iso.split("-"); return lang === "it" ? `${d}/${m}/${y}` : `${d}/${m}/${y}`; }
+const monthLabel = ym => { const [y, m] = ym.split("-").map(Number); return new Date(y, m - 1, 1).toLocaleDateString(loc(), { month: "short", year: "2-digit" }); };
+const norm = x => (x || "").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/[^a-z0-9]+/g, " ").trim();
+const iso = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+function toast(msg) { const e = $("toast"); e.textContent = msg; e.classList.remove("hidden"); clearTimeout(toast.tm); toast.tm = setTimeout(() => e.classList.add("hidden"), 5000); }
+function changeChip(before, now, invert) {
+  if (!before) return h("span", { class: "chip neutral" }, "—");
+  const v = (now - before) / before * 100;
+  const up = v > 0.05, down = v < -0.05;
+  return h("span", { class: "chip " + (up ? (invert ? "down" : "up") : down ? (invert ? "up" : "down") : "neutral") }, pct(v));
+}
+
+// ============================================================== data
+const FORMAT = "kitchen-receipts-office";
+const DB = { business: null, exportedAt: null, sellers: new Map(), families: new Map(), products: new Map(), documents: [], hasPhoneData: false };
+
+function loadSnapshot(j) {
+  if (!j || j.format !== FORMAT) throw new Error("format");
+  DB.business = j.business; DB.exportedAt = j.exportedAt; DB.hasPhoneData = true;
+  for (const x of j.sellers) DB.sellers.set(x.id, x);
+  for (const x of j.families) DB.families.set(x.id, x);
+  for (const x of j.products) DB.products.set(x.id, x);
+  for (const d of j.documents) DB.documents.push(d);
+}
+
+const b64bytes = b => Uint8Array.from(atob(b), c => c.charCodeAt(0));
+async function gunzip(bytes) {
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"));
+  return await new Response(stream).text();
+}
+async function decryptEnvelope(env, password) {
+  const enc = new TextEncoder();
+  const base = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
+  const key = await crypto.subtle.deriveKey({ name: "PBKDF2", hash: "SHA-256", salt: b64bytes(env.salt), iterations: env.iter }, base, { name: "AES-GCM", length: 256 }, false, ["decrypt"]);
+  const plain = await crypto.subtle.decrypt({ name: "AES-GCM", iv: b64bytes(env.iv), additionalData: enc.encode(FORMAT), tagLength: 128 }, key, b64bytes(env.data));
+  return JSON.parse(await gunzip(new Uint8Array(plain)));
+}
+function embeddedEnvelope(text) {
+  const m = /\/\*KR-DATA\*\/([\s\S]*?)\/\*KR-END\*\//.exec(text);
+  if (!m) return null;
+  const v = JSON.parse(m[1]);
+  return v && v.format === FORMAT ? v : null;
+}
+
+// ============================================================== e-invoices (FatturaPA) read in the browser
+function isZip(b) { return b.length > 4 && b[0] === 0x50 && b[1] === 0x4b && b[2] === 3 && b[3] === 4; }
+const latin1 = b => { let s = ""; for (let i = 0; i < b.length; i += 8192) s += String.fromCharCode.apply(null, b.subarray(i, i + 8192)); return s; };
+const containsInvoice = b => /FatturaElettronica(Body|Header|Semplificata)/.test(latin1(b.length > 400000 ? b.subarray(0, 400000) : b)) || /FatturaElettronica(Body|Header)/.test(latin1(b));
+function firstNonBlank(b) { let i = (b[0] === 0xef && b[1] === 0xbb && b[2] === 0xbf) ? 3 : 0; while (i < b.length && (b[i] === 32 || b[i] === 10 || b[i] === 13 || b[i] === 9)) i++; return i; }
+/** Every OCTET STRING inside a DER/BER structure (a signed .p7m), chunked ones joined. The signature is not checked. */
+function octetStrings(b) {
+  const out = [];
+  function walk(from, to, depth, sink) {
+    let p = from;
+    while (p < to) {
+      if (depth > 40) throw new Error("deep");
+      if (p + 1 < to && b[p] === 0 && b[p + 1] === 0) return p + 2;
+      const tag = b[p++];
+      if ((tag & 0x1f) === 0x1f) { while (p < to && (b[p] & 0x80)) p++; p++; }
+      let len = b[p++], indefinite = false;
+      if (len === 0x80) indefinite = true;
+      else if (len > 0x80) { const n = len & 0x7f; if (n > 4) throw new Error("len"); len = 0; for (let k = 0; k < n; k++) len = len * 256 + b[p++]; }
+      const constructed = (tag & 0x20) !== 0, octets = (tag & 0x1f) === 4;
+      if (constructed) {
+        const chunks = octets ? (sink || []) : null;
+        let end;
+        if (indefinite) end = walk(p, to, depth + 1, chunks); else { walk(p, p + len, depth + 1, chunks); end = p + len; }
+        if (octets && !sink) { let n = 0; for (const c of chunks) n += c.length; const all = new Uint8Array(n); let o = 0; for (const c of chunks) { all.set(c, o); o += c.length; } out.push(all); }
+        p = end;
+      } else {
+        if (indefinite || p + len > to) throw new Error("bad");
+        const piece = b.subarray(p, p + len);
+        if (octets) { if (sink) sink.push(piece); else out.push(piece); }
+        p += len;
+      }
+    }
+    return p;
+  }
+  walk(0, b.length, 0, null);
+  return out;
+}
+function unwrap(b) {
+  const i = firstNonBlank(b);
+  if (b[i] === 0x3c) return containsInvoice(b) ? b : null;
+  if (b[i] === 0x30) { try { const inner = octetStrings(b).find(containsInvoice); return inner ? (unwrap(inner) || inner) : null; } catch { return null; } }
+  const text = latin1(b).split(/\r?\n/).filter(l => !l.startsWith("-----")).join("").replace(/\s+/g, "");
+  if (text.length >= 16 && /^[A-Za-z0-9+/=]+$/.test(text)) { try { const d = b64bytes(text); if (d.length && d[0] !== b[i]) return unwrap(d); } catch { } }
+  return null;
+}
+async function unzip(b) {
+  const out = [], dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  // Central directory: find "end of central directory" record.
+  let eocd = -1;
+  for (let i = b.length - 22; i >= Math.max(0, b.length - 65557); i--) if (dv.getUint32(i, true) === 0x06054b50) { eocd = i; break; }
+  if (eocd < 0) return out;
+  let p = dv.getUint32(eocd + 16, true); const count = dv.getUint16(eocd + 10, true);
+  for (let k = 0; k < count && k < 500; k++) {
+    if (dv.getUint32(p, true) !== 0x02014b50) break;
+    const method = dv.getUint16(p + 10, true), csize = dv.getUint32(p + 20, true), nlen = dv.getUint16(p + 28, true), xlen = dv.getUint16(p + 30, true), clen = dv.getUint16(p + 32, true), off = dv.getUint32(p + 42, true);
+    const name = latin1(b.subarray(p + 46, p + 46 + nlen));
+    p += 46 + nlen + xlen + clen;
+    if (name.endsWith("/")) continue;
+    const lh = off + 30 + dv.getUint16(off + 26, true) + dv.getUint16(off + 28, true);
+    const data = b.subarray(lh, lh + csize);
+    let bytes;
+    if (method === 0) bytes = data;
+    else if (method === 8) bytes = new Uint8Array(await new Response(new Blob([data]).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
+    else continue;
+    if (/\.zip$/i.test(name)) out.push(...await unzip(bytes)); else out.push(bytes);
+  }
+  return out;
+}
+async function invoicesIn(bytes) {
+  if (isZip(bytes)) { const all = []; for (const f of await unzip(bytes)) { try { all.push(...await invoicesIn(f)); } catch { } } return all; }
+  const x = unwrap(bytes);
+  if (!x) throw new Error("not an e-invoice");
+  const xml = new TextDecoder(/encoding=["']ISO-8859-1["']/i.test(latin1(x.subarray(0, 200))) ? "iso-8859-1" : "utf-8").decode(x);
+  if (/<!DOCTYPE/i.test(xml)) throw new Error("doctype");
+  const doc = new DOMParser().parseFromString(xml, "application/xml");
+  if (doc.querySelector("parsererror")) throw new Error("xml");
+  const root = doc.documentElement;
+  const bodies = kids(root, "FatturaElettronicaBody");
+  return (bodies.length ? bodies : [null]).map(b => readInvoice(root, b));
+}
+const kids = (e, name) => e ? Array.from(e.children).filter(c => c.localName === name) : [];
+const kid = (e, name) => kids(e, name)[0] || null;
+const at = (e, path) => path.split("/").reduce((x, n) => x && kid(x, n), e);
+const txt = (e, path) => { const x = at(e, path); const v = x && x.textContent.trim(); return v || null; };
+const cents = v => v == null ? null : Math.round(Number(v) * 100);
+function party(e) {
+  if (!e) return { name: null, id: null };
+  const name = txt(e, "DatiAnagrafici/Anagrafica/Denominazione") || [txt(e, "DatiAnagrafici/Anagrafica/Nome"), txt(e, "DatiAnagrafici/Anagrafica/Cognome")].filter(Boolean).join(" ") || txt(e, "Denominazione") || null;
+  const idf = at(e, "DatiAnagrafici/IdFiscaleIVA") || at(e, "IdFiscaleIVA");
+  const id = idf ? (txt(idf, "IdPaese") || "") + (txt(idf, "IdCodice") || "") : (txt(e, "DatiAnagrafici/CodiceFiscale") || txt(e, "CodiceFiscale"));
+  return { name, id: id || null };
+}
+const LOT_IN_TEXT = /\b(?:lotto|lot|lt\.?)\s*[:.]?\s*([A-Z0-9][A-Z0-9\-\/.]{2,})/i;
+function readInvoice(root, body) {
+  const header = kid(root, "FatturaElettronicaHeader");
+  const simplified = root.localName === "FatturaElettronicaSemplificata";
+  const seller = party(kid(header, "CedentePrestatore"));
+  const gen = at(body, "DatiGenerali/DatiGeneraliDocumento");
+  const type = txt(gen, "TipoDocumento");
+  const lines = [];
+  if (!simplified) {
+    for (const l of kids(at(body, "DatiBeniServizi"), "DettaglioLinee")) {
+      const raw = txt(l, "Descrizione") || "";
+      const q = txt(l, "Quantita"), tot = txt(l, "PrezzoTotale");
+      if (tot == null) continue;
+      const total = cents(tot);
+      if (total === 0 && (q == null || Number(q) === 0)) continue;
+      let price = txt(l, "PrezzoUnitario");
+      if (q != null && Number(q) !== 0 && (kids(l, "ScontoMaggiorazione").length || price == null)) price = String(Math.round(Number(tot) / Number(q) * 10000) / 10000);
+      const other = kids(l, "AltriDatiGestionali");
+      const lotData = other.find(o => /LOT|BATCH/i.test(txt(o, "TipoDato") || ""));
+      const expData = other.find(o => /SCAD|EXP/i.test(txt(o, "TipoDato") || ""));
+      const m = LOT_IN_TEXT.exec(raw);
+      const codes = kids(l, "CodiceArticolo");
+      const code = (codes.find(c => !/EAN|GTIN/i.test(txt(c, "CodiceTipo") || "")) || codes[0]);
+      const u = txt(l, "UnitaMisura");
+      lines.push({
+        d: (m ? raw.replace(m[0], "") : raw).replace(/\s+/g, " ").trim() || raw, p: null, q, u: u ? u.toLowerCase().replace(/\.$/, "") : (q != null && Number.isInteger(Number(q)) ? "pz" : null),
+        pr: price, t: total, v: txt(l, "AliquotaIVA"), lot: lotData ? (txt(lotData, "RiferimentoTesto") || txt(lotData, "RiferimentoNumero")) : (m ? m[1] : null),
+        exp: expData ? (txt(expData, "RiferimentoData") || "").slice(0, 10) || null : null, pk: null, ps: null, code: code ? txt(code, "CodiceValore") : null,
+      });
+    }
+  } else {
+    for (const l of kids(body, "DatiBeniServizi")) lines.push({ d: txt(l, "Descrizione") || "", p: null, q: null, u: null, pr: null, t: cents(txt(l, "Importo")), v: txt(l, "DatiIVA/Aliquota"), lot: null, exp: null });
+  }
+  let sub = 0, vat = 0; const summary = kids(at(body, "DatiBeniServizi"), "DatiRiepilogo");
+  for (const r of summary) { sub += cents(txt(r, "ImponibileImporto")) || 0; vat += cents(txt(r, "Imposta")) || 0; }
+  const printed = cents(txt(gen, "ImportoTotaleDocumento"));
+  return {
+    seller, type, credit: type === "TD04" || type === "TD08",
+    doc: {
+      id: null, sellerId: null, date: (txt(gen, "Data") || "").slice(0, 10) || null, number: txt(gen, "Numero"), currency: txt(gen, "Divisa") || "EUR",
+      subtotal: summary.length ? sub : null, vat: summary.length ? vat : null, total: printed ?? (summary.length ? sub + vat : lines.reduce((a, l) => a + (l.t || 0), 0)),
+      vatBasis: simplified ? "INCLUSIVE" : "EXCLUSIVE", source: "dropped", lines,
+    },
+  };
+}
+let nextId = -1;
+function addInvoice(inv) {
+  const vatDigits = (inv.seller.id || "").replace(/\D/g, "").slice(-11);
+  let seller = [...DB.sellers.values()].find(s => (vatDigits && (s.vat || "").replace(/\D/g, "").slice(-11) === vatDigits) || (!vatDigits && norm(s.name) === norm(inv.seller.name)));
+  if (!seller) { seller = { id: nextId--, name: inv.seller.name || "?", vat: inv.seller.id }; DB.sellers.set(seller.id, seller); }
+  const d = inv.doc;
+  const dup = DB.documents.some(x => x.sellerId === seller.id && norm(x.number) === norm(d.number) && x.date === d.date);
+  if (dup) return false;
+  d.id = nextId--; d.sellerId = seller.id;
+  DB.documents.push(d);
+  return true;
+}
+async function addFiles(files) {
+  let added = 0, dupes = 0, failed = 0, credits = 0, unlockedFromFile = false;
+  for (const f of files) {
+    const bytes = new Uint8Array(await f.arrayBuffer());
+    if (/\.html?$/i.test(f.name) || latin1(bytes.subarray(0, 300)).includes("<!doctype html")) {
+      // Another office copy: open it here (asks for its password).
+      const env = embeddedEnvelope(new TextDecoder().decode(bytes));
+      if (env && !DB.hasPhoneData) { pendingEnvelope = env; showLock(); unlockedFromFile = true; continue; }
+      failed++; continue;
+    }
+    try {
+      for (const inv of await invoicesIn(bytes)) {
+        if (inv.credit) { credits++; continue; }
+        if (addInvoice(inv)) added++; else dupes++;
+      }
+    } catch { failed++; }
+  }
+  if (unlockedFromFile) return;
+  const parts = [];
+  if (added) parts.push(t("added", added));
+  if (dupes) parts.push(t("dupes", dupes));
+  if (credits) parts.push(t("creditSkipped", credits));
+  if (failed) parts.push(t("failed", failed));
+  if (parts.length) toast(parts.join(" · "));
+  if (added) { showApp(); render(); }
+}
+
+// ============================================================== period
+const PERIODS = ["month", "lastMonth", "3m", "12m", "year", "lastYear", "all", "custom"];
+const state = { period: "12m", from: null, to: null, tab: "overview", sort: {}, q: {} };
+function range(p) {
+  const now = DB.exportedAt ? new Date(DB.exportedAt) : new Date();
+  const y = now.getFullYear(), m = now.getMonth();
+  const r = (a, b) => [iso(a), iso(b)];
+  switch (p) {
+    case "month": return r(new Date(y, m, 1), new Date(y, m + 1, 0));
+    case "lastMonth": return r(new Date(y, m - 1, 1), new Date(y, m, 0));
+    case "3m": return r(new Date(y, m - 2, 1), new Date(y, m + 1, 0));
+    case "12m": return r(new Date(y, m - 11, 1), new Date(y, m + 1, 0));
+    case "year": return r(new Date(y, 0, 1), new Date(y, 11, 31));
+    case "lastYear": return r(new Date(y - 1, 0, 1), new Date(y - 1, 11, 31));
+    case "custom": return [state.from, state.to];
+    default: return [null, null];
+  }
+}
+function previousRange([a, b]) {
+  if (!a || !b) return null;
+  const A = new Date(a), B = new Date(b);
+  const days = Math.round((B - A) / 86400000) + 1;
+  // Whole months stay whole months (March → February), otherwise the same number of days before.
+  if (A.getDate() === 1 && new Date(B.getFullYear(), B.getMonth(), B.getDate() + 1).getDate() === 1) {
+    const months = (B.getFullYear() - A.getFullYear()) * 12 + B.getMonth() - A.getMonth() + 1;
+    return [iso(new Date(A.getFullYear(), A.getMonth() - months, 1)), iso(new Date(A.getFullYear(), A.getMonth(), 0))];
+  }
+  return [iso(new Date(A.getTime() - days * 86400000)), iso(new Date(A.getTime() - 86400000))];
+}
+const inRange = (d, [a, b]) => (!a && !b) ? true : (d.date != null && (!a || d.date >= a) && (!b || d.date <= b));
+
+// ============================================================== derived data
+function productOf(line, doc) {
+  if (line.p != null && DB.products.has(line.p)) return DB.products.get(line.p);
+  // Lines not linked to a product (e-invoices added here): grouped by their description and supplier.
+  const key = "u:" + doc.sellerId + ":" + norm(line.d);
+  let p = DB.products.get(key);
+  if (!p) { p = { id: key, name: line.d, brand: null, category: "other", unassigned: true }; DB.products.set(key, p); }
+  return p;
+}
+const basisLabel = b => b === "EXCLUSIVE" ? t("noVat") : b === "INCLUSIVE" ? t("withVat") : t("unknownBasis");
+const catLabel = p => p.unassigned ? t("notClassified") : (t("cat")[p.category] || p.category);
+const sellerName = id => (DB.sellers.get(id) || {}).name || "?";
+function srcLabel(s) { return t(s === "e-invoice" ? "src_einvoice" : s === "dropped" ? "src_dropped" : s === "pdf" ? "src_pdf" : "src_photo"); }
+function docsIn(r) { return DB.documents.filter(d => inRange(d, r)); }
+function sumTotals(docs) { return docs.reduce((a, d) => a + (d.total || 0), 0); }
+
+/** All purchase lines of the documents, each with its document, seller and product. */
+function purchases(docs) {
+  const out = [];
+  for (const d of docs) for (const l of d.lines) out.push({ l, d, p: productOf(l, d) });
+  return out;
+}
+
+/** Price series per product, unit and VAT basis, oldest first (the same unit and basis only are compared). */
+function priceSeries(rows) {
+  const m = new Map();
+  for (const r of rows) {
+    if (r.l.pr == null || !r.d.date) continue;
+    const k = r.p.id + "|" + (r.l.u || "") + "|" + r.d.vatBasis;
+    if (!m.has(k)) m.set(k, { p: r.p, unit: r.l.u, basis: r.d.vatBasis, pts: [] });
+    m.get(k).pts.push({ date: r.d.date, price: Number(r.l.pr), seller: r.d.sellerId, doc: r.d });
+  }
+  for (const v of m.values()) v.pts.sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0);
+  return [...m.values()];
+}
+function priceChanges(r) {
+  // Last purchase in the period against the purchase before it (any time before), per product / unit / basis.
+  const all = priceSeries(purchases(DB.documents));
+  const out = [];
+  for (const s of all) {
+    const inP = s.pts.filter(x => inRange({ date: x.date }, r));
+    if (!inP.length) continue;
+    const last = inP[inP.length - 1];
+    const prev = s.pts[s.pts.indexOf(last) - 1];
+    if (!prev || prev.price <= 0 || Math.abs(last.price - prev.price) < 1e-9) continue;
+    out.push({ s, prev, last, change: (last.price - prev.price) / prev.price * 100 });
+  }
+  return out.sort((a, b) => b.change - a.change);
+}
+
+// ============================================================== tables
+function table(id, cols, rows, opts = {}) {
+  const st = state.sort[id] || opts.sort || null;
+  if (st) {
+    const c = cols.find(c => c.key === st.key);
+    if (c) rows = rows.slice().sort((a, b) => { const x = c.sort ? c.sort(a) : c.val(a), y = c.sort ? c.sort(b) : c.val(b); return (x == null) - (y == null) || (x < y ? -1 : x > y ? 1 : 0) * (st.dir === "asc" ? 1 : -1); });
+  }
+  const limit = opts.limit || Infinity;
+  const head = h("tr", null, cols.map(c => h("th", {
+    class: (c.num ? "num " : "") + (st && st.key === c.key ? "sorted-" + st.dir : ""), "data-sort": c.key, scope: "col",
+    onclick: () => { const cur = state.sort[id]; state.sort[id] = { key: c.key, dir: cur && cur.key === c.key && cur.dir === "desc" ? "asc" : "desc" }; render(); },
+  }, c.label)));
+  const body = rows.slice(0, limit).map(r => h("tr", { class: opts.onRow ? "clickable" : null, onclick: opts.onRow ? () => opts.onRow(r) : null },
+    cols.map(c => { const v = c.cell ? c.cell(r) : c.val(r); return h("td", { class: c.num ? "num" : null }, v == null ? "—" : v); })));
+  const wrap = h("div", { class: "table-wrap" }, h("table", null, h("thead", null, head), h("tbody", null, body)));
+  wrap.csv = () => csv(cols, rows);
+  return rows.length ? wrap : h("div", { class: "empty" }, t("nothing"));
+}
+function csv(cols, rows) {
+  const sep = lang === "it" ? ";" : ",";
+  const q = v => { const s = v == null ? "" : String(v); return /[";,\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s; };
+  const numFmt = v => typeof v === "number" ? (lang === "it" ? String(v).replace(".", ",") : String(v)) : v;
+  return "﻿" + [cols.map(c => q(c.label)).join(sep), ...rows.map(r => cols.map(c => q(numFmt(c.csv ? c.csv(r) : c.val(r)))).join(sep))].join("\r\n");
+}
+function download(name, text) {
+  const a = h("a", { href: URL.createObjectURL(new Blob([text], { type: "text/csv;charset=utf-8" })), download: name });
+  document.body.append(a); a.click(); setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+}
+function card(title, body, tools, cls) { return h("section", { class: "card" + (cls ? " " + cls : "") }, h("h2", null, title, h("span", { class: "spacer" }), tools || null), body); }
+function csvButton(name, getTable) { return h("button", { class: "btn small no-print", onclick: () => { const tb = getTable(); if (tb.csv) download(name + ".csv", tb.csv()); } }, t("csv")); }
+
+// ============================================================== charts
+function barChart(points) {
+  // points: [{label, value}] in cents
+  const W = 640, H = 220, pad = { l: 8, r: 8, t: 14, b: 26 };
+  const max = Math.max(1, ...points.map(p => p.value));
+  const bw = (W - pad.l - pad.r) / Math.max(1, points.length);
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("perMonth") });
+  points.forEach((p, i) => {
+    const hgt = (H - pad.t - pad.b) * p.value / max;
+    const x = pad.l + i * bw + bw * 0.15, y = H - pad.b - hgt;
+    const rect = s("rect", { x, y, width: bw * 0.7, height: Math.max(hgt, p.value ? 1 : 0), rx: 3, fill: "var(--accent)" });
+    rect.append(s("title", null, `${p.label}: ${money(p.value)}`));
+    svg.append(rect);
+    if (points.length <= 14 || i % Math.ceil(points.length / 12) === 0) svg.append(s("text", { x: x + bw * 0.35, y: H - 8, "text-anchor": "middle" }, p.label));
+    if (p.value && points.length <= 14) svg.append(s("text", { x: x + bw * 0.35, y: y - 4, "text-anchor": "middle" }, compact(p.value)));
+  });
+  return h("div", { class: "chart" }, svg);
+}
+const compact = c => new Intl.NumberFormat(loc(), { maximumFractionDigits: 0 }).format(c / 100);
+function lineChart(series) {
+  const W = 640, H = 200, pad = { l: 48, r: 12, t: 12, b: 26 };
+  const pts = series.pts;
+  const ys = pts.map(p => p.price), lo = Math.min(...ys), hi = Math.max(...ys), span = hi - lo || hi * 0.1 || 1;
+  const t0 = new Date(pts[0].date).getTime(), t1 = new Date(pts[pts.length - 1].date).getTime(), tspan = t1 - t0 || 1;
+  const X = d => pad.l + (pts.length === 1 ? (W - pad.l - pad.r) / 2 : (new Date(d).getTime() - t0) / tspan * (W - pad.l - pad.r));
+  const Y = v => pad.t + (1 - (v - (lo - span * 0.1)) / (span * 1.2)) * (H - pad.t - pad.b);
+  const svg = s("svg", { viewBox: `0 0 ${W} ${H}`, role: "img", "aria-label": t("priceHistory") });
+  [lo, (lo + hi) / 2, hi].forEach(v => { svg.append(s("line", { x1: pad.l, x2: W - pad.r, y1: Y(v), y2: Y(v), stroke: "var(--line)" })); svg.append(s("text", { x: pad.l - 6, y: Y(v) + 4, "text-anchor": "end" }, dec(v, 3))); });
+  svg.append(s("polyline", { points: pts.map(p => `${X(p.date)},${Y(p.price)}`).join(" "), fill: "none", stroke: "var(--accent)", "stroke-width": 2 }));
+  pts.forEach(p => { const c = s("circle", { cx: X(p.date), cy: Y(p.price), r: 3.5, fill: "var(--accent)" }); c.append(s("title", null, `${fmtDate(p.date)} · ${dec(p.price, 4)} · ${sellerName(p.seller)}`)); svg.append(c); });
+  svg.append(s("text", { x: pad.l, y: H - 6 }, fmtDate(pts[0].date)));
+  svg.append(s("text", { x: W - pad.r, y: H - 6, "text-anchor": "end" }, fmtDate(pts[pts.length - 1].date)));
+  return h("div", { class: "chart" }, svg);
+}
+function bars(rows, fmt) {
+  const max = Math.max(1, ...rows.map(r => r.value + (r.alt || 0)));
+  return h("div", { class: "bars" }, rows.map(r => h("div", { class: "row" },
+    h("div", null, r.label),
+    h("div", { class: "bar-track" }, h("div", { class: "bar", style: `width:${r.value / max * 100}%` }), r.alt ? h("div", { class: "bar alt", style: `width:${r.alt / max * 100}%` }) : null),
+    h("div", { class: "num" }, fmt(r)))));
+}
+
+// ============================================================== views
+function vOverview(r) {
+  const docs = docsIn(r), prevR = previousRange(r), prevDocs = prevR ? docsIn(prevR) : null;
+  const spend = sumTotals(docs), prevSpend = prevDocs ? sumTotals(prevDocs) : null;
+  const rows = purchases(docs);
+  const sellers = new Set(docs.map(d => d.sellerId));
+  const kpi = (label, value, sub) => h("div", { class: "card kpi" }, h("div", { class: "label" }, label), h("div", { class: "value" }, value), h("div", { class: "sub muted" }, sub));
+  const sub = prevDocs ? h("span", null, changeChip(prevSpend, spend), " ", t("vsPrev")) : t("noPrev");
+  // months
+  const months = new Map();
+  let [a, b] = r;
+  const dated = docs.filter(d => d.date);
+  if (!a) a = dated.reduce((m, d) => d.date < m ? d.date : m, "9999"); if (!b) b = dated.reduce((m, d) => d.date > m ? d.date : m, "0000");
+  if (dated.length) { let y = +a.slice(0, 4), m = +a.slice(5, 7); const ey = +b.slice(0, 4), em = +b.slice(5, 7); let guard = 0; while ((y < ey || (y === ey && m <= em)) && guard++ < 240) { months.set(`${y}-${String(m).padStart(2, "0")}`, 0); m++; if (m > 12) { m = 1; y++; } } }
+  for (const d of dated) { const k = d.date.slice(0, 7); if (months.has(k)) months.set(k, months.get(k) + (d.total || 0)); }
+  // categories
+  const cats = new Map();
+  for (const x of rows) { const k = catLabel(x.p); const c = cats.get(k) || { label: k, value: 0, alt: 0, other: 0 }; if (x.d.vatBasis === "EXCLUSIVE") c.value += x.l.t || 0; else if (x.d.vatBasis === "INCLUSIVE") c.alt += x.l.t || 0; else c.other += x.l.t || 0; cats.set(k, c); }
+  const catRows = [...cats.values()].sort((p, q) => (q.value + q.alt) - (p.value + p.alt));
+  // suppliers
+  const bySeller = new Map();
+  for (const d of docs) bySeller.set(d.sellerId, (bySeller.get(d.sellerId) || 0) + (d.total || 0));
+  const top = [...bySeller.entries()].sort((p, q) => q[1] - p[1]).slice(0, 8).map(([id, v]) => ({ label: sellerName(id), value: v }));
+  const ups = priceChanges(r).filter(c => c.change > 0).slice(0, 8);
+  return [
+    h("div", { class: "grid kpis" },
+      kpi(t("spend"), money(spend), sub),
+      kpi(t("documents"), String(docs.length), prevDocs ? t("prevCount", prevDocs.length) : ""),
+      kpi(t("suppliers"), String(sellers.size), ""),
+      kpi(t("lines"), String(rows.length), "")),
+    h("div", { class: "grid three", style: "margin-top:16px" },
+      card(t("perMonth"), [months.size ? barChart([...months.entries()].map(([k, v]) => ({ label: monthLabel(k), value: v }))) : h("div", { class: "empty" }, t("nothing")), h("div", { class: "note" }, t("totalNote"))], null, "span2"),
+      card(t("topSuppliers"), top.length ? bars(top, x => money(x.value)) : h("div", { class: "empty" }, t("nothing"))),
+      card(t("byCategory"), [catRows.length ? bars(catRows, x => [x.value ? money(x.value) + " " + t("noVat") : null, x.alt ? money(x.alt) + " " + t("withVat") : null].filter(Boolean).join(" · ") || money(x.other)) : h("div", { class: "empty" }, t("nothing")), h("div", { class: "note" }, t("netNote"))]),
+      card(t("priceUps"), ups.length ? table("ups", [
+        { key: "p", label: t("product"), val: c => c.s.p.name },
+        { key: "b", label: t("before"), num: true, val: c => c.prev.price, cell: c => dec(c.prev.price, 4) },
+        { key: "n", label: t("now"), num: true, val: c => c.last.price, cell: c => dec(c.last.price, 4) },
+        { key: "c", label: t("change"), num: true, val: c => c.change, cell: c => changeChip(c.prev.price, c.last.price) },
+      ], ups, { onRow: c => openProduct(c.s.p) }) : h("div", { class: "empty" }, t("nothing")), null, "span2")),
+  ];
+}
+
+function vSuppliers(r) {
+  const docs = docsIn(r), prevR = previousRange(r), prev = prevR ? docsIn(prevR) : [];
+  const total = sumTotals(docs) || 1;
+  const m = new Map();
+  for (const d of docs) { const x = m.get(d.sellerId) || { id: d.sellerId, docs: 0, spend: 0, last: null, prev: 0 }; x.docs++; x.spend += d.total || 0; if (d.date && (!x.last || d.date > x.last)) x.last = d.date; m.set(d.sellerId, x); }
+  for (const d of prev) { const x = m.get(d.sellerId); if (x) x.prev += d.total || 0; }
+  const rows = [...m.values()];
+  const cols = [
+    { key: "n", label: t("name"), val: x => sellerName(x.id) },
+    { key: "v", label: t("vatNo"), val: x => (DB.sellers.get(x.id) || {}).vat, cell: x => h("span", { class: "mono" }, (DB.sellers.get(x.id) || {}).vat || "—") },
+    { key: "d", label: t("documents"), num: true, val: x => x.docs },
+    { key: "s", label: t("spend"), num: true, val: x => x.spend, cell: x => money(x.spend), csv: x => x.spend / 100 },
+    { key: "sh", label: t("share"), num: true, val: x => x.spend / total, cell: x => pct(x.spend / total * 100).replace("+", ""), csv: x => Math.round(x.spend / total * 1000) / 10 },
+    { key: "c", label: t("change"), num: true, val: x => x.prev ? (x.spend - x.prev) / x.prev : null, cell: x => prevR ? changeChip(x.prev, x.spend) : "—" },
+    { key: "l", label: t("last"), val: x => x.last, cell: x => fmtDate(x.last) },
+  ];
+  const tb = table("suppliers", cols, rows, { sort: { key: "s", dir: "desc" }, onRow: x => { state.q.documents = sellerName(x.id); state.tab = "documents"; render(); } });
+  return card(t("t_suppliers"), [tb, h("div", { class: "note" }, t("totalNote"))], csvButton("suppliers", () => tb));
+}
+
+function productStats(rows) {
+  const m = new Map();
+  for (const x of rows) {
+    const s = m.get(x.p.id) || { p: x.p, n: 0, qty: new Map(), net: 0, gross: 0, other: 0, last: null, sellers: new Set(), prices: [] };
+    s.n++;
+    if (x.l.q != null) { const u = x.l.u || "?"; s.qty.set(u, (s.qty.get(u) || 0) + Number(x.l.q)); }
+    if (x.d.vatBasis === "EXCLUSIVE") s.net += x.l.t || 0; else if (x.d.vatBasis === "INCLUSIVE") s.gross += x.l.t || 0; else s.other += x.l.t || 0;
+    s.sellers.add(x.d.sellerId);
+    if (x.d.date && (!s.last || x.d.date >= s.last.d.date)) s.last = x;
+    if (x.l.pr != null) s.prices.push({ v: Number(x.l.pr), u: x.l.u, b: x.d.vatBasis });
+    m.set(x.p.id, s);
+  }
+  return [...m.values()];
+}
+const qtyText = s => [...s.qty.entries()].map(([u, q]) => `${dec(q)} ${u}`).join(" · ") || "—";
+const spendText = s => [s.net ? money(s.net) + " " + t("noVat") : null, s.gross ? money(s.gross) + " " + t("withVat") : null, s.other ? money(s.other) : null].filter(Boolean).join(" · ") || "—";
+function lastPriceText(s) { const l = s.last; if (!l || l.l.pr == null) return "—"; return `${dec(l.l.pr, 4)} ${l.l.u ? t("perUnit", l.l.u) : ""}`.trim(); }
+function rangeText(s) {
+  if (!s.last || s.last.l.pr == null) return "—";
+  const same = s.prices.filter(p => p.u === s.last.l.u && p.b === s.last.d.vatBasis).map(p => p.v);
+  if (same.length < 2) return "—";
+  return `${dec(Math.min(...same), 4)} – ${dec(Math.max(...same), 4)}`;
+}
+function vProducts(r) {
+  const q = norm(state.q.products);
+  let rows = productStats(purchases(docsIn(r)));
+  if (q) rows = rows.filter(s => norm([s.p.name, s.p.brand, catLabel(s.p), ...[...s.sellers].map(sellerName)].join(" ")).includes(q));
+  const cols = [
+    { key: "n", label: t("product"), val: s => s.p.name, cell: s => h("div", null, s.p.name, s.p.unassigned ? h("div", { class: "muted", style: "font-size:12px" }, t("unassigned")) : null) },
+    { key: "b", label: t("brand"), val: s => s.p.brand },
+    { key: "c", label: t("category"), val: s => catLabel(s.p) },
+    { key: "q", label: t("bought"), num: true, val: s => qtyText(s) },
+    { key: "s", label: t("spend"), num: true, val: s => s.net + s.gross + s.other, cell: s => spendText(s), csv: s => (s.net + s.gross + s.other) / 100 },
+    { key: "lp", label: t("lastPrice"), num: true, val: s => s.last && s.last.l.pr != null ? Number(s.last.l.pr) : null, cell: s => lastPriceText(s) },
+    { key: "r", label: t("range"), num: true, val: s => rangeText(s) },
+    { key: "l", label: t("last"), val: s => s.last && s.last.d.date, cell: s => s.last ? fmtDate(s.last.d.date) + " · " + sellerName(s.last.d.sellerId) : "—" },
+  ];
+  const tb = table("products", cols, rows, { sort: { key: "s", dir: "desc" }, onRow: s => openProduct(s.p) });
+  return card(t("t_products"), [searchBox("products"), tb], csvButton("products", () => tb));
+}
+function vPrices(r) {
+  const rows = priceChanges(r);
+  const cols = [
+    { key: "p", label: t("product"), val: c => c.s.p.name },
+    { key: "u", label: t("unit"), val: c => (c.s.unit || "—") + " · " + basisLabel(c.s.basis) },
+    { key: "b", label: t("before"), num: true, val: c => c.prev.price, cell: c => dec(c.prev.price, 4) },
+    { key: "bd", label: t("when"), val: c => c.prev.date, cell: c => fmtDate(c.prev.date) + " · " + sellerName(c.prev.seller) },
+    { key: "n", label: t("now"), num: true, val: c => c.last.price, cell: c => dec(c.last.price, 4) },
+    { key: "nd", label: t("when"), val: c => c.last.date, cell: c => fmtDate(c.last.date) + " · " + sellerName(c.last.seller) },
+    { key: "c", label: t("change"), num: true, val: c => c.change, cell: c => changeChip(c.prev.price, c.last.price), csv: c => Math.round(c.change * 10) / 10 },
+  ];
+  const tb = table("prices", cols, rows, { sort: { key: "c", dir: "desc" }, onRow: c => openProduct(c.s.p) });
+  return card(t("t_prices"), [tb, h("div", { class: "note" }, t("sameBasis"))], csvButton("price-changes", () => tb));
+}
+function vDocuments(r) {
+  const q = norm(state.q.documents);
+  let rows = docsIn(r);
+  if (q) rows = rows.filter(d => norm([sellerName(d.sellerId), d.number, ...d.lines.map(l => l.d + " " + (l.lot || ""))].join(" ")).includes(q));
+  const cols = [
+    { key: "d", label: t("date"), val: d => d.date, cell: d => fmtDate(d.date) },
+    { key: "s", label: t("supplier"), val: d => sellerName(d.sellerId) },
+    { key: "n", label: t("number"), val: d => d.number, cell: d => h("span", { class: "mono" }, d.number || "—") },
+    { key: "l", label: t("lines"), num: true, val: d => d.lines.length },
+    { key: "t", label: t("total"), num: true, val: d => d.total, cell: d => money(d.total, d.currency), csv: d => d.total == null ? "" : d.total / 100 },
+    { key: "o", label: t("source"), val: d => srcLabel(d.source) },
+  ];
+  const tb = table("documents", cols, rows, { sort: { key: "d", dir: "desc" }, onRow: openDocument });
+  return card(t("t_documents"), [searchBox("documents"), tb], csvButton("documents", () => tb));
+}
+function vLots(r) {
+  const q = norm(state.q.lots);
+  let rows = purchases(docsIn(r)).filter(x => x.l.lot);
+  if (q) rows = rows.filter(x => norm([x.l.lot, x.p.name, x.l.d, sellerName(x.d.sellerId), x.d.number].join(" ")).includes(q));
+  const cols = [
+    { key: "l", label: t("lot"), val: x => x.l.lot, cell: x => h("span", { class: "mono" }, x.l.lot) },
+    { key: "e", label: t("expiry"), val: x => x.l.exp, cell: x => x.l.exp ? fmtDate(x.l.exp) : "—" },
+    { key: "p", label: t("product"), val: x => x.p.name },
+    { key: "q", label: t("qty"), num: true, val: x => x.l.q == null ? null : Number(x.l.q), cell: x => x.l.q == null ? "—" : `${dec(x.l.q)} ${x.l.u || ""}` },
+    { key: "s", label: t("supplier"), val: x => sellerName(x.d.sellerId) },
+    { key: "d", label: t("date"), val: x => x.d.date, cell: x => fmtDate(x.d.date) },
+    { key: "n", label: t("number"), val: x => x.d.number, cell: x => h("span", { class: "mono" }, x.d.number || "—") },
+  ];
+  const tb = table("lots", cols, rows, { sort: { key: "d", dir: "desc" }, onRow: x => openDocument(x.d) });
+  return card(t("t_lots"), [searchBox("lots", t("lotSearch")), tb, h("div", { class: "note" }, t("lotsNote"))], csvButton("lots", () => tb));
+}
+function searchBox(key, ph) {
+  const i = h("input", { class: "search", type: "search", placeholder: ph || t("search"), value: state.q[key] || "", "aria-label": ph || t("search") });
+  i.addEventListener("input", () => { state.q[key] = i.value; const pos = i.selectionStart; render(); const again = document.querySelector(".search"); if (again) { again.focus(); again.setSelectionRange(pos, pos); } });
+  return h("div", { class: "toolbar no-print" }, i);
+}
+
+// ============================================================== details
+function openDialog(title, body) { const tt = $("dlgTitle"); tt.replaceChildren(...[].concat(title)); $("dlgBody").replaceChildren(...[].concat(body)); const d = $("dlg"); if (!d.open) d.showModal(); }
+function openDocument(d) {
+  const cols = [
+    { key: "d", label: t("description"), val: l => l.d, cell: l => h("div", null, l.d, l.p != null && DB.products.has(l.p) && DB.products.get(l.p).name !== l.d ? h("div", { class: "muted", style: "font-size:12px" }, "→ " + DB.products.get(l.p).name) : null) },
+    { key: "q", label: t("qty"), num: true, val: l => l.q == null ? null : Number(l.q), cell: l => l.q == null ? "—" : dec(l.q) },
+    { key: "u", label: t("unit"), val: l => l.u },
+    { key: "p", label: t("price"), num: true, val: l => l.pr == null ? null : Number(l.pr), cell: l => l.pr == null ? "—" : dec(l.pr, 4) },
+    { key: "t", label: t("amount"), num: true, val: l => l.t, cell: l => money(l.t, d.currency) },
+    { key: "v", label: t("vat"), num: true, val: l => l.v == null ? null : Number(l.v), cell: l => l.v == null ? "—" : dec(l.v) + "%" },
+    { key: "l", label: t("lot"), val: l => l.lot, cell: l => l.lot ? h("span", { class: "mono" }, l.lot) : "—" },
+  ];
+  openDialog([h("h3", null, sellerName(d.sellerId)), h("div", { class: "muted" }, `${t("number")} ${d.number || "—"} · ${fmtDate(d.date)} · ${srcLabel(d.source)}`)], [
+    h("dl", { class: "kv" },
+      h("dt", null, t("total")), h("dd", null, money(d.total, d.currency)),
+      d.subtotal != null ? [h("dt", null, t("noVat")), h("dd", null, money(d.subtotal, d.currency))] : null,
+      d.vat != null ? [h("dt", null, t("vat")), h("dd", null, money(d.vat, d.currency))] : null,
+      h("dt", null, t("price")), h("dd", null, basisLabel(d.vatBasis)),
+      h("dt", null, t("vatNo")), h("dd", { class: "mono" }, (DB.sellers.get(d.sellerId) || {}).vat || "—")),
+    table("doc-lines", cols, d.lines),
+  ]);
+}
+function openProduct(p) {
+  const rows = purchases(DB.documents).filter(x => x.p.id === p.id);
+  const series = priceSeries(rows).filter(s => s.pts.length);
+  const cols = [
+    { key: "d", label: t("date"), val: x => x.d.date, cell: x => fmtDate(x.d.date) },
+    { key: "s", label: t("supplier"), val: x => sellerName(x.d.sellerId) },
+    { key: "q", label: t("qty"), num: true, val: x => x.l.q == null ? null : Number(x.l.q), cell: x => x.l.q == null ? "—" : `${dec(x.l.q)} ${x.l.u || ""}` },
+    { key: "p", label: t("price"), num: true, val: x => x.l.pr == null ? null : Number(x.l.pr), cell: x => x.l.pr == null ? "—" : `${dec(x.l.pr, 4)} · ${basisLabel(x.d.vatBasis)}` },
+    { key: "t", label: t("amount"), num: true, val: x => x.l.t, cell: x => money(x.l.t, x.d.currency) },
+    { key: "l", label: t("lot"), val: x => x.l.lot, cell: x => x.l.lot ? h("span", { class: "mono" }, x.l.lot) : "—" },
+  ];
+  openDialog([h("h3", null, p.name), h("div", { class: "muted" }, [p.brand, catLabel(p), (DB.families.get(p.familyId) || {}).name].filter(Boolean).join(" · "))], [
+    ...series.map(s => h("div", { style: "margin-bottom:14px" }, h("div", { class: "muted", style: "font-size:12.5px;margin-bottom:4px" }, `${t("priceHistory")} · ${s.unit ? t("perUnit", s.unit) : ""} · ${basisLabel(s.basis)}`), lineChart(s))),
+    h("h4", { style: "margin:8px 0" }, t("purchasesOf")),
+    table("product-purchases", cols, rows, { sort: { key: "d", dir: "desc" }, onRow: x => openDocument(x.d) }),
+  ]);
+}
+
+// ============================================================== shell
+const TABS = ["overview", "suppliers", "products", "prices", "documents", "lots"];
+const VIEWS = { overview: vOverview, suppliers: vSuppliers, products: vProducts, prices: vPrices, documents: vDocuments, lots: vLots };
+function render() {
+  document.documentElement.lang = lang;
+  document.querySelectorAll("[data-i18n]").forEach(e => { e.textContent = t(e.dataset.i18n); });
+  $("langBtn").textContent = lang === "it" ? "English" : "Italiano";
+  $("bizName").textContent = DB.business || "Kitchen Receipts";
+  $("asOf").textContent = DB.exportedAt ? t("asOf", fmtDate(DB.exportedAt.slice(0, 10)) + " " + DB.exportedAt.slice(11, 16)) : t("droppedOnly");
+  const sel = $("periodSel");
+  sel.replaceChildren(...PERIODS.map(p => h("option", { value: p, selected: p === state.period }, t("p_" + p))));
+  $("fromDate").classList.toggle("hidden", state.period !== "custom");
+  $("toDate").classList.toggle("hidden", state.period !== "custom");
+  $("tabs").replaceChildren(...TABS.map(k => h("button", { role: "tab", "aria-selected": String(state.tab === k), onclick: () => { state.tab = k; render(); } }, t("t_" + k))));
+  const r = range(state.period);
+  const out = VIEWS[state.tab](r);
+  $("view").replaceChildren(h("div", { id: "dropHint", class: "drop no-print" }, t("dropHere")), ...[].concat(out));
+  $("foot").textContent = t("readOnly");
+}
+function showApp() { $("lock").classList.add("hidden"); $("app").classList.remove("hidden"); }
+let pendingEnvelope = null;
+function showLock() { $("app").classList.add("hidden"); $("lock").classList.remove("hidden"); document.querySelectorAll("[data-i18n]").forEach(e => { e.textContent = t(e.dataset.i18n); }); setTimeout(() => $("pw").focus(), 0); }
+
+$("unlockForm").addEventListener("submit", async ev => {
+  ev.preventDefault();
+  const btn = $("unlockBtn"), err = $("pwError");
+  err.textContent = ""; btn.disabled = true; btn.textContent = t("opening");
+  try {
+    if (!crypto || !crypto.subtle || typeof DecompressionStream === "undefined") throw new Error("nocrypto");
+    const j = await decryptEnvelope(pendingEnvelope, $("pw").value);
+    loadSnapshot(j);
+    $("pw").value = "";
+    showApp(); render();
+  } catch (e) {
+    err.textContent = e && e.message === "nocrypto" ? t("noCrypto") : t("wrongPw");
+  } finally { btn.disabled = false; btn.textContent = t("open"); }
+});
+$("periodSel").addEventListener("change", e => {
+  state.period = e.target.value;
+  if (state.period === "custom" && !state.from) { const [a, b] = range("3m"); state.from = a; state.to = b; $("fromDate").value = a; $("toDate").value = b; }
+  render();
+});
+$("fromDate").addEventListener("change", e => { state.from = e.target.value || null; render(); });
+$("toDate").addEventListener("change", e => { state.to = e.target.value || null; render(); });
+$("langBtn").addEventListener("click", () => { lang = lang === "it" ? "en" : "it"; render(); });
+$("addFiles").addEventListener("click", () => $("fileInput").click());
+$("fileInput").addEventListener("change", e => { addFiles([...e.target.files]); e.target.value = ""; });
+$("dlgClose").addEventListener("click", () => $("dlg").close());
+$("dlg").addEventListener("click", e => { if (e.target === $("dlg")) $("dlg").close(); });
+let dragDepth = 0;
+window.addEventListener("dragenter", e => { e.preventDefault(); dragDepth++; document.body.classList.add("dragging"); });
+window.addEventListener("dragleave", () => { if (--dragDepth <= 0) { dragDepth = 0; document.body.classList.remove("dragging"); } });
+window.addEventListener("dragover", e => e.preventDefault());
+window.addEventListener("drop", e => { e.preventDefault(); dragDepth = 0; document.body.classList.remove("dragging"); if (e.dataTransfer && e.dataTransfer.files.length) addFiles([...e.dataTransfer.files]); });
+
+(function start() {
+  try { pendingEnvelope = embeddedEnvelope($("kr-data").textContent); } catch { pendingEnvelope = null; }
+  if (pendingEnvelope) showLock();
+  else { showApp(); render(); }
+})();
+</script>
+</body>
+</html>

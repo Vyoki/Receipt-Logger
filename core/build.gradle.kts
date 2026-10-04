@@ -19,3 +19,8 @@ kotlin {
 dependencies {
     testImplementation(libs.junit)
 }
+
+tasks.test {
+    // OfficeExportTest reads the office page from the app's assets.
+    systemProperty("kr.repo", rootDir.absolutePath)
+}
