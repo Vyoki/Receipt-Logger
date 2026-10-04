@@ -18,6 +18,8 @@ enum class ReviewReason {
     VAT_BASIS_UNKNOWN,
     /** The lines of one VAT rate do not add up to the VAT summary (a line was misread or missed). */
     VAT_GROUP_MISMATCH,
+    /** The document prints lot numbers, but some lines have none (traceability: every lot must be recorded). */
+    LOTS_MISSING,
 }
 
 /**
@@ -35,9 +37,15 @@ object AutoAccept {
         if (total == null) out += ReviewReason.TOTAL_MISSING
         if (d.items.isEmpty()) out += ReviewReason.NO_ITEMS
         if (d.uncertainCount > 0) out += ReviewReason.UNCERTAIN_VALUES
-        if (d.items.any { it.description.isMissing || ItalianNumbers.parse(it.quantity.text) == null || it.unit.isMissing || cents(it.lineTotal.text) == null }) {
+        // A VAT rate on some lines but not on others: one was not read.
+        val someRates = d.items.any { it.vatRate.text.isNotBlank() }
+        if (d.items.any { it.description.isMissing || ItalianNumbers.parse(it.quantity.text) == null || it.unit.isMissing || cents(it.lineTotal.text) == null } ||
+            (someRates && d.items.any { it.vatRate.text.isBlank() })
+        ) {
             out += ReviewReason.INCOMPLETE_ITEMS
         }
+        // Lots read on some lines but not on others: the missing ones were not read.
+        if (d.lotsPrinted && d.items.any { it.lot.text.isNotBlank() } && d.items.any { it.lot.text.isBlank() }) out += ReviewReason.LOTS_MISSING
         val sumOk = sumMatches(d)
         if (d.items.isNotEmpty() && total != null && ReviewReason.INCOMPLETE_ITEMS !in out && !sumOk) {
             out += ReviewReason.SUM_MISMATCH

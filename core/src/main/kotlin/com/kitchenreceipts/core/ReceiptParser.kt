@@ -28,12 +28,12 @@ data class ParseOptions(
 
 object ReceiptParser {
 
-    private val COMPANY_SUFFIX = Regex(
+    internal val COMPANY_SUFFIX = Regex(
         "(?i)(\\bs\\.?\\s?r\\.?\\s?[l1]\\.?\\s?s?\\.?(?=\\s|$|,|\\)|-)|\\bs\\.\\s?rl[e.]?(?=\\s|$)|\\bs\\.?\\s?p\\.?\\s?a\\.?(?=\\s|$|,|\\)|-)|" +
             "\\bs\\.?\\s?n\\.?\\s?c\\.?(?=\\s|$|,|\\)|-)|\\bs\\.?\\s?a\\.?\\s?s\\.?(?=\\s|$|,|\\)|-)|\\bsoc\\.?\\s?coop\\S*|" +
             "\\bcooperativa\\b|\\bs\\.?\\s?c\\.?\\s?a\\.?\\s?r\\.?\\s?l\\.?)",
     )
-    private val CUSTOMER_LABEL = Regex(
+    internal val CUSTOMER_LABEL = Regex(
         "(?i)\\b(spett\\.?\\s*l[ei]|spettabile|cliente|destinatario|intestatario|destinazione|fatturare\\s+a|consegnare\\s+a|luogo\\s+di\\s+consegna)\\b",
     )
     private val NOT_SELLER = Regex(
@@ -48,7 +48,7 @@ object ReceiptParser {
             "(?:n(?:r|um)?\\.?|n°|nº|numero|#)\\s*[:.]?\\s*([A-Za-z0-9][A-Za-z0-9\\-/]*)",
     )
     private val DOC_NUMBER_BARE = Regex("(?i)^(?:n\\.|n°|nº|numero|num\\.)\\s*(?:doc\\.?|documento)?\\s*[:.]?\\s*([A-Za-z0-9][A-Za-z0-9\\-/]*)")
-    private val NUMBER_LABEL = Regex("(?i)(\\bn\\.?\\s?ro\\b|\\bnumero\\b|\\bn\\.\\s*doc|\\bnum\\.)")
+    internal val NUMBER_LABEL = Regex("(?i)(\\bn\\.?\\s?ro\\b|\\bnumero\\b|\\bn\\.\\s*doc|\\bnum\\.)")
     /** "FATTURA 2025/0311 18/03/2025" (number without "n."), used only as a low-confidence fallback. */
     private val DOC_NUMBER_LOOSE = Regex("(?i)^\\s*(?:fattura|ft\\.?|ddt|d\\.d\\.t\\.?|bolla|ricevuta)\\s+([A-Za-z0-9][A-Za-z0-9\\-/]*)")
     private val DATE_LABEL = Regex("(?i)\\b(data(?:\\s+(?:documento|fattura|doc\\.?|emissione|ddt))?|del|emessa\\s+il)\\b(?!\\s+(?:scadenza|consegna|nascita|pagamento))")
@@ -71,7 +71,7 @@ object ReceiptParser {
     /** Pkgs glued to the product name: "3TORTA", "1/CINGHIALE" (only after an article code, in a table with a COLLI column). */
     private val GLUED_COLLI = Regex("^(\\d{1,2})/?([A-Za-z0][A-Za-z].*)$")
     private val PRICE_HEADING = Regex("(?i)\\b(prezzo|prz\\.?|p\\.\\s?unit|pr\\.\\s?unit)")
-    private val QTY_HEADING = Regex("(?i)(\\bq\\.?\\s?t[àa']?\\.?(?=\\W|$)|\\bquantit[àa]|\\btot\\.(?!\\w))")
+    private val QTY_HEADING = Regex("(?i)(\\bq\\.?\\s?t[àa']?\\.?(?=\\W|$)|\\bquantit[àa]|\\bquant\\.|\\bquantity\\b|\\bpezzi\\b|\\btot\\.(?!\\w))")
     private val ITEM_COLUMN = Regex("(?i)\\b(descrizione|articolo|prodotto|q\\.?\\s?t[àa']?\\.?|quantit[àa]|prezzo|u\\.?\\s?m\\.?)(?=\\W|$)")
     private val TOTAL_STRONG = Regex(
         "(?i)\\b(totale\\s+(?:documento|fattura|da\\s+pagare|complessivo|euro|eur|generale|a\\s+pagare|dovuto)|" +
@@ -101,11 +101,11 @@ object ReceiptParser {
     private val AMOUNT_IN_TEXT = Regex("(?<![\\w/.,])-?\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,4})?(?![\\w/])|(?<![\\w/.,])-?\\d+(?:[.,]\\d{1,4})?-?(?![\\w/.,]*\\d)")
     private val QTY_WITH_UNIT = Regex("^(\\d+(?:[.,]\\d{1,3})?)([A-Za-z]{1,10}\\.?)$")
     private val TIMES = setOf("x", "X", "×", "*")
-    private val ADDRESS_OR_CONTACT = Regex(
+    internal val ADDRESS_OR_CONTACT = Regex(
         "(?i)(^|\\s)(via|viale|v\\.le|piazza|p\\.zza|p\\.za|corso|c\\.so|loc\\.|localit[àa]|tel\\.?|telefono|cell\\.?|fax|" +
             "e-?mail|pec|www\\.|cap)(\\s|:|$)|@",
     )
-    private val DECIMAL_AMOUNT = Regex("[.,]\\d{2,4}-?$")
+    internal val DECIMAL_AMOUNT = Regex("[.,]\\d{2,4}-?$")
     /** VAT class printed after the price on Italian receipts: "2,50 B", "(A)", "*". */
     private val VAT_CODE_TOKEN = Regex("^\\(?([A-HJ-WYZa-hj-wyz]|\\*|#|[A-Z]\\d{1,2})\\)?$")
     /** Numeric VAT column after the amount: "3,45 10", "1,09 04", "10,74 22". */
@@ -235,11 +235,15 @@ object ReceiptParser {
             val q = QTY_HEADING.find(headerText)?.range?.first
             p != null && q != null && p < q
         }
+        // The headings name both the quantity and the price column: their order is known, nothing to guess.
+        val orderKnown = PRICE_HEADING.containsMatchIn(headerText) && QTY_HEADING.containsMatchIn(headerText)
 
-        val docNumber = findDocumentNumber(lines, consumed).let { first -> numberAcrossPages(first, pages) }
+        // The old first-match reading marks the number's line as not a product; the value comes from the evidence.
+        val firstMatch = findDocumentNumber(lines, consumed).let { first -> numberAcrossPages(first, pages) }
             .let { found -> options.layout?.numberShape?.let { shape -> numberOfShape(found, pages, shape) } ?: found }
+        val docNumber = HeaderEvidence.number(pages, options.layout) ?: firstMatch
         val date = findDocumentDate(lines, consumed)
-        val seller = findSellerOnPages(pages, options)
+        val seller = HeaderEvidence.seller(pages, options) ?: findSellerOnPages(pages, options)
         val currency = CURRENCY.find(text)?.let { Extracted("EUR", Confidence.HIGH, it.value) }
 
         // ------------------------------------------------------------ totals
@@ -380,7 +384,7 @@ object ReceiptParser {
             if (scan.lotRejectedAsDate) lotRejected = true
             var rest = LotExtractor.strip(line, scan.consumed)
             val isInfoOnly = (scan.lot != null || scan.expiry != null || scan.lotRejectedAsDate) &&
-                (rest.isBlank() || !rest.any { it.isLetter() } || parseItemLine(rest, colliColumn, priceFirst) == null)
+                (rest.isBlank() || !rest.any { it.isLetter() } || parseItemLine(rest, colliColumn, priceFirst, orderKnown) == null)
             if (isInfoOnly) {
                 // A "Lotto ... / Scad. ..." line belongs to the item right above it.
                 val prev = items.lastOrNull()
@@ -426,7 +430,7 @@ object ReceiptParser {
                 continue
             }
 
-            var item = parseItemLine(rest, colliColumn, priceFirst)
+            var item = parseItemLine(rest, colliColumn, priceFirst, orderKnown)
             // Description and amounts split over two rows: "Mozzarella fior di latte" / "kg 2,500 8,90 22,25".
             if (item == null && rest.count { it.isLetter() } >= 3) {
                 val nextIdx = idx + 1
@@ -435,14 +439,14 @@ object ReceiptParser {
                     // "792983 57,22" under the item: the lot (lot column) and the item's amount on the same row.
                     val lotAndAmount = if (lotColumn) Regex("^([A-Z0-9][A-Z0-9\\-/.]{3,})\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})$").find(next.trim()) else null
                     val merged = if (lotAndAmount != null) {
-                        parseItemLine("$rest ${lotAndAmount.groupValues[2]}", colliColumn, priceFirst)?.let { m ->
+                        parseItemLine("$rest ${lotAndAmount.groupValues[2]}", colliColumn, priceFirst, orderKnown)?.let { m ->
                             if (ItalianDates.findDates(lotAndAmount.groupValues[1]).isEmpty() && lotAndAmount.groupValues[1].any(Char::isDigit)) {
                                 lotRowsUsed++
                                 m.copy(lotNumber = Extracted(lotAndAmount.groupValues[1], Confidence.LOW, next))
                             } else m
                         }
                     } else {
-                        parseItemLine("$rest $next", colliColumn, priceFirst)
+                        parseItemLine("$rest $next", colliColumn, priceFirst, orderKnown)
                     }
                     if (merged != null) {
                         item = merged
@@ -458,7 +462,7 @@ object ReceiptParser {
                 val nextIdx = idx + 1
                 val next = lines.getOrNull(nextIdx)
                 if (next != null && nextIdx < firstTotalsLine && nextIdx !in consumed && next.count { it.isLetter() } >= 3 &&
-                    parseItemLine(next, colliColumn, priceFirst) == null && !isSectionHeading(next) && lastAmountCents(next) == null
+                    parseItemLine(next, colliColumn, priceFirst, orderKnown) == null && !isSectionHeading(next) && lastAmountCents(next) == null
                 ) {
                     val stripped = stripItemCode(next.split(' ').filter { it.isNotBlank() }, colliColumn)
                     val name = cleanDescription(stripped.tokens)
@@ -803,7 +807,7 @@ object ReceiptParser {
 
     private val LOTS_WORD = Regex("(?i)\\b(lott[oi]|lot\\.?|l\\.\\s?n\\.?|batch)\\b")
 
-    private val TRUNCATED_SUFFIX = Regex("(?i)\\bs\\.\\s?r\\.?$")
+    internal val TRUNCATED_SUFFIX = Regex("(?i)\\bs\\.\\s?r\\.?$")
 
     /**
      * The seller from the letterhead. On a document of several pages the letterhead is printed on each: the
@@ -899,7 +903,7 @@ object ReceiptParser {
             !TABLE_HEADER.containsMatchIn(line) && lastAmountCents(line) == null && ItalianDates.findDates(line).isEmpty()
     }
 
-    private fun cleanSeller(line: String): String = line.trim().trim('*', '-', '=', '_', '|', ' ', ',', ':')
+    internal fun cleanSeller(line: String): String = line.trim().trim('*', '-', '=', '_', '|', ' ', ',', ':')
         // "ABC S.rle": the legal form misread at the end of the name.
         .replace(Regex("(?i)\\bs\\.\\s?rl[e.]?$"), "S.r.l.")
 
@@ -971,7 +975,7 @@ object ReceiptParser {
      * start of the line) is the number of packages. [priceFirst]: the header prints the price column before
      * the quantity column, so of two numbers the first is the price.
      */
-    fun parseItemLine(line: String, colliColumn: Boolean = false, priceFirst: Boolean = false): ParsedLineItem? {
+    fun parseItemLine(line: String, colliColumn: Boolean = false, priceFirst: Boolean = false, orderKnown: Boolean = false): ParsedLineItem? {
         val stripped = stripItemCode(line.split(' ').filter { it.isNotBlank() }, colliColumn)
         val codeFree = stripped.tokens
         val itemCode = stripped.code
@@ -1072,7 +1076,9 @@ object ReceiptParser {
                     qty = q; price = p; totalCents = ItalianNumbers.toCents(values.last())
                 }
                 // Some layouts print price before quantity (no header to tell): a whole number after a price with decimals is the quantity.
-                if (!priceFirst && isWholeNumber(last3[1]) && !isWholeNumber(last3[0]) && last3[0].scale() >= 2 &&
+                // Not when the headings say the order, nor for a weight (3 decimals on a kg/l line: "KG 3,115 1,00").
+                val weight = last3[0].scale() == 3 && unit in setOf("kg", "l")
+                if (!priceFirst && !orderKnown && !weight && isWholeNumber(last3[1]) && !isWholeNumber(last3[0]) && last3[0].scale() >= 2 &&
                     matches(last3[0], last3[1], ItalianNumbers.toCents(last3[2])) && qty!!.compareTo(last3[0]) == 0
                 ) {
                     val tmp = qty; qty = price; price = tmp

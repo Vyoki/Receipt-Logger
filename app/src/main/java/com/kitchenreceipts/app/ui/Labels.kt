@@ -110,6 +110,7 @@ fun reviewReasonText(r: ReviewReason): String = stringResource(
         ReviewReason.SUM_MISMATCH -> R.string.reason_sum
         ReviewReason.VAT_BASIS_UNKNOWN -> R.string.reason_vat_basis
         ReviewReason.VAT_GROUP_MISMATCH -> R.string.reason_vat_group
+        ReviewReason.LOTS_MISSING -> R.string.reason_lots_missing
     },
 )
 

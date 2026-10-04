@@ -556,6 +556,7 @@
     <string name="learned_clear">Forget what was learned</string>
     <string name="warn_vat_group_mismatch">The lines of one VAT rate do not add up to the VAT summary.</string>
     <string name="reason_vat_group">The lines of one VAT rate do not add up to the VAT summary:</string>
+    <string name="reason_lots_missing">Some lines have no lot number, but this document prints lots.</string>
     <string name="vat_group_line">%1$s%%: lines %2$s, summary %3$s (difference %4$s)</string>
     <string name="pack_size">Pack size</string>
     <string name="pack_total">= %1$s %2$s in all</string>

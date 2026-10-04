@@ -544,6 +544,7 @@
     <string name="learned_clear">Dimentica ciò che è stato imparato</string>
     <string name="warn_vat_group_mismatch">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA.</string>
     <string name="reason_vat_group">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA:</string>
+    <string name="reason_lots_missing">Alcune righe non hanno il lotto, ma il documento riporta i lotti.</string>
     <string name="vat_group_line">%1$s%%: righe %2$s, riepilogo %3$s (differenza %4$s)</string>
     <string name="pack_size">Formato</string>
     <string name="pack_total">= %1$s %2$s in totale</string>
