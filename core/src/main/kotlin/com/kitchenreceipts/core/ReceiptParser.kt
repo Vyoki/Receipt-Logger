@@ -535,6 +535,14 @@ object ReceiptParser {
         items = PackagesCheck.repair(items, text)
         // Lots under a "LOTTO" heading, found under (nearly) every product: read where the document prints them.
         items = settleLots(items, text)
+        // A whole number with no unit printed counts pieces ("CARTA FORNO 1 6,90 6,90"); a quantity with decimals and no
+        // unit (a weight?) stays empty for the operator.
+        items = items.map { it ->
+            val q = it.quantity
+            if (it.unit == null && q != null && q.value.signum() > 0 && q.value.stripTrailingZeros().scale() <= 0) {
+                it.copy(unit = Extracted("pz", q.confidence, "a count (no unit printed)"))
+            } else it
+        }
         val warnings = (doc.warnings - CHECK_WARNINGS).toMutableSet()
         var total = doc.totalCents
         var vat = doc.vatCents
@@ -789,6 +797,16 @@ object ReceiptParser {
                 val sure = candidates.size == 1 && ItalianDates.findDates(next).size == 1 &&
                     (j == i + 1 || (NUMBER_LABEL.containsMatchIn(line) && between.none { ItalianDates.findDates(it).isNotEmpty() }))
                 return Extracted(d.date, if (sure) Confidence.HIGH else Confidence.LOW, "$line / $next")
+            }
+        }
+        // 2b. A date printed with the time ("14-08-2026 12:17", the issue time of a receipt): when it is the only date on
+        // the document, that is the document date.
+        val allDates = lines.flatMap { l -> ItalianDates.findDates(l).map { it.date } }.distinct()
+        lines.forEachIndexed { i, line ->
+            val d = ItalianDates.findDates(line).firstOrNull { m -> Regex("^\\s+(?:ore\\s+)?[0-2]?\\d[:.][0-5]\\d\\b").containsMatchIn(line.substring(m.range.last + 1)) }
+            if (d != null && !isInsideExpiry(line, d)) {
+                consumed += i
+                return Extracted(d.date, if (allDates.size == 1) Confidence.HIGH else Confidence.LOW, line)
             }
         }
         // 3. Otherwise the first date on a line that is not about expiry, delivery or payment.
@@ -1202,7 +1220,8 @@ object ReceiptParser {
             warnings = warnings,
             itemCode = itemCode,
             packages = stripped.packages?.let { Extracted(normalizeColli(it), Confidence.HIGH, line) },
-            packSize = packSize?.let { Extracted(it.text, conf, line) },
+            // A size printed in the name ("700G") is read, not worked out: certain whatever the rest of the line.
+            packSize = packSize?.let { Extracted(it.text, if (sizeOnly) Confidence.HIGH else conf, line) },
         )
     }
 

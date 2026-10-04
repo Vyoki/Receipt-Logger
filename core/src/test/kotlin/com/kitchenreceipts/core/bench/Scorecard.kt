@@ -41,6 +41,8 @@ class Scorecard {
     val worst = mutableListOf<String>()
     /** Documents the app would save without the operator although something is wrong: the costliest mistakes. */
     val savedWithErrors = mutableListOf<String>()
+    /** Why documents read entirely right still went to review (work that could be saved). */
+    val heldBack = sortedMapOf<String, Int>()
 
     private fun stat(name: String) = fields.getOrPut(name) { FieldStats() }
 
@@ -113,7 +115,9 @@ class Scorecard {
         docs++
         val right = outcomes.none { it == Outcome.FLAGGED || it == Outcome.SILENT }
         if (right) allRight++
-        val auto = AutoAccept.reasons(draft).isEmpty()
+        val reasons = AutoAccept.reasons(draft)
+        val auto = reasons.isEmpty()
+        if (right && !auto) reasons.forEach { heldBack[it.name] = (heldBack[it.name] ?: 0) + 1 }
         if (auto && right) autoRight++
         if (auto && !right) { autoWrong++; problems += "SAVED WITHOUT REVIEW WITH ERRORS" }
         if (problems.isNotEmpty()) worst += "${doc.name}: " + problems.take(6).joinToString("; ")
@@ -124,6 +128,7 @@ class Scorecard {
     fun report(title: String): String = buildString {
         append("== $title: $docs documents\n")
         append("documents fully right: ${pct(allRight)}  saved without review: right ${pct(autoRight)}, WITH ERRORS ${pct(autoWrong)}\n")
+        if (heldBack.isNotEmpty()) append("fully right but sent to review, because: ").append(heldBack.entries.joinToString(", ") { "${it.key} ${it.value}" }).append('\n')
         append(String.format("%-12s %7s %7s %7s %7s %7s\n", "field", "right", "sure", "check", "fixed", "SILENT"))
         fields.forEach { (name, s) ->
             append(String.format("%-12s %6.1f%% %6.1f%% %6.1f%% %6.1f%% %6.1f%%  (n=%d)\n", name, s.right, s.pct(Outcome.SURE), s.pct(Outcome.CHECK), s.pct(Outcome.FLAGGED), s.pct(Outcome.SILENT), s.total))
