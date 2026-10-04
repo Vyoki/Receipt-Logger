@@ -123,6 +123,9 @@ object TableReader {
                 h == null -> { pendingPercent = null }
                 h == H.PERCENT -> pendingPercent = w
                 h == H.CONT -> raw.lastOrNull()?.let { if (w.left - it.right < 3 * (w.right - w.left) + 40) it.right = w.right }
+                // "DESCRIZIONE ARTICOLO": one heading, not a description and a code column.
+                h == H.ARTICOLO && raw.lastOrNull()?.h == H.DESCRIPTION && w.left - raw.last().right < 2.5 * (w.right - w.left) / maxOf(1, w.text.length) * 3 ->
+                    raw.last().right = w.right
                 raw.isNotEmpty() && raw.last().h == h -> raw.last().right = w.right
                 else -> {
                     val left = pendingPercent?.left ?: w.left
@@ -283,10 +286,13 @@ object TableReader {
     private fun mergeHeading(header: Header, row: List<Word>): Header {
         val cols = header.columns.toMutableList()
         var pzKg = header.qtyPzOrKg
+        var lots = header.hasLotColumn
         for (w in row) {
             val n = norm(w.text).trim('.', ':')
             if (n == "pz/kg" || n == "kg/pz") pzKg = true
             val h = heading(w.text) ?: continue
+            // "ID LOTTO" under the description heading: lots are printed (on the row under each item).
+            if (h == H.LOT) lots = true
             val idx = cols.indexOfFirst { c -> w.right > c.left - 8 && w.left < c.right + 8 }
             if (idx >= 0) {
                 val c = cols[idx]
@@ -307,7 +313,7 @@ object TableReader {
             }
         }
         cols.sortBy { it.left }
-        return header.copy(columns = cols, hasLotColumn = header.hasLotColumn || cols.any { it.kind == Kind.LOT }, qtyPzOrKg = pzKg)
+        return header.copy(columns = cols, hasLotColumn = lots || cols.any { it.kind == Kind.LOT }, qtyPzOrKg = pzKg)
     }
 
     private fun readRows(rows: List<List<Word>>, header: Header): List<ParsedLineItem> {
@@ -320,6 +326,14 @@ object TableReader {
             val text = row.joinToString(" ") { it.text }
             if (ReceiptParser.isFooterRow(text)) break
             if (ReceiptParser.isNotAnItemRow(text)) { pendingDescription = null; headingNumbers = null; continue }
+            // A lot printed alone on the row under its item ("429342"), in a table with a lot column: never an item.
+            val codeOnly = row.size <= 2 && row.all { w -> w.text.any(Char::isDigit) && !isMoney(w.text) } && ItalianDates.findDates(text).isEmpty()
+            val last = items.lastOrNull()
+            if (header.hasLotColumn && codeOnly && last != null && last.lotNumber == null && row.first().text.length >= 4) {
+                items[items.lastIndex] = last.copy(lotNumber = Extracted(row.first().text, Confidence.LOW, text))
+                pendingDescription = null
+                continue
+            }
             val cells = assign(row, header)
             val item = buildItem(cells, text, header)
             val scan = LotExtractor.scan(text)
