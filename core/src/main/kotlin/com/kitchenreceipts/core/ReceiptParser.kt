@@ -94,6 +94,13 @@ object ReceiptParser {
             "trasporto\\s+a\\s+cura|peso\\s+lordo|colli|vettore|causale|aliquota|riepilogo|cassiere|grazie|" +
             "elettronico|non\\s+riscosso|operatore|transazione)\\b",
     )
+    /**
+     * Notes printed under fresh produce: origin, class and size ("Prov ITALIA Cat II Cal 40-45", "Origine: Spagna",
+     * "Categoria I Calibro 70/80"). They are never items and never the name of the numbers next to them.
+     */
+    private val PRODUCE_NOTE = Regex(
+        "(?i)^\\s*(?:(?:prov\\.?|provenienza|origine|paese\\s+d'?origine)\\s*:?\\s+\\p{L}{3,}|.*\\bcat(?:\\.|egoria)?\\s+(?:i{1,2}|il|1|2|extra)\\b.*\\bcal(?:\\.|ibro)?\\b)",
+    )
     private val INCLUSIVE_HINT = Regex("(?i)\\b(di\\s+cui\\s+iva|iva\\s+inclusa|iva\\s+compresa|prezzi\\s+ivati|ivato|compresa\\s+iva|incl\\.?\\s+iva)\\b")
     private val EXCLUSIVE_HINT = Regex("(?i)(\\biva\\s+esclusa\\b|\\+\\s*iva\\b|\\bal\\s+netto\\s+(?:di\\s+)?iva\\b|\\bprezzi\\s+netti\\b|\\besclusa\\s+iva\\b)")
     private val CURRENCY = Regex("(?i)(€|\\beur\\b|\\beuro\\b)")
@@ -374,6 +381,7 @@ object ReceiptParser {
         var lotRowsUsed = 0
         var lotRejected = false
         var pendingQty: QtyLine? = null
+        var orphanName: Pair<Int, String>? = null
         var i = start
         while (i < firstTotalsLine) {
             val idx = i
@@ -412,25 +420,48 @@ object ReceiptParser {
                 }
                 continue
             }
+            if (PRODUCE_NOTE.containsMatchIn(line) && lastAmountCents(line) == null) continue
             if (NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line)) continue
             if (seller != null && seller.source == line) continue
             if (isTableHeader(line)) continue
             // VAT summary headings ("% IVA  IMPONIBILE  IMPORTO IVA"): never an item, never merged with the rates below.
             if (VAT_SUMMARY_WORD.findAll(line).count() >= 3) continue
 
-            // "2 x 1,25" on its own line: belongs to the item above or below.
-            val qtyLine = parseQtyLine(rest)
-            if (qtyLine != null) {
-                val prev = items.lastOrNull()
-                if (prev != null && (prev.quantity == null || prev.unitPrice == null || !selfConsistent(prev)) && qtyLine.fits(prev)) {
-                    items[items.lastIndex] = qtyLine.applyTo(prev)
-                } else {
-                    pendingQty = qtyLine
-                }
-                continue
-            }
-
             var item = parseItemLine(rest, colliColumn, priceFirst, orderKnown)
+            var pairedWithName = false
+            // A numbers row with no real name ("PZ 6 3,198 19,19 10", "VA GR 150 3 0,780 2,34 22"): the name is on its
+            // own row next to it. Normal order puts it above; a tilted photo puts it below. The row above wins when it
+            // is a name not used by any line.
+            if ((item == null || (!isSectionHeading(item.originalDescription) && lettersOutsideUnits(item.originalDescription) <= 2)) &&
+                lastAmountCents(rest) != null && lettersOutsideUnits(rest) <= 2
+            ) {
+                val above = orphanName?.takeIf { it.first == idx - 1 }?.second
+                val nextIdx = idx + 1
+                val below = lines.getOrNull(nextIdx)?.takeIf { next -> above == null && nextIdx < firstTotalsLine && nextIdx !in consumed && nameOnly(next) }
+                val nameRow = above ?: below
+                if (nameRow != null) {
+                    val name = LotExtractor.strip(nameRow, LotExtractor.scan(nameRow).consumed)
+                    val paired = parseItemLine("$name $rest", colliColumn, priceFirst, orderKnown)
+                    if (paired != null && lettersOutsideUnits(paired.originalDescription) > 2) {
+                        item = paired
+                        pairedWithName = true
+                        if (above == null) i++
+                    }
+                }
+            }
+            if (!pairedWithName) {
+                // "2 x 1,25" on its own line: belongs to the item above or below.
+                val qtyLine = parseQtyLine(rest)
+                if (qtyLine != null) {
+                    val prev = items.lastOrNull()
+                    if (prev != null && (prev.quantity == null || prev.unitPrice == null || !selfConsistent(prev)) && qtyLine.fits(prev)) {
+                        items[items.lastIndex] = qtyLine.applyTo(prev)
+                    } else {
+                        pendingQty = qtyLine
+                    }
+                    continue
+                }
+            }
             // Description and amounts split over two rows: "Mozzarella fior di latte" / "kg 2,500 8,90 22,25".
             if (item == null && rest.count { it.isLetter() } >= 3) {
                 val nextIdx = idx + 1
@@ -455,7 +486,12 @@ object ReceiptParser {
                     }
                 }
             }
-            if (item == null) continue
+            if (item == null) {
+                // A name with no numbers: the numbers row right below (or, on a tilted photo, right above) may need it.
+                if (nameOnly(rest)) orphanName = idx to rest
+                continue
+            }
+            orphanName = null
             // "Merce non alimentare" took the numbers of the row below it (a tilted photo puts them between the two):
             // the product is the next line, "24195 CARTA FORNO 40CM X 50M C/ASTUCCIO".
             if (isSectionHeading(item.originalDescription)) {
@@ -618,6 +654,15 @@ object ReceiptParser {
     /** A column-header row: several header words (one of them an item column) and no amount. */
     internal fun isTableHeader(line: String): Boolean =
         TABLE_HEADER.findAll(line).count() >= 2 && ITEM_COLUMN.containsMatchIn(line) && lastAmountCents(line) == null
+
+    /** "KG 2,5", "LT.1,5", "GR 500" in a product name: a size, not an amount. */
+    private val SIZE_IN_NAME = Regex("(?i)\\b(kg|gr|g|hg|lt|l|ml|cl|cc)\\.?\\s?\\d+(?:[.,]\\d+)?\\b")
+
+    /** A row with only a product name (and its code): no amount, not a heading, a note, an address or a total. */
+    private fun nameOnly(line: String): Boolean =
+        line.count { it.isLetter() } >= 3 && lettersOutsideUnits(line) > 2 && lastAmountCents(SIZE_IN_NAME.replace(line, " ")) == null && parseItemLine(line) == null &&
+            !isSectionHeading(line) && !PRODUCE_NOTE.containsMatchIn(line) && !NON_ITEM.containsMatchIn(line) &&
+            !ADDRESS_OR_CONTACT.containsMatchIn(line) && !VAT_ID.containsMatchIn(line) && !isTableHeader(line) && !isFooterRow(line)
 
     private fun lettersOutsideUnits(line: String): Int =
         line.split(' ').filter { Units.normalizeKnown(it) == null && it.lowercase() !in setOf("x", "eur", "euro") }

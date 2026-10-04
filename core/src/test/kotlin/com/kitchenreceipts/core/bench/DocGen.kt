@@ -192,10 +192,17 @@ object DocGen {
         col("price", listOf("PREZZO", "PREZZO UNIT.", "P.UNIT.", "PR.UNITARIO")[r.nextInt(4)], 240, true)
         col("amount", listOf("IMPORTO", "TOTALE", "VALORE")[r.nextInt(3)], 240, true)
         col("vat", listOf("IVA", "% IVA", "ALIQ.", "COD.IVA")[r.nextInt(4)], 120, true)
+        // Cash & carry invoices often print each line on two rows (code and name, then the numbers) with produce notes
+        // under fresh goods ("Prov ITALIA Cat II Cal 40 -45"). On a tilted photo the numbers row is read before its
+        // name. A separate random stream, so the other documents stay as they were.
+        val layout = Random(t.number.hashCode())
+        val twoRows = cash && cols.any { it.key == "um" } && layout.nextInt(3) == 0
+        val numbersFirst = twoRows && layout.nextBoolean()
+        val nameKeys = setOf("code", "colli", "desc")
         rows += Row(cols.map { Cell(it.x, it.head) })
         if (ddt) rows += Row(listOf(Cell(cols.first { it.key == "desc" }.x, "ID LOTTO")))
         t.items!!.forEachIndexed { i, it ->
-            val cells = cols.mapNotNull { c ->
+            val keyed = cols.mapNotNull { c ->
                 val text = when (c.key) {
                     "code" -> "${100000 + i * 37 + 11}"
                     "colli" -> if (it.unit == "kg") "1" else "${maxOf(1, it.quantity.toInt() / 6)}"
@@ -207,9 +214,17 @@ object DocGen {
                     "vat" -> if (cash) "%02d".format(it.vatRate) else "${it.vatRate}"
                     else -> null
                 } ?: return@mapNotNull null
-                Cell(if (c.right) c.x + 200 - CW * text.length else c.x, text)
+                c.key to Cell(if (c.right) c.x + 200 - CW * text.length else c.x, text)
             }
-            rows += Row(cells)
+            val cells = keyed.map { it.second }
+            if (twoRows) {
+                val name = Row(keyed.filter { k -> k.first in nameKeys }.map { k -> k.second })
+                val numbers = Row(keyed.filter { k -> k.first !in nameKeys }.map { k -> k.second })
+                if (numbersFirst) { rows += numbers; rows += name } else { rows += name; rows += numbers }
+                if (it.unit == "kg" && layout.nextBoolean()) {
+                    rows += Row(listOf(Cell(cols.first { c -> c.key == "desc" }.x, listOf("Prov ITALIA Cat II Cal 40 -45", "Prov SPAGNA Cat I", "Origine: Italia Categoria I Calibro 70/80")[layout.nextInt(3)])))
+                }
+            } else rows += Row(cells)
             if (it.lot != null) rows += Row(listOf(Cell(cols.first { c -> c.key == "desc" }.x, if (r.nextBoolean()) it.lot else "LOTTO ${it.lot}")))
         }
         rows += Row(emptyList())

@@ -178,9 +178,18 @@ object AiTargets {
                 ReceiptParser.isSectionHeading(it.originalDescription)
         }
         val usedRows = itemRow.filterNotNull().toSet()
+        // The numbers half of a line printed on two rows ("CECI ..." / "LT GR 1775 3 2,950 8,85 10"): its amount is
+        // the amount of the item found on the row next to it. Not a missed line.
+        fun continuation(r: RowInfo): Boolean {
+            val amount = ReceiptParser.lastAmountCents(r.text) ?: return false
+            return doc.lineItems.indices.any { i ->
+                val row = itemRow[i]
+                row != null && row.page == r.page && kotlin.math.abs(row.index - r.index) == 1 && doc.lineItems[i].lineTotalCents?.value == amount
+            }
+        }
         val missed = tableRows.filter { r ->
             r !in usedRows && (r.page !in headless || r.index in headlessSpan.getValue(r.page)) && r.text.count(Char::isLetter) >= 3 && hasMoney(r.text) &&
-                !ReceiptParser.isNotAnItemRow(r.text) && LotExtractor.scan(r.text).lot == null
+                !ReceiptParser.isNotAnItemRow(r.text) && LotExtractor.scan(r.text).lot == null && !continuation(r)
         }
         if (doubtful.size + missed.size > maxOf(MAX_ROW_TARGETS, doc.lineItems.size / 2)) return null
 
@@ -243,7 +252,17 @@ object AiTargets {
             val asked = targets.mapNotNull { t ->
                 when (t) { is AiTarget.Row -> t.itemIndex; is AiTarget.Choice -> t.itemIndex; is AiTarget.Number -> t.itemIndex; else -> null }
             }.toSet()
-            val candidates = doc.lineItems.indices.filter { i -> i !in asked && itemRow[i] != null && doc.lineItems[i].lineTotalCents != null }
+            // Only lines with something not proven: a line whose printed quantity x price = amount (all read with
+            // confidence) gains nothing from a second look and costs seconds.
+            fun proven(it: ParsedLineItem): Boolean {
+                val q = it.quantity ?: return false; val p = it.unitPrice ?: return false; val t = it.lineTotalCents ?: return false
+                // A quantity worked out as amount / price is proven too when every VAT group adds up.
+                val qSure = q.confidence == Confidence.HIGH || (provenByVat && ReceiptParser.workedOut(it))
+                return qSure && p.confidence == Confidence.HIGH && t.confidence == Confidence.HIGH && ReceiptParser.matches(q.value, p.value, t.value)
+            }
+            val open = doc.lineItems.indices.filter { i -> i !in asked && itemRow[i] != null && doc.lineItems[i].lineTotalCents != null }
+            // Everything proven: still one look at the largest amount, the line where a misread costs most.
+            val candidates = open.filter { !proven(doc.lineItems[it]) }.ifEmpty { listOfNotNull(open.maxByOrNull { doc.lineItems[it].lineTotalCents!!.value }) }
             val worked = candidates.filter { ReceiptParser.workedOut(doc.lineItems[it]) }
             val largest = (candidates - worked.toSet()).sortedByDescending { doc.lineItems[it].lineTotalCents!!.value }
             for (i in (worked + largest).take(MAX_SPOT_LINES)) {

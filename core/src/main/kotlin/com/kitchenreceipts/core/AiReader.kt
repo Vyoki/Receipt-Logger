@@ -357,6 +357,14 @@ object AiReader {
                     val read = ItalianNumbers.parse(answer) ?: continue
                     checked++
                     val agrees = read.compareTo(target.expected) == 0
+                    // A different number counts only if the line adds up with it; otherwise the AI read another column
+                    // (the amount for the quantity, "3,90" for 5) and the line, which adds up as read, stays as it is.
+                    val price = old.unitPrice?.value
+                    val fits = when (target.field) {
+                        AiTarget.Field.QUANTITY -> price != null && old.lineTotalCents != null && ReceiptParser.matches(read, price, old.lineTotalCents.value)
+                        AiTarget.Field.AMOUNT -> price != null && old.quantity != null && ReceiptParser.matches(old.quantity.value, price, ItalianNumbers.toCents(read))
+                    }
+                    if (!agrees && !fits) continue
                     val line = "line ${idx + 1}"
                     items[idx] = when (target.field) {
                         // The AI read the same number the arithmetic gives: two independent sources agree, the line is proven.
