@@ -121,7 +121,10 @@ object DocGen {
         val vatTotal = groups.values.sumOf { it.second }
         val truth = when (kind) {
             // A shop receipt: prices include VAT; the total is what was paid.
-            "receipt" -> DocTruth(kind, seller, sellerVat, number, date, null, null, subtotal, items.map { it.copy(vatRate = null, lot = null) })
+            // One piece: the receipt prints only the amount (the app leaves quantity and price for the operator: never invented).
+            "receipt" -> DocTruth(kind, seller, sellerVat, number, date, null, null, subtotal, items.map {
+                it.copy(vatRate = null, lot = null, unitPrice = if (it.quantity.compareTo(BigDecimal.ONE) == 0) BigDecimal(it.amountCents).movePointLeft(2) else it.unitPrice)
+            })
             else -> DocTruth(kind, seller, sellerVat, number, date, subtotal, vatTotal, subtotal + vatTotal, items)
         }
         val rows = when (kind) {

@@ -223,8 +223,6 @@ object HeaderEvidence {
 
     private fun add(all: MutableList<Candidate>, value: String, score: Int, why: String, page: Int, line: String) {
         if (!ReceiptParser.plausibleDocNumber(value)) return
-        // A phone number ("06 1234567", "0612345678") is not a document number.
-        if (value.filter(Char::isDigit).let { it.length >= 8 && it.startsWith("0") && value.none(Char::isLetter) && '/' !in value }) return
         all += Candidate(value, score, "page ${page + 1}: $line", listOf(why))
     }
 }
