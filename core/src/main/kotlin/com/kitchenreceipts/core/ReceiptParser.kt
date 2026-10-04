@@ -422,7 +422,7 @@ object ReceiptParser {
             val qtyLine = parseQtyLine(rest)
             if (qtyLine != null) {
                 val prev = items.lastOrNull()
-                if (prev != null && prev.quantity == null && qtyLine.fits(prev)) {
+                if (prev != null && (prev.quantity == null || prev.unitPrice == null || !selfConsistent(prev)) && qtyLine.fits(prev)) {
                     items[items.lastIndex] = qtyLine.applyTo(prev)
                 } else {
                     pendingQty = qtyLine
@@ -479,7 +479,9 @@ object ReceiptParser {
                 }
             }
             val pq = pendingQty
-            if (pq != null && item.quantity == null && pq.fits(item)) item = pq.applyTo(item)
+            // A "4 x 0,97" line whose product is the amount is the quantity and price, stronger than a number in the
+            // name ("ZUCCHERO KG 1" is the pack, not the quantity bought).
+            if (pq != null && pq.fits(item) && (item.quantity == null || item.unitPrice == null || !selfConsistent(item))) item = pq.applyTo(item)
             pendingQty = null
             items += item.copy(lotNumber = scan.lot ?: item.lotNumber, expiryDate = scan.expiry ?: item.expiryDate)
         }
@@ -522,6 +524,7 @@ object ReceiptParser {
      * Cross-checks a reading: subtotal + VAT = total, the lines against the totals, and whether prices
      * include VAT (printed wording first, then the arithmetic). Used for every reading (text, columns, AI).
      */
+
     fun finish(doc: ParsedDocument, text: String): ParsedDocument {
         // Logic first: a line that does not add up is solved from its own printed numbers where only one reading fits.
         val groups = VatSummary.parse(text)
@@ -538,17 +541,35 @@ object ReceiptParser {
         if (items.isEmpty()) warnings += ParseWarning.NO_ITEMS_FOUND
         if (items.any { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings }) warnings += ParseWarning.LINE_TOTAL_MISMATCH
 
-        val s = doc.subtotalCents; val v = vat; val t = total
-        if (s != null && v != null && t != null) {
-            if (kotlin.math.abs(s.value + v.value - t.value) > 1) warnings += ParseWarning.TOTALS_INCONSISTENT
-            else {
-                // subtotal + VAT = total: all three confirm each other.
-                total = t.copy(confidence = Confidence.HIGH)
-                vat = v.copy(confidence = Confidence.HIGH)
-            }
-        }
         val itemTotals = items.mapNotNull { it.lineTotalCents?.value }
         val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) itemTotals.sum() else null
+        var subtotal = doc.subtotalCents
+        val s0 = subtotal; val v0 = vat; val t0 = total
+        if (s0 != null && v0 != null && t0 != null) {
+            fun close(a: Long, b: Long) = kotlin.math.abs(a - b) <= 1
+            val groupsVat = groups.takeIf { it.isNotEmpty() }?.sumOf { it.vatCents }
+            when {
+                // subtotal + VAT = total: all three confirm each other.
+                close(s0.value + v0.value, t0.value) -> {
+                    total = t0.copy(confidence = Confidence.HIGH); vat = v0.copy(confidence = Confidence.HIGH); subtotal = s0.copy(confidence = Confidence.HIGH)
+                }
+                // VAT included in the prices ("di cui IVA", subtotal = total): the VAT is not added on top.
+                close(s0.value, t0.value) || INCLUSIVE_HINT.containsMatchIn(text) -> warnings += ParseWarning.TOTALS_INCONSISTENT
+                // One of the three was misread: the one the other evidence (the lines, the VAT summary) contradicts is
+                // replaced when the rest agrees, otherwise all three are shown for checking.
+                itemsSum != null && close(itemsSum + v0.value, t0.value) ->
+                    subtotal = Extracted(itemsSum, Confidence.HIGH, "lines ${ItalianNumbers.formatCents(itemsSum)} + VAT = total")
+                groupsVat != null && close(s0.value + groupsVat, t0.value) ->
+                    vat = Extracted(groupsVat, Confidence.HIGH, "VAT summary ${ItalianNumbers.formatCents(groupsVat)}: taxable + VAT = total")
+                itemsSum != null && close(itemsSum, s0.value) && (groupsVat == null || close(groupsVat, v0.value)) ->
+                    total = Extracted(s0.value + v0.value, Confidence.LOW, "taxable + VAT (the printed total ${ItalianNumbers.formatCents(t0.value)} does not add up)")
+                else -> {
+                    warnings += ParseWarning.TOTALS_INCONSISTENT
+                    subtotal = s0.copy(confidence = Confidence.LOW); vat = v0.copy(confidence = Confidence.LOW); total = t0.copy(confidence = Confidence.LOW)
+                }
+            }
+        }
+        val s = subtotal; val v = vat
         val tolerance = maxOf(2L, items.size.toLong())
         val matchesSubtotal = itemsSum != null && s != null && kotlin.math.abs(itemsSum - s.value) <= tolerance
         val matchesTotal = itemsSum != null && total != null && kotlin.math.abs(itemsSum - total.value) <= tolerance
@@ -572,7 +593,7 @@ object ReceiptParser {
         if (vatChecks.any { !it.ok }) warnings += ParseWarning.VAT_GROUP_MISMATCH
         val lotsPrinted = items.any { it.lotNumber != null } || LOTS_WORD.containsMatchIn(text)
         return doc.copy(
-            lineItems = items, totalCents = total, vatCents = vat, vatBasis = vatBasis, warnings = warnings,
+            lineItems = items, totalCents = total, vatCents = vat, subtotalCents = subtotal, vatBasis = vatBasis, warnings = warnings,
             vatChecks = vatChecks, lotsPrinted = lotsPrinted,
         )
     }
@@ -605,13 +626,29 @@ object ReceiptParser {
         fun applyTo(item: ParsedLineItem): ParsedLineItem {
             val consistent = item.lineTotalCents?.let { matches(qty, price, it.value) } ?: false
             val c = if (consistent) Confidence.HIGH else Confidence.LOW
+            // Replacing a number taken from the name ("ZUCCHERO KG 1"): that was the pack size, and the unit is the
+            // quantity line's own (pieces for a whole number).
+            val replaced = item.quantity
+            val newUnit = unit?.let { Extracted(it, c, raw) }
+                ?: if (replaced != null) Extracted(if (qty.stripTrailingZeros().scale() <= 0) "pz" else "kg", c, raw) else item.unit
+            val size = if (replaced != null && item.packSize == null) {
+                item.unit?.value?.let { u -> Units.dimension(u)?.let { PackSizes.Size(replaced.value.stripTrailingZeros(), u).text } }
+            } else null
             return item.copy(
                 quantity = Extracted(qty, c, raw),
                 unitPrice = Extracted(price, c, raw),
-                unit = item.unit ?: unit?.let { Extracted(it, c, raw) },
+                unit = newUnit,
                 lineTotalCents = item.lineTotalCents ?: totalCents?.let { Extracted(it, Confidence.LOW, raw) },
+                packSize = item.packSize ?: size?.let { Extracted(it, c, raw) },
             )
         }
+    }
+
+    private fun selfConsistent(i: ParsedLineItem): Boolean {
+        val q = i.quantity?.value ?: return false
+        val p = i.unitPrice?.value ?: return false
+        val t = i.lineTotalCents?.value ?: return false
+        return matches(q, p, t) && q.compareTo(BigDecimal.ONE) != 0 // "1 x amount" proves nothing
     }
 
     private fun parseQtyLine(line: String): QtyLine? {
@@ -1040,12 +1077,24 @@ object ReceiptParser {
             }
         }
         var qtyFromUnitTok: BigDecimal? = null
-        tail.filterIsInstance<Tok.QtyUnit>().firstOrNull()?.let {
+        val sizeTok = tail.filterIsInstance<Tok.QtyUnit>().firstOrNull()
+        // "PASSATA DI POMODORO 700G 1,08", "BIRRA 33CL X24 118,86": a size printed with the name and one amount after it
+        // is the size of the pack, not the quantity bought (that comes from a "6 x 19,81" line, or is one piece).
+        val oneAmount = tail.count { it is Tok.Num } == 1 && tail.none { it is Tok.Times }
+        val sizeOnly = sizeTok != null && sizeTok.unit in setOf("g", "ml", "cl") && oneAmount
+        // "ACQUA 50CL X24 4,25", "TOVAGLIOLI X100 55,25": the number of pieces in the pack, part of the name.
+        val packCount = sizeTok != null && sizeTok.unit.isEmpty() && sizeTok.raw.first() in "xX" && oneAmount
+        if (sizeOnly) {
+            packSize = PackSizes.Size(sizeTok!!.value.stripTrailingZeros(), sizeTok.unit)
+            description = "$description ${sizeTok.raw.uppercase()}".trim()
+        } else if (packCount) {
+            description = "$description ${sizeTok!!.raw.uppercase()}".trim()
+        } else sizeTok?.let {
             qtyFromUnitTok = it.value
             if (it.unit.isNotEmpty()) unit = it.unit
         }
         val rate = tail.filterIsInstance<Tok.Rate>().lastOrNull()?.value ?: vatCode
-        val hasTimes = tail.any { it is Tok.Times } || tail.any { it is Tok.QtyUnit && (it as Tok.QtyUnit).unit.isEmpty() }
+        val hasTimes = tail.any { it is Tok.Times } || (!packCount && tail.any { it is Tok.QtyUnit && (it as Tok.QtyUnit).unit.isEmpty() })
 
         var qty: BigDecimal? = qtyFromUnitTok
         var price: BigDecimal? = null
@@ -1063,6 +1112,8 @@ object ReceiptParser {
             values.size == 2 -> {
                 qty = values[0]
                 if (hasTimes) price = values[1] else totalCents = ItalianNumbers.toCents(values[1])
+                // One piece: its price is the amount ("ZUCCHERO KG 1  3,88" has no other reading of the price).
+                if (!hasTimes && qty.compareTo(BigDecimal.ONE) == 0) price = values[1]
             }
             else -> {
                 val last3 = values.takeLast(3)

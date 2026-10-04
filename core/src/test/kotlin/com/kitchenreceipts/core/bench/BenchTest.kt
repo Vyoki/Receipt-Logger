@@ -94,7 +94,7 @@ class BenchTest {
             append("\n== Saved without review although something is wrong\n")
             all.savedWithErrors.forEach { append(it).append('\n') }
             append("\n== Examples of what went wrong\n")
-            all.worst.take(60).forEach { append(it).append('\n') }
+            all.worst.forEach { append(it).append('\n') }
         }
         System.getenv("BENCH_REPORT")?.let { File(it).writeText(report) }
         println(report)
