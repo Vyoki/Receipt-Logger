@@ -100,6 +100,21 @@ class ImportProcessor(private val renderer: PageRenderer) {
         ai: AiUse? = null,
     ): PendingImport {
         val started = System.currentTimeMillis()
+        if (file.mimeType == com.kitchenreceipts.app.files.FileStore.MIME_XML) {
+            // An e-invoice: every value is in the XML. No OCR, no AI, nothing guessed.
+            onProgress(ImportProgress(1, 1, 1))
+            val read = withContext(Dispatchers.Default) { com.kitchenreceipts.core.EInvoice.read(renderer.bytes(file.relativePath), options.ownVatNumber) }
+            return PendingImport(
+                file = file,
+                ocrText = read.text,
+                parsed = read.parsed,
+                engineName = "E-invoice (XML)",
+                pagesRead = file.pageCount,
+                ocrError = null,
+                ocrMillis = System.currentTimeMillis() - started,
+                readingNote = "read from the e-invoice XML" + (read.documentType?.let { " ($it)" } ?: ""),
+            )
+        }
         val pages = minOf(file.pageCount, MAX_OCR_PAGES)
         val first = readAll(file, engine, pages, 1) { p, of -> onProgress(ImportProgress(p, of, 1)) }
         var best = first

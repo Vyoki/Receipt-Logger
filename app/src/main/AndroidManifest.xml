@@ -58,6 +58,38 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!--
+              "Open with" / "Share to" Kitchen Receipts from mail, files or the gallery: PDFs, photos and e-invoices
+              (.xml, signed .p7m, .zip). The file is copied into the app and read on the phone like any import.
+              Mail apps often label a .p7m as binary, so sharing also accepts that (opening does not, to stay out of
+              the way for other files).
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/xml" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/pkcs7-mime" />
+                <data android:mimeType="application/x-pkcs7-mime" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="image/jpeg" />
+                <data android:mimeType="image/png" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="application/pdf" />
+                <data android:mimeType="text/xml" />
+                <data android:mimeType="application/xml" />
+                <data android:mimeType="application/pkcs7-mime" />
+                <data android:mimeType="application/x-pkcs7-mime" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="image/jpeg" />
+                <data android:mimeType="image/png" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
         </activity>
 
         <service

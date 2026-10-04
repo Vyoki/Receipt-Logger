@@ -20,6 +20,8 @@ enum class ReviewReason {
     VAT_GROUP_MISMATCH,
     /** The document prints lot numbers, but some lines have none (traceability: every lot must be recorded). */
     LOTS_MISSING,
+    /** An e-invoice addressed to another company. */
+    OTHER_BUYER,
 }
 
 /**
@@ -51,6 +53,7 @@ object AutoAccept {
             out += ReviewReason.SUM_MISMATCH
         }
         if (d.vatGroupProblems.isNotEmpty()) out += ReviewReason.VAT_GROUP_MISMATCH
+        if (ParseWarning.OTHER_BUYER in d.warnings) out += ReviewReason.OTHER_BUYER
         if (d.vatBasis == VatBasis.UNKNOWN && inferVatBasis(d) == null && sumOk) {
             out += ReviewReason.VAT_BASIS_UNKNOWN
         }

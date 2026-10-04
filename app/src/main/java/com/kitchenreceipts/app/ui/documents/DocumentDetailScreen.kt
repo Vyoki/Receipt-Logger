@@ -181,7 +181,7 @@ fun DocumentDetailScreen(
                                 ) {
                                     Icon(Icons.Filled.OpenInNew, contentDescription = null)
                                     Spacer(Modifier.width(6.dp))
-                                    Text(stringResource(if (d.mimeType == FileStore.MIME_PDF) R.string.open_pdf else R.string.open_image))
+                                    Text(stringResource(when (d.mimeType) { FileStore.MIME_PDF -> R.string.open_pdf; FileStore.MIME_XML -> R.string.open_xml; else -> R.string.open_image }))
                                 }
                             }
                         }

@@ -1,0 +1,105 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Invented e-invoice (FatturaPA 1.2.2 layout). No real company. -->
+<p:FatturaElettronica versione="FPR12" xmlns:ds="http://www.w3.org/2000/09/xmldsig#" xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">
+  <FatturaElettronicaHeader>
+    <DatiTrasmissione>
+      <IdTrasmittente><IdPaese>IT</IdPaese><IdCodice>01234567897</IdCodice></IdTrasmittente>
+      <ProgressivoInvio>00001</ProgressivoInvio>
+      <FormatoTrasmissione>FPR12</FormatoTrasmissione>
+      <CodiceDestinatario>0000000</CodiceDestinatario>
+    </DatiTrasmissione>
+    <CedentePrestatore>
+      <DatiAnagrafici>
+        <IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>01234567897</IdCodice></IdFiscaleIVA>
+        <Anagrafica><Denominazione>ABC S.r.l.</Denominazione></Anagrafica>
+        <RegimeFiscale>RF01</RegimeFiscale>
+      </DatiAnagrafici>
+      <Sede><Indirizzo>VIA DELLE PROVE</Indirizzo><NumeroCivico>1</NumeroCivico><CAP>00100</CAP><Comune>ROMA</Comune><Provincia>RM</Provincia><Nazione>IT</Nazione></Sede>
+    </CedentePrestatore>
+    <CessionarioCommittente>
+      <DatiAnagrafici>
+        <IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>09876543217</IdCodice></IdFiscaleIVA>
+        <Anagrafica><Denominazione>RISTORANTE PROVA SAS</Denominazione></Anagrafica>
+      </DatiAnagrafici>
+      <Sede><Indirizzo>PIAZZA ESEMPIO</Indirizzo><CAP>00100</CAP><Comune>ROMA</Comune><Nazione>IT</Nazione></Sede>
+    </CessionarioCommittente>
+  </FatturaElettronicaHeader>
+  <FatturaElettronicaBody>
+    <DatiGenerali>
+      <DatiGeneraliDocumento>
+        <TipoDocumento>TD24</TipoDocumento>
+        <Divisa>EUR</Divisa>
+        <Data>2026-09-23</Data>
+        <Numero>12A/34567</Numero>
+        <ImportoTotaleDocumento>63.78</ImportoTotaleDocumento>
+      </DatiGeneraliDocumento>
+      <DatiDDT><NumeroDDT>B26 204177</NumeroDDT><DataDDT>2026-09-22</DataDDT></DatiDDT>
+    </DatiGenerali>
+    <DatiBeniServizi>
+      <DettaglioLinee>
+        <NumeroLinea>1</NumeroLinea>
+        <Descrizione>Rif. DDT B26 204177 del 22/09/2026</Descrizione>
+        <PrezzoUnitario>0.00</PrezzoUnitario>
+        <PrezzoTotale>0.00</PrezzoTotale>
+        <AliquotaIVA>0.00</AliquotaIVA>
+        <Natura>N2.2</Natura>
+      </DettaglioLinee>
+      <DettaglioLinee>
+        <NumeroLinea>2</NumeroLinea>
+        <CodiceArticolo><CodiceTipo>EAN</CodiceTipo><CodiceValore>8000000000001</CodiceValore></CodiceArticolo>
+        <CodiceArticolo><CodiceTipo>INTERNO</CodiceTipo><CodiceValore>2222443</CodiceValore></CodiceArticolo>
+        <Descrizione>PASTA BARI.PIPETTE RIG500 N.86 - BARILLA</Descrizione>
+        <Quantita>12.00</Quantita>
+        <UnitaMisura>PZ</UnitaMisura>
+        <PrezzoUnitario>0.90000000</PrezzoUnitario>
+        <ScontoMaggiorazione><Tipo>SC</Tipo><Percentuale>10.00</Percentuale></ScontoMaggiorazione>
+        <PrezzoTotale>9.72000000</PrezzoTotale>
+        <AliquotaIVA>4.00</AliquotaIVA>
+      </DettaglioLinee>
+      <DettaglioLinee>
+        <NumeroLinea>3</NumeroLinea>
+        <CodiceArticolo><CodiceTipo>INTERNO</CodiceTipo><CodiceValore>2216015</CodiceValore></CodiceArticolo>
+        <Descrizione>LOMBO B/A C/OSSO</Descrizione>
+        <Quantita>2.150</Quantita>
+        <UnitaMisura>KG</UnitaMisura>
+        <PrezzoUnitario>18.55</PrezzoUnitario>
+        <PrezzoTotale>39.88</PrezzoTotale>
+        <AliquotaIVA>10.00</AliquotaIVA>
+        <AltriDatiGestionali><TipoDato>LOTTO</TipoDato><RiferimentoTesto>L26-0915</RiferimentoTesto></AltriDatiGestionali>
+        <AltriDatiGestionali><TipoDato>SCADENZA</TipoDato><RiferimentoData>2026-10-10</RiferimentoData></AltriDatiGestionali>
+      </DettaglioLinee>
+      <DettaglioLinee>
+        <NumeroLinea>4</NumeroLinea>
+        <Descrizione>MOZZARELLA FIOR DI LATTE LOTTO 789431</Descrizione>
+        <Quantita>1.00</Quantita>
+        <UnitaMisura>KG</UnitaMisura>
+        <PrezzoUnitario>8.90</PrezzoUnitario>
+        <PrezzoTotale>8.90</PrezzoTotale>
+        <AliquotaIVA>4.00</AliquotaIVA>
+      </DettaglioLinee>
+      <DettaglioLinee>
+        <NumeroLinea>5</NumeroLinea>
+        <Descrizione>SPESE DI TRASPORTO</Descrizione>
+        <PrezzoUnitario>0.50</PrezzoUnitario>
+        <PrezzoTotale>0.50</PrezzoTotale>
+        <AliquotaIVA>10.00</AliquotaIVA>
+      </DettaglioLinee>
+      <DatiRiepilogo>
+        <AliquotaIVA>4.00</AliquotaIVA>
+        <ImponibileImporto>18.62</ImponibileImporto>
+        <Imposta>0.74</Imposta>
+        <EsigibilitaIVA>I</EsigibilitaIVA>
+      </DatiRiepilogo>
+      <DatiRiepilogo>
+        <AliquotaIVA>10.00</AliquotaIVA>
+        <ImponibileImporto>40.38</ImponibileImporto>
+        <Imposta>4.04</Imposta>
+        <EsigibilitaIVA>I</EsigibilitaIVA>
+      </DatiRiepilogo>
+    </DatiBeniServizi>
+    <DatiPagamento>
+      <CondizioniPagamento>TP02</CondizioniPagamento>
+      <DettaglioPagamento><ModalitaPagamento>MP05</ModalitaPagamento><DataScadenzaPagamento>2026-10-31</DataScadenzaPagamento><ImportoPagamento>63.78</ImportoPagamento></DettaglioPagamento>
+    </DatiPagamento>
+  </FatturaElettronicaBody>
+</p:FatturaElettronica>

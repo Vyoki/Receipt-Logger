@@ -129,6 +129,7 @@
     <string name="document_not_found">Questo documento non esiste più.</string>
     <string name="full_screen">Schermo intero</string>
     <string name="open_pdf">Apri PDF</string>
+    <string name="open_xml">Apri l\'XML della fattura</string>
     <string name="open_image">Apri immagine</string>
     <string name="no_viewer_app">Nessuna app può aprire questo file.</string>
     <string name="line_items_count">Righe (%1$d)</string>
@@ -449,7 +450,7 @@
 
     <!-- background reading -->
     <string name="pick_photos">Scegli foto dalla galleria</string>
-    <string name="import_pdf">Importa un PDF</string>
+    <string name="import_pdf">Importa PDF o fattura elettronica</string>
     <string name="add_from_gallery">Dalla galleria</string>
     <string name="notif_channel_progress">Lettura documenti</string>
     <string name="notif_channel_results">Documenti pronti</string>
@@ -544,6 +545,8 @@
     <string name="learned_clear">Dimentica ciò che è stato imparato</string>
     <string name="warn_vat_group_mismatch">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA.</string>
     <string name="reason_vat_group">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA:</string>
+    <string name="warn_other_buyer">Questa fattura elettronica è intestata a un\'altra azienda (la P.IVA del cliente non è la vostra).</string>
+    <string name="reason_other_buyer">Intestata a un\'altra azienda.</string>
     <string name="reason_lots_missing">Alcune righe non hanno il lotto, ma il documento riporta i lotti.</string>
     <string name="vat_group_line">%1$s%%: righe %2$s, riepilogo %3$s (differenza %4$s)</string>
     <string name="pack_size">Formato</string>
@@ -556,4 +559,8 @@
     <string name="scan_hint">Foto, galleria o PDF · più pagine</string>
     <string name="brand_is">Marca: %1$s</string>
     <string name="name_unknown">Non capito nel nome: %1$s. Tocca il prodotto per scrivere il nome; l\'app lo impara.</string>
+    <plurals name="shared_queued">
+        <item quantity="one">%d documento in lettura</item>
+        <item quantity="other">%d documenti in lettura</item>
+    </plurals>
 </resources>
