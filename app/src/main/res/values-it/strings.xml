@@ -554,4 +554,6 @@
     </plurals>
     <string name="ai_check_disagree">Ricontrollo IA: %1$d valori su %2$d letti diversamente (evidenziati):</string>
     <string name="scan_hint">Foto, galleria o PDF · più pagine</string>
+    <string name="brand_is">Marca: %1$s</string>
+    <string name="name_unknown">Non capito nel nome: %1$s. Tocca il prodotto per scrivere il nome; l\'app lo impara.</string>
 </resources>

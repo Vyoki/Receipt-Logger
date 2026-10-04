@@ -566,4 +566,6 @@
     </plurals>
     <string name="ai_check_disagree">AI double-check: %1$d of %2$d values read differently (highlighted):</string>
     <string name="scan_hint">Photo, gallery or PDF · several pages</string>
+    <string name="brand_is">Brand: %1$s</string>
+    <string name="name_unknown">Not understood in the name: %1$s. Tap the product to write the name; the app learns it.</string>
 </resources>

@@ -569,6 +569,13 @@ private fun ItemCard(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            if (newName != null) {
+                item.newProductBrand?.let { b -> Text(stringResource(R.string.brand_is, b), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+                // Abbreviations the app could not write out: the operator's name for them is learned on save.
+                if (item.nameUnknown.isNotEmpty()) {
+                    Text(stringResource(R.string.name_unknown, item.nameUnknown.joinToString(", ")), style = MaterialTheme.typography.bodySmall, color = status.uncertainBorder)
+                }
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ItemInput(item, errors, onChange, onConfirm, ItemField.QUANTITY, R.string.quantity, Modifier.weight(1f), FieldKind.DECIMAL)
                 ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT, R.string.unit, Modifier.weight(1f))

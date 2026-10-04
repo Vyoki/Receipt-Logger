@@ -5,6 +5,7 @@ import com.kitchenreceipts.core.AiReader
 import com.kitchenreceipts.core.Categories
 import com.kitchenreceipts.core.Category
 import com.kitchenreceipts.core.ChoiceRule
+import com.kitchenreceipts.core.ProductNames
 import com.kitchenreceipts.core.SupplierLayout
 import com.kitchenreceipts.core.SupplierLayouts
 import com.kitchenreceipts.core.SupplierMemory
@@ -34,8 +35,28 @@ class LearningStore(context: Context) {
     /** Words of product names and the category the operator chose for them (all suppliers). */
     private val categoryWords: MutableMap<String, Category> by lazy { loadCategories() }
 
-    /** Puts what was learned into the category guesser (call once at start). */
-    fun applyCategories() = synchronized(lock) { Categories.learned = categoryWords.toMap() }
+    /** Abbreviations in product names and the words the operator wrote for them ("tr" -> "tenerissimo"). */
+    private val nameWords: MutableMap<String, String> by lazy { loadNames() }
+
+    /** Puts what was learned into the category guesser and the name cleaner (call once at start). */
+    fun applyCategories() = synchronized(lock) {
+        Categories.learned = categoryWords.toMap()
+        ProductNames.learned = nameWords.toMap()
+    }
+
+    /** The operator named a new product [finalName] for the printed line [printed]: learn its abbreviations. */
+    fun learnName(printed: String, finalName: String) = synchronized(lock) {
+        val pairs = ProductNames.learnFromRename(printed, finalName)
+        if (pairs.isEmpty() || pairs.all { (k, v) -> nameWords[k] == v }) return@synchronized
+        nameWords.putAll(pairs)
+        ProductNames.learned = nameWords.toMap()
+        save()
+    }
+
+    private fun loadNames(): MutableMap<String, String> {
+        val o = runCatching { JSONObject(file.readText()).optJSONObject(NAMES_KEY) }.getOrNull() ?: return mutableMapOf()
+        return o.keys().asSequence().associateWith { o.optString(it) }.filterValues { it.isNotBlank() }.toMutableMap()
+    }
 
     /** The operator chose [category] for [productName]: the word the guess hinged on now means that category. */
     fun learnCategory(productName: String, category: Category) = synchronized(lock) {
@@ -86,6 +107,8 @@ class LearningStore(context: Context) {
         entries.clear()
         categoryWords.clear()
         Categories.learned = emptyMap()
+        nameWords.clear()
+        ProductNames.learned = emptyMap()
         file.delete()
     }
 
@@ -93,7 +116,7 @@ class LearningStore(context: Context) {
         val out = mutableMapOf<String, Entry>()
         val root = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return out
         for (key in root.keys()) {
-            if (key == CATEGORY_KEY) continue
+            if (key == CATEGORY_KEY || key == NAMES_KEY) continue
             val o = root.optJSONObject(key) ?: continue
             val rules = o.optJSONArray("rules")?.let { a -> (0 until a.length()).mapNotNull { ChoiceRule.decode(a.optString(it)) } }.orEmpty()
             val examples = o.optJSONArray("examples")?.let { a ->
@@ -127,6 +150,7 @@ class LearningStore(context: Context) {
             root.put(key, o)
         }
         root.put(CATEGORY_KEY, JSONObject(categoryWords.mapValues { it.value.key }))
+        root.put(NAMES_KEY, JSONObject(nameWords.toMap()))
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(root.toString())
         tmp.renameTo(file)
@@ -135,5 +159,6 @@ class LearningStore(context: Context) {
     private companion object {
         /** Not a supplier key (those start with "vat:" or "name:"). */
         const val CATEGORY_KEY = "#categories"
+        const val NAMES_KEY = "#names"
     }
 }

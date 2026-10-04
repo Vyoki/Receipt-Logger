@@ -147,7 +147,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             // Lines the app could not link to an existing product become new products (one per name).
             val createdProducts = doc.items.withIndex().mapNotNull { (i, it) ->
                 val name = it.newProductName?.takeIf { _ -> it.productId == null } ?: return@mapNotNull null
-                i to findOrCreateProduct(name)
+                i to findOrCreateProduct(name, it.newProductBrand)
             }.toMap()
             documents.insertItems(
                 doc.items.mapIndexed { i, it ->
@@ -246,12 +246,12 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         if (vat.isNotBlank()) sellers.clearVat(vat.filter(Char::isDigit))
     }
 
-    private fun findOrCreateProduct(name: String): Long {
+    private fun findOrCreateProduct(name: String, brand: String? = null): Long {
         val clean = name.trim()
         val normalized = ProductMatching.aliasKey(clean)
         products.findByNormalizedBlocking(normalized)?.let { return it.id }
         return products.insertBlocking(
-            ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis()),
+            ProductEntity(name = clean, normalizedName = normalized, createdAt = System.currentTimeMillis(), brand = brand?.trim()?.ifEmpty { null }),
         )
     }
 
@@ -465,7 +465,15 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                 return@map item.copy(productId = match.productId, productName = match.name, productSource = ProductSource.RECOGNISED, newProductName = null)
             }
             if (createNew) {
-                item.copy(newProductName = ProductMatching.proposeName(item.description.text), productSource = ProductSource.NEW)
+                // A readable name: brand and size moved to their fields, the trade's abbreviations written out.
+                val clean = com.kitchenreceipts.core.ProductNames.clean(item.description.text, com.kitchenreceipts.core.PackSizes.fromText(item.packSize.text))
+                item.copy(
+                    newProductName = clean.name,
+                    newProductBrand = clean.brand,
+                    nameUnknown = clean.unknown,
+                    packSize = clean.size?.takeIf { item.packSize.text.isBlank() }?.let { com.kitchenreceipts.core.DraftField(it.text, false, item.description.text) } ?: item.packSize,
+                    productSource = ProductSource.NEW,
+                )
             } else {
                 item
             }
