@@ -100,7 +100,7 @@ class BenchTest {
         println(report)
 
         // The gate: never worse than the recorded baseline.
-        val base = resource("bench/baseline.txt")?.lines()?.filter { '=' in it }?.associate { it.substringBefore('=').trim() to it.substringAfter('=').trim().toDouble() }.orEmpty()
+        val base = resource("bench/baseline.txt")?.lines()?.filter { it.isNotBlank() && !it.startsWith("#") && "=" in it }?.associate { it.substringBefore('=').trim() to it.substringAfter('=').trim().toDouble() }.orEmpty()
         val f = all.fields.getValue("all fields")
         val right = f.right
         val silent = f.pct(Outcome.SILENT)
