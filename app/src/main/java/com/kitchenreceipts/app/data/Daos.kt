@@ -193,6 +193,13 @@ interface DocumentDao {
     @Query("SELECT file_path FROM documents")
     suspend fun allFilePaths(): List<String>
 
+    /** Everything, for the office copy. */
+    @Query("SELECT * FROM documents ORDER BY (document_date IS NULL), document_date, id")
+    suspend fun allDocumentsOnce(): List<DocumentEntity>
+
+    @Query("SELECT * FROM line_items ORDER BY document_id, position")
+    suspend fun allItemsOnce(): List<LineItemEntity>
+
     @Query("$PURCHASE_SELECT ORDER BY d.document_date DESC, li.document_id DESC, li.position")
     fun allPurchases(): Flow<List<PurchaseRow>>
 

@@ -10,6 +10,8 @@ jobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 90
+    permissions:
+      contents: write # office-copy screenshots are published to the ci-office branch
     steps:
       - uses: actions/checkout@v5
 
@@ -27,7 +29,7 @@ jobs:
         run: git clone --depth 1 --branch b11242 https://github.com/ggml-org/llama.cpp third_party/llama.cpp
 
       - name: Core unit tests
-        run: BENCH_REPORT=$PWD/bench-report.txt ./gradlew :core:test --stacktrace
+        run: BENCH_REPORT=$PWD/bench-report.txt OFFICE_SAMPLE=$PWD/office-sample.html ./gradlew :core:test --stacktrace
       - name: Publish the reading scorecard
         if: always()
         shell: bash
@@ -39,6 +41,39 @@ jobs:
           head = t.split('\n== invented')[0][:3800]
           print('::notice title=Reading scorecard::' + head.replace('%', '%25').replace('\r', '').replace('\n', '%0A'))
           PY
+
+      - name: Office copy in a real browser
+        if: always()
+        shell: bash
+        run: |
+          # The office page made by the phone (sample with invented data from OfficeExportTest), opened in Chrome with
+          # the network cut off: password, every tab, details, CSV, dropping an e-invoice, phone width, dark mode.
+          [ -s office-sample.html ] || { echo "::error title=Office copy::no sample page"; exit 1; }
+          mkdir -p web-check && cd web-check
+          npm init -y >/dev/null && PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD=1 npm install --no-audit --no-fund playwright@1.56.0 >/dev/null
+          cp ../web/check-office.mjs .
+          set +e
+          PW_CHANNEL=chrome node check-office.mjs ../office-sample.html ../core/src/test/resources/fixtures/fattura_elettronica.xml ../office-screens 2>&1 | tee check.log
+          code=${PIPESTATUS[0]}
+          set -e
+          msg=$(tail -20 check.log); msg="${msg//'%'/'%25'}"; msg="${msg//$'\n'/'%0A'}"
+          if [ $code -eq 0 ]; then echo "::notice title=Office copy::${msg}"; else echo "::error title=Office copy::${msg}"; fi
+          exit $code
+      - name: Publish office-copy screenshots
+        if: always() && github.event_name == 'push'
+        shell: bash
+        run: |
+          [ -d office-screens ] && [ "$(ls office-screens/*.png 2>/dev/null | wc -l)" -gt 0 ] || { echo "::notice title=Office screenshots::none"; exit 0; }
+          cd office-screens
+          git init -q -b ci-office
+          git config user.name "github-actions"
+          git config user.email "github-actions@users.noreply.github.com"
+          git add *.png && git commit -qm "Office copy screenshots of ${GITHUB_SHA::7}"
+          if git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}" ci-office; then
+            echo "::notice title=Office screenshots::published $(ls *.png | wc -l) files for ${GITHUB_SHA::7}"
+          else
+            echo "::notice title=Office screenshots::push failed"
+          fi
 
       - name: Build debug APK
         shell: bash
