@@ -35,6 +35,10 @@ data class LineItemDraft(
     val productSource: ProductSource? = null,
     /** No product matched: a new product with this name is created when the document is saved. */
     val newProductName: String? = null,
+    /** The brand read from the line ("... - BARILLA"), given to the new product. */
+    val newProductBrand: String? = null,
+    /** Abbreviations in the proposed name the app could not write out ("TR."): the name is worth a look. */
+    val nameUnknown: List<String> = emptyList(),
     /** The line's numbers add up in more than one way: the operator picks (the first is the suggested one). */
     val choices: List<LineChoice> = emptyList(),
     /** How much one pack holds ("500 g", "1 l"): the quantity counts packs of this size. */
@@ -161,6 +165,7 @@ data class ValidLineItem(
     val itemCode: String? = null,
     /** Create this product on save and link the line to it (only when [productId] is null). */
     val newProductName: String? = null,
+    val newProductBrand: String? = null,
     val packages: String? = null,
     /** "500 g": one pack's size (normalised, see PackSizes). */
     val packSize: String? = null,
@@ -229,6 +234,7 @@ object DraftValidator {
             ValidLineItem(
                 desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry, it.itemCode,
                 newProductName = it.newProductName?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null },
+                newProductBrand = it.newProductBrand?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null },
                 packages = packages,
                 packSize = packSize,
             )

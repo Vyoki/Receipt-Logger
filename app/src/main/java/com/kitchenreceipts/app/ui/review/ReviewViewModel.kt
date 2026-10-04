@@ -364,6 +364,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 val key = ocrText?.let { SupplierMemory.key(it, own, doc.sellerName) } ?: supplierKey
                 val corrected = initialDraft?.items.orEmpty().filter { it.uncertainCount > 0 || it.choices.isNotEmpty() }.map { it.key }.toSet()
                 runCatching { c.learning.addExamples(key, SupplierMemory.examplesFrom(finalDraft, corrected)) }
+                // How the operator named new products teaches the abbreviations ("TR." -> tenerissimo), for every supplier.
+                finalDraft.items.forEach { i -> i.newProductName?.let { n -> runCatching { c.learning.learnName(i.description.text, n) } } }
                 // How this supplier prints its documents (number format, lots, headings), for next time.
                 readParsed?.let { read -> runCatching { c.learning.addLayout(key, com.kitchenreceipts.core.SupplierLayouts.learn(read, finalDraft)) } }
             }
