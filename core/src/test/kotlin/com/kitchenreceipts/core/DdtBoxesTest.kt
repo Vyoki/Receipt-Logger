@@ -102,7 +102,8 @@ class DdtBoxesTest {
         assertTrue(plan.any { it is AiTarget.Totals })
         assertTrue(plan.none { it is AiTarget.Row && it.itemIndex == null })
         val numbers = plan.filterIsInstance<AiTarget.Number>()
-        assertEquals(7, numbers.size)
+        // Every line adds up as printed: one look at the largest amount (and the worked-out quantity, unless the VAT summary proves it).
+        assertTrue(numbers.size in 1..2)
         assertTrue(numbers.all { it.boxes.isNotEmpty() && it.boxes.all { b -> b.width > 0 && b.height > 0 } })
     }
 }

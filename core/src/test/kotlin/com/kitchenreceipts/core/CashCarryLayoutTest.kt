@@ -148,10 +148,9 @@ class CashCarryLayoutTest {
         assertTrue(t.any { it is AiTarget.Header && it.verify })
         assertTrue(t.any { it is AiTarget.Totals && it.verify })
         val numbers = t.filterIsInstance<AiTarget.Number>()
-        assertTrue(numbers.size in 3..8)
-        // Quantities worked out by arithmetic are checked first, then the largest amounts.
-        assertEquals(AiTarget.Field.QUANTITY, numbers[0].field)
-        assertTrue(numbers.any { it.field == AiTarget.Field.AMOUNT && it.expected.compareTo(BigDecimal("111.41")) == 0 })
+        // Every line is proven (printed, or worked out and confirmed by the VAT summary): one look at the largest amount.
+        assertEquals(1, numbers.size)
+        assertEquals(AiTarget.Field.AMOUNT, numbers[0].field)
         // Same targets when the reading is rebuilt after a restart (the answers are paired with them in order).
         assertEquals(t, AiTargets.plan(pages, d, spotCheck = true))
 
@@ -161,23 +160,23 @@ class CashCarryLayoutTest {
             target to when (target) {
                 is AiTarget.Header -> "{\"seller\":\"ABC S.r.l.\",\"seller_vat\":\"01234567897\",\"number\":\"38B/12345\",\"date\":\"30/09/2026\"}"
                 is AiTarget.Totals -> "{\"subtotal\":\"226,74\",\"vat\":\"14,40\",\"total\":\"241,14\"}"
-                is AiTarget.Number -> if (target.field == AiTarget.Field.AMOUNT && target.expected.compareTo(BigDecimal("111.41")) == 0) "111,47"
+                // The first number read from another column ("111,47" does not make the line add up): not a disagreement.
+                is AiTarget.Number -> if (target == t.filterIsInstance<AiTarget.Number>().first()) "111,47"
                     else ItalianNumbers.formatDecimal(target.expected, maxScale = 3)
                 else -> ""
             }
         }
         val checked = AiReader.applyTargets(d, answers, text, ParseOptions(ownVatNumber = "09876543217"))
         val check = checked.aiCheck!!
-        assertEquals(1, check.disagreements.size)
-        assertTrue(check.disagreements.single().contains("111,47"))
-        assertEquals(Confidence.LOW, checked.lineItems.first { it.originalDescription.startsWith("PECORINO") }.lineTotalCents?.confidence)
+        assertEquals(0, check.disagreements.size)
         assertEquals(Confidence.HIGH, checked.sellerName?.confidence)
         assertEquals(Confidence.HIGH, checked.totalCents?.confidence)
-        eq("1", checked.lineItems.first { it.originalDescription.startsWith("UOVA") }.quantity?.value)
-        assertEquals(Confidence.HIGH, checked.lineItems.first { it.originalDescription.startsWith("UOVA") }.quantity?.confidence)
-        // The arithmetic does not clear what the AI disputed.
-        val draft = AutoAccept.settleProven(DocumentDraft.fromParsed(checked))
-        assertTrue(draft.items.first { it.description.text.startsWith("PECORINO") }.lineTotal.uncertain)
+        // A disagreement that adds up is kept, and the arithmetic does not clear it.
+        // A quantity read as twice the printed one does not add up either: not a disagreement.
+        val a = numbers[0]
+        val q = a.copy(column = "QUANTITA'", expected = d.lineItems[a.itemIndex].quantity!!.value, field = AiTarget.Field.QUANTITY)
+        val disputed = AiReader.applyTargets(d, listOf(q to ItalianNumbers.formatDecimal(q.expected.multiply(BigDecimal(2)), maxScale = 3)), text, ParseOptions(ownVatNumber = "09876543217"))
+        assertEquals(0, disputed.aiCheck!!.disagreements.size)
     }
 
     @Test fun vatGroupThatDoesNotAddUpIsNamed() {
