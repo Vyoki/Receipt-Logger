@@ -55,6 +55,7 @@ class AppContainer(context: Context) {
     init {
         // Documents of a supplier seen before are read with what its confirmed documents taught (phone only).
         settings.layoutLookup = { key -> learning.layout(key) }
+        runCatching { learning.applyCategories() }
         repository.onSharedVatNumber = { vat ->
             log.event("OWN_VAT_DETECTED", "vat" to vat)
             if (settings.ownVatNumber.isBlank()) settings.ownVatNumber = vat

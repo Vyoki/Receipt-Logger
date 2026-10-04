@@ -2,6 +2,8 @@ package com.kitchenreceipts.app.learning
 
 import android.content.Context
 import com.kitchenreceipts.core.AiReader
+import com.kitchenreceipts.core.Categories
+import com.kitchenreceipts.core.Category
 import com.kitchenreceipts.core.ChoiceRule
 import com.kitchenreceipts.core.SupplierLayout
 import com.kitchenreceipts.core.SupplierLayouts
@@ -28,6 +30,25 @@ class LearningStore(context: Context) {
     )
 
     private val entries: MutableMap<String, Entry> by lazy { load() }
+
+    /** Words of product names and the category the operator chose for them (all suppliers). */
+    private val categoryWords: MutableMap<String, Category> by lazy { loadCategories() }
+
+    /** Puts what was learned into the category guesser (call once at start). */
+    fun applyCategories() = synchronized(lock) { Categories.learned = categoryWords.toMap() }
+
+    /** The operator chose [category] for [productName]: the word the guess hinged on now means that category. */
+    fun learnCategory(productName: String, category: Category) = synchronized(lock) {
+        val word = Categories.wordToLearn(productName, category) ?: return@synchronized
+        categoryWords[word] = category
+        Categories.learned = categoryWords.toMap()
+        save()
+    }
+
+    private fun loadCategories(): MutableMap<String, Category> {
+        val o = runCatching { JSONObject(file.readText()).optJSONObject(CATEGORY_KEY) }.getOrNull() ?: return mutableMapOf()
+        return o.keys().asSequence().mapNotNull { k -> Category.fromKey(o.optString(k))?.let { k to it } }.toMap().toMutableMap()
+    }
 
     fun rules(key: String?): Set<ChoiceRule> = synchronized(lock) { key?.let { entries[it]?.rules?.toSet() }.orEmpty() }
 
@@ -63,6 +84,8 @@ class LearningStore(context: Context) {
 
     fun clear() = synchronized(lock) {
         entries.clear()
+        categoryWords.clear()
+        Categories.learned = emptyMap()
         file.delete()
     }
 
@@ -70,6 +93,7 @@ class LearningStore(context: Context) {
         val out = mutableMapOf<String, Entry>()
         val root = runCatching { JSONObject(file.readText()) }.getOrNull() ?: return out
         for (key in root.keys()) {
+            if (key == CATEGORY_KEY) continue
             val o = root.optJSONObject(key) ?: continue
             val rules = o.optJSONArray("rules")?.let { a -> (0 until a.length()).mapNotNull { ChoiceRule.decode(a.optString(it)) } }.orEmpty()
             val examples = o.optJSONArray("examples")?.let { a ->
@@ -102,8 +126,14 @@ class LearningStore(context: Context) {
             e.layout?.let { o.put("layout", it.encode()) }
             root.put(key, o)
         }
+        root.put(CATEGORY_KEY, JSONObject(categoryWords.mapValues { it.value.key }))
         val tmp = File(file.parentFile, file.name + ".tmp")
         tmp.writeText(root.toString())
         tmp.renameTo(file)
+    }
+
+    private companion object {
+        /** Not a supplier key (those start with "vat:" or "name:"). */
+        const val CATEGORY_KEY = "#categories"
     }
 }

@@ -96,7 +96,12 @@ data class ProductDetail(
     val aliases: List<AliasRow>,
 )
 
-class ProductDetailViewModel(private val repo: ReceiptRepository, private val id: Long) : ViewModel() {
+class ProductDetailViewModel(
+    private val repo: ReceiptRepository,
+    private val id: Long,
+    /** Teaches the category guesser from the operator's choice (see core Categories.learned). */
+    private val learnCategory: (String, Category) -> Unit = { _, _ -> },
+) : ViewModel() {
     val detail: StateFlow<ProductDetail?> = combine(
         repo.observeProduct(id),
         repo.purchasesForProduct(id),
@@ -112,7 +117,10 @@ class ProductDetailViewModel(private val repo: ReceiptRepository, private val id
     fun addConversion(from: String, to: String, factor: BigDecimal) = viewModelScope.launch { repo.addConversion(id, from, to, factor) }
     fun deleteConversion(cid: Long) = viewModelScope.launch { repo.deleteConversion(cid) }
     fun deleteAlias(aid: Long) = viewModelScope.launch { repo.deleteAlias(aid) }
-    fun setCategory(c: Category) = viewModelScope.launch { repo.setCategory(id, c) }
+    fun setCategory(c: Category) = viewModelScope.launch {
+        detail.value?.product?.name?.let { name -> runCatching { learnCategory(name, c) } }
+        repo.setCategory(id, c)
+    }
     fun mergeInto(target: Long, done: () -> Unit) = viewModelScope.launch { repo.mergeProducts(id, target); done() }
     fun setFamily(name: String) = viewModelScope.launch { repo.addToFamily(name, listOf(id)) }
     fun removeFromFamily() = viewModelScope.launch { repo.dismissFamilySuggestion(listOf(id)) }
@@ -128,7 +136,7 @@ class ProductDetailViewModel(private val repo: ReceiptRepository, private val id
 
 @Composable
 fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenFamily: (Long) -> Unit) {
-    val vm = appViewModel(key = "product-$productId") { ProductDetailViewModel(it.repository, productId) }
+    val vm = appViewModel(key = "product-$productId") { ProductDetailViewModel(it.repository, productId) { name, c -> it.learning.learnCategory(name, c) } }
     val detail by vm.detail.collectAsStateWithLifecycle()
     val others by vm.otherProducts.collectAsStateWithLifecycle()
     val changes by vm.priceChanges.collectAsStateWithLifecycle()
