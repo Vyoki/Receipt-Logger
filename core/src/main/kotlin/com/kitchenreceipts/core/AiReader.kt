@@ -337,6 +337,8 @@ object AiReader {
                         val amount = a.amount?.let { ItalianNumbers.parse(it) }?.let { ItalianNumbers.toCents(it) }
                         if (amount == doubted.lineTotalCents?.value && nameAgrees(doubted.originalDescription, a.description.orEmpty())) {
                             items[target.itemIndex!!] = doubted.copy(nameDoubt = false)
+                            // The rest of the block was paired the same way on the same tilted rows.
+                            for (k in target.sameBlock) items[k]?.let { if (it.nameDoubt) items[k] = it.copy(nameDoubt = false) }
                         } else {
                             disagreements += "line ${target.itemIndex!! + 1} name: ${doubted.originalDescription} / AI ${a.description.orEmpty()}"
                         }
