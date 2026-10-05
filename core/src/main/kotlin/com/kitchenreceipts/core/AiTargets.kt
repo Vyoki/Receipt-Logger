@@ -29,6 +29,11 @@ sealed interface AiTarget {
         val insertAfter: Int,
         val rowText: String,
         val headerText: String,
+        /**
+         * Names paired from another row: the following lines of the same block (consecutive, same page, same pairing).
+         * The photo's tilt shifted them all the same way, so the AI confirming this line confirms them too.
+         */
+        val sameBlock: List<Int> = emptyList(),
     ) : AiTarget
 
     /** A line whose numbers add up in several ways ([choices]): the answer is one letter. */
@@ -214,13 +219,25 @@ object AiTargets {
         fun head(page: Int) = headerRows[page]?.text ?: ""
 
         val targets = mutableListOf<AiTarget>()
+        // Lines whose names were paired from another row, in blocks of consecutive lines on one page: one look each block.
+        val block = mutableMapOf<Int, List<Int>>()
+        val skip = mutableSetOf<Int>()
+        val doubtNames = doubtful.filter { doc.lineItems[it].nameDoubt }.sorted()
+        for (i in doubtNames) {
+            if (i in skip) continue
+            val rest = mutableListOf<Int>()
+            var last = i
+            for (j in doubtNames) if (j > last && j - last <= 2 && itemRow[j]?.page == itemRow[i]?.page) { rest += j; skip += j; last = j }
+            block[i] = rest
+        }
         for (i in doubtful) {
+            if (i in skip) continue
             val r = itemRow[i] ?: continue
             val item = doc.lineItems[i]
             val choices = item.choices
             val head = head(r.page)
             targets += when {
-                item.nameDoubt -> AiTarget.Row(r.page, strip(r, around = true), i, i, r.text, head)
+                item.nameDoubt -> AiTarget.Row(r.page, strip(r, around = true), i, i, r.text, head, block[i].orEmpty())
                 choices.size >= 2 -> AiTarget.Choice(r.page, strip(r), i, choices, r.text, head)
                 // Only the quantity is in doubt (worked out): ask for that one number.
                 ReceiptParser.workedOut(item) -> AiTarget.Number(r.page, strip(r), i, quantityHeading(head), item.quantity!!.value, r.text, head)
