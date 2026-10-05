@@ -359,6 +359,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 "auto" to auto, "priceChanges" to _state.value.priceChanges.size,
             )
             c.log.block("corrections", corrections)
+            // Every hand correction is kept with its reading report, to be sent in one go when the operator chooses.
+            runCatching { c.problems.record(id, doc.sellerName, corrections, _state.value.recognisedText) }
             if (documentId == null) {
                 // Confirmed lines of this supplier, shown to the AI as examples next time (corrected ones first).
                 val key = ocrText?.let { SupplierMemory.key(it, own, doc.sellerName) } ?: supplierKey

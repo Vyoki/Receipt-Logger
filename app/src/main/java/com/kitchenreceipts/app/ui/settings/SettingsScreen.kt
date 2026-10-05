@@ -72,6 +72,8 @@ fun SettingsScreen(onBack: () -> Unit) {
     var priceAlerts by remember { mutableStateOf(s.priceAlerts) }
     var logSize by remember { mutableLongStateOf(c.log.sizeBytes()) }
     var askClear by remember { mutableStateOf(false) }
+    var askClearProblems by remember { mutableStateOf(false) }
+    var problemCount by remember { mutableStateOf(c.problems.count()) }
     val lockUnavailable = stringResource(R.string.app_lock_unavailable)
     val shareTitle = stringResource(R.string.share_log)
 
@@ -197,6 +199,22 @@ fun SettingsScreen(onBack: () -> Unit) {
                 c.log.event("SETTINGS", "blockScreenshots" to on)
             }
 
+            // ---------------------------------------------------------------- documents corrected by hand
+            SectionTitle(stringResource(R.string.problems_title))
+            Text(stringResource(R.string.problems_hint), style = MaterialTheme.typography.bodySmall)
+            Text(stringResource(R.string.problems_count, problemCount), style = MaterialTheme.typography.bodyMedium)
+            BigButton(stringResource(R.string.problems_send), Icons.Filled.Share, enabled = problemCount > 0, onClick = {
+                c.log.event("PROBLEMS_SHARED", "documents" to problemCount)
+                val uri = c.problems.exportForSharing(runCatching { c.log.text() }.getOrNull())
+                val send = Intent(Intent.ACTION_SEND)
+                    .setType("text/plain")
+                    .putExtra(Intent.EXTRA_STREAM, uri)
+                    .putExtra(Intent.EXTRA_SUBJECT, "Kitchen Receipts – documents corrected by hand")
+                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                context.startActivity(Intent.createChooser(send, shareTitle))
+            })
+            BigButton(stringResource(R.string.problems_clear), Icons.Filled.Delete, primary = false, enabled = problemCount > 0, onClick = { askClearProblems = true })
+
             // ---------------------------------------------------------------- operation log
             SectionTitle(stringResource(R.string.operation_log))
             Text(stringResource(R.string.operation_log_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
@@ -226,6 +244,16 @@ fun SettingsScreen(onBack: () -> Unit) {
             })
             BigButton(stringResource(R.string.clear_log), Icons.Filled.Delete, primary = false, onClick = { askClear = true })
         }
+    }
+
+    if (askClearProblems) {
+        ConfirmDialog(
+            title = stringResource(R.string.problems_clear),
+            text = stringResource(R.string.problems_clear_text),
+            confirmLabel = stringResource(R.string.delete),
+            onConfirm = { askClearProblems = false; c.problems.clear(); problemCount = 0 },
+            onDismiss = { askClearProblems = false },
+        )
     }
 
     if (askClear) {

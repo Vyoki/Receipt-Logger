@@ -574,6 +574,12 @@
     <string name="office_file_prefix">Kitchen_Receipts_copia_ufficio</string>
     <string name="office_subject">%1$s – copia per l\'ufficio %2$s</string>
     <string name="office_message">Copia per l\'ufficio dei documenti della cucina. Apri il file allegato sul computer (doppio clic, si apre nel browser) e inserisci la password che ti è stata comunicata. Non viene inviato nulla.</string>
+    <string name="problems_title">Documenti corretti a mano</string>
+    <string name="problems_hint">Ogni volta che correggi un valore letto male, la lettura del documento viene conservata qui, solo su questo telefono. Dopo una settimana di uso normale inviale tutte insieme, così gli errori si correggono in una volta.</string>
+    <string name="problems_count">%1$d documenti conservati</string>
+    <string name="problems_send">Invia i documenti corretti</string>
+    <string name="problems_clear">Elimina i documenti conservati</string>
+    <string name="problems_clear_text">Le letture conservate dei documenti corretti vengono eliminate da questo telefono. I documenti salvati non vengono toccati.</string>
     <plurals name="shared_queued">
         <item quantity="one">%d documento in lettura</item>
         <item quantity="other">%d documenti in lettura</item>

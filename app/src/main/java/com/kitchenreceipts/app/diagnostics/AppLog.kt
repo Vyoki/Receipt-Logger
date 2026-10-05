@@ -72,6 +72,12 @@ class AppLog(private val context: Context, private val settings: AppSettings) {
         previous.delete()
     }
 
+    /** Both log files as text (for the problem reports). */
+    fun text(): String = buildString {
+        if (previous.exists()) append(previous.readText())
+        if (current.exists()) append(current.readText())
+    }
+
     /** Builds one shareable text file (device info + both log files) and returns a content:// URI for it. */
     fun exportForSharing(): android.net.Uri {
         val out = File(File(context.cacheDir, "shared").apply { mkdirs() }, "kitchen-receipts-log.txt")
