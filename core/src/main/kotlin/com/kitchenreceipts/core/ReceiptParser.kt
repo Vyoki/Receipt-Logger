@@ -60,7 +60,7 @@ object ReceiptParser {
 
     /** Section titles inside the item table ("Merce non deperibile - Congelato", "Merce non alimentare"): never a product. */
     private val SECTION_HEADING = Regex(
-        "(?i)^\\W*(merce\\s+(non\\s+)?(deperibil[ei]|alimentar[ei]|surgelat[ae]|congelat[ae]|fresc[ah]e?|secc[ah]e?)|" +
+        "(?i)^\\W*([mn]erce\\s+(non\\s+)?(deperibil[ei]|alimentar[ei]|surgelat[ae]|congelat[ae]|fresc[ah]e?|secc[ah]e?)|" +
             "(prodotti|articoli|reparto|settore)\\s+(non\\s+)?(surgelati|congelati|freschi|secchi|refrigerati|alimentari|deperibili))\\b",
     )
 
@@ -443,7 +443,7 @@ object ReceiptParser {
                     val name = LotExtractor.strip(nameRow, LotExtractor.scan(nameRow).consumed)
                     val paired = parseItemLine("$name $rest", colliColumn, priceFirst, orderKnown)
                     if (paired != null && lettersOutsideUnits(paired.originalDescription) > 2) {
-                        item = paired
+                        item = paired.copy(nameDoubt = above == null)
                         pairedWithName = true
                         if (above == null) i++
                     }
@@ -507,6 +507,7 @@ object ReceiptParser {
                             originalDescription = name,
                             itemCode = stripped.code ?: item.itemCode,
                             packages = stripped.packages?.let { Extracted(normalizeColli(it), Confidence.HIGH, next) } ?: item.packages,
+                            nameDoubt = true,
                         )
                         i++
                     }
@@ -563,7 +564,7 @@ object ReceiptParser {
 
     fun finish(doc: ParsedDocument, text: String): ParsedDocument {
         // Logic first: a line that does not add up is solved from its own printed numbers where only one reading fits.
-        val groups = VatSummary.parse(text)
+        val groups = VatSummary.completeFromSubtotal(VatSummary.parse(text), text, doc.subtotalCents?.value)
         var items = DescriptionCleanup.apply(LineSolver.settle(doc.lineItems))
         // A line whose VAT rate was printed out of place gets the one rate that makes every VAT group add up.
         items = VatSummary.fillMissingRates(items, groups)
@@ -571,6 +572,7 @@ object ReceiptParser {
         items = PackagesCheck.repair(items, text)
         // Lots under a "LOTTO" heading, found under (nearly) every product: read where the document prints them.
         items = settleLots(items, text)
+        items = lotShapes(items)
         // A whole number with no unit printed counts pieces ("CARTA FORNO 1 6,90 6,90"); a quantity with decimals and no
         // unit (a weight?) stays empty for the operator.
         items = items.map { it ->
@@ -894,6 +896,20 @@ object ReceiptParser {
      * place, they are where the document prints them, and need no confirmation. A lot that looks like a date or has no
      * digit stays highlighted.
      */
+    /**
+     * A lot printed like the document's other lots but missing their leading letter ("269-27519" next to "B269-27522"):
+     * the camera lost the letter. The lot is kept as read and marked for a check; it is never completed by guessing.
+     */
+    private fun lotShapes(items: List<ParsedLineItem>): List<ParsedLineItem> {
+        fun shape(v: String) = v.map { if (it.isDigit()) '9' else if (it.isLetter()) 'A' else it }.joinToString("")
+        val shapes = items.mapNotNull { it.lotNumber?.value?.let(::shape) }.toSet()
+        return items.map { it ->
+            val lot = it.lotNumber ?: return@map it
+            val sh = shape(lot.value)
+            if (lot.confidence == Confidence.HIGH && sh.first() != 'A' && ("A$sh" in shapes)) it.copy(lotNumber = lot.copy(confidence = Confidence.LOW)) else it
+        }
+    }
+
     private fun settleLots(items: List<ParsedLineItem>, text: String): List<ParsedLineItem> {
         if (items.size < 2 || !LOT_HEADING.containsMatchIn(text)) return items
         val withLot = items.count { it.lotNumber != null }
@@ -1318,7 +1334,22 @@ object ReceiptParser {
     private class Stripped(val tokens: List<String>, val code: String?, val packages: String?)
 
     /** Removes "O 2046225 1x1" (marker, article code, colli) from the start of an item line; the colli are kept apart. */
-    private fun stripItemCode(tokens: List<String>, colliColumn: Boolean = false): Stripped {
+    /** Letters the OCR reads for digits in a number ("Z3741" for 23741, "217594S" for 2175945). */
+    private val DIGIT_LOOKALIKE = mapOf('O' to '0', 'o' to '0', 'D' to '0', 'S' to '5', 's' to '5', 'Z' to '2', 'z' to '2', 'I' to '1', 'l' to '1', '|' to '1', 'B' to '8')
+
+    /** An article code with one look-alike letter in it, as digits; null when it is not that. */
+    private fun repairedCode(token: String): String? {
+        if (token.length < 5 || ITEM_CODE.matches(token)) return null
+        val wrong = token.count { !it.isDigit() }
+        if (wrong != 1) return null
+        val fixed = token.map { if (it.isDigit()) it else DIGIT_LOOKALIKE[it] ?: return null }.joinToString("")
+        return fixed.takeIf { ITEM_CODE.matches(it) }
+    }
+
+    private fun stripItemCode(tokens0: List<String>, colliColumn: Boolean = false): Stripped {
+        // The code column: a code with one letter-for-digit slip is still the code, not the start of the name.
+        val first = if (tokens0.size > 3 && tokens0[0].length == 1 && (tokens0[0][0].isLetter() || tokens0[0] == "0")) 1 else 0
+        val tokens = repairedCode(tokens0.getOrElse(first) { "" })?.let { c -> tokens0.toMutableList().also { it[first] = c } } ?: tokens0
         var i = 0
         // Line marker ("O" offer, "S" discount); the OCR may read the letter O as a zero.
         if (tokens.size > 3 && tokens[0].length == 1 && (tokens[0][0].isLetter() || tokens[0] == "0") &&

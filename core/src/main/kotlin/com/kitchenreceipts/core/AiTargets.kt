@@ -172,10 +172,11 @@ object AiTargets {
         val provenByVat = doc.vatChecks.isNotEmpty() && doc.vatChecks.all { it.ok }
         val doubtful = doc.lineItems.indices.filter { i ->
             val it = doc.lineItems[i]
+            if (it.nameDoubt) return@filter true // numbers proven or not, the name needs a look
             if (provenByVat && ReceiptParser.workedOut(it)) return@filter false
             ParseWarning.LINE_TOTAL_MISMATCH in it.warnings || it.lineTotalCents == null ||
                 it.quantity?.confidence == Confidence.LOW || it.unitPrice?.confidence == Confidence.LOW ||
-                ReceiptParser.isSectionHeading(it.originalDescription)
+                ReceiptParser.isSectionHeading(it.originalDescription) || it.nameDoubt
         }
         val usedRows = itemRow.filterNotNull().toSet()
         // The numbers half of a line printed on two rows ("CECI ..." / "LT GR 1775 3 2,950 8,85 10"): its amount is
@@ -193,7 +194,7 @@ object AiTargets {
         }
         if (doubtful.size + missed.size > maxOf(MAX_ROW_TARGETS, doc.lineItems.size / 2)) return null
 
-        fun strip(r: RowInfo): List<PageBox> {
+        fun strip(r: RowInfo, around: Boolean = false): List<PageBox> {
             val h = headerRows[r.page]
             val lineH = (r.box.height).coerceAtLeast(12)
             val left = minOf(h?.box?.left ?: r.box.left, r.box.left)
@@ -201,8 +202,11 @@ object AiTargets {
             // The line and the one below it (a name, a lot, or an amount printed one row lower may be there).
             val next = allRows.firstOrNull { it.page == r.page && it.index == r.index + 1 }
             val nextFits = next != null && (inTable(next) || r.page in headless) && next.text.count(Char::isLetter) < 3
-            val bottom = if (nextFits) next!!.box.bottom else r.box.bottom
-            val line = PageBox(left, r.box.top - lineH / 2, right, bottom + lineH / 2)
+            val bottom = if (nextFits || (around && next != null)) next!!.box.bottom else r.box.bottom
+            // A name paired from another row: the rows above and below too, so the AI sees which name goes with the numbers.
+            val prev = if (around) allRows.firstOrNull { it.page == r.page && it.index == r.index - 1 } else null
+            val top = prev?.box?.top ?: r.box.top
+            val line = PageBox(left, top - lineH / 2, right, bottom + lineH / 2)
             if (h == null) return listOf(line)
             val header = PageBox(left, h.box.top - lineH / 3, right, h.box.bottom + lineH / 3)
             return listOf(header, line)
@@ -216,6 +220,7 @@ object AiTargets {
             val choices = item.choices
             val head = head(r.page)
             targets += when {
+                item.nameDoubt -> AiTarget.Row(r.page, strip(r, around = true), i, i, r.text, head)
                 choices.size >= 2 -> AiTarget.Choice(r.page, strip(r), i, choices, r.text, head)
                 // Only the quantity is in doubt (worked out): ask for that one number.
                 ReceiptParser.workedOut(item) -> AiTarget.Number(r.page, strip(r), i, quantityHeading(head), item.quantity!!.value, r.text, head)

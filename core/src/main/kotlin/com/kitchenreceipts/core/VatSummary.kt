@@ -60,6 +60,30 @@ object VatSummary {
             }
     }
 
+    /**
+     * A summary row whose taxable amount is unreadable ("22 28,9 ) 6,36": a stain, a fold) gets it from the printed
+     * total taxable minus the other rows, but only when that amount gives exactly the printed VAT at that rate:
+     * two printed numbers must agree, nothing is guessed.
+     */
+    fun completeFromSubtotal(groups: List<Group>, text: String, subtotalCents: Long?): List<Group> {
+        if (subtotalCents == null || groups.isEmpty()) return groups
+        val rest = subtotalCents - groups.sumOf { it.taxableCents }
+        if (rest <= 0) return groups
+        for (line in text.lines()) {
+            val clean = DOT_DECIMAL.replace(OcrCleanup.cleanLine(line)) { m -> "${m.groupValues[1]},${m.groupValues[2]}" }
+            if (UNIT_PRICE.containsMatchIn(clean)) continue
+            val lead = Regex("^\\s*(0?4|0?5|10|22)(?![\\d,])").find(clean) ?: continue
+            val rate = BigDecimal(lead.groupValues[1])
+            if (groups.any { it.ratePercent.compareTo(rate) == 0 }) continue
+            for (m in MONEY.findAll(clean)) {
+                val vat = ItalianNumbers.parseCents(m.value) ?: continue
+                val expected = BigDecimal(rest).multiply(rate).divide(BigDecimal(100), 0, RoundingMode.HALF_UP).toLong()
+                if (vat > 0 && kotlin.math.abs(expected - vat) <= 1) return groups + Group(plain(rate), rest, vat, line)
+            }
+        }
+        return groups
+    }
+
     private val UNIT_PRICE = Regex("(?<![\\d,.])\\d{1,3},\\d{3}(?![\\d,])")
     private val SUMMARY_WORDS = Regex("(?i)(aliquota|\\biva\\b|imponibil|imposta|esente|%)")
 

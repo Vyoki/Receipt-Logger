@@ -59,6 +59,12 @@ data class ParsedLineItem(
     val choices: List<LineChoice> = emptyList(),
     /** How much one pack holds, as printed ("500 g" for "GR 500"): the quantity counts packs of this size. */
     val packSize: Extracted<String>? = null,
+    /**
+     * The name was printed on another row than the numbers and taken from the row below them (a tilted photo reads
+     * the numbers first). Arithmetic proves the numbers, never which name goes with them: someone (the AI, or the
+     * operator) must confirm it.
+     */
+    val nameDoubt: Boolean = false,
 )
 
 /** The AI's double-check: how many values it read again, and where it read something else ("line 12 amount: 25,34 / AI 25,84"). */

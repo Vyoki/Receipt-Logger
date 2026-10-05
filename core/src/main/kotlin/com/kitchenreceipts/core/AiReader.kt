@@ -289,6 +289,16 @@ object AiReader {
     private fun obj(json: String): Map<*, *>? = runCatching { Json.parse(json.trim()) }.getOrNull() as? Map<*, *>
     private fun str(m: Map<*, *>, k: String): String? = (m[k] as? String)?.trim()?.takeIf { it.isNotEmpty() && it.lowercase() != "null" }
 
+    /** Most of the words of [ours] (3+ letters, accents and case ignored) are in the AI's name for the line. */
+    internal fun nameAgrees(ours: String, ai: String): Boolean {
+        fun w(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").uppercase()
+            .split(Regex("[^A-Z0-9]+")).filter { it.length >= 3 && it.any(Char::isLetter) }.toSet()
+        val o = w(ours)
+        val a = w(ai)
+        if (o.isEmpty() || a.isEmpty()) return false
+        return o.count { it in a } * 3 >= o.size * 2
+    }
+
     fun decodeItem(json: String): AiItem? = obj(json)?.let { m ->
         AiItem(str(m, "code"), str(m, "colli"), str(m, "description"), str(m, "unit"), str(m, "quantity"),
             str(m, "price"), str(m, "discount"), str(m, "amount"), str(m, "vat_rate"), str(m, "lot"))
@@ -319,6 +329,19 @@ object AiReader {
             when (target) {
                 is AiTarget.Row -> {
                     val a = decodeItem(raw) ?: continue
+                    // A name paired from another row: the AI's reading of that line confirms it when its name is this
+                    // name (most words) and its amount is this amount. The numbers stay as read; they are proven.
+                    val doubted = target.itemIndex?.let { idx -> items[idx]?.takeIf { it.nameDoubt } }
+                    if (doubted != null) {
+                        checked++
+                        val amount = a.amount?.let { ItalianNumbers.parse(it) }?.let { ItalianNumbers.toCents(it) }
+                        if (amount == doubted.lineTotalCents?.value && nameAgrees(doubted.originalDescription, a.description.orEmpty())) {
+                            items[target.itemIndex!!] = doubted.copy(nameDoubt = false)
+                        } else {
+                            disagreements += "line ${target.itemIndex!! + 1} name: ${doubted.originalDescription} / AI ${a.description.orEmpty()}"
+                        }
+                        continue
+                    }
                     val rowEv = Evidence(target.rowText + "\n" + text)
                     val new = item(a, rowEv)?.let { fixHeading(it, text) } ?: continue
                     val proven = ParseWarning.LINE_TOTAL_MISMATCH !in new.warnings && new.quantity?.confidence == Confidence.HIGH &&

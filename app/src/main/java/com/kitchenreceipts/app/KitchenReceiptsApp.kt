@@ -97,6 +97,7 @@ class KitchenReceiptsApp : Application() {
             c.log.crashSync(e)
             previous?.uncaughtException(thread, e)
         }
+        runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull()?.let { com.kitchenreceipts.app.ocr.appVersion = it }
         c.log.event(
             "APP_START",
             "version" to runCatching { packageManager.getPackageInfo(packageName, 0).versionName }.getOrNull(),
