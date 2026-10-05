@@ -348,6 +348,10 @@ What changed, for every supplier and language:
 
 The French receipt photos are not readable by Tesseract, so they can only be judged with the phone's OCR.
 
+## 7b-5. Documents corrected by hand (for fixing mistakes in batches)
+
+Each time the operator changes a value before saving, or edits a saved document, the app keeps the list of changes and the full reading report. They are stored on the phone only, up to 300 documents. Settings ▸ *Documents corrected by hand* ▸ **Send the corrected documents** puts them all in one text file for the share sheet, together with the operation log. After a week of normal use, every mistake can then be fixed at once from real evidence.
+
 ## 7c. Less typing, price changes and inventory
 
 - **Automatic save.** After a scan the app checks:

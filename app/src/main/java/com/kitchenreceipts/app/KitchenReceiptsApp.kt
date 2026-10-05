@@ -31,6 +31,8 @@ class AppContainer(context: Context) {
     val log = AppLog(context, settings)
     val database: AppDatabase = AppDatabase.build(context)
     val fileStore = FileStore(context)
+    /** Documents corrected by hand, kept on the phone to be shared in one go (see ProblemReports). */
+    val problems = com.kitchenreceipts.app.diagnostics.ProblemReports(context)
     val pageRenderer = PageRenderer(fileStore)
     val repository = ReceiptRepository(database, fileStore)
     val importProcessor = ImportProcessor(pageRenderer)

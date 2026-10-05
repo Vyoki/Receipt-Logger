@@ -586,6 +586,12 @@
     <string name="office_file_prefix">Kitchen_Receipts_office_copy</string>
     <string name="office_subject">%1$s – office copy %2$s</string>
     <string name="office_message">Office copy of the kitchen documents. Open the attached file on the computer (double-click it, it opens in the browser) and type the password you were given. Nothing is sent anywhere.</string>
+    <string name="problems_title">Documents corrected by hand</string>
+    <string name="problems_hint">Every time you change a value the app read wrong, the document\'s reading is kept here, on this phone only. After a week of normal use, send them in one go so all mistakes can be fixed together.</string>
+    <string name="problems_count">%1$d documents kept</string>
+    <string name="problems_send">Send the corrected documents</string>
+    <string name="problems_clear">Delete the kept documents</string>
+    <string name="problems_clear_text">The kept readings of corrected documents are deleted from this phone. Your saved documents are not touched.</string>
     <plurals name="shared_queued">
         <item quantity="one">%d document queued for reading</item>
         <item quantity="other">%d documents queued for reading</item>
