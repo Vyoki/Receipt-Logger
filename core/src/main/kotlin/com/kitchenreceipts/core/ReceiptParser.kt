@@ -24,6 +24,11 @@ data class ParseOptions(
     val layout: SupplierLayout? = null,
     /** Finds a supplier's learned layout by its key ([SupplierMemory.key]); used when [layout] is not given. */
     val layoutLookup: ((String) -> SupplierLayout?)? = null,
+    /**
+     * The day the document is read. A document date after it, or more than two years before it, is a misread
+     * ("2078" for "2018") or an old paper: shown for checking. Null: no such check (tests, old documents).
+     */
+    val today: java.time.LocalDate? = null,
 )
 
 object ReceiptParser {
@@ -31,16 +36,22 @@ object ReceiptParser {
     internal val COMPANY_SUFFIX = Regex(
         "(?i)(\\bs\\.?\\s?r\\.?\\s?[l1]\\.?\\s?s?\\.?(?=\\s|$|,|\\)|-)|\\bs\\.\\s?rl[e.]?(?=\\s|$)|\\bs\\.?\\s?p\\.?\\s?a\\.?(?=\\s|$|,|\\)|-)|" +
             "\\bs\\.?\\s?n\\.?\\s?c\\.?(?=\\s|$|,|\\)|-)|\\bs\\.?\\s?a\\.?\\s?s\\.?(?=\\s|$|,|\\)|-)|\\bsoc\\.?\\s?coop\\S*|" +
-            "\\bcooperativa\\b|\\bs\\.?\\s?c\\.?\\s?a\\.?\\s?r\\.?\\s?l\\.?)",
+            "\\bcooperativa\\b|\\bs\\.?\\s?c\\.?\\s?a\\.?\\s?r\\.?\\s?l\\.?|" +
+            // Other countries' legal forms. Two-letter ones (AG, SA, BV) never in brackets: "(AG)" is a province.
+            "\\b(?:gmbh|ohg|ltd|limited|inc|llc|plc|corp|sarl|eurl|sdn\\.?\\s?bhd|bhd|lda|oy|aps|sp\\.?\\s?z\\s?o\\.?\\s?o)\\b\\.?|" +
+            "(?<![(\\w])(?:ag|kg|b\\.\\s?v|bv|n\\.\\s?v|s\\.\\s?a|s\\.\\s?l|s/b|a/s)\\.?(?=\\s*$|\\s*,)|\\b(?:co\\.?\\s?ltd)\\b)",
     )
     internal val CUSTOMER_LABEL = Regex(
-        "(?i)\\b(spett\\.?\\s*l[ei]|spettabile|cliente|destinatario|intestatario|destinazione|fatturare\\s+a|consegnare\\s+a|luogo\\s+di\\s+consegna)\\b",
+        "(?i)\\b(spett\\.?\\s*l[ei]|spettabile|cliente|destinatario|intestatario|destinazione|fatturare\\s+a|consegnare\\s+a|luogo\\s+di\\s+consegna|" +
+            "bill(?:ed)?\\s+to|ship(?:ped)?\\s+to|sold\\s+to|deliver\\s+to|customer|client|factur[ée]\\s+[àa]|adresse\\s+de\\s+(?:facturation|livraison)|" +
+            "rechnungsadresse|lieferadresse|kunde|factuuradres|afleveradres|klant|facturar\\s+a|nabywca|attn|attention)\\b",
     )
     private val NOT_SELLER = Regex(
         "(?i)\\b(fattura|documento|ddt|d\\.d\\.t|scontrino|ricevuta|data|pagina|pag\\.|tel\\.?|telefono|fax|e-?mail|" +
             "p\\.?\\s?iva|partita|c\\.?f\\.?|cod\\.?\\s?fisc|via|viale|piazza|corso|cap|www\\.|pec|iban|rea|" +
             "commerciale|vendita|prestazione|cassa|totale|numero|soggett\\w*|direzione|coordinamento|unipersonale|capitale|" +
-            "sede\\s+legale|iscr\\w*|reg\\.?\\s*imp\\w*)\\b|@|\\d{5}",
+            "sede\\s+legale|iscr\\w*|reg\\.?\\s*imp\\w*|" +
+            "invoice|receipt|facture|rechnung|factuur|factura|faktura|date|phone|cashier|thank\\s+you|welcome|merci|danke|order)\\b|@|\\d{5}",
     )
     private val DOC_NUMBER_LABELED = Regex(
         "(?i)\\b(?:fattura(?:\\s+(?:accompagnatoria|immediata|differita|elettronica))?|ft\\.?|documento(?:\\s+di\\s+trasporto)?|doc\\.?|" +
@@ -48,11 +59,25 @@ object ReceiptParser {
             "(?:n(?:r|um)?\\.?|n°|nº|numero|#)\\s*[:.]?\\s*([A-Za-z0-9][A-Za-z0-9\\-/]*)",
     )
     private val DOC_NUMBER_BARE = Regex("(?i)^(?:n\\.|n°|nº|numero|num\\.)\\s*(?:doc\\.?|documento)?\\s*[:.]?\\s*([A-Za-z0-9][A-Za-z0-9\\-/]*)")
-    internal val NUMBER_LABEL = Regex("(?i)(\\bn\\.?\\s?ro\\b|\\bnumero\\b|\\bn\\.\\s*doc|\\bnum\\.)")
+    internal val NUMBER_LABEL = Regex(
+        "(?i)(\\bn\\.?\\s?ro\\b|\\bnumero\\b|\\bn\\.\\s*doc|\\bnum\\.|\\binvoice\\s*(?:no|nr|number|#)|\\bnum[ée]ro\\b|" +
+            "\\brechnungs(?:nummer|nr)|\\bfactuur(?:nummer|nr)|\\bn[úu]mero\\b)",
+    )
     /** "FATTURA 2025/0311 18/03/2025" (number without "n."), used only as a low-confidence fallback. */
     private val DOC_NUMBER_LOOSE = Regex("(?i)^\\s*(?:fattura|ft\\.?|ddt|d\\.d\\.t\\.?|bolla|ricevuta)\\s+([A-Za-z0-9][A-Za-z0-9\\-/]*)")
-    private val DATE_LABEL = Regex("(?i)\\b(data(?:\\s+(?:documento|fattura|doc\\.?|emissione|ddt))?|del|emessa\\s+il)\\b(?!\\s+(?:scadenza|consegna|nascita|pagamento))")
-    private val NOT_DOC_DATE = Regex("(?i)\\b(scad|scadenza|consegna|pagamento|nascita|valuta|entro)")
+    private val DATE_LABEL = Regex(
+        "(?i)\\b(data(?:\\s+(?:documento|fattura|doc\\.?|emissione|ddt))?|del|emessa\\s+il|" +
+            "(?:invoice\\s+|receipt\\s+|issue\\s+)?date|date\\s+(?:de\\s+)?(?:facture|facturation|d'[ée]mission)|(?:rechnungs|factuur)?datum|fecha(?:\\s+(?:de\\s+)?(?:factura|emisi[óo]n))?|data\\s+wystawienia)\\b" +
+            "(?!\\s+(?:scadenza|consegna|nascita|pagamento|due|of\\s+(?:delivery|birth)))",
+    )
+    /** A heading naming another date of the document (due, delivery). */
+    private val OTHER_DATE_HEADING = Regex(
+        "(?i)\\b(scadenza|data\\s+consegna|due\\s+date|delivery\\s+date|[ée]ch[ée]ance|f[äa]llig\\w*|lieferdatum|vervaldatum|vencimiento|fecha\\s+de\\s+entrega)",
+    )
+    private val NOT_DOC_DATE = Regex(
+        "(?i)\\b(scad|scadenza|consegna|pagamento|nascita|valuta|entro|due|payable\\s+by|delivery|shipped|order\\s+date|[ée]ch[ée]ance|livraison|" +
+            "f[äa]llig|liefer\\w*|leverdatum|vervaldatum|vencimiento|entrega|termin)",
+    )
     private val TABLE_HEADER = Regex(
         "(?i)\\b(descrizione|articolo|prodotto|q\\.?\\s?t[àa']?\\.?|quantit[àa]|prezzo|importo|imponibile|" +
             "u\\.?\\s?m\\.?|codice|sconto|aliquota|iva|totale|valore)\\b",
@@ -75,19 +100,37 @@ object ReceiptParser {
     private val ITEM_COLUMN = Regex("(?i)\\b(descrizione|articolo|prodotto|q\\.?\\s?t[àa']?\\.?|quantit[àa]|prezzo|u\\.?\\s?m\\.?)(?=\\W|$)")
     private val TOTAL_STRONG = Regex(
         "(?i)\\b(totale\\s+(?:documento|fattura|da\\s+pagare|complessivo|euro|eur|generale|a\\s+pagare|dovuto)|" +
-            "netto\\s+a\\s+pagare|importo\\s+(?:totale|da\\s+pagare|pagato)|totale\\s+€|da\\s+pagare)\\b",
+            "netto\\s+a\\s+pagare|importo\\s+(?:totale|da\\s+pagare|pagato)|totale\\s+€|da\\s+pagare|" +
+            // English, French, German, Spanish, Dutch, Polish
+            "grand\\s+total|total\\s+(?:amount|due|payable|to\\s+pay|incl\\.?|including|inclusive|ttc|[àa]\\s+payer|a\\s+pagar|factura|eur|€|\\(rm\\)|rm)|total\\s+sales\\s+\\(?incl\\w*|" +
+            "amount\\s+(?:due|payable|paid)|balance\\s+due|invoice\\s+total|rounded\\s+total|total\\s+rounded|net\\s+[àa]\\s+payer|montant\\s+(?:ttc|total|[àa]\\s+payer)|" +
+            "gesamtbetrag|rechnungsbetrag|endbetrag|gesamtsumme|bruttobetrag|zu\\s+zahlen|summe\\s+brutto|importe\\s+total|" +
+            "totaal\\s+(?:te\\s+betalen|incl\\.?|bedrag)|te\\s+betalen|totaalbedrag|do\\s+zap[łl]aty)\\b",
     )
     private val VAT_SUMMARY_WORD = Regex("(?i)\\b(imponibil[ei]|importo|iva|aliquota|imposta)\\b")
     private val TOTALS_ROW = Regex("(?i)^\\s*totali\\b")
-    private val NOT_A_TOTAL = Regex("(?i)\\b(sconto|offerta|offerte|punti|risparmi\\w*|premi|colli)\\b")
-    private val TOTAL_WEAK = Regex("(?i)^\\s*(totale|tot\\.?|total)\\b")
-    private val SUBTOTAL = Regex(
-        "(?i)\\b(imponibil[ei]|sub\\s?-?totale|totale\\s+imponibil[ei]|totale\\s+merce|totale\\s+netto|tot\\.?\\s+imponibil[ei])\\b",
+    private val NOT_A_TOTAL = Regex(
+        "(?i)\\b(sconto|offerta|offerte|punti|risparmi\\w*|premi|colli|discount|saving\\w*|points|qty|quantity|items?|" +
+            "change|tendered|cash|rounding|round(?:ing)?\\s+adj\\w*|remise|rendu|arrondi|rabatt|korting|wisselgeld|descuento)\\b",
     )
-    private val VAT_TOTAL = Regex("(?i)\\b(totale\\s+(?:iva|i\\.v\\.a\\.?|imposta|imposte)|tot\\.?\\s+iva|di\\s+cui\\s+iva)\\b")
-    private val VAT_LINE = Regex("(?i)^\\s*(iva|i\\.v\\.a\\.?|imposta)\\b")
+    private val TOTAL_WEAK = Regex("(?i)^\\s*(totale|tot\\.?|total|totaal|gesamt|summe|razem|importe|montant)\\b")
+    private val SUBTOTAL = Regex(
+        "(?i)\\b(imponibil[ei]|sub\\s?-?totale|totale\\s+imponibil[ei]|totale\\s+merce|totale\\s+netto|tot\\.?\\s+imponibil[ei]|" +
+            "sub\\s?-?total|total\\s+(?:excl\\.?|excluding|before\\s+tax|net|ht|hors\\s+taxes?)|net\\s+(?:amount|total)|amount\\s+excl\\w*|" +
+            "montant\\s+ht|sous-total|nettobetrag|zwischensumme|summe\\s+netto|netto(?:betrag)?(?!\\s+a\\s+pagare)|subtotaal|totaal\\s+excl\\.?|" +
+            "excl(?:\\.|usief)?\\s+btw|base\\s+imponible|total\\s+sin\\s+iva|razem\\s+netto|warto[śs][ćc]\\s+netto)\\b",
+    )
+    private val VAT_TOTAL = Regex(
+        "(?i)\\b(totale\\s+(?:iva|i\\.v\\.a\\.?|imposta|imposte)|tot\\.?\\s+iva|di\\s+cui\\s+iva|" +
+            "total\\s+(?:vat|tax|gst|tva|iva)|(?:vat|tax|gst|tva|btw)\\s+amount|montant\\s+tva|sales\\s+tax|totaal\\s+btw|cuota\\s+iva|" +
+            "summe\\s+(?:mwst|ust)|mehrwertsteuer|umsatzsteuer|kwota\\s+vat)\\b",
+    )
+    private val VAT_LINE = Regex("(?i)^\\s*(iva|i\\.v\\.a\\.?|imposta|vat|tax|taxes|gst|tva|mwst|ust|btw)\\b")
     // "C.F." needs its dots: a bare "CF" is a packaging code (confezione) on item lines.
-    private val VAT_ID = Regex("(?i)(p\\.?\\s?iva|partita\\s+iva|\\bc\\.\\s?f\\.|cod(?:ice)?\\.?\\s+fisc)")
+    private val VAT_ID = Regex(
+        "(?i)(p\\.?\\s?iva|partita\\s+iva|\\bc\\.\\s?f\\.|cod(?:ice)?\\.?\\s+fisc|\\b(?:vat|gst|tax)\\s*(?:reg\\w*|no|nr|number|id)\\b|" +
+            "\\bn°\\s*tva|tva\\s+intra\\w*|ust-?id\\w*|steuer-?n(?:umme)?r|btw-?(?:nummer|nr)|\\b(?:cif|nif|nip|siret|siren|kvk|abn)\\b)",
+    )
     private val NON_ITEM = Regex(
         "(?i)\\b(resto|contanti|contante|pagamento|pagato|bancomat|carta\\s+di\\s+(?:credito|debito)|pos|ricevuto|documento\\s+commerciale|" +
             "vendita|rt\\b|matricola|arrotondamento|sconto\\s+totale|scadenza\\s+pagamento|iban|abi|cab|banca|" +
@@ -249,7 +292,10 @@ object ReceiptParser {
         val firstMatch = findDocumentNumber(lines, consumed).let { first -> numberAcrossPages(first, pages) }
             .let { found -> options.layout?.numberShape?.let { shape -> numberOfShape(found, pages, shape) } ?: found }
         val docNumber = HeaderEvidence.number(pages, options.layout) ?: firstMatch
-        val date = findDocumentDate(lines, consumed)
+        val date = findDocumentDate(lines, consumed)?.let { d ->
+            val today = options.today
+            if (today != null && d.confidence == Confidence.HIGH && (d.value.isAfter(today.plusDays(1)) || d.value.isBefore(today.minusYears(2)))) d.copy(confidence = Confidence.LOW) else d
+        }
         val seller = HeaderEvidence.seller(pages, options) ?: findSellerOnPages(pages, options)
         val currency = CURRENCY.find(text)?.let { Extracted("EUR", Confidence.HIGH, it.value) }
 
@@ -300,12 +346,12 @@ object ReceiptParser {
             val labelEnd = when (kind) {
                 1 -> SUBTOTAL; 2 -> VAT_TOTAL; 3 -> TOTAL_STRONG; 4 -> TOTAL_WEAK; else -> VAT_LINE
             }.find(line)!!.range.last + 1
-            var amount = lastAmountCents(line.substring(labelEnd))
+            var amount = labelAmountCents(line.substring(labelEnd))
             var source = line
             if (amount == null) {
                 val next = lines.getOrNull(i + 1)
                 if (next != null && next.count { it.isLetter() } <= 3) {
-                    amount = lastAmountCents(next)
+                    amount = labelAmountCents(next)
                     if (amount != null) { consumed += i + 1; source = "$line $next" }
                 }
             }
@@ -314,7 +360,7 @@ object ReceiptParser {
                 // wrapped over several lines, with the amount alone below it.
                 for (j in i + 1..minOf(i + 5, lines.lastIndex)) {
                     val next = lines[j]
-                    val nextAmount = lastAmountCents(next)
+                    val nextAmount = labelAmountCents(next)
                     if (nextAmount != null && next.count { it.isLetter() } <= 3) {
                         amount = nextAmount; consumed += j; source = "$line … $next"; break
                     }
@@ -552,6 +598,55 @@ object ReceiptParser {
         )
     }
 
+    /** Lines that say how the total was paid ("PAGATO 12,50", "CARTA DI CREDITO 858,77", "CASH 100.00", "VISA"). */
+    private val PAYMENT_LINE = Regex(
+        "(?i)\\b(pagato|pagamento|contanti|carta|bancomat|pos|totale\\s+pagato|cash|card|visa|mastercard|maestro|amex|paid|tendered|" +
+            "pay[ée]|esp[èe]ces|cb|bezahlt|bar|ec-?karte|betaald|pin|pagado|efectivo|tarjeta|got[óo]wka|karta)\\b",
+    )
+    private val CHANGE_LINE = Regex("(?i)\\b(resto|change|rendu|r[üu]ckgeld|wisselgeld|cambio|reszta)\\b")
+
+    /**
+     * A total is sure only when something independent confirms it: taxable + VAT, the lines, the VAT summary, the
+     * payment (paid amount, or cash minus change), or a second total line with the same amount. A label alone
+     * ("TOTALE", "TOTAL") is not enough: the camera misreads digits ("80.91" as "60.91"), and a total-like line can be
+     * the one before discounts or rounding.
+     */
+    private fun confirmTotal(
+        total: Extracted<Long>?, subtotal: Extracted<Long>?, vat: Extracted<Long>?, itemsSum: Long?,
+        groups: List<VatSummary.Group>, text: String, tolerance: Long,
+    ): Extracted<Long>? {
+        if (total == null) return null
+        // A total read with doubt from a printed total line becomes sure only by the lines or the payment (below).
+        val printedLine = TOTAL_STRONG.containsMatchIn(total.source) || TOTAL_WEAK.containsMatchIn(total.source)
+        if (total.confidence != Confidence.HIGH && !printedLine) return total
+        val t = total.value
+        if (total.confidence != Confidence.HIGH) {
+            val lines0 = text.lines()
+            val amounts0 = lines0.map { lastAmountCents(it) }
+            val paid0 = lines0.indices.filter { PAYMENT_LINE.containsMatchIn(lines0[it]) && !CHANGE_LINE.containsMatchIn(lines0[it]) }.mapNotNull { amounts0[it] }
+            val change0 = lines0.indices.filter { CHANGE_LINE.containsMatchIn(lines0[it]) }.mapNotNull { amounts0[it] }
+            val byLines = itemsSum != null && kotlin.math.abs(itemsSum - t) <= tolerance
+            val byPayment = paid0.any { p -> p == t || change0.any { c -> p - c == t } }
+            return if (byLines && byPayment) total.copy(confidence = Confidence.HIGH) else total
+        }
+        fun close(a: Long, b: Long, tol: Long = 1) = kotlin.math.abs(a - b) <= tol
+        if (subtotal != null && vat != null && close(subtotal.value + vat.value, t)) return total
+        if (itemsSum != null && close(itemsSum, t, tolerance)) return total
+        if (itemsSum != null && vat != null && close(itemsSum + vat.value, t, tolerance)) return total
+        if (groups.isNotEmpty() && close(groups.sumOf { it.taxableCents + it.vatCents }, t, groups.size.toLong())) return total
+        val lines = text.lines()
+        val amounts = lines.map { lastAmountCents(it) }
+        // Paid with exactly the total, or cash given minus change.
+        val paid = lines.indices.filter { PAYMENT_LINE.containsMatchIn(lines[it]) && !CHANGE_LINE.containsMatchIn(lines[it]) }.mapNotNull { amounts[it] }
+        if (paid.any { it == t }) return total
+        val change = lines.indices.filter { CHANGE_LINE.containsMatchIn(lines[it]) }.mapNotNull { amounts[it] }
+        if (paid.any { p -> change.any { c -> p - c == t } }) return total
+        // The same amount on two different total lines ("TOTALE DOCUMENTO" and "TOTALE DA PAGARE").
+        val totalLines = lines.indices.filter { (TOTAL_STRONG.containsMatchIn(lines[it]) || TOTAL_WEAK.containsMatchIn(lines[it])) && amounts[it] == t }
+        if (totalLines.size >= 2) return total
+        return total.copy(confidence = Confidence.LOW)
+    }
+
     private val CHECK_WARNINGS = setOf(
         ParseWarning.NO_ITEMS_FOUND, ParseWarning.LINE_TOTAL_MISMATCH, ParseWarning.TOTALS_INCONSISTENT, ParseWarning.ITEMS_SUM_MISMATCH,
         ParseWarning.VAT_GROUP_MISMATCH,
@@ -590,8 +685,20 @@ object ReceiptParser {
         val itemTotals = items.mapNotNull { it.lineTotalCents?.value }
         val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) itemTotals.sum() else null
         var subtotal = doc.subtotalCents
+        // Several taxable-looking lines ("Subtotaal 717,97" with VAT, "Exclusief BTW 593,36"): the one that makes
+        // taxable + VAT = total is the taxable amount.
+        run {
+            val sv = subtotal; val vv = vat; val tv = total
+            if (sv != null && vv != null && tv != null && kotlin.math.abs(sv.value + vv.value - tv.value) > 1) {
+                text.lines().filter { SUBTOTAL.containsMatchIn(it) }.firstNotNullOfOrNull { l ->
+                    labelAmountCents(l.substring(SUBTOTAL.find(l)!!.range.last + 1))?.takeIf { kotlin.math.abs(it + vv.value - tv.value) <= 1 }?.let { it to l }
+                }?.let { (c, l) -> subtotal = Extracted(c, Confidence.HIGH, l) }
+            }
+        }
         val s0 = subtotal; val v0 = vat; val t0 = total
-        if (s0 != null && v0 != null && t0 != null) {
+        // A total worked out as taxable + VAT (no total line read) proves nothing about them: it stays to be checked.
+        val derivedTotal = s0 != null && v0 != null && t0 != null && t0.source == "${s0.source} + ${v0.source}"
+        if (s0 != null && v0 != null && t0 != null && !derivedTotal) {
             fun close(a: Long, b: Long) = kotlin.math.abs(a - b) <= 1
             val groupsVat = groups.takeIf { it.isNotEmpty() }?.sumOf { it.vatCents }
             when {
@@ -638,6 +745,21 @@ object ReceiptParser {
         val vatChecks = VatSummary.check(items, groups)
         if (vatChecks.any { !it.ok }) warnings += ParseWarning.VAT_GROUP_MISMATCH
         val lotsPrinted = items.any { it.lotNumber != null } || LOTS_WORD.containsMatchIn(text)
+        if (!derivedTotal) total = confirmTotal(total, subtotal, vat, itemsSum, groups, text, tolerance)
+        // Taxable amount and VAT: sure when they add up to the total, or the lines / the VAT summary give the same.
+        run {
+            val sv = subtotal; val vv = vat; val tv = total
+            val partsAddUp = !derivedTotal && sv != null && vv != null && tv != null && kotlin.math.abs(sv.value + vv.value - tv.value) <= 1
+            if (!partsAddUp) {
+                if (sv != null && sv.confidence == Confidence.HIGH &&
+                    !(itemsSum != null && kotlin.math.abs(itemsSum - sv.value) <= tolerance) &&
+                    !(groups.isNotEmpty() && kotlin.math.abs(groups.sumOf { it.taxableCents } - sv.value) <= groups.size)
+                ) subtotal = sv.copy(confidence = Confidence.LOW)
+                if (vv != null && vv.confidence == Confidence.HIGH &&
+                    !(groups.isNotEmpty() && kotlin.math.abs(groups.sumOf { it.vatCents } - vv.value) <= groups.size)
+                ) vat = vv.copy(confidence = Confidence.LOW)
+            }
+        }
         return doc.copy(
             lineItems = items, totalCents = total, vatCents = vat, subtotalCents = subtotal, vatBasis = vatBasis, warnings = warnings,
             vatChecks = vatChecks, lotsPrinted = lotsPrinted,
@@ -819,10 +941,14 @@ object ReceiptParser {
             if (LotExtractor.scan(line).expiry != null && !DATE_LABEL.containsMatchIn(line)) return@forEachIndexed
             val dates = ItalianDates.findDates(line)
             for (label in DATE_LABEL.findAll(line)) {
+                // "Order Date", "Due Date", "Delivery date": a date, not the document's.
+                if (NOT_DOC_DATE.containsMatchIn(line.substring(maxOf(0, label.range.first - 12), label.range.last + 1))) continue
                 val d = dates.firstOrNull { it.range.first > label.range.last && it.range.first - label.range.last <= 8 }
                 if (d != null && !isInsideExpiry(line, d)) {
                     consumed += i
-                    return Extracted(d.date, Confidence.HIGH, line)
+                    // Under headings that also name a due date ("Date | Date d'échéance"), "Date" may sit over either column.
+                    val otherDate = OTHER_DATE_HEADING.containsMatchIn(line) || (i > 0 && OTHER_DATE_HEADING.containsMatchIn(lines[i - 1]))
+                    return Extracted(d.date, if (otherDate) Confidence.LOW else Confidence.HIGH, line)
                 }
             }
         }
@@ -841,7 +967,9 @@ object ReceiptParser {
                 // Right under a "DATA DOCUMENTO"-style heading (or "NUMERO | DATA" with a heading line in between), the only
                 // date on the row: that is the document date.
                 val between = (i + 1 until j).map { lines[it] }
-                val sure = candidates.size == 1 && ItalianDates.findDates(next).size == 1 &&
+                // Headings that also name another date ("Date | Date d'échéance", "Data | Scadenza"): which column the one
+                // date read belongs to is not proven.
+                val sure = candidates.size == 1 && ItalianDates.findDates(next).size == 1 && !OTHER_DATE_HEADING.containsMatchIn(line) &&
                     (j == i + 1 || (NUMBER_LABEL.containsMatchIn(line) && between.none { ItalianDates.findDates(it).isNotEmpty() }))
                 return Extracted(d.date, if (sure) Confidence.HIGH else Confidence.LOW, "$line / $next")
             }
@@ -1036,6 +1164,13 @@ object ReceiptParser {
     }
 
     /** The last monetary amount on a line (ignoring percentages and dates), in cents. */
+    /** "216 974,40 €" with a space between thousands (French, Swiss): one amount, on a total line (no quantity there). */
+    private val SPACE_THOUSANDS = Regex("(?<![\\d,.])(\\d{1,3})((?:[ \u00A0\u202F]\\d{3})+)([.,]\\d{2})(?!\\d)")
+
+    /** The amount after a total, taxable or VAT label. */
+    private fun labelAmountCents(text: String): Long? =
+        lastAmountCents(SPACE_THOUSANDS.replace(text) { m -> m.groupValues[1] + m.groupValues[2].filter(Char::isDigit) + m.groupValues[3] })
+
     fun lastAmountCents(line: String): Long? {
         var cleaned = line
         for (d in ItalianDates.findDates(cleaned).reversed()) cleaned = cleaned.replaceRange(d.range, " ")
@@ -1091,7 +1226,21 @@ object ReceiptParser {
      * start of the line) is the number of packages. [priceFirst]: the header prints the price column before
      * the quantity column, so of two numbers the first is the price.
      */
-    fun parseItemLine(line: String, colliColumn: Boolean = false, priceFirst: Boolean = false, orderKnown: Boolean = false): ParsedLineItem? {
+    /**
+     * "64,00 Heures 190,00 TVA 20% 12 160,00 €": an amount with a space between thousands, joined only when two other
+     * numbers on the line multiply to it (quantity x price). Otherwise "2 160,00" stays a quantity and an amount.
+     */
+    private fun joinProvenThousands(line: String): String {
+        val m = SPACE_THOUSANDS.findAll(line).lastOrNull() ?: return line
+        val joined = ItalianNumbers.parse(m.groupValues[1] + m.groupValues[2].filter(Char::isDigit) + m.groupValues[3]) ?: return line
+        val others = Regex("(?<![\\d,.])\\d+(?:[.,]\\d{1,4})?(?![\\d%])").findAll(line.removeRange(m.range))
+            .mapNotNull { ItalianNumbers.parse(it.value) }.filter { it.signum() > 0 }.toList()
+        val proven = others.indices.any { i -> others.indices.any { j -> i != j && matches(others[i], others[j], ItalianNumbers.toCents(joined)) } }
+        return if (proven) line.replaceRange(m.range, m.groupValues[1] + m.groupValues[2].filter(Char::isDigit) + m.groupValues[3]) else line
+    }
+
+    fun parseItemLine(line0: String, colliColumn: Boolean = false, priceFirst: Boolean = false, orderKnown: Boolean = false): ParsedLineItem? {
+        val line = joinProvenThousands(line0)
         val stripped = stripItemCode(line.split(' ').filter { it.isNotBlank() }, colliColumn)
         val codeFree = stripped.tokens
         val itemCode = stripped.code

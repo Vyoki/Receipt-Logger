@@ -29,6 +29,12 @@ object Units {
         "vasc" to "vaschetta", "vaschetta" to "vaschetta", "vaschette" to "vaschetta",
         "latta" to "latta", // not "latte": that is milk
         "mz" to "mazzo", "mazzo" to "mazzo", "mazzi" to "mazzo",
+        // Other languages on suppliers' documents
+        "pieces" to "pz", "piece" to "pz", "pièces" to "pz", "pièce" to "pz", "unités" to "pz", "unité" to "pz", "unites" to "pz",
+        "unite" to "pz", "units" to "pz", "unit" to "pz", "stuk" to "pz", "stuks" to "pz", "stück" to "pz", "stk" to "pz",
+        "unidad" to "pz", "unidades" to "pz", "uds" to "pz", "szt" to "pz",
+        "litre" to "l", "litres" to "l", "liter" to "l", "liters" to "l", "litro" to "l", "kilogram" to "kg", "kilos" to "kg",
+        "heures" to "h", "heure" to "h", "hours" to "h", "hour" to "h", "hrs" to "h", "uur" to "h", "stunden" to "h", "std" to "h", "horas" to "h",
     )
 
     /** Unit -> (dimension, factor to the dimension's base unit kg / l). */

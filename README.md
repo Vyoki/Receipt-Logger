@@ -316,6 +316,38 @@ quantity × price = amount, the VAT summary and the totals prove the numbers of 
 
 Every shared report starts with the app build ("App: 0.1.0+abc1234"), so a problem can be traced to the version that read it.
 
+## 7b-4. Checked on real documents from public datasets
+
+`tools/realworld/realworld.py` takes public invoice and receipt datasets that come with the values printed on them. The datasets are not in this repository because of their licences; the script header says where to clone them. The script:
+- makes each document a bad photo: crooked, curled, blurred, dark, and all of these at once;
+- reads it with OCR;
+- writes the result in the app's report format.
+
+`RealWorldBenchTest` (`REALWORLD_DIR=…`) then runs the app's parser on every reading and scores each field: right and sure, right but checked, wrong but flagged, **wrong and silent**, or missing.
+
+Measured on 1,956 readings of 326 documents: invoice2data (real invoices in EN/FR/NL/DE/PL), SROIE (scanned receipts), invoice_dataset (French invoices) and Eoxia (French receipt photos). Tesseract was the OCR, standing in for the phone's ML Kit. Before → after this round:
+
+| field | right before | right after | wrong and silent after |
+|---|---|---|---|
+| supplier | 38.3% | 49.1% | 0.9% |
+| date | 57.9% | 62.4% | 2.8% (mostly digits misread inside the date) |
+| number | 16.0% | 23.5% | 0.5% |
+| total | 20.8% | 50.5% | 0.1% |
+| taxable amount | 0% | 49.5% | 0.3% |
+| VAT | 0% | 49.3% | 0% |
+| lines found | 16.9% | 42.9% | |
+
+No document would have been saved without review while wrong.
+
+What changed, for every supplier and language:
+- **Words:** totals, taxable amount, VAT, numbers, dates, customer blocks and company forms in English, French, German, Spanish, Dutch and Polish.
+- **Dates:** month names in those languages, "September 8, 2022", "08-Sep-22", and month-first order only when no other reading exists.
+- **Numbers and units:** thousands written with a space ("12 160,00", joined on a line only when quantity × price proves it), and units in other languages.
+- **A total is sure only when something independent confirms it:** taxable + VAT, the lines, the VAT summary, the payment, or a second total line. A label alone ("TOTAL") is not enough. The same holds for the taxable amount and VAT, and for a total worked out as taxable + VAT.
+- **Dates on the phone:** a date in the future or over two years old is shown for checking.
+
+The French receipt photos are not readable by Tesseract, so they can only be judged with the phone's OCR.
+
 ## 7c. Less typing, price changes and inventory
 
 - **Automatic save.** After a scan the app checks:

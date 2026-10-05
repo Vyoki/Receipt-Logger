@@ -48,7 +48,13 @@ object HeaderEvidence {
             }
             lines.forEachIndexed { i, raw ->
                 for ((text, sideBySide) in segments(raw)) {
-                    candidate(text, raw, i, p, vatLine, customer[i] && !sideBySide, ownVat, ownName)?.let { all += it }
+                    // A name wrapped before its legal form ("POPULAR BOOK" / "CO. (M) SDN BHD"): the two lines are one name.
+                    val prev = lines.getOrNull(i - 1)
+                    val joined = if (prev != null && WRAPPED_FORM.containsMatchIn(text) && !customer[i - 1] && prev.none(Char::isDigit) &&
+                        prev.count(Char::isLetter) >= 4 && prev.split(' ').count { it.isNotBlank() } <= 5 &&
+                        !ReceiptParser.ADDRESS_OR_CONTACT.containsMatchIn(prev) && ReceiptParser.COMPANY_SUFFIX.find(prev) == null
+                    ) "$prev $text" else text
+                    candidate(joined, raw, i, p, vatLine, customer[i] && !sideBySide, ownVat, ownName)?.let { all += it }
                 }
             }
         }
@@ -68,9 +74,14 @@ object HeaderEvidence {
         val second = merged.getOrNull(1)?.score ?: 0
         val strong = best.reasons.any { it == "legal form" || it == "heads the VAT block" }
         val complete = !ReceiptParser.TRUNCATED_SUFFIX.containsMatchIn(best.value)
-        val sure = strong && complete && best.score >= 7 && best.score - second >= 3
+        // Garbled reading ("?. o Bere AG", "WR. D.I.Y. (4)"): stray symbols or digits in the name are never sure.
+        val clean = best.value.split(' ').filter { it.isNotBlank() }.all { (Regex("^[\\p{L}&.,'’()\\-/+]+$").matches(it) || it.all(Char::isDigit)) }
+        val sure = strong && complete && clean && best.score >= 7 && best.score - second >= 3
         return Extracted(best.value, if (sure) Confidence.HIGH else Confidence.LOW, best.source)
     }
+
+    /** A line that is only the end of a company name: "CO. (M) SDN BHD", "& SONS LTD", "(M) BHD". */
+    private val WRAPPED_FORM = Regex("(?i)^\\W*(co\\.?|&|and|\\(m\\)|company)\\s")
 
     /** A row may hold the supplier on the left and the customer box on the right ("ABC S.r.l.   Spett.le ..."). */
     private fun segments(line: String): List<Pair<String, Boolean>> {
@@ -116,11 +127,15 @@ object HeaderEvidence {
 
     private val LABEL = Regex(
         "(?i)(?:\\b(?:fattura|ft|documento(?:\\s+di\\s+trasporto)?|ddt|d\\.d\\.t|doc|bolla|ricevuta|scontrino|nota\\s+di\\s+credito)\\.?\\s*" +
-            "(?:n(?:r|um|ro)?\\.?|n°|nº|numero|#)|\\bn(?:r|ro)?\\.?\\s*(?:doc(?:umento)?\\.?)|\\bnumero\\b|\\bn°|\\bnº|\\bnum\\.)\\s*[:.]?",
+            "(?:n(?:r|um|ro)?\\.?|n°|nº|numero|#)|\\bn(?:r|ro)?\\.?\\s*(?:doc(?:umento)?\\.?)|\\bnumero\\b|\\bn°|\\bnº|\\bnum\\.|" +
+            // "Invoice No.", "Invoice #", "Receipt No", "Bill No", "Facture n°", "N° de facture", "Rechnungsnummer", "Factuurnummer", "Factura nº"
+            "\\b(?:tax\\s+)?(?:invoice|receipt|bill|document|order)\\s*(?:no|nr|number|num|#)\\.?|\\binv\\.?\\s*no\\.?|\\bfacture\\s*(?:n[°º]|no|num[ée]ro)|" +
+            "\\bn[°º]\\s*de\\s+facture|\\bnum[ée]ro\\s+de\\s+facture|\\brechnungs(?:nummer|nr)\\.?|\\brechnung\\s*nr\\.?|\\bfactuur(?:nummer|nr)\\.?|" +
+            "\\bfactura\\s*(?:n[°º]|no|nr)\\.?|\\bn[úu]mero\\s+de\\s+factura|\\bnr\\s+faktury)\\s*[:.]?",
     )
-    private val DOC_WORD = Regex("(?i)^\\s*(?:copia\\s+)?(?:fattura(?:\\s+(?:immediata|differita|accompagnatoria))?|ddt|d\\.d\\.t\\.?|bolla|ricevuta)\\s+")
+    private val DOC_WORD = Regex("(?i)^\\s*(?:copia\\s+)?(?:fattura(?:\\s+(?:immediata|differita|accompagnatoria))?|ddt|d\\.d\\.t\\.?|bolla|ricevuta|(?:tax\\s+)?invoice|facture|rechnung|factuur|factura|faktura)\\s+")
     private val BARE_N = Regex("(?i)(?<![A-Za-z.])n\\s?[.°º]\\s*(?=[A-Za-z0-9]*\\d)")
-    private val DOC_WORD_ANY = Regex("(?i)\\b(fattura|ddt|d\\.d\\.t|documento|bolla|ricevuta|scontrino|nota\\s+di\\s+credito)\\b")
+    private val DOC_WORD_ANY = Regex("(?i)\\b(fattura|ddt|d\\.d\\.t|documento|bolla|ricevuta|scontrino|nota\\s+di\\s+credito|invoice|receipt|facture|rechnung|factuur|factura|faktura)\\b")
     private val PAGE = Regex("^\\d{1,2}/\\d{1,2}$")
     /** Words that come before a number but are not part of it ("DDT 4855", "N 1962"). */
     private val NOT_PREFIX = setOf("N", "NR", "NO", "NUM", "DDT", "DOC", "DEL", "DATA", "ORD", "RIF", "PAG", "COD", "TEL", "FAX", "CAP", "IVA")
@@ -231,8 +246,12 @@ object HeaderEvidence {
         return merged
     }
 
+    /** Order and customer references printed with "N°" too: "N° BC# BC03984", "Order No", "Ordernummer", "Customer No". */
+    private val OTHER_REFERENCE = Regex("(?i)(\\bbc\\s*#|\\bbc\\d|\\border\\w*|\\bcommande|\\bbestell\\w*|\\bpedido|\\bcustomer\\s*(?:no|nr|#)|\\bclient\\s*(?:no|n°)|\\bkunden\\w*|\\bklant\\w*|\\bpo\\s*(?:no|#|number))")
+
     private fun add(all: MutableList<Candidate>, value: String, score: Int, why: String, page: Int, line: String) {
         if (!ReceiptParser.plausibleDocNumber(value)) return
+        if (OTHER_REFERENCE.containsMatchIn(value)) return
         all += Candidate(value, score, "page ${page + 1}: $line", listOf(why))
     }
 }
