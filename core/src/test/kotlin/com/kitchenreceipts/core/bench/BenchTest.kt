@@ -59,6 +59,26 @@ class BenchTest {
                 own,
             )
         }
+        resource("fixtures/ddt_tilted_sections_boxes.txt")?.let { t ->
+            fun i(d: String, q: String, u: String, p: String, c: Long, v: Int, lot: String) = ItemTruth(d, BigDecimal(q), u, BigDecimal(p), c, v, lot)
+            out += BenchDoc(
+                "real-ddt-tilted-sections", boxes(t),
+                DocTruth(
+                    "ddt", "VERDE FRESCO S.p.A.", "01234567897", "B26 305511", LocalDate.of(2026, 9, 15), 20976, 2151, 23127,
+                    listOf(
+                        i("TORTA AL TESTO SPICCHI (PAMI)", "40", "pz", "2.384", 9536, 10, "788058"),
+                        i("PANNA COTTA (ALSA-CARTE D'OR)", "3", "pz", "8.820", 2646, 10, "B269-27519"),
+                        i("SEMOLA G.DURO RIMACINATA (GMI)", "5", "kg", "1.054", 527, 4, "788816"),
+                        i("ACETO DI VINO BIANCO", "12", "pz", "0.851", 1021, 10, "782515"),
+                        i("SALE MARINO GROSSO", "20", "pz", "0.422", 844, 22, "792323"),
+                        i("SALE MARINO FINO", "10", "pz", "0.422", 422, 22, "792320"),
+                        i("POMODORI PELATI (R.GARG)", "2", "ct", "21.780", 4356, 4, "792621"),
+                        i("CARTA FORNO 40CM X 50M C/ASTUCCIO", "3", "pz", "5.412", 1624, 22, "B269-27522"),
+                    ),
+                ),
+                own,
+            )
+        }
         resource("fixtures/fattura_cash_and_carry_5_pagine.txt")?.let { t ->
             out += BenchDoc(
                 "real-cash-and-carry-5-pages", emptyList(),

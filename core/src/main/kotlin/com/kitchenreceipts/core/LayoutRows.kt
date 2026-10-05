@@ -56,6 +56,12 @@ object LayoutRows {
             val median = tan(Math.toRadians(reported[reported.size / 2]))
             if (abs(median) in 0.001..0.3) { candidates += median; candidates += -median }
         }
+        // The engine reports 0.0 when it did not measure a line's angle: the measured ones alone give the tilt.
+        val measured = reported.filter { abs(it) >= 0.3 }
+        if (measured.size >= 3) {
+            val median = tan(Math.toRadians(measured[measured.size / 2]))
+            if (abs(median) in 0.001..0.3) { candidates += median; candidates += -median }
+        }
         val best = candidates
             .map { slope -> slope to chain(clean, slope, textHeight) }
             .minWith(compareBy<Pair<Double, List<List<OcrLine>>>> { it.second.size }.thenBy { abs(it.first) })
@@ -100,12 +106,14 @@ object LayoutRows {
         fun yAt(x: Double, default: Double): Double = last.centerY + slope(default) * (x - last.centerX)
     }
 
+    private const val EXTRAPOLATION = 0.015
+
     private fun chain(lines: List<OcrLine>, slope: Double, textHeight: Double): List<List<OcrLine>> {
         val tolerance = 0.6 * textHeight
         val rows = mutableListOf<Row>()
         for (line in lines.sortedWith(compareBy<OcrLine> { it.left }.thenBy { it.centerY })) {
             var best: Row? = null
-            var bestDy = Double.MAX_VALUE
+            var bestCost = Double.MAX_VALUE
             for (r in rows) {
                 val last = r.last
                 // A piece below/above the row's last piece in the same column belongs to another row.
@@ -113,7 +121,11 @@ object LayoutRows {
                 if (overlap > 0.3 * minOf(last.width, line.width)) continue
                 if (line.centerX <= last.centerX) continue
                 val dy = abs(r.yAt(line.centerX, slope) - line.centerY)
-                if (dy <= tolerance && dy < bestDy) { best = r; bestDy = dy }
+                // A row continued far to the right is a guess that grows with the distance (a curled page, a slope
+                // a little off): between two rows that both fit, the one whose last piece is nearer wins.
+                // "Merce non deperibile" ends at the middle of the page; its item row reaches the price column.
+                val cost = dy + EXTRAPOLATION * (line.centerX - last.centerX)
+                if (dy <= tolerance && cost < bestCost) { best = r; bestCost = cost }
             }
             if (best != null) best.items += line else rows += Row(line)
         }

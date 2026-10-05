@@ -308,6 +308,14 @@ How the reading decides (general rules, no supplier-specific code):
   summary say which, otherwise all three are shown for checking.
 - **Never invented**: a quantity not printed (a shop receipt line with only its amount) stays empty for the operator.
 
+### What the arithmetic cannot prove
+
+quantity × price = amount, the VAT summary and the totals prove the numbers of a line, but not two other things:
+- **Which name goes with which numbers.** When a tilted photo reads a line's numbers on the row above its name, the name is marked to be checked. The AI looks at those rows; if the AI is off, the operator does.
+- **A lot number.** A lot shaped like the document's other lots but missing their leading letter is marked to be checked. A single digit misread inside a lot (5 for 6) cannot be detected from a photo. For full traceability, e-invoices (XML) are exact.
+
+Every shared report starts with the app build ("App: 0.1.0+abc1234"), so a problem can be traced to the version that read it.
+
 ## 7c. Less typing, price changes and inventory
 
 - **Automatic save.** After a scan the app checks:

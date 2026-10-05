@@ -201,6 +201,16 @@ object HeaderEvidence {
                         if (v != null) add(all, v, if (dateIdx > 0 && withDate) 7 else 4, "under the heading '${line.trim().take(40)}'", p, "$line / $row")
                     }
                 }
+                // 4. A value printed just before a date, on a row under headings that name the date ("DATA"): the number
+                // heading may be too small to read ("B26 305511 15/09/2026" under "DATA PAG."). Never sure on its own.
+                if (i > 0 && !ReceiptParser.ADDRESS_OR_CONTACT.containsMatchIn(line) && !LEGAL_NOTICE.containsMatchIn(line)) {
+                    val dateIdx = toks.indexOfFirst { ItalianDates.findDates(it).isNotEmpty() }
+                    if (dateIdx > 0) {
+                        val v = (maxOf(0, dateIdx - 2) until dateIdx).firstNotNullOfOrNull { k -> valueAt(toks, k)?.takeIf { k + it.split(' ').size == dateIdx } }
+                        val dateHeading = (maxOf(0, i - 2) until i).any { Regex("(?i)\\bdata\\b").containsMatchIn(lines[it]) }
+                        if (v != null && v.count(Char::isDigit) >= 4) add(all, v, if (dateHeading) 6 else 3, "just before the date", p, line)
+                    }
+                }
             }
         }
         if (all.isEmpty()) return emptyList()

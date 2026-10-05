@@ -48,6 +48,7 @@ data class PendingImport(
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
         append("Kitchen Receipts – recognised text\n")
+        append("App: ").append(appVersion).append('\n')
         append("Engine: ").append(engineName).append(" · pages read: ").append(pagesRead).append('/').append(file.pageCount).append('\n')
         if (readingNote.isNotEmpty()) append("Reading: ").append(readingNote).append('\n')
         ocrError?.let { append("Error: ").append(it).append('\n') }
@@ -70,6 +71,9 @@ data class PendingImport(
         }
     }
 }
+
+/** "0.1.0+abc1234": the build (CI commit) that read a document, set when the app starts. */
+@Volatile var appVersion: String = "?"
 
 /** Progress of an import: which page of how many, and which reading (1 = photo, 2 = enhanced photo, 3 = AI whole page, 4 = AI checks). */
 data class ImportProgress(val page: Int, val of: Int, val pass: Int, val aiStage: Int = 0, val aiCount: Int = 0)

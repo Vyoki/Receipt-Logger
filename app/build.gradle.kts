@@ -13,8 +13,9 @@ android {
         applicationId = "com.kitchenreceipts.app"
         minSdk = 26 // java.time, PdfRenderer and adaptive icons without desugaring
         targetSdk = 35
-        versionCode = 1
-        versionName = "0.1.0"
+        // CI build number and commit, so every shared report says which build read the document.
+        versionCode = System.getenv("GITHUB_RUN_NUMBER")?.toIntOrNull() ?: 1
+        versionName = "0.1.0+" + (System.getenv("GITHUB_SHA")?.take(7) ?: "local")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
         // On-device AI reader (llama.cpp). arm64 for phones, x86_64 for the emulator used in tests.
