@@ -39,7 +39,7 @@ object ReceiptParser {
             "\\bcooperativa\\b|\\bs\\.?\\s?c\\.?\\s?a\\.?\\s?r\\.?\\s?l\\.?|" +
             // Other countries' legal forms. Two-letter ones (AG, SA, BV) never in brackets: "(AG)" is a province.
             "\\b(?:gmbh|ohg|ltd|limited|inc|llc|plc|corp|sarl|eurl|sdn\\.?\\s?bhd|bhd|lda|oy|aps|sp\\.?\\s?z\\s?o\\.?\\s?o)\\b\\.?|" +
-            "(?<![(\\w])(?:ag|kg|b\\.\\s?v|bv|n\\.\\s?v|s\\.\\s?a|s\\.\\s?l|s/b|a/s)\\.?(?=\\s*$|\\s*,)|\\b(?:co\\.?\\s?ltd)\\b)",
+            "(?<![(\\w])(?:ag|b\\.\\s?v|bv|n\\.\\s?v|s\\.\\s?a|s\\.\\s?l|s/b|a/s)\\.?(?=\\s*$|\\s*,)|\\b(?:co\\.?\\s?ltd)\\b)",
     )
     internal val CUSTOMER_LABEL = Regex(
         "(?i)\\b(spett\\.?\\s*l[ei]|spettabile|cliente|destinatario|intestatario|destinazione|fatturare\\s+a|consegnare\\s+a|luogo\\s+di\\s+consegna|" +
@@ -117,7 +117,7 @@ object ReceiptParser {
     private val SUBTOTAL = Regex(
         "(?i)\\b(imponibil[ei]|sub\\s?-?totale|totale\\s+imponibil[ei]|totale\\s+merce|totale\\s+netto|tot\\.?\\s+imponibil[ei]|" +
             "sub\\s?-?total|total\\s+(?:excl\\.?|excluding|before\\s+tax|net|ht|hors\\s+taxes?)|net\\s+(?:amount|total)|amount\\s+excl\\w*|" +
-            "montant\\s+ht|sous-total|nettobetrag|zwischensumme|summe\\s+netto|netto(?:betrag)?(?!\\s+a\\s+pagare)|subtotaal|totaal\\s+excl\\.?|" +
+            "montant\\s+ht|sous-total|nettobetrag|zwischensumme|summe\\s+netto|(?<!peso\\s)(?<!prezzo\\s)netto(?:betrag)?(?!\\s+a\\s+pagare)|subtotaal|totaal\\s+excl\\.?|" +
             "excl(?:\\.|usief)?\\s+btw|base\\s+imponible|total\\s+sin\\s+iva|razem\\s+netto|warto[śs][ćc]\\s+netto)\\b",
     )
     private val VAT_TOTAL = Regex(
