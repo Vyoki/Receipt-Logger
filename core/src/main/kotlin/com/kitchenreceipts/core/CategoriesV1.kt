@@ -99,6 +99,6 @@ internal object CategoriesV1 {
     }
 
     private fun normalize(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
-            .lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "")
+            .lowercase().replace(rx("[^a-z0-9]+"), " ").trim()
 }

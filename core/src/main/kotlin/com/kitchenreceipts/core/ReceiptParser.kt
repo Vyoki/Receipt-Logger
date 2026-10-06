@@ -263,7 +263,7 @@ object ReceiptParser {
 
     fun parse(rawText: String, options: ParseOptions = ParseOptions(), tableItems: List<ParsedLineItem>? = null): ParsedDocument {
         val pages = rawText.split(PAGE_BREAK).map { page ->
-            OcrCleanup.clean(page).lines().map { it.replace(Regex(" {2,}"), " ").trim() }.filter { it.isNotEmpty() }
+            OcrCleanup.clean(page).lines().map { it.replace(rx(" {2,}"), " ").trim() }.filter { it.isNotEmpty() }
         }.filter { it.isNotEmpty() }
         val lines = mutableListOf<String>()
         val pageOf = mutableListOf<Int>()
@@ -454,7 +454,7 @@ object ReceiptParser {
             // "792983 57,22": the lot, with the item's amount printed on the same row (already read with the item).
             val lotRow = line.trim().let { t ->
                 val prevTotal = items.lastOrNull()?.lineTotalCents?.value
-                val amount = Regex("\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})$").find(t)
+                val amount = rx("\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})$").find(t)
                 if (amount != null && prevTotal != null && ItalianNumbers.parseCents(amount.groupValues[1]) == prevTotal) t.substring(0, amount.range.first) else t
             }
             if (lotColumn && CODE_ONLY_LINE.matches(lotRow) && lotRow.any(Char::isDigit) && ItalianDates.findDates(lotRow).isEmpty()) {
@@ -514,7 +514,7 @@ object ReceiptParser {
                 val next = lines.getOrNull(nextIdx)
                 if (next != null && nextIdx < firstTotalsLine && nextIdx !in consumed && lettersOutsideUnits(next) <= 2) {
                     // "792983 57,22" under the item: the lot (lot column) and the item's amount on the same row.
-                    val lotAndAmount = if (lotColumn) Regex("^([A-Z0-9][A-Z0-9\\-/.]{3,})\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})$").find(next.trim()) else null
+                    val lotAndAmount = if (lotColumn) rx("^([A-Z0-9][A-Z0-9\\-/.]{3,})\\s+(\\d{1,3}(?:\\.\\d{3})*,\\d{2})$").find(next.trim()) else null
                     val merged = if (lotAndAmount != null) {
                         parseItemLine("$rest ${lotAndAmount.groupValues[2]}", colliColumn, priceFirst, orderKnown)?.let { m ->
                             if (ItalianDates.findDates(lotAndAmount.groupValues[1]).isEmpty() && lotAndAmount.groupValues[1].any(Char::isDigit)) {
@@ -768,7 +768,7 @@ object ReceiptParser {
 
     /** Number of leading lines of [next] that repeat the last lines of [prev] (at least 2 to count). */
     private fun overlap(prev: List<String>, next: List<String>): Int {
-        fun norm(l: String) = l.lowercase().replace(Regex("\\s+"), " ").trim()
+        fun norm(l: String) = l.lowercase().replace(rx("\\s+"), " ").trim()
         for (k in minOf(8, prev.size, next.size) downTo 2) {
             if (prev.takeLast(k).map(::norm) == next.take(k).map(::norm)) return k
         }
@@ -902,7 +902,7 @@ object ReceiptParser {
         // Column layout: "TIPO DOCUMENTO  N.RO DOCUMENTO  DATA" with the values on the row below.
         lines.forEachIndexed { i, line ->
             // "09876543217 NUMERO | DATA": a VAT number printed on the same row does not make it a values row.
-            val labelOnly = line.replace(Regex("\\b\\d{11}\\b"), " ")
+            val labelOnly = line.replace(rx("\\b\\d{11}\\b"), " ")
             if (!NUMBER_LABEL.containsMatchIn(labelOnly) || labelOnly.any { it.isDigit() }) return@forEachIndexed
             // The values row is usually right below, but another heading line may sit in between: up to 3 rows down,
             // the first row with a date (the number is printed just before it), else the next row.
@@ -910,7 +910,7 @@ object ReceiptParser {
             val next = rowsBelow.firstOrNull { ItalianDates.findDates(it).isNotEmpty() } ?: rowsBelow.firstOrNull() ?: return@forEachIndexed
             val toks = next.split(' ').filter { it.isNotBlank() }
             fun isNumberToken(tok: String) = tok.any(Char::isDigit) && tok.length >= 2 && ItalianDates.findDates(tok).isEmpty() &&
-                !DECIMAL_AMOUNT.containsMatchIn(tok) && !Regex("^\\d{1,2}/\\d{1,2}$").matches(tok) && // not "1/5" (page)
+                !DECIMAL_AMOUNT.containsMatchIn(tok) && !rx("^\\d{1,2}/\\d{1,2}$").matches(tok) && // not "1/5" (page)
                 !SellerProfiles.isValidPartitaIva(tok) // not a VAT number on the same row
             // The number is printed just before the date: "... GG.D.F. B26 111945 15/09/2026 1/1".
             val dateIdx = toks.indexOfFirst { ItalianDates.findDates(it).isNotEmpty() }
@@ -922,7 +922,7 @@ object ReceiptParser {
                 toks.firstOrNull { isNumberToken(it) }
             }?.trim(',', ';', ':')
             // "NUMERO | DATA" over "B26 204177 22/09/2026": the number right before the only date on the row is certain.
-            val sure = dateIdx > 0 && Regex("(?i)\\bdata\\b").containsMatchIn(labelOnly) && ItalianDates.findDates(next).size == 1
+            val sure = dateIdx > 0 && rx("(?i)\\bdata\\b").containsMatchIn(labelOnly) && ItalianDates.findDates(next).size == 1
             if (value != null && plausibleDocNumber(value)) return Extracted(value, if (sure) Confidence.HIGH else Confidence.LOW, "$line / $next")
         }
         lines.forEachIndexed { i, line ->
@@ -954,10 +954,10 @@ object ReceiptParser {
         }
         // 2. Column layout: the label row ("Numero  Data") with the values on the row below.
         lines.forEachIndexed { i, line ->
-            val strongLabel = Regex("(?i)data\\s+(documento|fattura|doc\\.?|emissione)").containsMatchIn(line)
+            val strongLabel = rx("(?i)data\\s+(documento|fattura|doc\\.?|emissione)").containsMatchIn(line)
             if (!DATE_LABEL.containsMatchIn(line) || ItalianDates.findDates(line).isNotEmpty()) return@forEachIndexed
             // "MODALITA' DI PAGAMENTO  NUMERO  DATA" is a row of headings: only the word right after "data" matters.
-            if (!strongLabel && Regex("(?i)\\bdata\\s+(di\\s+)?(scadenza|consegna|pagamento|nascita)").containsMatchIn(line)) return@forEachIndexed
+            if (!strongLabel && rx("(?i)\\bdata\\s+(di\\s+)?(scadenza|consegna|pagamento|nascita)").containsMatchIn(line)) return@forEachIndexed
             // The values row is usually right below, but the photo may put a line or two in between.
             for (j in i + 1..minOf(i + 3, lines.lastIndex)) {
                 val next = lines[j]
@@ -978,7 +978,7 @@ object ReceiptParser {
         // the document, that is the document date.
         val allDates = lines.flatMap { l -> ItalianDates.findDates(l).map { it.date } }.distinct()
         lines.forEachIndexed { i, line ->
-            val d = ItalianDates.findDates(line).firstOrNull { m -> Regex("^\\s+(?:ore\\s+)?[0-2]?\\d[:.][0-5]\\d\\b").containsMatchIn(line.substring(m.range.last + 1)) }
+            val d = ItalianDates.findDates(line).firstOrNull { m -> rx("^\\s+(?:ore\\s+)?[0-2]?\\d[:.][0-5]\\d\\b").containsMatchIn(line.substring(m.range.last + 1)) }
             if (d != null && !isInsideExpiry(line, d)) {
                 consumed += i
                 return Extracted(d.date, if (allDates.size == 1) Confidence.HIGH else Confidence.LOW, line)
@@ -1001,7 +1001,7 @@ object ReceiptParser {
             val scan = LotExtractor.scan(line)
             if (scan.expiry != null || scan.lotRejectedAsDate) return@forEach
             val d = ItalianDates.findDates(line).firstOrNull { !isInsideExpiry(line, it) }
-            if (d != null && !Regex("(?i)\\b(nascita|valuta)").containsMatchIn(line)) return Extracted(d.date, Confidence.LOW, line)
+            if (d != null && !rx("(?i)\\b(nascita|valuta)").containsMatchIn(line)) return Extracted(d.date, Confidence.LOW, line)
         }
         return null
     }
@@ -1082,7 +1082,7 @@ object ReceiptParser {
             for (k in i + 1..minOf(i + 5, lines.lastIndex)) {
                 val digits = SellerProfiles.repairDigits(lines[k]).filter(Char::isDigit)
                 if (digits.contains(ownVat)) return true
-                if (Regex("\\d{11}").findAll(SellerProfiles.repairDigits(lines[k])).any { SellerProfiles.isValidPartitaIva(it.value) }) return false
+                if (rx("\\d{11}").findAll(SellerProfiles.repairDigits(lines[k])).any { SellerProfiles.isValidPartitaIva(it.value) }) return false
             }
             return false
         }
@@ -1102,7 +1102,7 @@ object ReceiptParser {
                 } else {
                     // "Spett.le" alone (or "DESTINAZIONE MERCE  SPETTABILE": labels only) -> the customer's name is on
                     // the next line; otherwise it is on this line.
-                    val rest = CUSTOMER_LABEL.replace(line.substring(customer.range.last + 1), " ").replace(Regex("(?i)\\bmerce\\b"), " ")
+                    val rest = CUSTOMER_LABEL.replace(line.substring(customer.range.last + 1), " ").replace(rx("(?i)\\bmerce\\b"), " ")
                     skipUntil = if (rest.count { it.isLetter() } >= 3) i else i + 1
                     return@forEachIndexed
                 }
@@ -1149,7 +1149,7 @@ object ReceiptParser {
 
     internal fun cleanSeller(line: String): String = line.trim().trim('*', '-', '=', '_', '|', ' ', ',', ':')
         // "ABC S.rle": the legal form misread at the end of the name.
-        .replace(Regex("(?i)\\bs\\.\\s?rl[e.]?$"), "S.r.l.")
+        .replace(rx("(?i)\\bs\\.\\s?rl[e.]?$"), "S.r.l.")
 
     // ---------------------------------------------------------------- amounts
 
@@ -1159,7 +1159,7 @@ object ReceiptParser {
         for (d in ItalianDates.findDates(cleaned).reversed()) cleaned = cleaned.replaceRange(d.range, " ")
         cleaned = PERCENT.replace(cleaned, " ")
         return AMOUNT_IN_TEXT.findAll(cleaned).map { it.value }
-            .filter { it.contains(',') || Regex("\\.\\d{2}$").containsMatchIn(it) }
+            .filter { it.contains(',') || rx("\\.\\d{2}$").containsMatchIn(it) }
             .mapNotNull { ItalianNumbers.parseCents(it) }.toList()
     }
 
@@ -1171,13 +1171,17 @@ object ReceiptParser {
     private fun labelAmountCents(text: String): Long? =
         lastAmountCents(SPACE_THOUSANDS.replace(text) { m -> m.groupValues[1] + m.groupValues[2].filter(Char::isDigit) + m.groupValues[3] })
 
-    fun lastAmountCents(line: String): Long? {
+    /** Asked many times about the same lines (totals, headings, names, items): each line is worked out once. */
+    fun lastAmountCents(line: String): Long? = lastAmounts(line)
+    private val lastAmounts = Memo(8192) { line: String -> computeLastAmountCents(line) }
+
+    private fun computeLastAmountCents(line: String): Long? {
         var cleaned = line
         for (d in ItalianDates.findDates(cleaned).reversed()) cleaned = cleaned.replaceRange(d.range, " ")
         cleaned = PERCENT.replace(cleaned, " ")
         val candidates = AMOUNT_IN_TEXT.findAll(cleaned).map { it.value }.toList()
         // Prefer amounts with decimals: "Totale 3 colli 45,60" -> 45,60
-        val withDecimals = candidates.filter { it.contains(',') || Regex("\\.\\d{2}$").containsMatchIn(it) }
+        val withDecimals = candidates.filter { it.contains(',') || rx("\\.\\d{2}$").containsMatchIn(it) }
         val pick = withDecimals.lastOrNull() ?: return null
         return ItalianNumbers.parseCents(pick)
     }
@@ -1233,7 +1237,7 @@ object ReceiptParser {
     private fun joinProvenThousands(line: String): String {
         val m = SPACE_THOUSANDS.findAll(line).lastOrNull() ?: return line
         val joined = ItalianNumbers.parse(m.groupValues[1] + m.groupValues[2].filter(Char::isDigit) + m.groupValues[3]) ?: return line
-        val others = Regex("(?<![\\d,.])\\d+(?:[.,]\\d{1,4})?(?![\\d%])").findAll(line.removeRange(m.range))
+        val others = rx("(?<![\\d,.])\\d+(?:[.,]\\d{1,4})?(?![\\d%])").findAll(line.removeRange(m.range))
             .mapNotNull { ItalianNumbers.parse(it.value) }.filter { it.signum() > 0 }.toList()
         val proven = others.indices.any { i -> others.indices.any { j -> i != j && matches(others[i], others[j], ItalianNumbers.toCents(joined)) } }
         return if (proven) line.replaceRange(m.range, m.groupValues[1] + m.groupValues[2].filter(Char::isDigit) + m.groupValues[3]) else line
@@ -1251,7 +1255,7 @@ object ReceiptParser {
         }
         // VAT code column: "... 3,450 3,45 10" -> rate 10, not an amount.
         var vatCode: BigDecimal? = null
-        if (tokens.size > 2 && VAT_RATE_CODE.matches(tokens.last()) && Regex("[.,]\\d{2}$").containsMatchIn(tokens[tokens.size - 2])) {
+        if (tokens.size > 2 && VAT_RATE_CODE.matches(tokens.last()) && rx("[.,]\\d{2}$").containsMatchIn(tokens[tokens.size - 2])) {
             vatCode = BigDecimal(tokens.last())
             tokens = tokens.dropLast(1)
         }

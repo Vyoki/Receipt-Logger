@@ -291,8 +291,8 @@ object AiReader {
 
     /** Most of the words of [ours] (3+ letters, accents and case ignored) are in the AI's name for the line. */
     internal fun nameAgrees(ours: String, ai: String): Boolean {
-        fun w(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").uppercase()
-            .split(Regex("[^A-Z0-9]+")).filter { it.length >= 3 && it.any(Char::isLetter) }.toSet()
+        fun w(s: String) = java.text.Normalizer.normalize(s, java.text.Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").uppercase()
+            .split(rx("[^A-Z0-9]+")).filter { it.length >= 3 && it.any(Char::isLetter) }.toSet()
         val o = w(ours)
         val a = w(ai)
         if (o.isEmpty() || a.isEmpty()) return false
@@ -486,7 +486,7 @@ object AiReader {
     /** What the OCR saw on the page, to check the AI's answer against. */
     class Evidence(ocrText: String) {
         private val cleaned = OcrCleanup.clean(ocrText)
-        private val numbers: Set<BigDecimal> = Regex("\\d[\\d.,]*").findAll(cleaned)
+        private val numbers: Set<BigDecimal> = rx("\\d[\\d.,]*").findAll(cleaned)
             .flatMap { m -> listOfNotNull(ItalianNumbers.parse(m.value.trimEnd('.', ','))) }
             .map { it.stripTrailingZeros() }.toSet()
         private val compact: String = alnum(cleaned)
@@ -738,12 +738,12 @@ object AiReader {
         return kotlin.math.abs(ItalianNumbers.toCents(net) - total) <= 2
     }
 
-    private fun cleanText(s: String) = s.replace(Regex("\\s+"), " ").trim().trim('"', '\'', ' ', ',', ';')
+    private fun cleanText(s: String) = s.replace(rx("\\s+"), " ").trim().trim('"', '\'', ' ', ',', ';')
 
     private fun alnum(s: String) = normalize(s).replace(" ", "")
 
     private fun normalize(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").lowercase().replace(rx("[^a-z0-9]+"), " ").trim()
 }
 
 /** Minimal JSON reader (objects, arrays, strings, numbers, true/false/null) for the AI's answers. */

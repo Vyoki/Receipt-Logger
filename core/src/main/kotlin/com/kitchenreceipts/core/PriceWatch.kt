@@ -83,7 +83,12 @@ object PriceWatch {
     }
 
     /** The change of [new] against [history] (which may include [new] itself; it is skipped), or null. */
-    fun compare(new: PricePoint, history: List<PricePoint>, threshold: BigDecimal = DEFAULT_THRESHOLD): PriceChange? {
+    fun compare(new: PricePoint, history: List<PricePoint>, threshold: BigDecimal = DEFAULT_THRESHOLD): PriceChange? =
+        compare(new, history, threshold, ::unitCost)
+
+    private fun compare(
+        new: PricePoint, history: List<PricePoint>, threshold: BigDecimal, unitCost: (PricePoint) -> Pair<String, BigDecimal>?,
+    ): PriceChange? {
         val (unit, newPrice) = unitCost(new) ?: return null
         val earlier = history.filter { h ->
             h.productId == new.productId && h.documentId != new.documentId && h.vatBasis == new.vatBasis &&
@@ -122,7 +127,14 @@ object PriceWatch {
     /** Every price change in a purchase history, most recent first. */
     fun history(points: List<PricePoint>, threshold: BigDecimal = DEFAULT_THRESHOLD): List<PriceChange> {
         val byProduct = points.groupBy { it.productId }
-        return points.mapNotNull { compare(it, byProduct.getValue(it.productId), threshold) }
+        // Each purchase is compared with every earlier one of its product: work out each unit cost once.
+        val costs = java.util.IdentityHashMap<PricePoint, Any>()
+        val none = Any()
+        val cost: (PricePoint) -> Pair<String, BigDecimal>? = { p ->
+            @Suppress("UNCHECKED_CAST")
+            (costs.getOrPut(p) { unitCost(p) ?: none }.takeIf { it !== none } as Pair<String, BigDecimal>?)
+        }
+        return points.mapNotNull { compare(it, byProduct.getValue(it.productId), threshold, cost) }
             .sortedWith(compareByDescending<PriceChange> { it.newDate ?: LocalDate.MIN }.thenByDescending { it.newDocumentId })
     }
 

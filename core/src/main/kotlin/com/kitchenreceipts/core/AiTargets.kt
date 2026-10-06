@@ -161,11 +161,19 @@ object AiTargets {
         // Which row each line of the document came from (best word overlap with its source text), each row used once:
         // ten identical "IMPASTO SALSICCIA" lines are ten rows, not one row and nine "missed" lines.
         val taken = mutableSetOf<RowInfo>()
+        val rowWords = tableRows.associateWith { words(it.text) } // each row's words worked out once
         val itemRow = doc.lineItems.map { item ->
             val source = item.lineTotalCents?.source ?: item.quantity?.source ?: item.originalDescription
-            val best = tableRows.filter { it !in taken }.maxByOrNull { similarity(it.text, source) }
-                ?.takeIf { similarity(it.text, source) >= 0.5 }
-            best?.also { taken += it }
+            val s = words(source)
+            fun score(r: RowInfo): Double = if (s.isEmpty()) 0.0 else s.count { it in rowWords.getValue(r) }.toDouble() / s.size
+            var best: RowInfo? = null
+            var bestScore = 0.0
+            for (r in tableRows) {
+                if (r in taken) continue
+                val v = score(r)
+                if (best == null || v > bestScore) { best = r; bestScore = v }
+            }
+            best?.takeIf { bestScore >= 0.5 }?.also { taken += it }
         }
         // Too few lines found on the page: the page is not understood well enough for small questions.
         if (headless.isNotEmpty() && itemRow.count { it != null } < (doc.lineItems.size + 1) / 2) return null
@@ -303,11 +311,11 @@ object AiTargets {
 
     /** The amount column's heading as printed ("IMPORTO", "TOTALE", "VALORE"). */
     private fun amountHeading(header: String): String =
-        Regex("(?i)\\b(importo|totale|valore|imponibile|ammontare)\\b").find(header)?.value ?: "IMPORTO"
+        rx("(?i)\\b(importo|totale|valore|imponibile|ammontare)\\b").find(header)?.value ?: "IMPORTO"
 
     /** The quantity column's heading as printed ("TOT. PZ/KG", "QUANTITA'", "QTA"), for the question. */
     private fun quantityHeading(header: String): String {
-        val m = Regex("(?i)\\b(tot\\.?\\s*(pz/kg)?|quantit\\S*|q\\.?t[aà]\\S*|qta\\S*|pezzi)").find(header)
+        val m = rx("(?i)\\b(tot\\.?\\s*(pz/kg)?|quantit\\S*|q\\.?t[aà]\\S*|qta\\S*|pezzi)").find(header)
         return m?.value?.trim() ?: "QUANTITA'"
     }
 
@@ -317,14 +325,6 @@ object AiTargets {
     private fun hasMoney(s: String) = MONEY.containsMatchIn(s)
 
     private fun words(s: String): Set<String> =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase()
-            .split(Regex("[^a-z0-9,]+")).filter { it.length >= 2 }.toSet()
-
-    /** Share of the source's words found in the row. */
-    private fun similarity(row: String, source: String): Double {
-        val s = words(source)
-        if (s.isEmpty()) return 0.0
-        val r = words(row)
-        return s.count { it in r }.toDouble() / s.size
-    }
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").lowercase()
+            .split(rx("[^a-z0-9,]+")).filter { it.length >= 2 }.toSet()
 }

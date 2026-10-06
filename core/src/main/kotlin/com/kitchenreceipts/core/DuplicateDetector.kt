@@ -31,20 +31,20 @@ object DuplicateDetector {
 
     private val LEGAL_SUFFIX = Regex("\\b(srls|srl|spa|snc|sas|soc coop|coop|societa|di)\\b")
 
-    fun normalizeSeller(name: String?): String? {
-        if (name.isNullOrBlank()) return null
-        val ascii = Normalizer.normalize(name, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
+    fun normalizeSeller(name: String?): String? = if (name.isNullOrBlank()) null else sellerKeys(name)
+    private val sellerKeys = Memo { name: String ->
+        val ascii = Normalizer.normalize(name, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "")
         val s = ascii.lowercase()
-            .replace(Regex("\\b([a-z])\\.(?=[a-z]\\.)"), "$1") // s.r.l. -> srl.
-            .replace(Regex("[^a-z0-9 ]"), " ")
-            .replace(Regex("\\b(s r l s|s r l|s p a|s n c|s a s)\\b")) { it.value.replace(" ", "") }
-        return LEGAL_SUFFIX.replace(s, " ").replace(Regex("\\s+"), " ").trim().ifEmpty { null }
+            .replace(rx("\\b([a-z])\\.(?=[a-z]\\.)"), "$1") // s.r.l. -> srl.
+            .replace(rx("[^a-z0-9 ]"), " ")
+            .replace(rx("\\b(s r l s|s r l|s p a|s n c|s a s)\\b")) { it.value.replace(" ", "") }
+        LEGAL_SUFFIX.replace(s, " ").replace(rx("\\s+"), " ").trim().ifEmpty { null }
     }
 
     /** "FT 0145/2025" and "ft-145/2025" normalise the same way. */
     fun normalizeNumber(number: String?): String? {
         if (number.isNullOrBlank()) return null
-        val parts = number.uppercase().split(Regex("[^A-Z0-9]+")).filter { it.isNotEmpty() }
+        val parts = number.uppercase().split(rx("[^A-Z0-9]+")).filter { it.isNotEmpty() }
         if (parts.isEmpty()) return null
         return parts.joinToString("/") { p -> if (p.all { it.isDigit() }) p.trimStart('0').ifEmpty { "0" } else p }
     }

@@ -68,6 +68,6 @@ object FieldLocator {
         if (wanted.isEmpty()) 0.0 else wanted.count { it in have }.toDouble() / wanted.size
 
     private fun norm(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase()
-            .replace(Regex("[^a-z0-9,./]+"), " ").trim()
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").lowercase()
+            .replace(rx("[^a-z0-9,./]+"), " ").trim()
 }

@@ -17,12 +17,14 @@ object ProductMatching {
     private val STOPWORDS = setOf("di", "da", "del", "della", "al", "alla", "con", "per", "e", "in", "the", "and")
 
     /** Exact, case/accents/spacing-insensitive key. "MOZZARELLA  Fior di latte" == "mozzarella fior di latte". */
-    fun aliasKey(description: String): String =
+    fun aliasKey(description: String): String = aliasKeys(description)
+    private val aliasKeys = Memo { description: String ->
         Normalizer.normalize(description, Normalizer.Form.NFD)
-            .replace(Regex("\\p{M}+"), "")
+            .replace(rx("\\p{M}+"), "")
             .lowercase()
-            .replace(Regex("[^a-z0-9%]+"), " ")
+            .replace(rx("[^a-z0-9%]+"), " ")
             .trim()
+    }
 
     private fun tokens(s: String): Set<String> =
         aliasKey(s).split(' ').filter { it.length > 1 && it !in STOPWORDS && !it.all(Char::isDigit) }.toSet()
@@ -46,7 +48,7 @@ object ProductMatching {
 
     /** A readable default name for a new product created from a description: codes and extra spaces removed. */
     fun proposeName(description: String): String {
-        val words = description.trim().split(Regex("\\s+"))
+        val words = description.trim().split(rx("\\s+"))
             .filterIndexed { i, w -> !(i == 0 && w.length >= 3 && w.any(Char::isDigit) && w.none(Char::isLowerCase)) }
         val joined = words.joinToString(" ").trim()
         if (joined.isEmpty()) return description.trim()

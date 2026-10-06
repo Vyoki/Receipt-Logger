@@ -33,10 +33,10 @@ object ProductLookup {
         // front of it are kept (the product, before its size); without such a number nothing is searched.
         val text = COMPANY.find(description)?.let { m ->
             val before = description.substring(0, m.range.first)
-            val lastNumber = Regex("\\S*\\d\\S*").findAll(before).lastOrNull() ?: return null
+            val lastNumber = rx("\\S*\\d\\S*").findAll(before).lastOrNull() ?: return null
             before.substring(0, lastNumber.range.first)
         } ?: description
-        val words = text.split(Regex("[\\s,;:()\\[\\]\"'/]+"))
+        val words = text.split(rx("[\\s,;:()\\[\\]\"'/]+"))
             .map { it.trim('.', '-', '*') }
             .filter { w -> w.length >= 2 && w.any(Char::isLetter) && !NOT_A_WORD.matches(w) && w.count(Char::isDigit) * 2 < w.length }
             .take(6)

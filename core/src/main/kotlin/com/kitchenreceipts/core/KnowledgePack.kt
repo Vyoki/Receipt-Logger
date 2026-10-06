@@ -44,8 +44,8 @@ data class KnowledgePack(
         /** A supplier entry is kept only if it is well formed (an Italian number must pass its checksum). */
         fun valid(s: Supplier): Boolean {
             if (s.name.isBlank() || s.name.length > 120) return false
-            if (!Regex("[A-Z]{2}").matches(s.country)) return false
-            return if (s.country == "IT") SellerProfiles.isValidPartitaIva(s.vat) else Regex("[A-Z0-9]{4,15}").matches(s.vat)
+            if (!rx("[A-Z]{2}").matches(s.country)) return false
+            return if (s.country == "IT") SellerProfiles.isValidPartitaIva(s.vat) else rx("[A-Z0-9]{4,15}").matches(s.vat)
         }
     }
 }

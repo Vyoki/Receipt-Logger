@@ -74,12 +74,12 @@ object LotExtractor {
             i = maxOf(i, r.last + 1)
         }
         if (i < line.length) sb.append(line, i, line.length)
-        return sb.toString().replace(Regex("\\s{2,}"), " ").trim().trimEnd('-', ',', ';', '|').trim()
+        return sb.toString().replace(rx("\\s{2,}"), " ").trim().trimEnd('-', ',', ';', '|').trim()
     }
 
     /** "09/2025" -> last day of that month (the usual meaning of a month-only expiry). */
     private fun parseMonthYear(raw: String): LocalDate? {
-        val m = Regex("^(\\d{1,2})\\s?[/.\\-]\\s?(\\d{4}|\\d{2})$").find(raw.trim()) ?: return null
+        val m = rx("^(\\d{1,2})\\s?[/.\\-]\\s?(\\d{4}|\\d{2})$").find(raw.trim()) ?: return null
         val month = m.groupValues[1].toInt()
         if (month !in 1..12) return null
         val y = m.groupValues[2].let { if (it.length == 2) 2000 + it.toInt() else it.toInt() }

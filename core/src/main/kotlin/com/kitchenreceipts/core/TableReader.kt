@@ -91,13 +91,16 @@ object TableReader {
     /** Whether [word] is a heading the app knows by itself (without anything learned). */
     fun isKnownHeading(word: String): Boolean = withLearned(emptyMap()) { heading(word) != null }
 
+    /** Headings that a slightly misread word may stand for (long, letters only), in the same order. */
+    private val LONG_HEADINGS by lazy { HEADINGS.entries.filter { (k, _) -> k.length >= 6 && k.all(Char::isLetter) } }
+
     private fun heading(word: String): H? {
         val w = ocrNormal(norm(word).trim('.', ':', ',', '\'', '’', '"', '|', '(', ')'))
         if (w.isEmpty()) return null
         HEADINGS[w]?.let { return it }
         // A slightly misread long heading word ("descrizt one" -> "descriztone" -> descrizione): one letter off, same start.
         if (w.length >= 6 && w.all { it.isLetter() }) {
-            val near = HEADINGS.entries.filter { (k, _) -> k.length >= 6 && k.all(Char::isLetter) && k[0] == w[0] && SmartMatcher.damerau(k, w, 1) <= 1 }
+            val near = LONG_HEADINGS.filter { (k, _) -> k[0] == w[0] && SmartMatcher.damerau(k, w, 1) <= 1 }
             if (near.map { it.value }.distinct().size == 1) return near.first().value
         }
         learned.get()?.let { m -> (m[w] ?: m[SupplierLayouts.headingKey(word)])?.let { return hOf(it) } }
@@ -105,7 +108,7 @@ object TableReader {
     }
 
     private fun norm(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase().trim()
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").lowercase().trim()
 
     /** Finds the column layout in a heading row, or null if the row is not an item table heading. */
     fun header(rowWords: List<OcrLine>, slope: Double = 0.0, headings: Map<String, Kind> = emptyMap()): Header? =
@@ -503,7 +506,7 @@ object TableReader {
         var unit: String? = if (header.columns.any { it.kind == Kind.UNIT }) units.firstOrNull()
         else units.firstOrNull { Units.dimension(it) != null } ?: units.firstOrNull()
         // "4,45KG" in the quantity column
-        if (unit == null) cell(Kind.QUANTITY).firstNotNullOfOrNull { Regex("^[\\d.,]+([A-Za-z]{1,3})\\.?$").find(it.text)?.groupValues?.get(1)?.let(Units::normalizeKnown) }?.let { unit = it }
+        if (unit == null) cell(Kind.QUANTITY).firstNotNullOfOrNull { rx("^[\\d.,]+([A-Za-z]{1,3})\\.?$").find(it.text)?.groupValues?.get(1)?.let(Units::normalizeKnown) }?.let { unit = it }
         var price = cell(Kind.PRICE).mapNotNull { numberIn(it.text) }.lastOrNull()
         val discount = discountOf(cell(Kind.DISCOUNT).joinToString("") { it.text })
         var vat = cell(Kind.VAT).mapNotNull { numberIn(it.text) }.firstOrNull { it.stripTrailingZeros().toPlainString() in VAT_RATES }
@@ -561,7 +564,7 @@ object TableReader {
         // The decimal comma is the easiest mark for the OCR to lose: "3450" under PREZZO with an amount of 3,45.
         val priceWord = cell(Kind.PRICE).lastOrNull { numberIn(it.text) != null }?.text
         // ... or read as a thousands dot: "3.450".
-        val commaLost = priceWord != null && ((priceWord.all(Char::isDigit) && priceWord.length >= 3) || Regex("^\\d{1,3}\\.\\d{3}$").matches(priceWord))
+        val commaLost = priceWord != null && ((priceWord.all(Char::isDigit) && priceWord.length >= 3) || rx("^\\d{1,3}\\.\\d{3}$").matches(priceWord))
         if (total != null && price != null && commaLost) {
             val q = qty ?: BigDecimal.ONE
             if (!ReceiptParser.matches(q, price, total)) {
@@ -642,7 +645,7 @@ object TableReader {
     }
 
     private fun numberIn(t: String): BigDecimal? {
-        val s = t.trim('€', ' ', '-').replace(Regex("[A-Za-z.]+$"), "").trimEnd('.')
+        val s = t.trim('€', ' ', '-').replace(rx("[A-Za-z.]+$"), "").trimEnd('.')
         if (s.isEmpty() || !s.any(Char::isDigit) || !s.all { it.isDigit() || it in ".," }) return null
         return ItalianNumbers.parse(s)
     }

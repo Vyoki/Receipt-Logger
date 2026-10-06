@@ -17,7 +17,7 @@ object PackagesCheck {
         for ((i, line) in lines.withIndex()) {
             val m = LABEL.find(line) ?: continue
             val after = line.substring(m.range.last + 1)
-            Regex("\\b(\\d{1,4})\\b").find(after)?.let { return it.groupValues[1].toInt() }
+            rx("\\b(\\d{1,4})\\b").find(after)?.let { return it.groupValues[1].toInt() }
             lines.getOrNull(i + 1)?.let { next -> FIRST_INT.find(next.trim())?.let { return it.groupValues[1].toInt() } }
         }
         return null

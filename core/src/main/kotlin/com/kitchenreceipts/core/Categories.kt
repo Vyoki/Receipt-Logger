@@ -165,7 +165,7 @@ object Categories {
         // "BISC." / "PAT." / "PARM.": the beginning of a known word, when only one category has words starting so.
         if (w.abbreviation && w.text.length >= 3 && w.text.any(Char::isLetter)) {
             val found = RULES.flatMap { (c, keywords) ->
-                keywords.filter { k -> !k.contains(' ') && k.length > w.text.length && normalize(k).startsWith(w.text) }.map { c to normalize(it) }
+                keywords.filter { k -> !k.contains(' ') && k.length > w.text.length && keyword(k).startsWith(w.text) }.map { c to keyword(it) }
             }
             if (found.map { it.first }.distinct().size == 1) return found.first().first
             // "LIM." could be "limoni" or "limonata": the shorter word, when the others only continue it, wins.
@@ -177,26 +177,33 @@ object Categories {
 
     /** Words of the name; a word printed with a dot after it ("BISC.", "M.B.", or "CIP," misread) is an abbreviation. */
     private fun words(name: String): List<Word> {
-        val folded = Normalizer.normalize(name, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase()
-        return Regex("([a-z0-9]+)([.,](?=[a-z\\s]|$))?").findAll(folded).map { m ->
+        val folded = Normalizer.normalize(name, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").lowercase()
+        return rx("([a-z0-9]+)([.,](?=[a-z\\s]|$))?").findAll(folded).map { m ->
             Word(m.groupValues[1], m.groupValues[2].isNotEmpty() && m.groupValues[1].none(Char::isDigit))
         }.toList()
     }
 
     /** Whether [word] is a food/supply word the app knows; two different known words are never "typos" of each other. */
-    fun isKnownWord(word: String): Boolean {
-        val w = normalize(word)
-        if (w.length < 3) return false
-        return (OVERRIDES + RULES).any { (_, keywords) -> keywords.any { k -> !k.contains(' ') && matches(k, w, listOf(w)) } }
+    fun isKnownWord(word: String): Boolean = knownWords(word)
+    private val knownWords by lazy {
+        Memo { word: String ->
+            val w = normalize(word)
+            w.length >= 3 && ALL_RULES.any { (_, keywords) -> keywords.any { k -> !k.contains(' ') && matches(k, w, listOf(w)) } }
+        }
     }
 
+    /** Keywords are a fixed set: each is normalised once. */
+    private val normalizedKeywords = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private fun keyword(k: String): String = normalizedKeywords.getOrPut(k) { normalize(k) }
+    private val ALL_RULES by lazy { OVERRIDES + RULES }
+
     private fun matches(keyword: String, text: String, words: List<String>): Boolean {
-        val k = normalize(keyword)
+        val k = keyword(keyword)
         if (k.contains(' ')) return (" $text ").contains(" $k ")
         return if (k.length <= 4) words.any { it == k } else words.any { it.startsWith(k) }
     }
 
     private fun normalize(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
-            .lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "")
+            .lowercase().replace(rx("[^a-z0-9]+"), " ").trim()
 }

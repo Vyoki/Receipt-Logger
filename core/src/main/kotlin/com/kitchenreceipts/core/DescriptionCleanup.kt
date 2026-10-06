@@ -16,7 +16,7 @@ object DescriptionCleanup {
         val letters = s.filter { it.isLetter() }
         if (letters.length >= 4 && letters.count { it.isUpperCase() } >= letters.length * 0.5) s = s.uppercase()
         // A 0 between letters inside a word chunk ("S/0SSO", "C0PPA"): the letter O.
-        s = Regex("(?<=[A-Za-z])0(?=[A-Za-z])|(?<=[/.\\s])0(?=[A-Za-z]{2})").replace(s) { m ->
+        s = rx("(?<=[A-Za-z])0(?=[A-Za-z])|(?<=[/.\\s])0(?=[A-Za-z]{2})").replace(s) { m ->
             val chunkStart = s.lastIndexOfAny(charArrayOf(' ', '/', '.', ',', '-'), m.range.first - 1) + 1
             val chunkEnd = s.indexOfAny(charArrayOf(' ', '/', '.', ',', '-'), m.range.first).let { if (it < 0) s.length else it }
             val chunk = s.substring(chunkStart, chunkEnd)
@@ -57,5 +57,5 @@ object DescriptionCleanup {
 
     /** How odd a spelling looks: lower-case letters in an upper-case name, digits inside words. */
     private fun oddness(s: String): Int =
-        s.count { it.isLowerCase() } + Regex("[A-Za-z][0-9][A-Za-z]").findAll(s).count() * 2
+        s.count { it.isLowerCase() } + rx("[A-Za-z][0-9][A-Za-z]").findAll(s).count() * 2
 }

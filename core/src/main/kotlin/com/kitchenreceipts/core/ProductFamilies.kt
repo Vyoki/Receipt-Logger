@@ -127,13 +127,16 @@ object ProductFamilies {
     )
 
     /** The generic Italian name for a product, or null when the dictionary does not recognise it. */
-    fun genericName(productName: String): String? {
-        val text = normalize(productName)
-        if (text.isEmpty()) return null
-        val words = text.split(' ')
-        return KINDS.firstOrNull { (_, alternatives) ->
-            alternatives.any { all -> all.all { k -> matches(k, text, words) } }
-        }?.first
+    fun genericName(productName: String): String? = genericNames(productName)
+    private val genericNames by lazy {
+        Memo { productName: String ->
+            val text = normalize(productName)
+            if (text.isEmpty()) null
+            else {
+                val words = text.split(' ')
+                KINDS.firstOrNull { (_, alternatives) -> alternatives.any { all -> all.all { k -> matches(k, text, words) } } }?.first
+            }
+        }
     }
 
     /** Key for comparing group names: "Passata di Pomodoro" = "passata di pomodoro". */
@@ -287,14 +290,17 @@ object ProductFamilies {
 
     // ------------------------------------------------------------------ helpers
 
+    /** Dictionary keywords are a fixed set: each is normalised and split once. */
+    private val keywordParts = java.util.concurrent.ConcurrentHashMap<String, List<String>>()
+
     private fun matches(keyword: String, text: String, words: List<String>): Boolean {
-        val parts = normalize(keyword).split(' ')
+        val parts = keywordParts.getOrPut(keyword) { normalize(keyword).split(' ') }
         fun word(k: String, w: String) = if (k.length <= 4) w == k else w.startsWith(k)
         if (parts.size == 1) return words.any { word(parts[0], it) }
         return (0..words.size - parts.size).any { i -> parts.indices.all { j -> word(parts[j], words[i + j]) } }
     }
 
     private fun normalize(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
-            .lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "")
+            .lowercase().replace(rx("[^a-z0-9]+"), " ").trim()
 }
