@@ -65,10 +65,20 @@ data class ParsedLineItem(
      * operator) must confirm it.
      */
     val nameDoubt: Boolean = false,
+    /**
+     * What the AI read for this line where it differs and was not taken ("description", "quantity", "amount"):
+     * offered to the operator as a replacement, never applied by itself.
+     */
+    val aiRead: Map<String, String> = emptyMap(),
 )
 
 /** The AI's double-check: how many values it read again, and where it read something else ("line 12 amount: 25,34 / AI 25,84"). */
-data class AiCheck(val checked: Int, val disagreements: List<String>)
+data class AiCheck(
+    val checked: Int,
+    val disagreements: List<String>,
+    /** What the AI read in the header and totals where it differs from the reading ("seller", "number", "date", "subtotal", "vat", "total"). */
+    val header: Map<String, String> = emptyMap(),
+)
 
 data class ParsedDocument(
     val sellerName: Extracted<String>?,

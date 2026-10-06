@@ -321,6 +321,13 @@ object AiReader {
         // The double-check: how many values the AI looked at again, and where it read something else.
         var checked = 0
         val disagreements = mutableListOf<String>()
+        // The AI's readings that differ and were not taken: offered to the operator as replacements.
+        val headerRead = linkedMapOf<String, String>()
+        fun aiRead(idx: Int, field: String, value: String?) {
+            val v = value?.trim()?.takeIf { it.isNotEmpty() } ?: return
+            val old = items[idx] ?: return
+            items[idx] = old.copy(aiRead = old.aiRead + (field to v))
+        }
         fun <T> flag(e: Extracted<T>, what: String, aiRead: String): Extracted<T> {
             disagreements += "$what: ${e.value.let { if (it is java.time.LocalDate) ItalianDates.format(it) else it.toString() }} / AI $aiRead"
             return e.copy(confidence = Confidence.LOW, source = "${e.source} ($DISAGREE $aiRead)")
@@ -341,6 +348,7 @@ object AiReader {
                             for (k in target.sameBlock) items[k]?.let { if (it.nameDoubt) items[k] = it.copy(nameDoubt = false) }
                         } else {
                             disagreements += "line ${target.itemIndex!! + 1} name: ${doubted.originalDescription} / AI ${a.description.orEmpty()}"
+                            if (differs(doubted.originalDescription, a.description)) aiRead(target.itemIndex!!, "description", a.description)
                         }
                         continue
                     }
@@ -348,7 +356,14 @@ object AiReader {
                     val new = item(a, rowEv)?.let { fixHeading(it, text) } ?: continue
                     val proven = ParseWarning.LINE_TOTAL_MISMATCH !in new.warnings && new.quantity?.confidence == Confidence.HIGH &&
                         new.lineTotalCents?.confidence == Confidence.HIGH && !ReceiptParser.isSectionHeading(new.originalDescription)
-                    if (!proven) continue
+                    if (!proven) {
+                        // Not proven by the numbers: only the AI's name is worth offering (its numbers did not add up).
+                        target.itemIndex?.let { i ->
+                            val old = items[i]
+                            if (old != null && differs(old.originalDescription, a.description)) aiRead(i, "description", a.description)
+                        }
+                        continue
+                    }
                     val idx = target.itemIndex
                     if (idx != null) {
                         val old = items[idx] ?: continue
@@ -400,6 +415,8 @@ object AiReader {
                             if (agrees) old else old.copy(lineTotalCents = flag(t, "$line amount", answer))
                         } ?: old
                     }
+                    // A different number that adds up: offered as the replacement of the highlighted one.
+                    if (!agrees) aiRead(idx, if (target.field == AiTarget.Field.QUANTITY) "quantity" else "amount", ItalianNumbers.toEditText(read))
                 }
                 is AiTarget.Header -> {
                     val m = obj(raw) ?: continue
@@ -411,11 +428,25 @@ object AiReader {
                         checked++
                         return if (same(old.value, new.value)) old else flag(old, what, new.value.let { if (it is java.time.LocalDate) ItalianDates.format(it) else it.toString() })
                     }
+                    // What the AI read, where it differs from the reading (taken or not): offered as replacements.
+                    str(m, "seller")?.trim()?.takeIf { it.isNotEmpty() && d.sellerName?.value?.let { s -> DuplicateDetector.normalizeSeller(s) == DuplicateDetector.normalizeSeller(it) } != true }
+                        // Never the operator's own business (the customer box) as the supplier.
+                        ?.takeIf { s -> options.ownBusinessName?.let { own -> SellerProfiles.sameCompany(own, s) } != true }
+                        ?.let { headerRead["seller"] = it }
+                    str(m, "number")?.trim()?.takeIf { it.isNotEmpty() && d.documentNumber?.value?.let { n -> docNumberKey(n) == docNumberKey(it) } != true }?.let { headerRead["number"] = it }
+                    parsed.documentDate?.value?.takeIf { it != d.documentDate?.value }?.let { headerRead["date"] = ItalianDates.format(it) }
                     d = d.copy(
                         sellerName = check(d.sellerName, parsed.sellerName, "supplier") { a, b -> sameName(a, b) },
                         documentNumber = check(d.documentNumber, parsed.documentNumber, "number") { a, b -> docNumberKey(a) == docNumberKey(b) },
                         documentDate = check(d.documentDate, parsed.documentDate, "date") { a, b -> a == b },
                     )
+                    // The AI spells the supplier differently, even where the OCR never saw its spelling ("ABC" for the
+                    // OCR's "ABG"): one of the two is misread, so the name is looked at, with the AI's offered.
+                    val aiSeller = headerRead["seller"]
+                    val ours = d.sellerName
+                    if (aiSeller != null && ours != null && ours.confidence == Confidence.HIGH && !sameName(ours.value, aiSeller)) {
+                        d = d.copy(sellerName = flag(ours, "supplier", aiSeller))
+                    }
                 }
                 is AiTarget.Totals -> {
                     val m = obj(raw) ?: continue
@@ -426,6 +457,9 @@ object AiReader {
                         if (old == null || new == null) return old
                         checked++
                         return if (old.value == new.value) old else flag(old, what, ItalianNumbers.formatCents(new.value))
+                    }
+                    for ((k, old) in listOf("subtotal" to d.subtotalCents, "vat" to d.vatCents, "total" to d.totalCents)) {
+                        money(k)?.value?.takeIf { it != old?.value }?.let { headerRead[k] = ItalianNumbers.centsToEditText(it) }
                     }
                     d = d.copy(
                         subtotalCents = check(d.subtotalCents, money("subtotal"), "taxable amount"),
@@ -441,16 +475,22 @@ object AiReader {
             if (it != null) out += it
             inserts.filter { ins -> ins.first == i }.forEach { ins -> out += ins.second }
         }
-        val aiCheck = if (checked > 0) AiCheck(checked, disagreements) else d.aiCheck
+        val aiCheck = if (checked > 0 || headerRead.isNotEmpty()) AiCheck(checked, disagreements, headerRead) else d.aiCheck
         return ReceiptParser.finish(
             d.copy(lineItems = out, itemsReadBy = if (answers.isEmpty()) d.itemsReadBy else d.itemsReadBy + "+ai", aiCheck = aiCheck), text,
         )
     }
 
+    /** The AI's text is something else than ours (not only spacing, case or punctuation). */
+    private fun differs(ours: String, ai: String?): Boolean =
+        !ai.isNullOrBlank() && normalize(ours).replace(" ", "") != normalize(ai).replace(" ", "")
+
     private fun sameName(a: String, b: String): Boolean {
         val x = DuplicateDetector.normalizeSeller(a) ?: return false
         val y = DuplicateDetector.normalizeSeller(b) ?: return false
-        return x == y || x.contains(y) || y.contains(x) || SmartMatcher.damerau(x, y, 2) <= 2
+        // A letter apart ("ABG" / "ABC") is a different reading: one of the two is misread, so the operator looks
+        // (with the AI's spelling offered as the replacement).
+        return x == y || x.contains(y) || y.contains(x)
     }
 
     private fun docNumberKey(s: String) = s.uppercase().filter { it.isLetterOrDigit() }
