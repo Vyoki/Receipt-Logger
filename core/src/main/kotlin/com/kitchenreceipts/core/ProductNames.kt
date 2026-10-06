@@ -60,11 +60,11 @@ object ProductNames {
     private val CUT_NUMBER = Regex("^(?i)n\\.?(\\d{1,4})$")
 
     fun clean(printed: String, packSizeHint: PackSizes.Size? = null): Clean {
-        var text = printed.trim().replace(Regex("\\s+"), " ")
+        var text = printed.trim().replace(rx("\\s+"), " ")
         // A dash with nothing after it ("- .", "-.") is just the end of the supplier's name field.
-        text = text.replace(Regex("\\s*-\\s*\\.?\\s*$"), "").trim()
+        text = text.replace(rx("\\s*-\\s*\\.?\\s*$"), "").trim()
         var brand: String? = null
-        Regex("^(.*\\S)\\s+-\\s+([A-Za-z][A-Za-z'&. ]{1,30})$").find(text)?.let { m ->
+        rx("^(.*\\S)\\s+-\\s+([A-Za-z][A-Za-z'&. ]{1,30})$").find(text)?.let { m ->
             val b = m.groupValues[2].trim().trimEnd('.')
             if (b.count(Char::isLetter) >= 2 && b.split(' ').size <= 3) { brand = b; text = m.groupValues[1].trim() }
         }
@@ -124,7 +124,7 @@ object ProductNames {
                 else -> out += raw
             }
         }
-        val name = titleCase(out.joinToString(" ").replace(Regex("\\s+"), " ").trim())
+        val name = titleCase(out.joinToString(" ").replace(rx("\\s+"), " ").trim())
         return Clean(name.ifBlank { titleCase(text) }, brand?.let { b -> if (b.count(Char::isLetter) <= 3) b.uppercase() else titleCase(b) }, if (packSizeHint != null && (Units.dimension(packSizeHint.unit) != null || size == null)) packSizeHint else size ?: packSizeHint, unknown)
     }
 
@@ -132,24 +132,24 @@ object ProductNames {
     private fun pieces(text: String): List<String> =
         text.split(' ').filter { it.isNotBlank() }.flatMap { w ->
             if (SIZE.matches(w.trimEnd('.')) || CUT_NUMBER.matches(w) || w.count { it == '.' } == 0) listOf(w)
-            else if (Regex("^(?i)[a-z]\\.[a-z]{1,2}\\.?$").matches(w)) listOf(w) // "B.AD.", "P.S" written as one
-            else Regex("[^.]+\\.?").findAll(w).map { it.value }.toList()
-        }.flatMap { w -> if (Regex("^(?i)(rig)(\\d+)$").matches(w)) listOf(w.substring(0, 3), w.substring(3)) else listOf(w) }
+            else if (rx("^(?i)[a-z]\\.[a-z]{1,2}\\.?$").matches(w)) listOf(w) // "B.AD.", "P.S" written as one
+            else rx("[^.]+\\.?").findAll(w).map { it.value }.toList()
+        }.flatMap { w -> if (rx("^(?i)(rig)(\\d+)$").matches(w)) listOf(w.substring(0, 3), w.substring(3)) else listOf(w) }
 
     /** Lower case, accents and dots removed: "B.AD." -> "bad", "S/V" -> "s/v". */
     private fun key(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase().replace(".", "").replace("'", "").trim(',', ';', ':', '-', '(', ')')
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").lowercase().replace(".", "").replace("'", "").trim(',', ';', ':', '-', '(', ')')
 
     /** Printed as an abbreviation: a dot after letters ("TR.", "ORLAN."), or a slash form ("P/OCCHIO"). */
     private fun isAbbreviation(raw: String): Boolean =
-        (raw.endsWith('.') && raw.count(Char::isLetter) in 1..7 && raw.none(Char::isDigit)) || Regex("^(?i)[a-z]{1,2}/[a-z]+$").matches(raw)
+        (raw.endsWith('.') && raw.count(Char::isLetter) in 1..7 && raw.none(Char::isDigit)) || rx("^(?i)[a-z]{1,2}/[a-z]+$").matches(raw)
 
     private fun titleCase(s: String): String = s.split(' ').mapIndexed { i, w ->
         when {
             w.isEmpty() -> w
             w in setOf("DOP", "IGP", "UHT", "BIO", "IGT", "DOC", "DOCG") -> w
             i > 0 && w.lowercase() in SMALL_WORDS -> w.lowercase()
-            w.startsWith("n.") || Regex("^x\\d+$").matches(w) -> w
+            w.startsWith("n.") || rx("^x\\d+$").matches(w) -> w
             // "C+C", "1/16", "25X25": codes and measures stay as printed.
             w.any { !it.isLetter() && it != '.' && it != '\'' && it != '-' } -> w.uppercase()
             // "M.BIGAZZI" -> "M.Bigazzi", "VITE-POLLO" -> "Vite-Pollo"

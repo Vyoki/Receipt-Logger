@@ -26,15 +26,15 @@ data class SearchQuery(val text: String, val from: LocalDate?, val to: LocalDate
             "novembre" to 11, "nov" to 11, "november" to 11,
             "dicembre" to 12, "dic" to 12, "december" to 12, "dec" to 12,
         )
-        private val MONTH_YEAR = Regex("(?<![\\d/.\\-])(\\d{1,2})[/.\\-](\\d{4}|\\d{2})(?![\\d/.\\-])")
-        private val YEAR_MONTH = Regex("(?<![\\d/.\\-])(\\d{4})[/.\\-](\\d{1,2})(?![\\d/.\\-])")
+        private val MONTH_YEAR = rx("(?<![\\d/.\\-])(\\d{1,2})[/.\\-](\\d{4}|\\d{2})(?![\\d/.\\-])")
+        private val YEAR_MONTH = rx("(?<![\\d/.\\-])(\\d{4})[/.\\-](\\d{1,2})(?![\\d/.\\-])")
         private val NAMED_MONTH = Regex("(?i)\\b(" + MONTHS.keys.sortedByDescending { it.length }.joinToString("|") + ")\\.?\\s+(\\d{4}|\\d{2})\\b")
 
         fun parse(raw: String): SearchQuery {
             var text = raw.trim()
             // A full date first.
             ItalianDates.findDates(text).firstOrNull()?.let { d ->
-                return SearchQuery(text.removeRange(d.range).trim().replace(Regex("\\s+"), " "), d.date, d.date)
+                return SearchQuery(text.removeRange(d.range).trim().replace(rx("\\s+"), " "), d.date, d.date)
             }
             fun month(y: Int, m: Int): YearMonth? =
                 if (m in 1..12 && y in 1990..2100) YearMonth.of(y, m) else null
@@ -54,7 +54,7 @@ data class SearchQuery(val text: String, val from: LocalDate?, val to: LocalDate
             val found = ym
             val r = range
             if (found != null && r != null) {
-                text = text.removeRange(r).trim().replace(Regex("\\s+"), " ")
+                text = text.removeRange(r).trim().replace(rx("\\s+"), " ")
                 return SearchQuery(text, found.atDay(1), found.atEndOfMonth())
             }
             return SearchQuery(text, null, null)

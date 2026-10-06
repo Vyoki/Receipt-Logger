@@ -52,7 +52,7 @@ object OcrCleanup {
             val g = m.groupValues
             if (g[1].isNotEmpty()) "${g[1]},${g[2]}" else "${g[3]},${g[4]}"
         }
-        return s.replace(Regex(" {2,}"), " ").trim()
+        return s.replace(rx(" {2,}"), " ").trim()
     }
 
     /**

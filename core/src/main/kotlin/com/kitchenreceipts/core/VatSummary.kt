@@ -72,7 +72,7 @@ object VatSummary {
         for (line in text.lines()) {
             val clean = DOT_DECIMAL.replace(OcrCleanup.cleanLine(line)) { m -> "${m.groupValues[1]},${m.groupValues[2]}" }
             if (UNIT_PRICE.containsMatchIn(clean)) continue
-            val lead = Regex("^\\s*(0?4|0?5|10|22)(?![\\d,])").find(clean) ?: continue
+            val lead = rx("^\\s*(0?4|0?5|10|22)(?![\\d,])").find(clean) ?: continue
             val rate = BigDecimal(lead.groupValues[1])
             if (groups.any { it.ratePercent.compareTo(rate) == 0 }) continue
             for (m in MONEY.findAll(clean)) {

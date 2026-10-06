@@ -23,7 +23,8 @@ object ItalianNumbers {
      */
     fun parse(raw: String?): BigDecimal? {
         if (raw == null) return null
-        var s = CURRENCY_NOISE.replace(raw, "")
+        // The currency words need a '€' or an 'e' (the pattern folds ASCII case only): skip the scan otherwise.
+        var s = (if (raw.any { it == '€' || it == 'e' || it == 'E' }) CURRENCY_NOISE.replace(raw, "") else raw)
             .replace(' ', ' ')
             .replace(" ", "")
             .replace("'", "") // Swiss-style thousands separator occasionally seen
@@ -65,12 +66,20 @@ object ItalianNumbers {
         val withLeadingZero = if (normalized.startsWith(".")) "0$normalized" else normalized
         if (!VALID_PLAIN.matches(withLeadingZero)) return null
         val value = BigDecimal(withLeadingZero)
+        // A run of 16+ digits is a misread (or a code), not an amount, and would overflow the cents.
+        if (value.precision() - value.scale() > 15) return null
         return if (negative) value.negate() else value
     }
 
     /** Converts an amount to integer cents, rounding half-up only beyond the second decimal. */
-    fun toCents(amount: BigDecimal): Long =
-        amount.setScale(2, RoundingMode.HALF_UP).movePointRight(2).longValueExact()
+    fun toCents(amount: BigDecimal): Long {
+        val c = amount.setScale(2, RoundingMode.HALF_UP).movePointRight(2)
+        // Beyond any real amount (a misread code times a price): a value no arithmetic check can match, not a crash.
+        if (c.abs() > SATURATED) return if (c.signum() < 0) -SATURATED_LONG else SATURATED_LONG
+        return c.longValueExact()
+    }
+    private const val SATURATED_LONG = Long.MAX_VALUE / 4
+    private val SATURATED = BigDecimal.valueOf(SATURATED_LONG)
 
     fun parseCents(raw: String?): Long? = parse(raw)?.let { toCents(it) }
 

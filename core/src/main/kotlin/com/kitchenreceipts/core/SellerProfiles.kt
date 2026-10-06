@@ -54,7 +54,9 @@ object SellerProfiles {
     /** "O1234567897": letters the OCR reads for digits inside an 11-character number (the checksum still decides). */
     private val DIGITS_WITH_SLIPS = Regex("(?<![A-Za-z0-9])[0-9OoIlS]{11}(?![A-Za-z0-9])")
 
-    internal fun repairDigits(text: String): String = DIGITS_WITH_SLIPS.replace(text) { m ->
+    internal fun repairDigits(text: String): String = repaired(text)
+    private val repaired = Memo(256) { text: String -> repairDigitsNow(text) }
+    private fun repairDigitsNow(text: String): String = DIGITS_WITH_SLIPS.replace(text) { m ->
         val v = m.value
         if (v.count(Char::isDigit) < 9 || v.all(Char::isDigit)) v
         else v.map { c -> when (c) { 'O', 'o' -> '0'; 'I', 'l' -> '1'; 'S' -> '5'; else -> c } }.joinToString("")
@@ -181,10 +183,12 @@ object SellerProfiles {
         val lines = repairDigits(documentText).lines()
         val candidates = vatNumbers(documentText).filter { it != own }
         if (candidates.isEmpty()) return null
+        val squeezed = lines.map { it.replace(" ", "") }
         val scored = candidates.mapIndexed { order, v ->
-            val occurrences = lines.sumOf { l -> Regex(v).findAll(l.replace(" ", "")).count() }
-            val onLetterhead = lines.any { l -> l.replace(" ", "").contains(v) && LETTERHEAD_HINT.containsMatchIn(l) }
-            val onCustomerLine = lines.any { l -> l.replace(" ", "").contains(v) && CUSTOMER_HINT.containsMatchIn(l) }
+            val re = Regex(v)
+            val occurrences = squeezed.sumOf { l -> re.findAll(l).count() }
+            val onLetterhead = lines.indices.any { i -> squeezed[i].contains(v) && LETTERHEAD_HINT.containsMatchIn(lines[i]) }
+            val onCustomerLine = lines.indices.any { i -> squeezed[i].contains(v) && CUSTOMER_HINT.containsMatchIn(lines[i]) }
             var score = 0
             if (onLetterhead) score += 3
             if (occurrences >= 2) score -= 3
@@ -197,6 +201,6 @@ object SellerProfiles {
     }
 
     private fun normalize(s: String): String =
-        Normalizer.normalize(s, Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "")
-            .lowercase().replace(Regex("[^a-z0-9]+"), " ").trim()
+        Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "")
+            .lowercase().replace(rx("[^a-z0-9]+"), " ").trim()
 }

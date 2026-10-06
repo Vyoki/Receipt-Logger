@@ -63,14 +63,14 @@ object LineSolver {
         if (t.length >= 2 && t.count { it.isDigit() || it in ".," } >= t.length - 2 && t.any { it in LETTER_DIGIT }) {
             out += t.map { LETTER_DIGIT[it] ?: it }.joinToString("")
         }
-        if (Regex("^\\d{1,4}\\.\\d{2,3}$").matches(t)) out += t.replace('.', ',')
+        if (rx("^\\d{1,4}\\.\\d{2,3}$").matches(t)) out += t.replace('.', ',')
         if (t.all { it.isDigit() || it in ".," }) {
             for (i in t.indices) {
                 if (t[i] == '7') out += t.substring(0, i) + '1' + t.substring(i + 1)
                 if (t[i] == '1') out += t.substring(0, i) + '7' + t.substring(i + 1)
             }
         }
-        if (Regex("^\\d{3,6}$").matches(t)) out += t.dropLast(2) + "," + t.takeLast(2)
+        if (rx("^\\d{3,6}$").matches(t)) out += t.dropLast(2) + "," + t.takeLast(2)
         return out.distinct().filter { it != t }
     }
 

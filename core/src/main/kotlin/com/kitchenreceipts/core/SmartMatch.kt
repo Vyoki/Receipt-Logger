@@ -50,7 +50,8 @@ object SmartMatcher {
     /** [words] are stems (plural endings removed); [raw] the same words as printed, for the dictionary checks. */
     data class Signature(val words: List<String>, val sizes: Set<String>, val raw: List<String> = words)
 
-    fun signature(description: String): Signature {
+    fun signature(description: String): Signature = signatures(description)
+    private val signatures = Memo { description: String ->
         val sizes = mutableSetOf<String>()
         var s = description
         for (re in listOf(SIZE_BEFORE, SIZE_AFTER)) {
@@ -63,7 +64,7 @@ object SmartMatcher {
         val raw = ProductMatching.aliasKey(s).split(' ')
             .filter { it.length > 1 && it !in STOPWORDS && !it.all(Char::isDigit) && it.any(Char::isLetter) }
             .filterNot { w -> w.count(Char::isDigit) >= 2 } // article codes glued to words
-        return Signature(raw.map(::stem), sizes, raw)
+        Signature(raw.map(::stem), sizes.toSet(), raw)
     }
 
     fun bestMatch(description: String, candidates: List<ProductCandidate>): SmartMatch? =

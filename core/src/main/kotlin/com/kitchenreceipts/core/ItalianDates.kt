@@ -53,7 +53,14 @@ object ItalianDates {
         "(?i)(?<![\\p{L}])($MONTH_WORDS)\\.?\\s+(\\d{1,2})(?:st|nd|rd|th)?,?\\s+(\\d{4})(?!\\d)",
     )
 
-    fun findDates(line: String): List<DateMatch> {
+    private val LETTERS = Regex("\\p{L}+")
+
+    /** Each line is asked about several times (dates, lots, amounts): worked out once. */
+    fun findDates(line: String): List<DateMatch> = foundDates(line)
+    private val foundDates = Memo(8192) { line: String -> computeDates(line) }
+
+    private fun computeDates(line: String): List<DateMatch> {
+        if (line.none { it in '0'..'9' }) return emptyList() // every date form has digits
         val found = mutableListOf<DateMatch>()
         for (m in ISO.findAll(line)) {
             build(m.groupValues[1].toInt(), m.groupValues[3].toInt(), m.groupValues[4].toInt())
@@ -69,6 +76,9 @@ object ItalianDates {
             (build(year, b, a) ?: if (b > 12 && a <= 12 && m.groupValues[3].length == 4 && '/' in m.value) build(year, a, b) else null)
                 ?.let { found += DateMatch(it, m.range, m.value) }
         }
+        // The month-name forms need a whole word that is a month name (letters on both sides are not allowed):
+        // skip the two long patterns when there is none.
+        if (LETTERS.findAll(line).none { it.value.lowercase() in MONTHS }) return found.sortedBy { it.range.first }
         for (m in TEXTUAL.findAll(line)) {
             if (found.any { it.range.overlaps(m.range) }) continue
             val month = MONTHS[m.groupValues[2].lowercase()] ?: continue

@@ -290,7 +290,7 @@ object EInvoice {
                 val lotData = other.firstOrNull { (it.text("TipoDato") ?: "").uppercase().let { t -> "LOT" in t || "BATCH" in t } }
                 val expData = other.firstOrNull { (it.text("TipoDato") ?: "").uppercase().let { t -> "SCAD" in t || "EXP" in t } }
                 val scan = LotExtractor.scan(raw)
-                val description = LotExtractor.strip(raw, scan.consumed).replace(Regex("\\s+"), " ").trim().trimEnd('-', ',', ';', ' ').ifEmpty { raw }
+                val description = LotExtractor.strip(raw, scan.consumed).replace(rx("\\s+"), " ").trim().trimEnd('-', ',', ';', ' ').ifEmpty { raw }
                 val lot = (lotData?.text("RiferimentoTesto") ?: lotData?.text("RiferimentoNumero"))?.let { sure(it, src) } ?: scan.lot
                 val expiry = (expData?.text("RiferimentoData")?.let(::date) ?: date(expData?.text("RiferimentoTesto")))?.let { sure(it, src) } ?: scan.expiry
                 // The unit price after the line's discounts, so price = amount / quantity (what was really paid).

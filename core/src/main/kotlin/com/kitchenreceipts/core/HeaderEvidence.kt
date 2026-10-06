@@ -75,7 +75,7 @@ object HeaderEvidence {
         val strong = best.reasons.any { it == "legal form" || it == "heads the VAT block" }
         val complete = !ReceiptParser.TRUNCATED_SUFFIX.containsMatchIn(best.value)
         // Garbled reading ("?. o Bere AG", "WR. D.I.Y. (4)"): stray symbols or digits in the name are never sure.
-        val clean = best.value.split(' ').filter { it.isNotBlank() }.all { (Regex("^[\\p{L}&.,'’()\\-/+]+$").matches(it) || it.all(Char::isDigit)) }
+        val clean = best.value.split(' ').filter { it.isNotBlank() }.all { (rx("^[\\p{L}&.,'’()\\-/+]+$").matches(it) || it.all(Char::isDigit)) }
         val sure = strong && complete && clean && best.score >= 7 && best.score - second >= 3
         return Extracted(best.value, if (sure) Confidence.HIGH else Confidence.LOW, best.source)
     }
@@ -115,7 +115,7 @@ object HeaderEvidence {
         if (ownName != null && (DuplicateDetector.normalizeSeller(value) ?: "").contains(ownName)) { score -= 10; reasons += "own name" }
         if (DOC_WORDS.containsMatchIn(name)) { score -= 5; reasons += "document words" }
         if (LEGAL_NOTICE.containsMatchIn(value)) { score -= 5; reasons += "legal notice" }
-        if (ReceiptParser.ADDRESS_OR_CONTACT.containsMatchIn(value) || Regex("\\b\\d{5}\\b").containsMatchIn(value)) { score -= 5; reasons += "address or contact" }
+        if (ReceiptParser.ADDRESS_OR_CONTACT.containsMatchIn(value) || rx("\\b\\d{5}\\b").containsMatchIn(value)) { score -= 5; reasons += "address or contact" }
         if (letters < value.count { !it.isWhitespace() } * 0.6) { score -= 4; reasons += "mostly digits" }
         if (ItalianDates.findDates(value).isNotEmpty() || ReceiptParser.lastAmountCents(value) != null) { score -= 4; reasons += "date or amount" }
         if (value.split(' ').count { it.isNotBlank() } > 7) { score -= 3; reasons += "long sentence" }
@@ -187,7 +187,7 @@ object HeaderEvidence {
                 // never on an address line ("VIA ROMA N. 1").
                 // Not on a registration line either ("REA n. 123456/RM", "Iscr. Albo n. ...").
                 if (!ReceiptParser.ADDRESS_OR_CONTACT.containsMatchIn(line) && !LEGAL_NOTICE.containsMatchIn(line) &&
-                    !Regex("(?i)\\b(rea|albo|registro|cciaa|autorizz\\w*|licenza)\\b").containsMatchIn(line) && LABEL.find(line) == null
+                    !rx("(?i)\\b(rea|albo|registro|cciaa|autorizz\\w*|licenza)\\b").containsMatchIn(line) && LABEL.find(line) == null
                 ) {
                     for (m in BARE_N.findAll(line)) {
                         val v = valueAt(line.substring(m.range.last + 1).trimStart().split(' ').filter { it.isNotBlank() }, 0) ?: continue
@@ -201,14 +201,14 @@ object HeaderEvidence {
                     valueAt(t, 0)?.let { v -> if (t.firstOrNull()?.let { LABEL.matches(it) } != true) add(all, v, 3, "after '${m.value.trim()}'", p, line) }
                 }
                 // 3. A row of headings with "NUMERO"/"N.RO" and no values, the values on a row below.
-                val labelOnly = line.replace(Regex("\\b\\d{11}\\b"), " ")
+                val labelOnly = line.replace(rx("\\b\\d{11}\\b"), " ")
                 if (ReceiptParser.NUMBER_LABEL.containsMatchIn(labelOnly) && labelOnly.none(Char::isDigit)) {
                     val below = (i + 1..minOf(i + 3, lines.lastIndex)).map { lines[it] }
                     val row = below.firstOrNull { ItalianDates.findDates(it).isNotEmpty() } ?: below.firstOrNull()
                     if (row != null) {
                         val rt = row.split(' ').filter { it.isNotBlank() }
                         val dateIdx = rt.indexOfFirst { ItalianDates.findDates(it).isNotEmpty() }
-                        val withDate = Regex("(?i)\\bdata\\b").containsMatchIn(labelOnly)
+                        val withDate = rx("(?i)\\bdata\\b").containsMatchIn(labelOnly)
                         // The number is printed just before the date ("... B26 204177 22/09/2026"), else the first number token.
                         val v = if (dateIdx > 0) {
                             (maxOf(0, dateIdx - 2) until dateIdx).firstNotNullOfOrNull { k -> valueAt(rt, k)?.takeIf { k + it.split(' ').size == dateIdx } }
@@ -222,7 +222,7 @@ object HeaderEvidence {
                     val dateIdx = toks.indexOfFirst { ItalianDates.findDates(it).isNotEmpty() }
                     if (dateIdx > 0) {
                         val v = (maxOf(0, dateIdx - 2) until dateIdx).firstNotNullOfOrNull { k -> valueAt(toks, k)?.takeIf { k + it.split(' ').size == dateIdx } }
-                        val dateHeading = (maxOf(0, i - 2) until i).any { Regex("(?i)\\bdata\\b").containsMatchIn(lines[it]) }
+                        val dateHeading = (maxOf(0, i - 2) until i).any { rx("(?i)\\bdata\\b").containsMatchIn(lines[it]) }
                         if (v != null && v.count(Char::isDigit) >= 4) add(all, v, if (dateHeading) 6 else 3, "just before the date", p, line)
                     }
                 }

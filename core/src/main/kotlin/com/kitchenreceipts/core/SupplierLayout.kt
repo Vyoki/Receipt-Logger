@@ -52,7 +52,7 @@ object SupplierLayouts {
      * The shape of a document number: digits as 9, letters as A, separators kept ("12A/34567" -> "99A/99999",
      * "B26 204177" -> "A99 999999").
      */
-    fun shape(number: String): String = number.trim().replace(Regex("\\s+"), " ")
+    fun shape(number: String): String = number.trim().replace(rx("\\s+"), " ")
         .map { c -> when { c.isDigit() -> '9'; c.isLetter() -> 'A'; else -> c } }.joinToString("")
 
     /**
@@ -107,6 +107,6 @@ object SupplierLayouts {
 
     /** "COLLI/DESCRIZIONE" -> "colli/descrizione": heading words as [TableReader] compares them. */
     fun headingKey(word: String): String =
-        java.text.Normalizer.normalize(word, java.text.Normalizer.Form.NFD).replace(Regex("\\p{M}+"), "").lowercase().trim()
+        java.text.Normalizer.normalize(word, java.text.Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").lowercase().trim()
             .trim('.', ':', ',', '\'', '’', '"', '|', '(', ')')
 }
