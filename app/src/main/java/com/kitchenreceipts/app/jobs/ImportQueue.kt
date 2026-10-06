@@ -15,6 +15,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -70,9 +71,10 @@ class ImportQueue(
     val jobs: StateFlow<List<ImportJob>> = _jobs.asStateFlow()
 
     private val wake = Channel<Unit>(Channel.CONFLATED)
-    private var current: Job? = null
-    private var currentId: String? = null
-    @Volatile private var started = false
+    // Written by the worker, read by discard() on the main thread.
+    @Volatile private var current: Job? = null
+    @Volatile private var currentId: String? = null
+    private val started = java.util.concurrent.atomic.AtomicBoolean(false)
 
     /** Called when a document read in the background was saved without review (keeps its reading, see ReadingArchive). */
     @Volatile var onAutoSaved: (Long, PendingImport) -> Unit = { _, _ -> }
@@ -98,9 +100,17 @@ class ImportQueue(
     /** Stops a reading or drops a document that was not saved; its file is deleted. */
     fun discard(id: String) {
         val job = job(id) ?: return
-        if (currentId == id) current?.cancel()
-        if (job.status != JobStatus.SAVED) fileStore.delete(job.file.relativePath)
+        val running = current.takeIf { currentId == id }
         remove(id)
+        if (running != null) {
+            // The file is deleted once the reading has really stopped (it may still be using it).
+            scope.launch {
+                running.cancelAndJoin()
+                if (job.status != JobStatus.SAVED) fileStore.delete(job.file.relativePath)
+            }
+        } else if (job.status != JobStatus.SAVED) {
+            fileStore.delete(job.file.relativePath)
+        }
         log.event("JOB_DISCARDED", "job" to id.take(8), "status" to job.status)
     }
 
@@ -123,9 +133,12 @@ class ImportQueue(
             .sortedBy { it.createdAt }
             .map { if (it.status == JobStatus.READING) it.copy(status = JobStatus.QUEUED) else it }
         _jobs.value = loaded
-        loaded.filter { it.status == JobStatus.READY }.forEach { j ->
-            scope.launch {
+        // One after another: rebuilding several readings at once would slow the start and any new reading.
+        val ready = loaded.filter { it.status == JobStatus.READY }
+        if (ready.isNotEmpty()) scope.launch {
+            for (j in ready) {
                 val pending = runCatching { loadReading(j) }.getOrNull()
+                if (job(j.id) == null) continue // discarded meanwhile
                 if (pending != null) update(j.copy(pending = pending)) else update(j.copy(status = JobStatus.QUEUED))
                 if (pending == null) wake.trySend(Unit)
             }
@@ -137,8 +150,7 @@ class ImportQueue(
     }
 
     private fun startWorker() {
-        if (started) return
-        started = true
+        if (!started.compareAndSet(false, true)) return
         scope.launch {
             for (signal in wake) {
                 while (true) {
@@ -173,6 +185,8 @@ class ImportQueue(
             )
             val prepared = preparer.prepare(pending)
             val d = prepared.draft
+            // Discarded while it was being read: nothing is saved.
+            if (job(j.id) == null) return
             val savedId = runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()
             savedId?.let { id -> runCatching { onAutoSaved(id, pending) } }
             j = (job(j.id) ?: return).copy(
@@ -185,6 +199,7 @@ class ImportQueue(
                 itemCount = d.items.size,
             )
             update(j)
+            if (savedId != null) dropReading(j.id) // saved: the reading is kept with the document (ReadingArchive)
             notifier.finished(j)
             val alerts = runCatching { preparer.priceAlerts(savedId, prepared) }.onFailure { log.error("priceAlerts", it) }.getOrDefault(emptyList())
             if (alerts.isNotEmpty()) {
@@ -206,6 +221,11 @@ class ImportQueue(
     private fun update(job: ImportJob, persist: Boolean = true) {
         _jobs.update { list -> list.map { if (it.id == job.id) job else it } }
         if (persist) writeMeta(job)
+    }
+
+    /** The files of a reading no longer needed (the job's status stays, for the list). */
+    private fun dropReading(id: String) {
+        File(dir, id).listFiles()?.filter { it.name != "meta.properties" }?.forEach { it.delete() }
     }
 
     private fun remove(id: String) {

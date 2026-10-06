@@ -39,6 +39,8 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.launch
 import java.time.LocalDate
 
@@ -122,7 +124,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         }
         storedFile = pending.file
         ocrText = pending.ocrText
-        val prepared = c.preparer.prepare(pending)
+        // Heavy (supplier, products, price history): off the screen's thread, so opening the review never stutters.
+        val prepared = withContext(Dispatchers.Default) { c.preparer.prepare(pending) }
         ocrSellerRaw = prepared.ocrSellerRaw
         supplierKey = prepared.supplierKey
         ocrPages = pending.rawLines
@@ -151,7 +154,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         priceJob?.cancel()
         priceJob = viewModelScope.launch {
             delay(400)
-            val changes = priceChanges(_state.value.draft)
+            val d = _state.value.draft
+            val changes = withContext(Dispatchers.Default) { priceChanges(d) }
             _state.update { it.copy(priceChanges = changes) }
         }
     }
@@ -235,7 +239,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun pickChoice(key: Long, choice: LineChoice) {
         editItem(key) { it.pick(choice) }
         if (_state.value.isNew) {
-            c.learning.addRule(supplierKey, choice.rule)
+            val key = supplierKey
+            viewModelScope.launch(Dispatchers.IO) { runCatching { c.learning.addRule(key, choice.rule) } }
             c.log.event("CHOICE_PICKED", "rule" to choice.rule.encode())
         }
     }
@@ -319,7 +324,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             is ValidationResult.Valid -> {
                 _state.update { it.copy(errors = emptyMap()) }
                 viewModelScope.launch {
-                    val dups = repo.findDuplicates(r.document, storedFile?.sha256, documentId)
+                    val dups = withContext(Dispatchers.Default) { repo.findDuplicates(r.document, storedFile?.sha256, documentId) }
                     val uncertain = s.draft.uncertainCount
                     if (dups.isNotEmpty()) {
                         c.log.event("DUPLICATE_WARNING", "matches" to dups.size, "reasons" to dups.flatMap { it.match.reasons }.distinct().joinToString(","))
@@ -349,6 +354,17 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 docOcrText?.let { SellerLearning(it, null, own) }
             }
             val id = repo.saveDocument(doc, storedFile, ocrText, documentId, learning)
+            // Files on the phone (queue, readings, corrections, what was learned): not on the screen's thread.
+            withContext(Dispatchers.IO) { afterSave(id, doc, own, auto) }
+            _state.update { it.copy(saving = false, savedId = id, autoSaved = auto) }
+        } catch (e: Exception) {
+            c.log.error("save", e)
+            _state.update { it.copy(saving = false, saveError = e.message ?: e.javaClass.simpleName) }
+        }
+    }
+
+    private fun afterSave(id: Long, doc: ValidDocument, own: String?, auto: Boolean) {
+        run {
             if (documentId == null) jobId?.let { c.importQueue.markSaved(it) }
             // The reading as the camera saw it, so later versions can read this document again (see ReadingChecker).
             if (documentId == null) runCatching { c.readings.save(id, ocrPages) }
@@ -373,10 +389,6 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 // How this supplier prints its documents (number format, lots, headings), for next time.
                 readParsed?.let { read -> runCatching { c.learning.addLayout(key, com.kitchenreceipts.core.SupplierLayouts.learn(read, finalDraft)) } }
             }
-            _state.update { it.copy(saving = false, savedId = id, autoSaved = auto) }
-        } catch (e: Exception) {
-            c.log.error("save", e)
-            _state.update { it.copy(saving = false, saveError = e.message ?: e.javaClass.simpleName) }
         }
     }
 

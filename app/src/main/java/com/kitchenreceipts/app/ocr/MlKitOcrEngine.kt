@@ -5,9 +5,15 @@ import com.google.mlkit.vision.common.InputImage
 import com.google.mlkit.vision.text.TextRecognition
 import com.google.mlkit.vision.text.latin.TextRecognizerOptions
 import com.kitchenreceipts.core.OcrLine
-import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.asExecutor
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.withContext
+import kotlin.coroutines.coroutineContext
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
+import kotlin.coroutines.suspendCoroutine
 
 /**
  * Google ML Kit Text Recognition v2, Latin script, with the model bundled in the APK
@@ -21,9 +27,18 @@ class MlKitOcrEngine : OcrEngine {
 
     private val recognizer by lazy { TextRecognition.getClient(TextRecognizerOptions.DEFAULT_OPTIONS) }
 
-    override suspend fun recognize(page: Bitmap): List<OcrLine> = suspendCancellableCoroutine { cont ->
+    override suspend fun recognize(page: Bitmap): List<OcrLine> {
+        // Waits for ML Kit even when the reading is cancelled: the page image is freed right after this returns, and
+        // ML Kit must be done with it by then. The result is converted off the main thread.
+        val lines = withContext(NonCancellable) { suspendCoroutine { cont -> start(page, cont) } }
+        coroutineContext.ensureActive()
+        return lines
+    }
+
+    private fun start(page: Bitmap, cont: kotlin.coroutines.Continuation<List<OcrLine>>) {
+        val executor = Dispatchers.Default.asExecutor()
         recognizer.process(InputImage.fromBitmap(page, 0))
-            .addOnSuccessListener { text ->
+            .addOnSuccessListener(executor) { text ->
                 val lines = text.textBlocks.flatMap { it.lines }.mapNotNull { line ->
                     val box = line.boundingBox ?: return@mapNotNull null
                     // Word boxes let the parser read table columns by position.
@@ -33,8 +48,8 @@ class MlKitOcrEngine : OcrEngine {
                     }
                     OcrLine(line.text, box.left, box.top, box.right, box.bottom, line.angle, words)
                 }
-                if (cont.isActive) cont.resume(lines)
+                cont.resume(lines)
             }
-            .addOnFailureListener { e -> if (cont.isActive) cont.resumeWithException(e) }
+            .addOnFailureListener(executor) { e -> cont.resumeWithException(e) }
     }
 }

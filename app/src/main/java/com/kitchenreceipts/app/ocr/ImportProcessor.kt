@@ -91,6 +91,52 @@ class AiUse(
 class ImportProcessor(private val renderer: PageRenderer) {
 
     /**
+     * The page image being worked on, kept for the next step that needs the same page (OCR pass 2, the AI) instead
+     * of decoding and flattening the photo again. One page at a time: asking for another frees the previous one.
+     */
+    private inner class PageImages(private val file: StoredFile) {
+        private var page = -1
+        private var bmp: android.graphics.Bitmap? = null
+
+        fun get(i: Int): android.graphics.Bitmap {
+            bmp?.let { if (page == i && !it.isRecycled) return it }
+            release()
+            return renderer.renderForReading(file.relativePath, file.mimeType, i, OCR_LONG_SIDE).also { bmp = it; page = i }
+        }
+
+        fun release() {
+            bmp?.recycle()
+            bmp = null
+            page = -1
+        }
+    }
+
+    /** The AI model, loaded once for the whole document (loading takes seconds and a lot of memory). */
+    private class SharedReader(private val ai: AiUse) {
+        private var reader: AiPageReader? = null
+        private var failure: Exception? = null
+
+        /** The loaded model, or the reason it could not be loaded. */
+        suspend fun get(): Result<AiPageReader> {
+            reader?.let { return Result.success(it) }
+            failure?.let { return Result.failure(it) }
+            return try {
+                Result.success(ai.reader().also { reader = it })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                failure = e
+                Result.failure(e)
+            }
+        }
+
+        fun close() {
+            reader?.close()
+            reader = null
+        }
+    }
+
+    /**
      * Reads a stored document. Pass 1 reads each page as photographed. If the result does not fully check out
      * (a line where quantity x price differs from the amount, lines not adding up to the total, a missing date...),
      * pass 2 reads the pages again after [ImageEnhancer] has removed shadows and boosted faint print, and the
@@ -120,12 +166,33 @@ class ImportProcessor(private val renderer: PageRenderer) {
             )
         }
         val pages = minOf(file.pageCount, MAX_OCR_PAGES)
-        val first = readAll(file, engine, pages, 1) { p, of -> onProgress(ImportProgress(p, of, 1)) }
+        val images = PageImages(file)
+        val shared = ai?.let { SharedReader(it) }
+        try {
+            return processPages(file, engine, onProgress, options, ai, pages, images, shared, started)
+        } finally {
+            images.release()
+            shared?.close()
+        }
+    }
+
+    private suspend fun processPages(
+        file: StoredFile,
+        engine: OcrEngine,
+        onProgress: (ImportProgress) -> Unit,
+        options: ParseOptions,
+        ai: AiUse?,
+        pages: Int,
+        images: PageImages,
+        shared: SharedReader?,
+        started: Long,
+    ): PendingImport {
+        val first = readAll(images, engine, pages, 1) { p, of -> onProgress(ImportProgress(p, of, 1)) }
         var best = first
         var passes = 1
         if (first.error == null && first.lines.isNotEmpty() && !ReceiptParser.isConfident(first.parsed(options)) && engine.worksOffline && engine !== NoOcrEngine) {
             val second = try {
-                readAll(file, engine, first.lines.size, 2) { p, of -> onProgress(ImportProgress(p, of, 2)) }
+                readAll(images, engine, first.lines.size, 2) { p, of -> onProgress(ImportProgress(p, of, 2)) }
             } catch (e: CancellationException) {
                 throw e
             } catch (_: Exception) {
@@ -147,7 +214,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val aiRaw = mutableListOf<String>()
         val aiTargeted = mutableListOf<String>()
         var aiSpot = false
-        if (ai != null && best.error == null && best.lines.isNotEmpty()) {
+        var targets: List<AiTarget>? = null
+        if (ai != null && shared != null && best.error == null && best.lines.isNotEmpty()) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
             // totals and key lines of every document before the operator sees it. Whole pages only when the regular
             // reading failed too broadly for that, or when the operator asked the AI to read everything.
@@ -156,7 +224,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             if (!ai.always) {
                 val q = withContext(Dispatchers.Default) { AiTargets.layoutQuestion(best.lines, parsed) }
                 if (q != null) {
-                    val (raw, note) = askLayout(file, best, ai, q, onProgress)
+                    val (raw, note) = askLayout(images, best, shared, q, onProgress)
                     val answer = raw?.let { AiReader.decodeLayout(it, q) }
                     val better = answer?.let { a -> withContext(Dispatchers.Default) { withAiLayout(best.lines, options, parsed, a) } }
                     if (better != null && answer != null) {
@@ -166,13 +234,14 @@ class ImportProcessor(private val renderer: PageRenderer) {
                     layoutNote = "headings: $note" + (if (better != null) " (used)" else if (answer != null) " (not better)" else " (no answer)")
                 }
             }
-            val targets = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed, spotCheck = true) }
-            aiSpot = targets != null
+            val planned = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed, spotCheck = true) }
+            targets = planned
+            aiSpot = planned != null
             aiNote = when {
-                targets == null -> runAi(file, best, ai, options, onProgress, aiRaw, parsed)
+                planned == null -> runAi(images, best, ai, shared, options, onProgress, aiRaw, parsed)
                 // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
-                targets.isEmpty() -> "nothing to ask"
-                else -> runTargets(file, best, ai, targets, onProgress, aiTargeted, ai.examples(parsed, best.text))
+                planned.isEmpty() -> "nothing to ask"
+                else -> runTargets(images, best, shared, planned, onProgress, aiTargeted, ai.examples(parsed, best.text))
             }
             layoutNote?.let { aiNote = "$it; $aiNote" }
         }
@@ -180,60 +249,42 @@ class ImportProcessor(private val renderer: PageRenderer) {
             file, best.lines, best.widths, best.error, engine.displayName, aiRaw, aiNote, aiTargeted,
             "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else ""),
             options, System.currentTimeMillis() - started, aiSpot, aiLayout,
+            // Worked out above from the same reading: not again.
+            preParsed = parsed, preTargets = targets,
         )
     }
 
     /** Asks the AI what each column heading of [q] holds; returns its answer (null on failure) and a note for the log. */
     private suspend fun askLayout(
-        file: StoredFile,
+        images: PageImages,
         best: Reading,
-        ai: AiUse,
+        shared: SharedReader,
         q: LayoutQuestion,
         onProgress: (ImportProgress) -> Unit,
     ): Pair<String?, String> {
         onProgress(ImportProgress(1, 1, 4))
-        val reader = try {
-            ai.reader()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return null to "not started: ${e.message}"
-        }
-        try {
-            val bmp = renderer.renderForReading(file.relativePath, file.mimeType, q.page, OCR_LONG_SIDE)
-            try {
-                val r = reader.readRegions(
-                    bmp, best.lines[q.page], best.widths.getOrElse(q.page) { bmp.width }, q.boxes,
-                    AiReader.layoutInstruction(q.headings), AiReader.layoutGrammar(q.headings.size),
-                ) { stage, count -> onProgress(ImportProgress(1, 1, 4, stage, count)) }
-                if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
-                return (if (r.error == null) r.raw else null) to "${q.headings.size} headings, ${r.millis / 100 / 10.0}s answer='${r.raw.take(40)}'" + (r.error?.let { " error=$it" } ?: "")
-            } finally {
-                bmp.recycle()
-            }
-        } finally {
-            reader.close()
-        }
+        val reader = shared.get().getOrElse { return null to "not started: ${it.message}" }
+        val bmp = images.get(q.page)
+        val r = reader.readRegions(
+            bmp, best.lines[q.page], best.widths.getOrElse(q.page) { bmp.width }, q.boxes,
+            AiReader.layoutInstruction(q.headings), AiReader.layoutGrammar(q.headings.size),
+        ) { stage, count -> onProgress(ImportProgress(1, 1, 4, stage, count)) }
+        if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
+        return (if (r.error == null) r.raw else null) to "${q.headings.size} headings, ${r.millis / 100 / 10.0}s answer='${r.raw.take(40)}'" + (r.error?.let { " error=$it" } ?: "")
     }
 
     /** Asks the AI the small questions of [targets], collecting its answers in [answers]; returns a note for the log. */
     private suspend fun runTargets(
-        file: StoredFile,
+        images: PageImages,
         best: Reading,
-        ai: AiUse,
+        shared: SharedReader,
         targets: List<AiTarget>,
         onProgress: (ImportProgress) -> Unit,
         answers: MutableList<String>,
         examples: List<AiReader.RowExample> = emptyList(),
     ): String {
         onProgress(ImportProgress(1, targets.size, 4))
-        val reader = try {
-            ai.reader()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return "not started: ${e.message}"
-        }
+        val reader = shared.get().getOrElse { return "not started: ${it.message}" }
         val notes = mutableListOf("checks ${targets.size} (" + targets.joinToString(",") { t ->
             when (t) {
                 is AiTarget.Row -> t.itemIndex?.let { "line${it + 1}" } ?: "missed"
@@ -244,11 +295,16 @@ class ImportProcessor(private val renderer: PageRenderer) {
             }
         } + ") lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
         val started = System.currentTimeMillis()
-        val pageCache = mutableMapOf<Int, android.graphics.Bitmap>()
-        try {
-            targets.forEachIndexed { i, t ->
-                onProgress(ImportProgress(i + 1, targets.size, 4))
-                val bmp = pageCache.getOrPut(t.page) { renderer.renderForReading(file.relativePath, file.mimeType, t.page, OCR_LONG_SIDE) }
+        // Each question is independent (a fresh context every time), so they are asked page by page: only one page
+        // image is in memory, however long the document. Answers are kept in the planned order.
+        val got = arrayOfNulls<String>(targets.size)
+        val byNote = arrayOfNulls<String>(targets.size)
+        var done = 0
+        run {
+            for ((i, t) in targets.withIndex().sortedBy { it.value.page }) {
+                done++
+                onProgress(ImportProgress(done, targets.size, 4))
+                val bmp = images.get(t.page)
                 val (instruction, grammar) = when (t) {
                     is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText, examples = examples) to AiReader.ROW_GRAMMAR
                     is AiTarget.Choice -> AiReader.choiceInstruction(t.headerText, t.rowText, t.choices) to AiReader.CHOICE_GRAMMAR
@@ -256,17 +312,17 @@ class ImportProcessor(private val renderer: PageRenderer) {
                     is AiTarget.Header -> AiReader.headerInstruction() to AiReader.HEADER_GRAMMAR
                     is AiTarget.Totals -> AiReader.totalsInstruction() to AiReader.TOTALS_GRAMMAR
                 }
+                val step = done
                 val r = reader.readRegions(bmp, best.lines[t.page], best.widths.getOrElse(t.page) { bmp.width }, t.boxes, instruction, grammar) { stage, count ->
-                    onProgress(ImportProgress(i + 1, targets.size, 4, stage, count))
+                    onProgress(ImportProgress(step, targets.size, 4, stage, count))
                 }
                 if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
-                answers += if (r.error == null) r.raw else ""
-                notes += "c${i + 1}: ${r.millis / 100 / 10.0}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "")
+                got[i] = if (r.error == null) r.raw else ""
+                byNote[i] = "c${i + 1}: ${r.millis / 100 / 10.0}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "")
             }
-        } finally {
-            pageCache.values.forEach { it.recycle() }
-            reader.close()
         }
+        got.forEach { answers += it ?: "" }
+        byNote.forEach { n -> n?.let { notes += it } }
         notes += "total ${(System.currentTimeMillis() - started) / 1000}s"
         return notes.joinToString("; ")
     }
@@ -276,9 +332,10 @@ class ImportProcessor(private val renderer: PageRenderer) {
      * [raw] ("" for pages it did not read); returns a note for the log.
      */
     private suspend fun runAi(
-        file: StoredFile,
+        images: PageImages,
         best: Reading,
         ai: AiUse,
+        shared: SharedReader,
         options: ParseOptions,
         onProgress: (ImportProgress) -> Unit,
         raw: MutableList<String>,
@@ -290,31 +347,17 @@ class ImportProcessor(private val renderer: PageRenderer) {
         }
         repeat(pages) { raw += "" }
         onProgress(ImportProgress(selected.first() + 1, pages, 3))
-        val reader = try {
-            ai.reader()
-        } catch (e: CancellationException) {
-            throw e
-        } catch (e: Exception) {
-            return "not started: ${e.message}"
-        }
+        val reader = shared.get().getOrElse { return "not started: ${it.message}" }
         val notes = mutableListOf("pages ${selected.joinToString(",") { "${it + 1}" }} of $pages")
-        try {
-            for (i in selected) {
-                val bmp = renderer.renderForReading(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
-                val r = try {
-                    reader.read(bmp, best.lines[i], best.widths.getOrElse(i) { bmp.width }, LayoutRows.toText(best.lines[i]), options) { stage, count ->
-                        onProgress(ImportProgress(i + 1, pages, 3, stage, count))
-                    }
-                } finally {
-                    bmp.recycle()
-                }
-                raw[i] = if (r.error == null) r.raw else ""
-                notes += "p${i + 1}: ${r.millis / 1000}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "") +
-                    (r.parsed?.let { " items=${it.lineItems.size}" } ?: "")
-                if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
+        for (i in selected) {
+            val bmp = images.get(i)
+            val r = reader.read(bmp, best.lines[i], best.widths.getOrElse(i) { bmp.width }, LayoutRows.toText(best.lines[i]), options) { stage, count ->
+                onProgress(ImportProgress(i + 1, pages, 3, stage, count))
             }
-        } finally {
-            reader.close()
+            raw[i] = if (r.error == null) r.raw else ""
+            notes += "p${i + 1}: ${r.millis / 1000}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "") +
+                (r.parsed?.let { " items=${it.lineItems.size}" } ?: "")
+            if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
         }
         return notes.joinToString("; ")
     }
@@ -328,7 +371,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
     }
 
     private suspend fun readAll(
-        file: StoredFile,
+        images: PageImages,
         engine: OcrEngine,
         pages: Int,
         pass: Int,
@@ -340,17 +383,14 @@ class ImportProcessor(private val renderer: PageRenderer) {
         for (i in 0 until pages) {
             onProgress(i + 1, pages)
             try {
-                val bmp = renderer.renderForReading(file.relativePath, file.mimeType, i, OCR_LONG_SIDE)
-                try {
-                    if (pass == 1) {
-                        raw += engine.recognize(bmp)
-                        widths += bmp.width
-                    } else {
-                        val enhanced = withContext(Dispatchers.Default) { ImageEnhancer.enhance(bmp) }
-                        try { raw += engine.recognize(enhanced); widths += enhanced.width } finally { enhanced.recycle() }
-                    }
-                } finally {
-                    bmp.recycle()
+                // The page image stays with [images] (freed when the next page is read or the document is done).
+                val bmp = images.get(i)
+                if (pass == 1) {
+                    raw += engine.recognize(bmp)
+                    widths += bmp.width
+                } else {
+                    val enhanced = withContext(Dispatchers.Default) { ImageEnhancer.enhance(bmp) }
+                    try { raw += engine.recognize(enhanced); widths += enhanced.width } finally { enhanced.recycle() }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -383,14 +423,20 @@ class ImportProcessor(private val renderer: PageRenderer) {
             aiSpot: Boolean = false,
             /** The AI's answer about the column headings, when it was used (see [withAiLayout]). */
             aiLayout: String? = null,
+            /** The reading (with the AI's headings) and the questions, when just worked out from the same lines. */
+            preParsed: ParsedDocument? = null,
+            preTargets: List<AiTarget>? = null,
         ): PendingImport = withContext(Dispatchers.Default) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
-            var parsed = if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options)
-            SupplierLayout.decode(aiLayout)?.let { a -> withAiLayout(lines, options, parsed, a)?.let { parsed = it } }
+            var parsed = preParsed ?: run {
+                var p = if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options)
+                SupplierLayout.decode(aiLayout)?.let { a -> withAiLayout(lines, options, p, a)?.let { p = it } }
+                p
+            }
             if (aiTargeted.isNotEmpty()) {
                 // The questions are worked out again from the same reading, so they pair up with the stored answers.
-                val targets = AiTargets.plan(lines, parsed, spotCheck = aiSpot)
+                val targets = preTargets ?: AiTargets.plan(lines, parsed, spotCheck = aiSpot)
                 if (targets != null && targets.size == aiTargeted.size) {
                     parsed = AiReader.applyTargets(parsed, targets.zip(aiTargeted).filter { it.second.isNotBlank() }, text, options)
                 }

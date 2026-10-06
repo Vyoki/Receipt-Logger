@@ -151,7 +151,12 @@ class AiPageReader private constructor(private val handle: Long) : Closeable {
                 val crop = Bitmap.createBitmap(page, l, t, r - l, bt - t)
                 // Never wider than the model's usual image, never scaled up.
                 val s = minOf(scale, AiImagePlan.MAX_SIDE.toDouble() / crop.width, 1.0)
-                if (s < 1.0) Bitmap.createScaledBitmap(crop, maxOf(1, (crop.width * s).toInt()), maxOf(1, (crop.height * s).toInt()), true).also { crop.recycle() } else crop
+                if (s < 1.0) {
+                    val scaled = Bitmap.createScaledBitmap(crop, maxOf(1, (crop.width * s).toInt()), maxOf(1, (crop.height * s).toInt()), true)
+                    // Android may return the same bitmap (a crop of the whole page, or no change in size): never free the page.
+                    if (scaled !== crop && crop !== page) crop.recycle()
+                    scaled
+                } else crop
             }
             val gap = 8
             val w = pieces.maxOf { it.width }
@@ -163,7 +168,7 @@ class AiPageReader private constructor(private val handle: Long) : Closeable {
             for (p in pieces) {
                 c.drawBitmap(p, 0f, y, null)
                 y += p.height + gap
-                p.recycle()
+                if (p !== page) p.recycle()
             }
             val rgb = toRgb(out, Int.MAX_VALUE)
             out.recycle()

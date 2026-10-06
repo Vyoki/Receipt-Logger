@@ -206,6 +206,13 @@ interface DocumentDao {
     @Query("$PURCHASE_SELECT ORDER BY d.document_date DESC, li.document_id DESC, li.position")
     suspend fun allPurchasesOnce(): List<PurchaseRow>
 
+    /** The purchases of a few products, in the same order as [allPurchasesOnce] (at most 900 ids per call). */
+    @Query("$PURCHASE_SELECT WHERE li.product_id IN (:productIds) ORDER BY d.document_date DESC, li.document_id DESC, li.position")
+    suspend fun purchasesOfProductsOnce(productIds: List<Long>): List<PurchaseRow>
+
+    @Query("SELECT DISTINCT product_id FROM line_items WHERE document_id = :documentId AND product_id IS NOT NULL")
+    suspend fun productIdsOfDocument(documentId: Long): List<Long>
+
     @Query("$PURCHASE_SELECT WHERE li.product_id = :productId ORDER BY (d.document_date IS NULL), d.document_date DESC, li.id DESC")
     fun purchasesForProduct(productId: Long): Flow<List<PurchaseRow>>
 }

@@ -29,6 +29,8 @@ class ReadingChecker(
     private val settings: AppSettings,
     private val problems: ProblemReports,
     private val log: AppLog,
+    /** True while documents are being read: the check waits, so it never slows a reading down. */
+    private val busy: () -> Boolean = { false },
 ) {
     data class Result(
         val version: String,
@@ -75,6 +77,7 @@ class ReadingChecker(
         readings.deleteExcept(docs.map { it.id }.toSet())
         val options = settings.parseOptions()
         val compared = docs.filter { it.mimeType != FileStore.MIME_XML }.mapNotNull { d ->
+            while (busy()) kotlinx.coroutines.delay(5_000)
             // The reading as the camera saw it; for documents saved before readings were kept, the recognised text.
             val pages = readings.load(d.id)
             val parsed = when {

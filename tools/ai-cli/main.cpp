@@ -2,6 +2,7 @@
 // Runs exactly the app's reader code on a desktop, for CI. The image is a binary PPM (P6), RGB.
 #include "receipt_ai.h"
 #include <cstdio>
+#include <cstdlib>
 #include <fstream>
 #include <sstream>
 #include <string>
@@ -36,6 +37,15 @@ int main(int argc, char ** argv) {
     fprintf(stderr, "prompt=%d generated=%d encode=%.1fs write=%.1fs error=%s\n", r.prompt_tokens, r.generated_tokens,
             r.encode_seconds, r.generate_seconds, r.error.c_str());
     printf("%s\n", r.text.c_str());
+    // RECEIPT_AI_REPEAT=1: ask the same question again on the same engine (the app reuses the working memory
+    // between questions); the answer must be identical to the first.
+    int code = r.error.empty() ? 0 : 1;
+    if (getenv("RECEIPT_AI_REPEAT") && r.error.empty()) {
+        auto r2 = receipt_ai::generate(lr.engine, req, [](int, int) { return true; });
+        bool same = r2.error.empty() && r2.text == r.text;
+        fprintf(stderr, "reuse=%s encode=%.1fs write=%.1fs\n", same ? "same" : "DIFFERENT", r2.encode_seconds, r2.generate_seconds);
+        if (!same) code = 3;
+    }
     receipt_ai::free_engine(lr.engine);
-    return r.error.empty() ? 0 : 1;
+    return code;
 }

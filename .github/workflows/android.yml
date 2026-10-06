@@ -282,7 +282,9 @@ jobs:
           # Whole pages with Italian instructions were measured equal to English (2026-09-30); only the short
           # questions are compared in both languages now, to keep this job well inside its time limit.
           runrow() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/row-$2.ppm ai-run/row-$2.txt ai-run/row.gbnf > ai-run/rowanswer-$1-$2.json 2> ai-run/row-$1-$2.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/row-$1-$2.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/row-$1-$2.log; }
-          runrow 2b filetto
+          RECEIPT_AI_REPEAT=1 runrow 2b filetto
+          grep -h 'reuse=' ai-run/row-2b-filetto.log || true
+          if grep -q 'reuse=DIFFERENT' ai-run/row-2b-filetto.log; then echo "::error::the second question on the same engine answered differently"; exit 1; fi
           runrow 2b candeggina
           runrow 4b filetto
           runrow 4b candeggina
