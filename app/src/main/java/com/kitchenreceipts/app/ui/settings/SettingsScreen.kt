@@ -221,6 +221,9 @@ fun SettingsScreen(onBack: () -> Unit) {
             })
             BigButton(stringResource(R.string.problems_clear), Icons.Filled.Delete, primary = false, enabled = problemCount > 0, onClick = { askClearProblems = true })
 
+            // ---------------------------------------------------------------- FUNCTION X (temporary, remove with functionx/)
+            com.kitchenreceipts.app.functionx.FunctionXSection(c)
+
             // ---------------------------------------------------------------- operation log
             SectionTitle(stringResource(R.string.operation_log))
             Text(stringResource(R.string.operation_log_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)

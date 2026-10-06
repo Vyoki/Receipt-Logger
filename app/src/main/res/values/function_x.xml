@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FUNCTION X (temporary): delete this file together with app/.../functionx/ to remove it. -->
+<resources>
+    <string name="function_x_title">Function X: export for Claude</string>
+    <string name="function_x_hint">One text file with your saved documents (what you saved and what the app read), the documents corrected by hand and the log, to send to Claude so the reading can be improved. It contains your documents\' data (suppliers, amounts): it is created on this phone and leaves only where you choose to share it.</string>
+    <string name="function_x_button">Export for Claude</string>
+    <string name="function_x_failed">The file could not be created. Nothing was sent.</string>
+</resources>
