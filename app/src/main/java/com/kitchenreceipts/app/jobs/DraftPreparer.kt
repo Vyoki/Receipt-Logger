@@ -46,6 +46,8 @@ class DraftPreparer(
     private val settings: AppSettings,
     private val log: AppLog,
     private val learning: LearningStore? = null,
+    /** Public knowledge on the phone (known suppliers by VAT number). */
+    private val knowledge: () -> com.kitchenreceipts.core.KnowledgePack = { com.kitchenreceipts.core.KnowledgePack.EMPTY },
 ) {
 
     suspend fun prepare(pending: PendingImport): PreparedDraft {
@@ -66,6 +68,13 @@ class DraftPreparer(
             )
             val usual = recognition.usualVatBasis
             if (usual != null && draft.vatBasis == VatBasis.UNKNOWN) draft = draft.copy(vatBasis = usual, vatBasisUncertain = true)
+        } else {
+            // A supplier not yet saved on this phone, but in the knowledge pack: named by its VAT number. Sure when
+            // the name read agrees; otherwise shown for a glance (the number could be another company's).
+            runCatching { knowledge().supplierOf(pending.ocrText, settings.ownVatNumber.ifBlank { null }, ocrSellerRaw) }.getOrNull()?.let { f ->
+                draft = draft.copy(seller = DraftField(f.supplier.name, uncertain = !f.agreesWithReading, source = draft.seller.source ?: draft.seller.text))
+                log.event("SUPPLIER_FROM_PACK", "agrees" to f.agreesWithReading)
+            }
         }
         // The line amounts prove whether prices include VAT: no need to ask.
         if (draft.vatBasis == VatBasis.UNKNOWN || draft.vatBasisUncertain) {

@@ -70,12 +70,24 @@ class AppContainer(context: Context) {
     val appScope = CoroutineScope(SupervisorJob())
 
     val notifier = ReadingNotifier(context)
-    val preparer = DraftPreparer(repository, settings, log, learning)
+    /** Public knowledge that comes into the phone (known suppliers); see the network setting. */
+    val knowledge = com.kitchenreceipts.app.knowledge.KnowledgeStore(context, settings, log)
+    /** Product lookup online (Open Food Facts): only product words go out, only when the operator allows it. */
+    val productLookup = com.kitchenreceipts.app.knowledge.ProductLookupClient(settings, log)
+    val preparer = DraftPreparer(repository, settings, log, learning) { knowledge.pack.value }
 
     /** Documents read in the background, one after another; survives restarts. */
     val importQueue = ImportQueue(
         context, appScope, importProcessor, ocrEngine, settings, ::aiUse, preparer, fileStore, log, notifier,
     )
+
+    /** The OCR reading of every saved document, and the re-check of all of them after each update. */
+    val readings = com.kitchenreceipts.app.diagnostics.ReadingArchive(context)
+    val readingChecker = com.kitchenreceipts.app.diagnostics.ReadingChecker(context, repository, readings, settings, problems, log)
+
+    init {
+        importQueue.onAutoSaved = { id, pending -> readings.save(id, pending.rawLines) }
+    }
 
     /** A screen to open, e.g. from a notification tap ("review/<job>", "document/<id>"). */
     val pendingRoute = MutableStateFlow<String?>(null)
@@ -112,6 +124,17 @@ class KitchenReceiptsApp : Application() {
         runCatching { c.importQueue.restore() }.onFailure { c.log.error("restoreQueue", it) }
         container.appScope.launch {
             runCatching { container.repository.cleanupOrphanFiles(c.importQueue.filePaths()) }
+        }
+        // A new version reads every saved document again and compares (on the phone; see ReadingChecker).
+        if (c.readingChecker.due()) container.appScope.launch {
+            kotlinx.coroutines.delay(20_000) // after start-up and any pending reading have had the phone first
+            while (c.importQueue.busy) kotlinx.coroutines.delay(30_000)
+            c.readingChecker.run()
+        }
+        // Automatic network mode: the public knowledge pack, about once a week, on Wi-Fi only.
+        if (c.knowledge.autoCheckDue()) container.appScope.launch {
+            kotlinx.coroutines.delay(10_000)
+            runCatching { c.knowledge.download() }
         }
         if (!c.settings.categoriesRegrouped) {
             container.appScope.launch {

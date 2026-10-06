@@ -74,6 +74,9 @@ class ImportQueue(
     private var currentId: String? = null
     @Volatile private var started = false
 
+    /** Called when a document read in the background was saved without review (keeps its reading, see ReadingArchive). */
+    @Volatile var onAutoSaved: (Long, PendingImport) -> Unit = { _, _ -> }
+
     /** True while something is still to be read (the foreground service stays up meanwhile). */
     val busy: Boolean get() = _jobs.value.any { it.status == JobStatus.QUEUED || it.status == JobStatus.READING }
 
@@ -171,6 +174,7 @@ class ImportQueue(
             val prepared = preparer.prepare(pending)
             val d = prepared.draft
             val savedId = runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()
+            savedId?.let { id -> runCatching { onAutoSaved(id, pending) } }
             j = (job(j.id) ?: return).copy(
                 status = if (savedId != null) JobStatus.SAVED else JobStatus.READY,
                 pending = if (savedId != null) null else pending,

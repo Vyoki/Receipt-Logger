@@ -81,6 +81,17 @@ jobs:
           set -o pipefail
           ./gradlew :app:assembleDebug --stacktrace 2>&1 | tee build.log
 
+      - name: Check what the app may connect to
+        shell: bash
+        run: |
+          # The merged manifest of the real APK: Google's usage-statistics sender must be gone, and the only
+          # permissions about the network are the two the network setting needs.
+          aapt2=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)aapt2
+          m=$("$aapt2" dump xmltree --file AndroidManifest.xml app/build/outputs/apk/debug/app-debug.apk)
+          if grep -q "TransportBackendDiscovery" <<<"$m"; then echo "::error::usage-statistics sender is in the APK"; exit 1; fi
+          grep -o 'android.permission.[A-Z_]*' <<<"$m" | sort -u
+          if grep -q "ACCESS_WIFI_STATE" <<<"$m"; then echo "::error::unexpected Wi-Fi permission"; exit 1; fi
+
       - name: Compile instrumented tests
         shell: bash
         run: |

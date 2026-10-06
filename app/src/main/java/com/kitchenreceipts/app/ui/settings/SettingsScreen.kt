@@ -173,6 +173,9 @@ fun SettingsScreen(onBack: () -> Unit) {
             // ---------------------------------------------------------------- AI reader
             AiSettingsSection(c)
 
+            // ---------------------------------------------------------------- network (information comes in only)
+            NetworkSettingsSection(c)
+
             // ---------------------------------------------------------------- privacy & security
             SectionTitle(stringResource(R.string.privacy_security))
             Panel {
@@ -198,6 +201,9 @@ fun SettingsScreen(onBack: () -> Unit) {
                 (context as? MainActivity)?.applySecureScreen()
                 c.log.event("SETTINGS", "blockScreenshots" to on)
             }
+
+            // ---------------------------------------------------------------- saved documents read again
+            ReadingCheckSection(c)
 
             // ---------------------------------------------------------------- documents corrected by hand
             SectionTitle(stringResource(R.string.problems_title))

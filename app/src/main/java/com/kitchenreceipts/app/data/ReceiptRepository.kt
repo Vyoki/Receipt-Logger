@@ -564,7 +564,27 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             Inventory.report(purchases, period, conv)
         }.flowOn(Dispatchers.Default)
 
-    /** The owner's report for [period], from everything saved (computed on the phone). */
+    /** One saved document as the operator confirmed it, for reading it again (see ReadingChecker). */
+    data class CheckDocument(
+        val id: Long, val label: String, val mimeType: String, val ocrText: String?, val confirmed: com.kitchenreceipts.core.ReadingCheck.Confirmed,
+    )
+
+    suspend fun readingCheckDocuments(): List<CheckDocument> = withContext(Dispatchers.Default) {
+        val names = sellers.allOnce().associate { it.id to it.name }
+        val lines = documents.allItemsOnce().groupBy { it.documentId }
+        documents.allDocumentsOnce().map { d ->
+            CheckDocument(
+                d.id,
+                "${names[d.sellerId] ?: "?"} ${d.documentNumber.orEmpty()} ${d.documentDate?.let(com.kitchenreceipts.core.ItalianDates::format).orEmpty()}".trim(),
+                d.mimeType, d.ocrText,
+                com.kitchenreceipts.core.ReadingCheck.Confirmed(
+                    d.documentDate, d.documentNumber, d.totalCents, d.subtotalCents, d.vatCents,
+                    lines[d.id].orEmpty().mapNotNull { it.lineTotalCents },
+                ),
+            )
+        }
+    }
+
     /** Everything recorded, for the office copy (see core OfficeExport). Files (photos, PDFs, XML) are not included. */
     suspend fun officeSnapshot(business: String?): OfficeExport.Snapshot = withContext(Dispatchers.Default) {
         val lines = documents.allItemsOnce().groupBy { it.documentId }

@@ -8,7 +8,7 @@
         which needs no CAMERA permission as long as this app does not declare it.
       - Images and PDFs are imported through the system document picker (Storage Access Framework),
         which needs no storage permission.
-      - No INTERNET permission: OCR runs on the device with the bundled ML Kit model.
+      - Reading (OCR, AI) runs on the device with bundled models: it never needs the internet.
     -->
     <uses-feature android:name="android.hardware.camera" android:required="false" />
 
@@ -22,12 +22,17 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <!--
-      Security: what is on this phone stays on this phone.
-      Libraries (e.g. ML Kit usage statistics) may ask for network access through manifest merging;
-      these lines strip it, so Android itself blocks every network connection from this app.
+      Security: nothing about the documents ever leaves this phone. Information may only come IN, and only as
+      the operator chose in Settings > Network (Offline / Hybrid / Automatic):
+      - INTERNET: used only to download the public knowledge pack (one file, the same for everyone) and, if the
+        operator turns it on, to look up product words in a public product database. In Offline mode the app
+        makes no connection at all.
+      - ACCESS_NETWORK_STATE: Automatic mode downloads on Wi-Fi only.
+      - Google's usage-statistics sender, which ML Kit brings in, is removed below: with internet allowed it would
+        otherwise report usage to Google. (Without its backend list the statistics are dropped on the phone.)
     -->
-    <uses-permission android:name="android.permission.INTERNET" tools:node="remove" />
-    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" tools:node="remove" />
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" tools:node="remove" />
 
     <!-- Lets us check whether a camera app is installed (package visibility, Android 11+). -->
@@ -96,6 +101,11 @@
             android:name=".jobs.ReadingService"
             android:exported="false"
             android:foregroundServiceType="dataSync" />
+
+        <!-- Google usage statistics (ML Kit): removed, see the permissions above. -->
+        <service
+            android:name="com.google.android.datatransport.runtime.backends.TransportBackendDiscovery"
+            tools:node="remove" />
 
         <provider
             android:name="androidx.core.content.FileProvider"
