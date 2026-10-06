@@ -52,7 +52,10 @@ object Routes {
 
 @Composable
 fun AppNavHost(nav: NavHostController = rememberNavController()) {
-    val back: () -> Unit = { nav.popBackStack() }
+    // A fast double tap pops once: only the screen on top (fully shown) may go back.
+    val back: () -> Unit = {
+        if (nav.currentBackStackEntry?.lifecycle?.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) nav.popBackStack()
+    }
     // Screens opened from a notification ("ready to check", "saved").
     val c = appContainer()
     val route by c.pendingRoute.collectAsState()

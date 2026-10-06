@@ -38,6 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -267,10 +268,18 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     /** Pre-fills products the user already assigned for this seller + description. */
     suspend fun rememberedProduct(sellerName: String, description: String, itemCode: String? = null): Long? {
         val seller = sellers.findByNormalizedSuspend(normalizeSeller(sellerName)) ?: return null
-        // The supplier's article code first: it survives small misreadings of the description.
-        itemCode?.let { code -> products.findAlias(seller.id, ProductMatching.codeKey(code))?.let { return it } }
-        return products.findAlias(seller.id, ProductMatching.aliasKey(description))
+        return rememberedProduct(seller.id, description, itemCode)
     }
+
+    private suspend fun rememberedProduct(sellerId: Long, description: String, itemCode: String?): Long? {
+        // The supplier's article code first: it survives small misreadings of the description.
+        itemCode?.let { code -> products.findAlias(sellerId, ProductMatching.codeKey(code))?.let { return it } }
+        return products.findAlias(sellerId, ProductMatching.aliasKey(description))
+    }
+
+    /** The purchases of [ids] only (not the whole history), in the history's order. */
+    private suspend fun purchasesOf(ids: Collection<Long>): List<PurchaseRow> =
+        ids.distinct().chunked(900).flatMap { documents.purchasesOfProductsOnce(it) }
 
     /** Deletes stored originals that belong to no document; [keep] = files still used elsewhere (being read). */
     suspend fun cleanupOrphanFiles(keep: Set<String> = emptySet()) = withContext(Dispatchers.IO) {
@@ -386,10 +395,11 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         rows.groupBy { it.sellerId to ProductMatching.aliasKey(it.originalDescription) }
             .map { (key, g) -> UnassignedGroup(key.first, g.first().sellerName, g.first().originalDescription, key.second, g.map { it.lineItemId }) }
             .sortedWith(compareByDescending<UnassignedGroup> { it.lineItemIds.size }.thenBy { it.sellerName })
-    }
+    }.flowOn(Dispatchers.Default)
 
     suspend fun assignGroup(group: UnassignedGroup, productId: Long) = db.withTransaction {
-        products.assign(group.lineItemIds, productId)
+        // SQLite takes at most 999 values per statement: a big group goes in parts.
+        group.lineItemIds.chunked(900).forEach { products.assign(it, productId) }
         products.upsertAliasSuspend(ProductAliasEntity(sellerId = group.sellerId, aliasKey = group.aliasKey, productId = productId))
     }
 
@@ -401,7 +411,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                 val rows = byProduct[p.id].orEmpty()
                 ProductWithSummary(p, summarize(rows, convByProduct[p.id].orEmpty()), rows.size)
             }
-        }
+        }.flowOn(Dispatchers.Default)
 
     fun summarize(rows: List<PurchaseRow>, conversions: List<UnitConversionEntity>): CostSummary =
         CostCalculator.summarize(
@@ -418,11 +428,14 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
      * name", so the better rules apply to them too (e.g. every biscuit in one category). Run once after the update.
      */
     suspend fun regroupGuessedCategories(): Int = withContext(Dispatchers.IO) {
-        var n = 0
-        for (p in products.allOnce()) {
-            if (Categories.wasGuessedByOldRules(p.name, p.category)) { products.setCategory(p.id, null); n++ }
+        // One transaction: the product lists are refreshed once, not once per product.
+        db.withTransaction {
+            var n = 0
+            for (p in products.allOnce()) {
+                if (Categories.wasGuessedByOldRules(p.name, p.category)) { products.setCategory(p.id, null); n++ }
+            }
+            n
         }
-        n
     }
 
     /**
@@ -455,9 +468,11 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     suspend fun autoAssign(sellerName: String, items: List<LineItemDraft>, createNew: Boolean): List<LineItemDraft> {
         val candidates = productCandidates()
         val names = candidates.associate { it.id to it.name }
+        // The supplier is looked up once for the whole document.
+        val sellerId = if (sellerName.isNotBlank()) sellers.findByNormalizedSuspend(normalizeSeller(sellerName))?.id else null
         return items.map { item ->
             if (item.productId != null || item.description.text.isBlank()) return@map item
-            val remembered = if (sellerName.isNotBlank()) rememberedProduct(sellerName, item.description.text, item.itemCode) else null
+            val remembered = sellerId?.let { rememberedProduct(it, item.description.text, item.itemCode) }
             if (remembered != null && names.containsKey(remembered)) {
                 return@map item.copy(productId = remembered, productName = names[remembered], productSource = ProductSource.REMEMBERED, newProductName = null)
             }
@@ -488,7 +503,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     suspend fun fixSwappedQuantities(items: List<LineItemDraft>): List<LineItemDraft> {
         val ids = items.mapNotNull { it.productId }.toSet()
         if (ids.isEmpty()) return items
-        val last = documents.allPurchasesOnce().filter { it.productId in ids }
+        val last = purchasesOf(ids)
             .groupBy { it.productId!! }
             .mapValues { (_, rows) -> rows.mapNotNull { r -> PriceWatch.unitCost(r.toPricePoint())?.let { r.unit to it.second } } }
         return items.map { item ->
@@ -519,8 +534,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         val linked = items.filter { it.productId != null }
         if (linked.isEmpty()) return emptyList()
         val ids = linked.mapNotNull { it.productId }.toSet()
-        val history = documents.allPurchasesOnce()
-            .filter { it.productId in ids && it.documentId != excludeDocumentId }
+        val history = purchasesOf(ids)
+            .filter { it.documentId != excludeDocumentId }
             .map { it.toPricePoint() }
         return linked.mapIndexedNotNull { i, item ->
             val point = PricePoint(
@@ -536,14 +551,19 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
 
     /** Price changes on a saved document. */
     suspend fun priceChangesForDocument(documentId: Long): List<PriceChange> {
-        val all = documents.allPurchasesOnce().filter { it.productId != null }
-        val ids = all.filter { it.documentId == documentId }.mapNotNull { it.productId }.toSet()
-        val history = all.filter { it.productId in ids }.map { it.toPricePoint() }
+        val ids = documents.productIdsOfDocument(documentId).toSet()
+        if (ids.isEmpty()) return emptyList()
+        val history = purchasesOf(ids).map { it.toPricePoint() }
         return history.filter { it.documentId == documentId }.mapNotNull { PriceWatch.compare(it, history) }
     }
 
     /** Every price change in the purchase history, most recent first. */
-    fun priceHistory(): Flow<List<PriceChange>> = documents.allPurchases().map { rows ->
+    fun priceHistory(): Flow<List<PriceChange>> = documents.allPurchases().distinctUntilChanged().map { rows ->
+        PriceWatch.history(rows.filter { it.productId != null }.map { it.toPricePoint() })
+    }.flowOn(Dispatchers.Default)
+
+    /** The price changes of one product (only its own purchases are compared, so the result is the same). */
+    fun priceHistoryForProduct(productId: Long): Flow<List<PriceChange>> = documents.purchasesForProduct(productId).distinctUntilChanged().map { rows ->
         PriceWatch.history(rows.filter { it.productId != null }.map { it.toPricePoint() })
     }.flowOn(Dispatchers.Default)
 
@@ -569,7 +589,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         val id: Long, val label: String, val mimeType: String, val ocrText: String?, val confirmed: com.kitchenreceipts.core.ReadingCheck.Confirmed,
     )
 
-    suspend fun readingCheckDocuments(): List<CheckDocument> = withContext(Dispatchers.Default) {
+    suspend fun readingCheckDocuments(): List<CheckDocument> = db.withTransaction {
         val names = sellers.allOnce().associate { it.id to it.name }
         val lines = documents.allItemsOnce().groupBy { it.documentId }
         documents.allDocumentsOnce().map { d ->
@@ -586,7 +606,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     }
 
     /** Everything recorded, for the office copy (see core OfficeExport). Files (photos, PDFs, XML) are not included. */
-    suspend fun officeSnapshot(business: String?): OfficeExport.Snapshot = withContext(Dispatchers.Default) {
+    suspend fun officeSnapshot(business: String?): OfficeExport.Snapshot = db.withTransaction {
+        // One transaction: a document saved meanwhile is either fully in the copy or not at all.
         val lines = documents.allItemsOnce().groupBy { it.documentId }
         OfficeExport.Snapshot(
             business = business?.ifBlank { null },

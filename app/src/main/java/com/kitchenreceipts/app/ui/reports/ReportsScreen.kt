@@ -53,6 +53,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -63,6 +64,7 @@ enum class ExportKind { MONTHLY, PURCHASES }
 
 class ReportsViewModel(private val repo: ReceiptRepository, private val log: com.kitchenreceipts.app.diagnostics.AppLog) : ViewModel() {
     val rows: StateFlow<List<MonthlySellerRow>?> = repo.reportDocuments().map { Reports.monthlyBySeller(it) }
+        .flowOn(Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     /** null = idle; true/false = last export result. */
@@ -70,9 +72,11 @@ class ReportsViewModel(private val repo: ReceiptRepository, private val log: com
 
     fun export(uri: Uri, kind: ExportKind, format: CsvFormat, resolver: ContentResolver) = viewModelScope.launch {
         val ok = try {
-            val csv = when (kind) {
-                ExportKind.MONTHLY -> ReportCsv.monthlySeller(rows.value ?: Reports.monthlyBySeller(emptyList()), format)
-                ExportKind.PURCHASES -> ReportCsv.purchases(repo.purchaseExportRows(), format)
+            val csv = withContext(Dispatchers.Default) {
+                when (kind) {
+                    ExportKind.MONTHLY -> ReportCsv.monthlySeller(rows.value ?: Reports.monthlyBySeller(emptyList()), format)
+                    ExportKind.PURCHASES -> ReportCsv.purchases(repo.purchaseExportRows(), format)
+                }
             }
             withContext(Dispatchers.IO) {
                 resolver.openOutputStream(uri, "wt")?.use { it.write(csv.toByteArray(Charsets.UTF_8)) } ?: error("Cannot write")

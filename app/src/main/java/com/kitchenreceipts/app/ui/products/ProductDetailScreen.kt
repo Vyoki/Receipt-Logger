@@ -82,6 +82,7 @@ import com.kitchenreceipts.core.Units
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -108,6 +109,7 @@ class ProductDetailViewModel(
         repo.conversionsForProduct(id),
         repo.aliasesForProduct(id),
     ) { p, purchases, conv, aliases -> ProductDetail(p, purchases, repo.summarize(purchases, conv), conv, aliases) }
+        .flowOn(kotlinx.coroutines.Dispatchers.Default)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
 
     fun rename(name: String, onTaken: () -> Unit) = viewModelScope.launch {
@@ -118,7 +120,8 @@ class ProductDetailViewModel(
     fun deleteConversion(cid: Long) = viewModelScope.launch { repo.deleteConversion(cid) }
     fun deleteAlias(aid: Long) = viewModelScope.launch { repo.deleteAlias(aid) }
     fun setCategory(c: Category) = viewModelScope.launch {
-        detail.value?.product?.name?.let { name -> runCatching { learnCategory(name, c) } }
+        // Learning rewrites a file on the phone: not on the screen's thread.
+        detail.value?.product?.name?.let { name -> kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { runCatching { learnCategory(name, c) } } }
         repo.setCategory(id, c)
     }
     fun mergeInto(target: Long, done: () -> Unit) = viewModelScope.launch { repo.mergeProducts(id, target); done() }
@@ -130,7 +133,7 @@ class ProductDetailViewModel(
 
     val otherProducts: StateFlow<List<ProductEntity>> = repo.products().map { list -> list.filter { it.id != id } }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-    val priceChanges: StateFlow<List<PriceChange>> = repo.priceHistory().map { list -> list.filter { it.productId == id } }
+    val priceChanges: StateFlow<List<PriceChange>> = repo.priceHistoryForProduct(id)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
 

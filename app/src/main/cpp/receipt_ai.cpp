@@ -18,6 +18,10 @@ struct Engine {
     int n_threads = 4;
     int n_threads_batch = 4;
     std::atomic<bool> cancel{false};
+    // The working memory of the last question, reused by the next one of the same size (creating it allocates and
+    // clears hundreds of MB each time). Emptied before every question, so each still starts from nothing.
+    llama_context * lctx = nullptr;
+    int lctx_n_ctx = 0;
 };
 
 void cancel(Engine * e) { if (e) e->cancel = true; }
@@ -59,6 +63,7 @@ LoadResult load(const std::string & backend_dir, const std::string & model_path,
 
 void free_engine(Engine * e) {
     if (!e) return;
+    if (e->lctx) llama_free(e->lctx);
     if (e->mtmd) mtmd_free(e->mtmd);
     if (e->model) llama_model_free(e->model);
     delete e;
@@ -93,7 +98,16 @@ static bool abort_cb(void * data) {
     return static_cast<std::atomic<bool> *>(data)->load();
 }
 
+static Result generate_once(Engine * e, const Request & req, const std::function<bool(int, int)> & progress);
+
 Result generate(Engine * e, const Request & req, const std::function<bool(int, int)> & progress) {
+    Result r = generate_once(e, req, progress);
+    // After a stop or an error the working memory is not trusted again: the next question makes a new one.
+    if ((r.cancelled || !r.error.empty()) && e->lctx) { llama_free(e->lctx); e->lctx = nullptr; e->lctx_n_ctx = 0; }
+    return r;
+}
+
+static Result generate_once(Engine * e, const Request & req, const std::function<bool(int, int)> & progress) {
     Result r;
     using clock = std::chrono::steady_clock;
     e->cancel = false;
@@ -106,14 +120,21 @@ Result generate(Engine * e, const Request & req, const std::function<bool(int, i
     cp.n_threads_batch = e->n_threads_batch;
     cp.abort_callback = abort_cb;
     cp.abort_callback_data = &e->cancel;
-    llama_context * lctx = llama_init_from_model(e->model, cp);
-    if (!lctx) { r.error = "Not enough memory for the AI reader"; return r; }
+    if (e->lctx && e->lctx_n_ctx != req.n_ctx) { llama_free(e->lctx); e->lctx = nullptr; e->lctx_n_ctx = 0; }
+    if (!e->lctx) {
+        e->lctx = llama_init_from_model(e->model, cp);
+        if (!e->lctx) { r.error = "Not enough memory for the AI reader"; return r; }
+        e->lctx_n_ctx = req.n_ctx;
+    } else {
+        llama_memory_clear(llama_get_memory(e->lctx), true); // nothing of the previous question remains
+    }
+    llama_context * lctx = e->lctx;
 
     const llama_vocab * vocab = llama_model_get_vocab(e->model);
     llama_sampler * smpl = llama_sampler_chain_init(llama_sampler_chain_default_params());
     if (!req.grammar.empty()) {
         llama_sampler * g = llama_sampler_init_grammar(vocab, req.grammar.c_str(), "root");
-        if (!g) { llama_sampler_free(smpl); llama_free(lctx); r.error = "Invalid grammar"; return r; }
+        if (!g) { llama_sampler_free(smpl); r.error = "Invalid grammar"; return r; }
         llama_sampler_chain_add(smpl, g);
     }
     llama_sampler_chain_add(smpl, llama_sampler_init_greedy());
@@ -128,7 +149,7 @@ Result generate(Engine * e, const Request & req, const std::function<bool(int, i
         mtmd_input_chunks_free(chunks);
         mtmd_bitmap_free(bmp);
         llama_sampler_free(smpl);
-        llama_free(lctx);
+        // The context stays with the engine for the next question (freed with the engine).
     };
 
     if (mtmd_tokenize(e->mtmd, chunks, &text, bitmaps, 1) != 0) {

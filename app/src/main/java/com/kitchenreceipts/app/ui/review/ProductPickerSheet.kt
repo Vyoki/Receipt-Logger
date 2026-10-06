@@ -58,9 +58,12 @@ fun ProductPickerSheet(
         ProductMatching.suggest(description, products.map { ProductRef(it.id, it.name) })
             .mapNotNull { byId[it.product.id] }
     }
+    // Each product's search key once per list, not on every keystroke.
+    val keyed = remember(products) { products.map { it to ProductMatching.aliasKey(it.name) } }
+    val proposed = remember(description) { ProductMatching.proposeName(description) }
     val key = ProductMatching.aliasKey(query)
-    val filtered = products.filter { key.isBlank() || ProductMatching.aliasKey(it.name).contains(key) }
-    val exact = products.firstOrNull { ProductMatching.aliasKey(it.name) == key }
+    val filtered = remember(keyed, key) { keyed.filter { (_, k) -> key.isBlank() || k.contains(key) }.map { it.first } }
+    val exact = remember(keyed, key) { keyed.firstOrNull { (_, k) -> k == key }?.first }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 16.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -80,7 +83,7 @@ fun ProductPickerSheet(
                 }
             }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
-                if (suggestions.isNotEmpty() && query == ProductMatching.proposeName(description)) {
+                if (suggestions.isNotEmpty() && query == proposed) {
                     item { Text(stringResource(R.string.similar_products), style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(vertical = 8.dp)) }
                     items(suggestions, key = { "s${it.id}" }) { p -> ProductRow(p, p.id == currentProductId) { onPick(p) } }
                     item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }

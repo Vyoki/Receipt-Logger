@@ -209,16 +209,17 @@ fun SettingsScreen(onBack: () -> Unit) {
             SectionTitle(stringResource(R.string.problems_title))
             Text(stringResource(R.string.problems_hint), style = MaterialTheme.typography.bodySmall)
             Text(stringResource(R.string.problems_count, problemCount), style = MaterialTheme.typography.bodyMedium)
-            BigButton(stringResource(R.string.problems_send), Icons.Filled.Share, enabled = problemCount > 0, onClick = {
+            BigButton(stringResource(R.string.problems_send), Icons.Filled.Share, enabled = problemCount > 0, onClick = { scope.launch {
                 c.log.event("PROBLEMS_SHARED", "documents" to problemCount)
-                val uri = c.problems.exportForSharing(runCatching { c.log.text() }.getOrNull())
+                // Reads up to 300 files and the log: not on the screen's thread.
+                val uri = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { c.problems.exportForSharing(runCatching { c.log.text() }.getOrNull()) }
                 val send = Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
                     .putExtra(Intent.EXTRA_STREAM, uri)
                     .putExtra(Intent.EXTRA_SUBJECT, "Kitchen Receipts – documents corrected by hand")
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 context.startActivity(Intent.createChooser(send, shareTitle))
-            })
+            } })
             BigButton(stringResource(R.string.problems_clear), Icons.Filled.Delete, primary = false, enabled = problemCount > 0, onClick = { askClearProblems = true })
 
             // ---------------------------------------------------------------- FUNCTION X (temporary, remove with functionx/)
@@ -241,16 +242,16 @@ fun SettingsScreen(onBack: () -> Unit) {
                 stringResource(R.string.log_size, Formatter.formatShortFileSize(context, logSize)),
                 style = MaterialTheme.typography.bodyMedium,
             )
-            BigButton(stringResource(R.string.share_log), Icons.Filled.Share, onClick = {
+            BigButton(stringResource(R.string.share_log), Icons.Filled.Share, onClick = { scope.launch {
                 c.log.event("LOG_SHARED")
-                val uri = c.log.exportForSharing()
+                val uri = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) { c.log.exportForSharing() }
                 val send = Intent(Intent.ACTION_SEND)
                     .setType("text/plain")
                     .putExtra(Intent.EXTRA_STREAM, uri)
                     .putExtra(Intent.EXTRA_SUBJECT, "Kitchen Receipts log")
                     .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 context.startActivity(Intent.createChooser(send, shareTitle))
-            })
+            } })
             BigButton(stringResource(R.string.clear_log), Icons.Filled.Delete, primary = false, onClick = { askClear = true })
         }
     }

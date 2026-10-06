@@ -157,7 +157,7 @@ fun DocumentDetailScreen(
                     if (priceChanges.isNotEmpty()) {
                         item("prices") { PriceChangesCard(priceChanges, onOpenProduct = onOpenProduct) }
                     }
-                    item {
+                    item("pages") {
                         Panel {
                             DocumentPages(d.filePath, d.mimeType, d.pageCount, Modifier.fillMaxWidth().height(300.dp), onClick = onViewOriginal)
                             Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -186,7 +186,7 @@ fun DocumentDetailScreen(
                             }
                         }
                     }
-                    item {
+                    item("summary") {
                         Panel {
                             Column(Modifier.padding(16.dp)) {
                                 KeyValue(stringResource(R.string.seller), doc.sellerName, emphasize = true)
@@ -199,8 +199,8 @@ fun DocumentDetailScreen(
                             }
                         }
                     }
-                    item { SectionTitle(stringResource(R.string.line_items_count, items.size)) }
-                    if (items.isEmpty()) item { EmptyState(stringResource(R.string.no_line_items)) }
+                    item("itemsTitle") { SectionTitle(stringResource(R.string.line_items_count, items.size)) }
+                    if (items.isEmpty()) item("noItems") { EmptyState(stringResource(R.string.no_line_items)) }
                     items(items, key = { it.item.id }) { row -> SavedItemCard(row, d.currency, onOpenProduct) }
                     d.ocrText?.takeIf { it.isNotBlank() }?.let { t -> item("recognised") { RecognisedTextCard(t) } }
                 }

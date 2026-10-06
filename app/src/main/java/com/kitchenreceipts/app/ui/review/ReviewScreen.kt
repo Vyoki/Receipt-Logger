@@ -346,7 +346,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
     pickerFor?.let { key ->
         val item = state.draft.items.firstOrNull { it.key == key }
         if (item == null) {
-            pickerFor = null
+            LaunchedEffect(key) { pickerFor = null } // the line was removed: close the picker after this frame
         } else {
             ProductPickerSheet(
                 description = item.description.text,
@@ -455,11 +455,13 @@ private fun HeaderSection(
 
         HeaderInput(draft, HeaderField.SELLER, R.string.seller, errors, vm)
         // Existing sellers that match what was typed: one tap to use the same spelling.
-        val typed = DuplicateDetector.normalizeSeller(draft.seller.text)
-        val matches = if (typed == null) emptyList() else sellerNames.filter {
-            val n = DuplicateDetector.normalizeSeller(it) ?: ""
-            it != draft.seller.text && (n.contains(typed) || typed.contains(n)) && n.isNotEmpty()
-        }.take(3)
+        val matches = remember(draft.seller.text, sellerNames) {
+            val typed = DuplicateDetector.normalizeSeller(draft.seller.text)
+            if (typed == null) emptyList() else sellerNames.filter {
+                val n = DuplicateDetector.normalizeSeller(it) ?: ""
+                it != draft.seller.text && (n.contains(typed) || typed.contains(n)) && n.isNotEmpty()
+            }.take(3)
+        }
         if (matches.isNotEmpty()) {
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 matches.forEach { name -> AssistChip(onClick = { vm.setHeader(HeaderField.SELLER, name) }, label = { Text(name) }) }

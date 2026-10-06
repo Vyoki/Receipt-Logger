@@ -140,7 +140,7 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
                     Text(stringResource(R.string.family_suggestions_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
                 }
                 val names = products.associate { it.id to it.name }
-                items(suggestions.take(5), key = { "s${it.name}" }) { s ->
+                items(suggestions.take(5), key = { "s${it.productIds.firstOrNull()}-${it.name}" }) { s ->
                     FamilySuggestionCard(s, names, onAccept = { vm.acceptFamily(s) }, onDismiss = { vm.refuseFamily(s) })
                 }
             }

@@ -43,7 +43,14 @@ class ReadingNotifier(private val context: Context) {
         }
     }
 
-    private fun localized(): Context = AppSettings.wrapWithLanguage(context)
+    /** The app's language, made once per language (the progress notification is updated every second). */
+    @Volatile private var cached: Pair<String?, Context>? = null
+
+    private fun localized(): Context {
+        val lang = context.getSharedPreferences(AppSettings.FILE, Context.MODE_PRIVATE).getString("language", null)
+        cached?.let { (l, c) -> if (l == lang) return c }
+        return AppSettings.wrapWithLanguage(context).also { cached = lang to it }
+    }
 
     private fun openIntent(route: String?, requestCode: Int): PendingIntent {
         val intent = Intent(context, MainActivity::class.java)

@@ -58,7 +58,7 @@ fun AiSettingsSection(c: AppContainer) {
     var message by remember { mutableStateOf<String?>(null) }
     var askRemove by remember { mutableStateOf(false) }
     var testing by remember { mutableStateOf(false) }
-    val support = remember { store.deviceSupport(option) }
+    val support = remember(option) { store.deviceSupport(option) }
     val noBrowser = stringResource(R.string.no_browser)
     val readyFmt = stringResource(R.string.ai_test_ok)
     val failedFmt = stringResource(R.string.ai_failed)

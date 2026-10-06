@@ -162,7 +162,7 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
     }
     // Photos already on the phone: the system photo picker (no storage permission), several at once.
     val pickImages = rememberLauncherForActivityResult(ActivityResultContracts.PickMultipleVisualMedia(20)) { uris ->
-        if (uris.isNotEmpty()) scope.launch { photos = photos + vm.copyPicked(uris) }
+        if (uris.isNotEmpty()) scope.launch { val added = vm.copyPicked(uris); photos = photos + added }
     }
     val pickPdf = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) vm.importPdf(uri)
