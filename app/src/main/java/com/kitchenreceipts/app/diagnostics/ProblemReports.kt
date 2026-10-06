@@ -37,6 +37,11 @@ class ProblemReports(private val context: Context) {
 
     fun count(): Int = dir.listFiles()?.size ?: 0
 
+    /** The stored problems, oldest first: (file name, document id, text). */
+    fun all(): List<Triple<String, Long?, String>> = dir.listFiles()?.sortedBy { it.name }?.map { f ->
+        Triple(f.name, f.name.substringAfterLast("_doc").removeSuffix(".txt").toLongOrNull(), f.readText())
+    }.orEmpty()
+
     fun clear() { dir.listFiles()?.forEach { it.delete() } }
 
     /** One text file with every stored problem, for the share sheet. */

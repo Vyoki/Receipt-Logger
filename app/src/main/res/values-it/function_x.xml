@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- FUNCTION X (temporanea): elimina questo file insieme a app/.../functionx/ per toglierla. -->
+<resources>
+    <string name="function_x_title">Funzione X: esporta per Claude</string>
+    <string name="function_x_hint">Un unico file di testo con i documenti salvati (ciò che hai salvato e ciò che l\'app ha letto), i documenti corretti a mano e il registro, da inviare a Claude per migliorare la lettura. Contiene i dati dei tuoi documenti (fornitori, importi): viene creato su questo telefono ed esce solo dove scegli di condividerlo.</string>
+    <string name="function_x_button">Esporta per Claude</string>
+    <string name="function_x_failed">Impossibile creare il file. Non è stato inviato nulla.</string>
+</resources>
