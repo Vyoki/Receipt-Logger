@@ -153,7 +153,12 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
     val onPeek: (PeekRequest?) -> Unit = remember { { r -> if (r != null) peekRequest = r else if (enlarged == null) peekRequest = null } }
-    CompositionLocalProvider(LocalFieldPeek provides onPeek) {
+    // A replacement under every value the app could not settle (computed again as the operator edits).
+    val packSellers = com.kitchenreceipts.app.ui.appContainer().knowledge.pack.collectAsStateWithLifecycle().value.suppliers
+    val replacements = remember(state.draft, sellerNames, packSellers) {
+        com.kitchenreceipts.core.Replacements.compute(state.draft, sellerNames + packSellers.map { it.name }, java.time.LocalDate.now())
+    }
+    CompositionLocalProvider(LocalFieldPeek provides onPeek, LocalReplacements provides replacements) {
     Box(Modifier.fillMaxSize()) {
     AppScaffold(
         title = title,
@@ -455,9 +460,10 @@ private fun HeaderSection(
 
         HeaderInput(draft, HeaderField.SELLER, R.string.seller, errors, vm)
         // Existing sellers that match what was typed: one tap to use the same spelling.
-        val matches = remember(draft.seller.text, sellerNames) {
+        // (A doubtful supplier name gets its replacements under the field itself.)
+        val matches = remember(draft.seller.text, draft.seller.uncertain, sellerNames) {
             val typed = DuplicateDetector.normalizeSeller(draft.seller.text)
-            if (typed == null) emptyList() else sellerNames.filter {
+            if (typed == null || draft.seller.uncertain) emptyList() else sellerNames.filter {
                 val n = DuplicateDetector.normalizeSeller(it) ?: ""
                 it != draft.seller.text && (n.contains(typed) || typed.contains(n)) && n.isNotEmpty()
             }.take(3)
@@ -621,9 +627,8 @@ private fun ItemCard(
             val printed = ItalianNumbers.parseCents(item.lineTotal.text)
             val q = ItalianNumbers.parse(item.quantity.text)
             val p = ItalianNumbers.parse(item.unitPrice.text)
-            if (computed != null && printed == null) {
-                AssistChip(onClick = onUseComputed, label = { Text(stringResource(R.string.use_computed_total, ItalianNumbers.formatCents(computed))) })
-            } else if (q != null && p != null && printed != null && !ReceiptParser.matches(q, p, printed)) {
+            // (A missing amount gets qty x price offered under the field itself, with the other replacements.)
+            if (q != null && p != null && printed != null && !ReceiptParser.matches(q, p, printed)) {
                 Text(
                     stringResource(R.string.line_mismatch, ItalianNumbers.formatCents(computed ?: 0)),
                     color = status.uncertainBorder,
@@ -671,6 +676,9 @@ private fun SaveBar(uncertain: Int, errors: Int, saving: Boolean, onSave: () -> 
     } }
 }
 
+/** Replacements of the doubtful values on screen, by field key (see core Replacements). */
+private val LocalReplacements = androidx.compose.runtime.staticCompositionLocalOf<Map<String, List<String>>> { emptyMap() }
+
 @Composable
 private fun HeaderInput(
     draft: DocumentDraft,
@@ -691,6 +699,7 @@ private fun HeaderInput(
         error = errors[f.key]?.let { errorText(it) },
         placeholder = placeholder,
         trailing = trailing,
+        replacements = LocalReplacements.current[com.kitchenreceipts.core.Replacements.header(f.key)].orEmpty(),
     )
 }
 
@@ -717,5 +726,6 @@ private fun ItemInput(
         error = errors[ReviewViewModel.itemErrorKey(item.key, field.key)]?.let { errorText(it) },
         missingHint = missingHint,
         highlightMissing = !optional,
+        replacements = LocalReplacements.current[com.kitchenreceipts.core.Replacements.item(item.key, field.key)].orEmpty(),
     )
 }

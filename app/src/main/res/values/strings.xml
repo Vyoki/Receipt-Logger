@@ -629,4 +629,5 @@
     <string name="lookup_none">Nothing found.</string>
     <string name="lookup_failed">Could not search. Check the connection.</string>
     <string name="lookup_use">Use brand and category</string>
+    <string name="use_replacement">Use %1$s</string>
 </resources>

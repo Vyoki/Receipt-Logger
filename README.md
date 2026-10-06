@@ -353,6 +353,17 @@ The French receipt photos are not readable by Tesseract, so they can only be jud
 
 Each time the operator changes a value before saving, or edits a saved document, the app keeps the list of changes and the full reading report. They are stored on the phone only, up to 300 documents. Settings ▸ *Documents corrected by hand* ▸ **Send the corrected documents** puts them all in one text file for the share sheet, together with the operation log. After a week of normal use, every mistake can then be fixed at once from real evidence.
 
+## 7b-5b. A replacement under every doubtful value
+
+Under every value the app could not settle (orange) or could not find, the review screen offers the best other readings it has; one tap takes one (core `Replacements`). Nothing is applied by itself. Where they come from, most trusted first:
+
+1. the document's own arithmetic from values that are sure: quantity × price = amount (and the quantity or the price from the other two), taxable + VAT = total, the lines' sum;
+2. what the AI read where it differs from the reading, even when it could not be proven (for example the supplier's name spelled "ABC" where the OCR read "ABG"; such a difference now also marks the name for a look);
+3. suppliers already saved on the phone, or in the knowledge pack, whose name is the misread one give or take a letter;
+4. for a date in the future or years ago, the same day and month in a plausible year;
+5. for a line's VAT rate, the rate every other line has;
+6. the arithmetic from values that are themselves doubtful.
+
 ## 7b-6. Saved documents read again after every update
 
 Each saved document keeps its OCR reading (text with positions) on the phone. After an update, the new version reads every saved document again and compares with what the operator saved: date, number, total, taxable, VAT and each line amount. Settings ▸ *Saved documents read again* shows how many values were read as saved, and which documents the new version reads **worse** than the version before; those are also kept with the documents corrected by hand, so they reach the next fix. Documents saved before this existed are read again from their recognised text. E-invoices (XML) are skipped: they are not read from a photo.

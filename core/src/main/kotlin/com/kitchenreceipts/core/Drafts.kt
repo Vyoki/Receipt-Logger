@@ -43,6 +43,8 @@ data class LineItemDraft(
     val choices: List<LineChoice> = emptyList(),
     /** How much one pack holds ("500 g", "1 l"): the quantity counts packs of this size. */
     val packSize: DraftField = DraftField(),
+    /** What the AI read for this line where it differs (see ParsedLineItem.aiRead): offered as replacements. */
+    val aiRead: Map<String, String> = emptyMap(),
 ) {
     /** "4 × 500 g = 2 kg": the total amount the packs hold, or null when there is no size or the unit is not a count. */
     fun packTotal(): Pair<BigDecimal, String>? {
@@ -136,6 +138,7 @@ data class DocumentDraft(
                         itemCode = it.itemCode,
                         choices = it.choices,
                         packSize = f(it.packSize) { s -> s },
+                        aiRead = it.aiRead,
                     )
                 },
                 warnings = p.warnings,

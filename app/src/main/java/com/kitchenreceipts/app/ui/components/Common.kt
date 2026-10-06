@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoFixHigh
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.AlertDialog
@@ -223,6 +224,8 @@ fun ReviewField(
     trailing: (@Composable () -> Unit)? = null,
     /** false for optional fields (expiry, VAT %) whose absence is normal. */
     highlightMissing: Boolean = true,
+    /** Other readings of a doubtful or missing value, offered under the field: one tap takes one (see core Replacements). */
+    replacements: List<String> = emptyList(),
 ) {
     val status = LocalStatusColors.current
     // Where this value was read on the photo, shown while the field is being checked (review screen only).
@@ -267,6 +270,7 @@ fun ReviewField(
         field.isMissing && highlightMissing -> missingHint ?: stringResource(R.string.field_missing)
         else -> null
     }
+    androidx.compose.foundation.layout.Column(modifier) {
     OutlinedTextField(
         value = field.text,
         onValueChange = onChange,
@@ -288,7 +292,7 @@ fun ReviewField(
             trailing != null -> trailing
             else -> null
         },
-        modifier = modifier.fillMaxWidth().let { m ->
+        modifier = Modifier.fillMaxWidth().let { m ->
             if (peek == null) {
                 m
             } else {
@@ -305,6 +309,18 @@ fun ReviewField(
             }
         },
     )
+    // The app's other readings of a value it could not settle: one tap replaces it (and counts as checked).
+    if ((field.uncertain || field.isMissing) && replacements.isNotEmpty()) {
+        replacements.forEach { r ->
+            androidx.compose.material3.AssistChip(
+                onClick = { onChange(r) },
+                label = { Text(stringResource(R.string.use_replacement, r), maxLines = 1, overflow = TextOverflow.Ellipsis) },
+                leadingIcon = { Icon(Icons.Filled.AutoFixHigh, contentDescription = null, tint = status.ok) },
+                modifier = Modifier.heightIn(min = 48.dp),
+            )
+        }
+    }
+    }
 }
 
 @Composable

@@ -617,4 +617,5 @@
     <string name="lookup_none">Nessun risultato.</string>
     <string name="lookup_failed">Ricerca non riuscita. Controlla la connessione.</string>
     <string name="lookup_use">Usa marca e categoria</string>
+    <string name="use_replacement">Usa %1$s</string>
 </resources>
