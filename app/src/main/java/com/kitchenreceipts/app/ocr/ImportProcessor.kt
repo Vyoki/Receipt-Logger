@@ -98,7 +98,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         private var page = -1
         private var bmp: android.graphics.Bitmap? = null
 
-        fun get(i: Int): android.graphics.Bitmap {
+        suspend fun get(i: Int): android.graphics.Bitmap {
             bmp?.let { if (page == i && !it.isRecycled) return it }
             release()
             return renderer.renderForReading(file.relativePath, file.mimeType, i, OCR_LONG_SIDE).also { bmp = it; page = i }
