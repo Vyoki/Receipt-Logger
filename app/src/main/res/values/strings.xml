@@ -208,7 +208,7 @@
     <string name="your_business_name">Business name</string>
     <string name="your_vat_number">Your VAT number (P.IVA, 11 digits)</string>
     <string name="privacy_security">Privacy and security</string>
-    <string name="privacy_statement">Everything stays on this phone. The app has no internet access (Android blocks it), keeps no cloud backup and never sends anything by itself. Data leaves the phone only when you tap Share or Export.</string>
+    <string name="privacy_statement">Nothing about your documents ever leaves this phone by itself. In Offline mode the app makes no connection at all; in Hybrid and Automatic it only downloads public knowledge and, if you turn it on, searches product words. No cloud backup. Data leaves the phone only when you tap Share or Export.</string>
     <string name="app_lock">App lock</string>
     <string name="app_lock_hint">Ask for fingerprint, face or screen-lock PIN when the app is opened, and after 3 minutes away.</string>
     <string name="app_lock_unavailable">Set up a screen lock (PIN, fingerprint or face) in the phone\'s settings first.</string>
@@ -389,7 +389,7 @@
     <string name="ai_download_vision">Download the vision file (mmproj)</string>
     <string name="ai_step3">3. When both downloads have finished</string>
     <string name="ai_load_files">Load the 2 downloaded files</string>
-    <string name="ai_download_note">Files come from huggingface.co (Qwen models, Apache 2.0 licence). The app itself never connects to the internet. After loading, you can delete the files from your Downloads.</string>
+    <string name="ai_download_note">Files come from huggingface.co (Qwen models, Apache 2.0 licence). The app does not download the model itself: you do, in the browser. After loading, you can delete the files from your Downloads.</string>
     <string name="ai_copying">Copying the model into the app…</string>
 
     <!-- owner report -->
@@ -596,4 +596,37 @@
         <item quantity="one">%d document queued for reading</item>
         <item quantity="other">%d documents queued for reading</item>
     </plurals>
+    <string name="network_title">Network</string>
+    <string name="network_offline">Offline</string>
+    <string name="network_offline_hint">The app never connects. New knowledge arrives only with app updates or from a file you open.</string>
+    <string name="network_hybrid">Hybrid</string>
+    <string name="network_hybrid_hint">Connects only when you tap \"Download now\".</string>
+    <string name="network_automatic">Automatic</string>
+    <string name="network_automatic_hint">Also downloads by itself about once a week, on Wi-Fi only.</string>
+    <string name="network_never_out">In every mode, nothing about your documents leaves this phone. A download fetches one public file, the same for everyone.</string>
+    <string name="knowledge_status">Knowledge pack: %1$s · %2$d known suppliers.</string>
+    <string name="knowledge_checked_at">Last looked for online: %1$s.</string>
+    <string name="knowledge_download">Download now</string>
+    <string name="knowledge_open_file">Open a knowledge pack file</string>
+    <string name="knowledge_updated">Knowledge pack updated.</string>
+    <string name="knowledge_current">You already have the latest knowledge pack.</string>
+    <string name="knowledge_offline">Offline mode: nothing was downloaded.</string>
+    <string name="knowledge_failed">Could not get the knowledge pack. Nothing was changed.</string>
+    <string name="product_lookup">Look up products online</string>
+    <string name="product_lookup_hint">Searches only the product\'s words (e.g. \"passata pomodoro\") in Open Food Facts, a free public product database, to suggest brand and category. Never prices, amounts, dates, document or VAT numbers, or company names.</string>
+    <string name="reading_check_title">Saved documents read again</string>
+    <string name="reading_check_hint">After every update, the app reads all your saved documents again and compares with what you saved, so a new version that reads worse is noticed. On this phone only.</string>
+    <string name="reading_check_never">Not done yet: it runs by itself shortly after an update.</string>
+    <string name="reading_check_summary">Version %1$s · %2$d documents · %3$d%% of the values read as saved</string>
+    <string name="reading_check_compared">Compared with %1$s: %2$d read better, %3$d read worse</string>
+    <string name="reading_check_show">Show the documents read worse</string>
+    <string name="reading_check_hide">Hide</string>
+    <string name="reading_check_run">Read them again now</string>
+    <string name="lookup_title">Online suggestion</string>
+    <string name="lookup_sends">Sends only: \"%1$s\"</string>
+    <string name="lookup_nothing">This name has no product words to search.</string>
+    <string name="lookup_search">Search</string>
+    <string name="lookup_none">Nothing found.</string>
+    <string name="lookup_failed">Could not search. Check the connection.</string>
+    <string name="lookup_use">Use brand and category</string>
 </resources>

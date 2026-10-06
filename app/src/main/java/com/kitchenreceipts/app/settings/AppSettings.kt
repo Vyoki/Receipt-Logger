@@ -13,6 +13,15 @@ class AppSettings(context: Context) {
     /** When the on-phone AI reader runs (only if a model is installed). */
     enum class AiMode { OFF, WHEN_NEEDED, ALWAYS }
 
+    /**
+     * How knowledge reaches the phone. In no mode does anything about the documents leave it: the only connection
+     * ever made downloads the public knowledge pack, the same file for everyone.
+     * OFFLINE: never connects; packs arrive with app updates or as a file the operator opens.
+     * HYBRID: connects only when the operator taps "Check for updates".
+     * AUTOMATIC: also checks by itself about once a week, on Wi-Fi only.
+     */
+    enum class NetworkMode { OFFLINE, HYBRID, AUTOMATIC }
+
     private val prefs = context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
 
     var language: Language
@@ -66,6 +75,28 @@ class AppSettings(context: Context) {
     var priceAlerts: Boolean
         get() = prefs.getBoolean("price_alerts", true)
         set(v) = prefs.edit().putBoolean("price_alerts", v).apply()
+
+    var networkMode: NetworkMode
+        get() = NetworkMode.entries.firstOrNull { it.name == prefs.getString("network_mode", null) } ?: NetworkMode.OFFLINE
+        set(v) = prefs.edit().putString("network_mode", v.name).apply()
+
+    /**
+     * Product lookup in a public product database (Open Food Facts), only with Hybrid or Automatic. Off unless the
+     * operator turns it on; sends only product words (see ProductLookupClient).
+     */
+    var onlineProductLookup: Boolean
+        get() = prefs.getBoolean("online_product_lookup", false)
+        set(v) = prefs.edit().putBoolean("online_product_lookup", v).apply()
+
+    /** When the knowledge pack was last looked for online (millis), for the weekly automatic check. */
+    var knowledgeCheckedAt: Long
+        get() = prefs.getLong("knowledge_checked_at", 0L)
+        set(v) = prefs.edit().putLong("knowledge_checked_at", v).apply()
+
+    /** The app version that last re-read the saved documents (see ReadingChecker). */
+    var readingCheckVersion: String
+        get() = prefs.getString("reading_check_version", "") ?: ""
+        set(v) = prefs.edit().putString("reading_check_version", v).apply()
 
     var aiMode: AiMode
         get() = AiMode.entries.firstOrNull { it.name == prefs.getString("ai_mode", null) } ?: AiMode.WHEN_NEEDED

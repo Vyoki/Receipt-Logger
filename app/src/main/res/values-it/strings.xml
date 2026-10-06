@@ -196,7 +196,7 @@
     <string name="your_business_name">Nome dell\'attività</string>
     <string name="your_vat_number">La tua partita IVA (11 cifre)</string>
     <string name="privacy_security">Privacy e sicurezza</string>
-    <string name="privacy_statement">Tutto resta su questo telefono. L\'app non ha accesso a internet (lo blocca Android), non fa backup nel cloud e non invia nulla da sola. I dati escono dal telefono solo quando tocchi Condividi o Esporta.</string>
+    <string name="privacy_statement">Nulla dei tuoi documenti esce mai da solo da questo telefono. In modalità Offline l\'app non si collega affatto; in Ibrida e Automatica scarica solo conoscenze pubbliche e, se lo attivi, cerca le parole dei prodotti. Nessun backup nel cloud. I dati escono dal telefono solo quando tocchi Condividi o Esporta.</string>
     <string name="app_lock">Blocco app</string>
     <string name="app_lock_hint">Chiede impronta, volto o PIN di sblocco all\'apertura e dopo 3 minuti di assenza.</string>
     <string name="app_lock_unavailable">Imposta prima un blocco schermo (PIN, impronta o volto) nelle impostazioni del telefono.</string>
@@ -377,7 +377,7 @@
     <string name="ai_download_vision">Scarica il file visione (mmproj)</string>
     <string name="ai_step3">3. Quando i due download sono finiti</string>
     <string name="ai_load_files">Carica i 2 file scaricati</string>
-    <string name="ai_download_note">I file provengono da huggingface.co (modelli Qwen, licenza Apache 2.0). L\'app non si collega mai a internet. Dopo il caricamento puoi cancellare i file dai Download.</string>
+    <string name="ai_download_note">I file provengono da huggingface.co (modelli Qwen, licenza Apache 2.0). Il modello non lo scarica l\'app: lo scarichi tu, dal browser. Dopo il caricamento puoi cancellare i file dai Download.</string>
     <string name="ai_copying">Copia del modello nell\'app…</string>
 
     <!-- owner report -->
@@ -584,4 +584,37 @@
         <item quantity="one">%d documento in lettura</item>
         <item quantity="other">%d documenti in lettura</item>
     </plurals>
+    <string name="network_title">Rete</string>
+    <string name="network_offline">Offline</string>
+    <string name="network_offline_hint">L\'app non si collega mai. Le nuove conoscenze arrivano solo con gli aggiornamenti o da un file che apri tu.</string>
+    <string name="network_hybrid">Ibrida</string>
+    <string name="network_hybrid_hint">Si collega solo quando tocchi \"Scarica ora\".</string>
+    <string name="network_automatic">Automatica</string>
+    <string name="network_automatic_hint">Scarica anche da sola circa una volta a settimana, solo con Wi-Fi.</string>
+    <string name="network_never_out">In ogni modalità nulla dei tuoi documenti esce dal telefono. Un download prende un solo file pubblico, uguale per tutti.</string>
+    <string name="knowledge_status">Pacchetto conoscenze: %1$s · %2$d fornitori noti.</string>
+    <string name="knowledge_checked_at">Ultima ricerca online: %1$s.</string>
+    <string name="knowledge_download">Scarica ora</string>
+    <string name="knowledge_open_file">Apri un file di conoscenze</string>
+    <string name="knowledge_updated">Pacchetto conoscenze aggiornato.</string>
+    <string name="knowledge_current">Hai già il pacchetto conoscenze più recente.</string>
+    <string name="knowledge_offline">Modalità offline: non è stato scaricato nulla.</string>
+    <string name="knowledge_failed">Impossibile ottenere il pacchetto. Non è cambiato nulla.</string>
+    <string name="product_lookup">Cerca i prodotti online</string>
+    <string name="product_lookup_hint">Cerca solo le parole del prodotto (es. \"passata pomodoro\") in Open Food Facts, un database pubblico e gratuito di prodotti, per suggerire marca e categoria. Mai prezzi, importi, date, numeri di documento o di partita IVA, o nomi di aziende.</string>
+    <string name="reading_check_title">Documenti salvati riletti</string>
+    <string name="reading_check_hint">Dopo ogni aggiornamento l\'app rilegge tutti i documenti salvati e li confronta con quanto hai salvato, così una versione che legge peggio viene notata. Solo su questo telefono.</string>
+    <string name="reading_check_never">Non ancora fatto: parte da sola poco dopo un aggiornamento.</string>
+    <string name="reading_check_summary">Versione %1$s · %2$d documenti · %3$d%% dei valori letti come salvati</string>
+    <string name="reading_check_compared">Rispetto a %1$s: %2$d letti meglio, %3$d letti peggio</string>
+    <string name="reading_check_show">Mostra i documenti letti peggio</string>
+    <string name="reading_check_hide">Nascondi</string>
+    <string name="reading_check_run">Rileggili ora</string>
+    <string name="lookup_title">Suggerimento online</string>
+    <string name="lookup_sends">Invia solo: \"%1$s\"</string>
+    <string name="lookup_nothing">Questo nome non ha parole di prodotto da cercare.</string>
+    <string name="lookup_search">Cerca</string>
+    <string name="lookup_none">Nessun risultato.</string>
+    <string name="lookup_failed">Ricerca non riuscita. Controlla la connessione.</string>
+    <string name="lookup_use">Usa marca e categoria</string>
 </resources>

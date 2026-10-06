@@ -350,6 +350,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             }
             val id = repo.saveDocument(doc, storedFile, ocrText, documentId, learning)
             if (documentId == null) jobId?.let { c.importQueue.markSaved(it) }
+            // The reading as the camera saw it, so later versions can read this document again (see ReadingChecker).
+            if (documentId == null) runCatching { c.readings.save(id, ocrPages) }
             val finalDraft = _state.value.draft
             val corrections = initialDraft?.let { Corrections.diff(it, finalDraft) }.orEmpty()
             c.log.event(

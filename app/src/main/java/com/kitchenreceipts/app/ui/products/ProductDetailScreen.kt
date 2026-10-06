@@ -151,6 +151,7 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
     var addingConversion by remember { mutableStateOf(false) }
     val snackbar = remember { SnackbarHostState() }
     val scope = rememberCoroutineScope()
+    val lookup = com.kitchenreceipts.app.ui.appContainer().productLookup
     val takenMsg = stringResource(R.string.product_exists)
 
     val d = detail
@@ -209,6 +210,14 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
                                 Text(d.product.brand ?: stringResource(R.string.brand_none), style = MaterialTheme.typography.titleMedium)
                             }
                             Text(stringResource(R.string.change), color = MaterialTheme.colorScheme.primary)
+                        }
+                    }
+                }
+                if (lookup.available()) {
+                    item("lookup") {
+                        ProductLookupCard(lookup, d.product.name) { sug ->
+                            sug.brand?.let { vm.setBrand(it) }
+                            sug.category?.let { vm.setCategory(it) }
                         }
                     }
                 }

@@ -4,7 +4,7 @@ A native Android app (Kotlin + Jetpack Compose) for managing restaurant supplier
 
 You photograph a receipt or invoice, or import an image or PDF. The app reads the text **on the phone**, and you check and correct the values it found. Purchases are then organised by seller and month, with prices, lot numbers and weighted average costs per product.
 
-Everything is stored locally in a Room database, so the app works fully offline. It needs no account, no API key and no runtime permissions.
+Everything is stored locally in a Room database, so the app works fully offline. It needs no account, no API key and no runtime permissions. Nothing about the documents ever leaves the phone; Settings ▸ Network decides whether public knowledge may come in (Offline by default).
 
 ---
 
@@ -48,7 +48,8 @@ Wireless option (Android 11+): in Developer options, turn on **Wireless debuggin
 |---|---|---|
 | Take a photo | Opens the phone's own camera app (`ACTION_IMAGE_CAPTURE`), which saves into a file the app owns | None. The app deliberately does **not** declare `CAMERA`. |
 | Import image/PDF | System document picker (Storage Access Framework) | None. No storage permission is needed. |
-| OCR | On-device ML Kit model bundled in the APK | None. The app does not even request `INTERNET`. |
+| OCR | On-device ML Kit model bundled in the APK | None. Reading never uses the internet. |
+| Network (optional) | Downloading the public knowledge pack; product lookup | `INTERNET` and `ACCESS_NETWORK_STATE` (install-time, not asked). Used only in Hybrid/Automatic mode, see 7b-7. |
 | Open original / export CSV | `FileProvider` share and the system "Save as" dialog | None |
 
 The first time you take a photo, the **camera app** may ask for its own camera permission. That request comes from the camera app, not from Kitchen Receipts. Allow it.
@@ -230,8 +231,8 @@ Open **Settings** with the gear icon on the Home screen.
 - Size is capped at about 1 MB (it rotates).
 - **Settings ▸ Share log** sends it through any app you choose. **Clear log** deletes it.
 
-**Privacy and security: what is on this phone stays on this phone.**
-- **No network at all**: the manifest removes `INTERNET` and network-state permissions (including any that libraries try to add), so Android itself blocks every connection from the app.
+**Privacy and security: nothing about the documents leaves this phone; information may only come in.**
+- **Network modes** (Settings ▸ Network, see 7b-7): *Offline* (default) makes no connection at all. *Hybrid* and *Automatic* only download the public knowledge pack and, if separately turned on, search product words. Google's ML Kit usage-statistics sender is removed from the manifest, and CI checks the built APK for it.
 - **No cloud backup and no device-to-device copy** (`allowBackup=false` plus data-extraction rules). Keep your own copy with Reports ▸ Export CSV if you need one.
 - Data leaves the phone only when you tap **Share** (recognised text, log, original document) or **Export** (CSV).
 - **App lock** (optional): asks for fingerprint, face or the screen-lock PIN on opening and after 3 minutes away. It needs a screen lock set up on the phone.
@@ -352,6 +353,24 @@ The French receipt photos are not readable by Tesseract, so they can only be jud
 
 Each time the operator changes a value before saving, or edits a saved document, the app keeps the list of changes and the full reading report. They are stored on the phone only, up to 300 documents. Settings ▸ *Documents corrected by hand* ▸ **Send the corrected documents** puts them all in one text file for the share sheet, together with the operation log. After a week of normal use, every mistake can then be fixed at once from real evidence.
 
+## 7b-6. Saved documents read again after every update
+
+Each saved document keeps its OCR reading (text with positions) on the phone. After an update, the new version reads every saved document again and compares with what the operator saved: date, number, total, taxable, VAT and each line amount. Settings ▸ *Saved documents read again* shows how many values were read as saved, and which documents the new version reads **worse** than the version before; those are also kept with the documents corrected by hand, so they reach the next fix. Documents saved before this existed are read again from their recognised text. E-invoices (XML) are skipped: they are not read from a photo.
+
+## 7b-7. Network: information comes in, nothing goes out
+
+Settings ▸ Network has three modes:
+
+| Mode | What connects |
+|---|---|
+| Offline (default) | Nothing. New knowledge arrives with app updates, or from a pack file the operator opens. |
+| Hybrid | Only when the operator taps **Download now**. |
+| Automatic | Also about once a week by itself, on Wi-Fi only (checked when the app starts). |
+
+- **Knowledge pack** (`knowledge/pack.json`, see `knowledge/README.md`): one public file, the same for everyone, downloaded whole from this repository. No question about any document is asked. It lists suppliers by VAT number: a supplier never saved on this phone is named from the pack on its first document (sure when the name read agrees, otherwise shown for a glance). The pack is **empty for now**; filling it with public registry data is a later step. A copy is bundled with the app.
+- **Look up products online** (separate switch, off by default, only in Hybrid/Automatic): on a product's page, the app shows the exact words it would send (for example `passata pomodoro`) and, on **Search**, asks Open Food Facts. Only product words are sent: never amounts, prices, dates, document or VAT numbers, or company names (a description with a company name is cut before it). Answers only suggest brand and category, applied when the operator taps **Use**.
+- Requests carry a neutral app name instead of Android's default, which would name the phone model.
+
 ## 7c. Less typing, price changes and inventory
 
 - **Automatic save.** After a scan the app checks:
@@ -394,7 +413,7 @@ The notification needs the Android notification permission (asked once).
 
 ## 7d. On-phone AI reader (optional)
 
-A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the normal OCR text. It runs **entirely on the phone**, through llama.cpp compiled into the app (CPU, the fastest variant for the phone is picked at start). The app has **no internet permission**: the model is downloaded once by the phone's browser and then loaded with the file picker.
+A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the normal OCR text. It runs **entirely on the phone**, through llama.cpp compiled into the app (CPU, the fastest variant for the phone is picked at start). The app never downloads the model itself: it is downloaded once by the phone's browser and then loaded with the file picker.
 
 **Setup:** Settings ▸ AI reader:
 1. Choose the model: 2B (recommended, about 1.5 GB) or 4B (about 3 GB).
