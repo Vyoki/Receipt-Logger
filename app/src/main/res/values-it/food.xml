@@ -8,9 +8,12 @@
     <string name="food_add_dish">Aggiungi un piatto</string>
     <string name="food_cost_line">Costo %1$s · prezzo %2$s</string>
     <string name="food_percent">%1$s%%</string>
-    <string name="food_incomplete">%1$d ingredienti senza prezzo: il costo è troppo basso</string>
-    <string name="food_target">Food cost obiettivo (%%)</string>
-    <string name="food_overhead">In più per personale e utenze (%%)</string>
+    <plurals name="food_incomplete">
+        <item quantity="one">%1$d ingrediente senza prezzo: il costo è troppo basso</item>
+        <item quantity="other">%1$d ingredienti senza prezzo: il costo è troppo basso</item>
+    </plurals>
+    <string name="food_target" formatted="false">Food cost obiettivo (%)</string>
+    <string name="food_overhead" formatted="false">In più per personale e utenze (%)</string>
     <string name="food_overhead_hint">Facoltativo. Il tuo foglio aggiunge 20% + 10%: scrivi 30 per vedere lo stesso costo pieno.</string>
     <string name="food_months">Mese per mese</string>
     <string name="food_months_hint">Cibo e bevande acquistati (senza IVA) rispetto al tuo incasso. Gli acquisti seguono le consegne, non il consumo: un mese che fa scorta sembra più caro.</string>
@@ -36,7 +39,7 @@
     <string name="recipe_cat_other">Altro</string>
     <string name="recipe_price">Prezzo nel menu (€)</string>
     <string name="recipe_price_vat">Prezzo IVA inclusa</string>
-    <string name="recipe_vat_rate">IVA %%</string>
+    <string name="recipe_vat_rate" formatted="false">IVA %</string>
     <string name="recipe_portions">Porzioni che fanno gli ingredienti</string>
     <string name="recipe_ingredients">Ingredienti</string>
     <string name="recipe_add_ingredient">Aggiungi un ingrediente</string>
@@ -44,7 +47,7 @@
     <string name="recipe_pick_product">Scegli tra i prodotti</string>
     <string name="recipe_free_ingredient">Usa “%1$s” senza prodotto</string>
     <string name="recipe_quantity">Quantità</string>
-    <string name="recipe_waste">Scarto %%</string>
+    <string name="recipe_waste" formatted="false">Scarto %</string>
     <string name="recipe_manual_price">Prezzo (€) al</string>
     <string name="recipe_manual_hint">Nessun acquisto ancora: scrivi un prezzo, o collegalo a un prodotto.</string>
     <string name="recipe_price_from">%1$s al %2$s · %3$s</string>

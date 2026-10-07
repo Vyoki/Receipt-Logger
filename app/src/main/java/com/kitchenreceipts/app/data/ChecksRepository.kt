@@ -98,23 +98,24 @@ class ChecksRepository(private val db: AppDatabase) {
     fun documents(): Flow<List<MatchDocRow>> = dao.matchDocsFlow()
 
     /** The check of one invoice: its delivery notes, the ones it names but are not saved, and the differences. */
-    suspend fun invoiceCheck(invoiceId: Long): InvoiceCheck? = withContext(Dispatchers.Default) {
-        val all = dao.matchDocs()
-        val inv = all.firstOrNull { it.id == invoiceId } ?: return@withContext null
+    suspend fun invoiceCheck(invoiceId: Long): InvoiceCheck? = withContext(Dispatchers.Default) { invoiceCheck(invoiceId, dao.matchDocs()) }
+
+    private suspend fun invoiceCheck(invoiceId: Long, all: List<MatchDocRow>): InvoiceCheck? {
+        val inv = all.firstOrNull { it.id == invoiceId } ?: return null
         val notes = all.filter { it.coveredBy == invoiceId }
         val missing = DeliveryMatching.missing(inv.toMatch(), all.map { it.toMatch() })
-        if (notes.isEmpty()) return@withContext InvoiceCheck(invoiceId, notes, missing, emptyList())
+        if (notes.isEmpty()) return InvoiceCheck(invoiceId, notes, missing, emptyList())
         val lines = dao.compareLines(notes.map { it.id } + invoiceId).map {
             CompareLine(it.documentId, it.lineItemId, it.productId, it.originalDescription, it.quantity, it.unit, it.lineTotalCents, it.unitPrice)
         }
         val diffs = DeliveryMatching.compare(lines.filter { it.documentId == invoiceId }, lines.filter { it.documentId != invoiceId })
-        InvoiceCheck(invoiceId, notes, missing, diffs)
+        return InvoiceCheck(invoiceId, notes, missing, diffs)
     }
 
     /** Every invoice with delivery notes, checked; for the Checks screen. */
     fun invoiceChecks(): Flow<List<InvoiceCheck>> = dao.matchDocsFlow().map { all ->
         val invoices = all.filter { inv -> all.any { it.coveredBy == inv.id } || inv.ddtRefs != null }
-        invoices.mapNotNull { invoiceCheck(it.id) }.filter { it.differences.isNotEmpty() || it.missing.isNotEmpty() }
+        invoices.mapNotNull { invoiceCheck(it.id, all) }.filter { it.differences.isNotEmpty() || it.missing.isNotEmpty() }
     }.flowOn(Dispatchers.Default)
 
     // ------------------------------------------------------------ agreed prices

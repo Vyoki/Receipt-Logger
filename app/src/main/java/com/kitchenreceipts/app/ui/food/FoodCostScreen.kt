@@ -164,7 +164,7 @@ private fun DishRow(d: RecipeCost, target: BigDecimal, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
                 )
                 val missing = d.ingredients.count { it.problem != null }
-                if (missing > 0) Text(stringResource(R.string.food_incomplete, missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                if (missing > 0) Text(androidx.compose.ui.res.pluralStringResource(R.plurals.food_incomplete, missing, missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
             d.foodCostPercent?.let { p ->
                 Text(
