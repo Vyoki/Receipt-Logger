@@ -231,7 +231,8 @@ object MenuSheet {
             val l = d.getElementsByTagNameNS("*", "si")
             (0 until l.length).map { i -> textOf(l.item(i) as Element) }
         }.orEmpty()
-        val preferred = sheets.sortedBy { (n, _) -> if (norm(n).let { it.startsWith("piatti") || it.startsWith("dishes") || it.startsWith("menu") }) 0 else 1 }
+        // "Piatti" / "Dishes" first, then "Menu", then the rest (a workbook may also hold costing blocks named MENU).
+        val preferred = sheets.sortedBy { (n, _) -> norm(n).let { if (it.startsWith("piatti") || it.startsWith("dishes")) 0 else if (it.startsWith("menu")) 1 else 2 } }
         for ((_, part) in preferred) {
             val rows = parts[part]?.let { sheetRows(xml(it), strings) } ?: continue
             if (rows.take(30).any { r -> r.any { colOf(it.text) == Col.DISH } && r.any { colOf(it.text) == Col.INGREDIENT } }) return rows
