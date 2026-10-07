@@ -27,3 +27,4 @@ They imitate the OCR text of typical Italian supplier documents:
   angled + rotated 3°). Format per case: `# name`, then `left,top,right,bottom,angle | text`.
 - `ai_answer_qwen3vl_2b.json`: the answer Qwen3-VL 2B gave in CI (job ai-model-check) for the synthetic
   "ABC S.r.l." invoice photo drawn by `tools/ai-cli/make_invoice.py`, with the app's prompt and grammar.
+- `menu_esempio.xlsx`: an invented menu sheet (two dishes and a cover charge) in the layout the app imports, made with openpyxl; one formula cell has no saved value, as in a file never opened in Excel.

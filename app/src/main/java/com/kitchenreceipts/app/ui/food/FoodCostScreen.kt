@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.UploadFile
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Switch
@@ -82,9 +83,35 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
     var target by remember { mutableStateOf(ItalianNumbers.formatDecimal(c.settings.foodCostTarget)) }
     var overhead by remember { mutableStateOf(ItalianNumbers.formatDecimal(c.settings.overheadPercent)) }
     var editMonth by remember { mutableStateOf<YearMonth?>(null) }
+    var plan by remember { mutableStateOf<com.kitchenreceipts.core.MenuPlan?>(null) }
+    var removeMissing by remember { mutableStateOf(false) }
+    val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val context = androidx.compose.ui.platform.LocalContext.current
+    val badFile = stringResource(R.string.food_import_bad)
+    val failed = stringResource(R.string.food_import_failed)
+    val done = stringResource(R.string.food_import_done)
+    val pick = androidx.activity.compose.rememberLauncherForActivityResult(androidx.activity.result.contract.ActivityResultContracts.OpenDocument()) { uri ->
+        if (uri == null) return@rememberLauncherForActivityResult
+        scope.launch {
+            try {
+                val bytes = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    context.contentResolver.openInputStream(uri)?.use { it.readBytes() } ?: error("Cannot open")
+                }
+                require(bytes.size <= 30_000_000) { "Too large" }
+                val menu = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) { com.kitchenreceipts.core.MenuSheet.read(bytes) }
+                removeMissing = false
+                plan = c.food.planImport(menu)
+            } catch (e: com.kitchenreceipts.core.MenuSheet.NotAMenu) {
+                snackbar.showSnackbar(badFile)
+            } catch (e: Exception) {
+                c.log.error("menuImport", e)
+                snackbar.showSnackbar(failed)
+            }
+        }
+    }
     val targetValue = ItalianNumbers.parse(target)?.takeIf { it.signum() > 0 } ?: FoodCost.DEFAULT_TARGET
 
-    AppScaffold(title = stringResource(R.string.food_title), onBack = onBack) { padding ->
+    AppScaffold(title = stringResource(R.string.food_title), onBack = onBack, snackbarHostState = snackbar) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item("intro") { Text(stringResource(R.string.food_intro), style = MaterialTheme.typography.bodySmall, color = Palette.Orange) }
             item("settings") {
@@ -114,15 +141,48 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
             val list = dishes
             if (list != null && list.isEmpty()) item("noDish") { EmptyState(stringResource(R.string.food_no_dishes)) }
             // Highest food cost first: those are the dishes to look at.
-            items(list.orEmpty().sortedByDescending { it.foodCostPercent ?: BigDecimal.ZERO }, key = { "d" + it.recipe.id }) { d ->
+            items(list.orEmpty().sortedWith(compareBy<RecipeCost> { it.recipe.ingredients.isEmpty() }.thenByDescending { it.foodCostPercent ?: BigDecimal.ZERO }), key = { "d" + it.recipe.id }) { d ->
                 DishRow(d, targetValue) { onOpenDish(d.recipe.id) }
             }
             item("add") { BigButton(stringResource(R.string.food_add_dish), Icons.Filled.Add, primary = false, onClick = { onOpenDish(0L) }) }
+            item("import") {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    BigButton(stringResource(R.string.food_import), Icons.Filled.UploadFile, primary = false, onClick = { pick.launch(arrayOf("*/*")) })
+                    Text(stringResource(R.string.food_import_hint), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                }
+            }
 
             item("monT") { SectionTitle(stringResource(R.string.food_months)) }
             item("monH") { Text(stringResource(R.string.food_months_hint), style = MaterialTheme.typography.bodySmall, color = Palette.Orange) }
             items(months, key = { "m" + it.month }) { m -> MonthRow(m, targetValue) { editMonth = m.month } }
         }
+    }
+
+    plan?.let { p ->
+        ConfirmDialog(
+            title = stringResource(R.string.food_import_title, p.dishes.size),
+            text = stringResource(R.string.food_import_summary, p.added, p.updated, p.linked, p.typedOnly, p.noPrice),
+            confirmLabel = stringResource(R.string.food_import_go),
+            onConfirm = {
+                plan = null
+                scope.launch {
+                    c.food.applyImport(p, removeMissing)
+                    c.log.event("MENU_IMPORTED", "dishes" to p.dishes.size, "linked" to p.linked, "removed" to (if (removeMissing) p.notInFile.size else 0))
+                    snackbar.showSnackbar(done)
+                }
+            },
+            onDismiss = { plan = null },
+            body = {
+                if (p.skipped > 0) Text(stringResource(R.string.food_import_skipped, p.skipped), color = Palette.Orange)
+                if (p.withoutIngredients > 0) Text(stringResource(R.string.food_import_empty, p.withoutIngredients))
+                if (p.notInFile.isNotEmpty()) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(stringResource(R.string.food_import_remove, p.notInFile.size), modifier = Modifier.weight(1f))
+                        Switch(checked = removeMissing, onCheckedChange = { removeMissing = it })
+                    }
+                }
+            },
+        )
     }
 
     editMonth?.let { m ->
@@ -164,9 +224,10 @@ private fun DishRow(d: RecipeCost, target: BigDecimal, onClick: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
                 )
                 val missing = d.ingredients.count { it.problem != null }
+                if (d.recipe.ingredients.isEmpty()) Text(stringResource(R.string.food_no_ingredients), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
                 if (missing > 0) Text(androidx.compose.ui.res.pluralStringResource(R.plurals.food_incomplete, missing, missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
-            d.foodCostPercent?.let { p ->
+            d.foodCostPercent?.takeIf { d.recipe.ingredients.isNotEmpty() }?.let { p ->
                 Text(
                     stringResource(R.string.food_percent, ItalianNumbers.formatDecimal(p, maxScale = 1)),
                     style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,

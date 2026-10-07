@@ -67,6 +67,42 @@ class FoodRepository(private val db: AppDatabase) {
 
     suspend fun delete(id: Long) = dao.deleteRecipe(id)
 
+    // ------------------------------------------------------------ menu from a spreadsheet
+
+    /** What importing [menu] would change: nothing is written yet. */
+    suspend fun planImport(menu: com.kitchenreceipts.core.MenuImport): com.kitchenreceipts.core.MenuPlan = withContext(Dispatchers.IO) {
+        val names = products.allOnce()
+        val items = dao.allItemsOnce().groupBy { it.recipeId }
+        val existing = dao.recipesOnce().map { r ->
+            com.kitchenreceipts.core.ExistingDish(r.id, r.name, items[r.id].orEmpty().map { it.name to it.productId })
+        }
+        com.kitchenreceipts.core.MenuImporter.plan(menu, existing, names.map { com.kitchenreceipts.core.ProductRef(it.id, it.name) })
+    }
+
+    /** Writes the plan in one go; dishes not in the file are deleted only when [removeMissing]. */
+    suspend fun applyImport(plan: com.kitchenreceipts.core.MenuPlan, removeMissing: Boolean) = db.withTransaction {
+        val now = System.currentTimeMillis()
+        for (d in plan.dishes) {
+            val old = d.existingId?.let { dao.recipe(it) }
+            val entity = RecipeEntity(
+                id = old?.id ?: 0, name = d.dish.name, category = d.dish.course ?: old?.category, salePriceCents = d.dish.salePriceCents,
+                priceIncludesVat = d.dish.priceIncludesVat, vatRate = d.dish.vatRatePercent, portions = d.dish.portions,
+                createdAt = old?.createdAt ?: now, updatedAt = now,
+            )
+            val id = if (old == null) dao.insertRecipe(entity) else { dao.updateRecipe(entity); old.id }
+            dao.deleteItems(id)
+            dao.insertItems(
+                d.ingredients.mapIndexed { i, p ->
+                    RecipeItemEntity(
+                        recipeId = id, position = i, productId = p.productId, name = p.ingredient.name, quantity = p.ingredient.quantity,
+                        unit = p.ingredient.unit, wastePercent = p.ingredient.wastePercent, manualPrice = p.ingredient.price, manualUnit = p.ingredient.priceUnit,
+                    )
+                },
+            )
+        }
+        if (removeMissing) plan.notInFile.forEach { dao.deleteRecipe(it.id) }
+    }
+
     // ------------------------------------------------------------ months
 
     fun revenue(): Flow<List<RevenueEntity>> = dao.revenue()

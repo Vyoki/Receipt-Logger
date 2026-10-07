@@ -77,4 +77,16 @@
     <string name="order_send">Send order</string>
     <string name="order_heading">Order for %1$s – %2$s</string>
     <string name="order_note">Note for the supplier (optional)</string>
+    <string name="food_import">Import dishes from a spreadsheet</string>
+    <string name="food_import_hint">Excel (.xlsx) or CSV with one row per ingredient: Piatto, Ingrediente, Quantità, Unità… Update the file when the menu changes and import it again.</string>
+    <string name="food_import_title">Import %1$d dishes?</string>
+    <string name="food_import_summary">New: %1$d · updated: %2$d\nIngredients linked to your products: %3$d\nWith the price from the sheet: %4$d\nWithout a price: %5$d</string>
+    <string name="food_import_skipped">Rows without a quantity, left out: %1$d (fill them in the sheet)</string>
+    <string name="food_import_empty">Dishes with no ingredients yet: %1$d</string>
+    <string name="food_import_remove">Delete the %1$d dishes not in this file</string>
+    <string name="food_import_go">Import</string>
+    <string name="food_import_done">Dishes imported.</string>
+    <string name="food_import_bad">This file has no columns «Piatto» and «Ingrediente».</string>
+    <string name="food_import_failed">The file could not be read.</string>
+    <string name="food_no_ingredients">No ingredients yet</string>
 </resources>
