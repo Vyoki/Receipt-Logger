@@ -7,6 +7,7 @@ import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kitchenreceipts.app.data.AppDatabase
 import com.kitchenreceipts.app.data.Migrations
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -37,6 +38,29 @@ class MigrationTest {
         }
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
             db.execSQL("PRAGMA foreign_keys=OFF")
+            // v8 -> v7: no agreed prices, credits, dismissed notices; documents without kind / ddt_refs / covered_by
+            db.execSQL("DROP TABLE agreed_prices")
+            db.execSQL("DROP TABLE credits")
+            db.execSQL("DROP TABLE dismissed")
+            db.execSQL(
+                "CREATE TABLE `documents_v7` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `seller_id` INTEGER NOT NULL, " +
+                    "`document_date` INTEGER, `document_number` TEXT, `currency` TEXT, `subtotal_cents` INTEGER, `vat_cents` INTEGER, " +
+                    "`total_cents` INTEGER, `vat_basis` TEXT NOT NULL, `file_path` TEXT NOT NULL, `mime_type` TEXT NOT NULL, " +
+                    "`page_count` INTEGER NOT NULL, `file_sha256` TEXT NOT NULL, `ocr_text` TEXT, `created_at` INTEGER NOT NULL, " +
+                    "`updated_at` INTEGER NOT NULL, " +
+                    "FOREIGN KEY(`seller_id`) REFERENCES `sellers`(`id`) ON UPDATE NO ACTION ON DELETE RESTRICT )",
+            )
+            db.execSQL("DROP TABLE documents")
+            db.execSQL("ALTER TABLE documents_v7 RENAME TO documents")
+            db.execSQL("CREATE INDEX `index_documents_seller_id` ON `documents` (`seller_id`)")
+            db.execSQL("CREATE INDEX `index_documents_document_date` ON `documents` (`document_date`)")
+            db.execSQL("CREATE INDEX `index_documents_file_sha256` ON `documents` (`file_sha256`)")
+            if (version == 7) {
+                insertRows(db)
+                db.execSQL("INSERT INTO products (id, name, normalized_name, created_at, category, family_id, brand, family_dismissed) VALUES (1, 'Mozzarella', 'mozzarella', 0, NULL, NULL, NULL, 0)")
+                db.version = 7
+                return@use
+            }
             // v7 -> v6: line_items without pack_size
             db.execSQL(
                 "CREATE TABLE `line_items_v6` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `document_id` INTEGER NOT NULL, " +
@@ -135,6 +159,10 @@ class MigrationTest {
         try {
             runBlocking {
                 assertEquals(7106L, migrated.documentDao().fingerprints().single().totalCents)
+                val doc = migrated.checksDao().matchDocs().single()
+                assertNull(doc.kind)
+                assertNull(doc.coveredBy)
+                assertEquals(0, migrated.checksDao().openCredits().first().size)
                 val item = migrated.documentDao().itemsOnce(1).single().item
                 assertEquals(0, java.math.BigDecimal("2.5").compareTo(item.quantity))
                 assertEquals("L24-118", item.lotNumber)
@@ -159,6 +187,11 @@ class MigrationTest {
         } finally {
             migrated.close()
         }
+    }
+
+    @Test fun migrate7To8() {
+        createOldDatabase(7)
+        openAndCheck()
     }
 
     @Test fun migrate6To7() {

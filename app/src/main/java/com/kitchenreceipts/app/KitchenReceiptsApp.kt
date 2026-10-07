@@ -35,6 +35,8 @@ class AppContainer(context: Context) {
     val problems = com.kitchenreceipts.app.diagnostics.ProblemReports(context)
     val pageRenderer = PageRenderer(fileStore)
     val repository = ReceiptRepository(database, fileStore)
+    /** Delivery notes against invoices, agreed prices, credits owed, expiry dates and lots. */
+    val checks = com.kitchenreceipts.app.data.ChecksRepository(database)
     val importProcessor = ImportProcessor(pageRenderer)
     val aiModels = AiModelStore(context)
     /** What the app learned from the operator's choices and confirmed lines, per supplier (phone only). */
@@ -126,6 +128,12 @@ class KitchenReceiptsApp : Application() {
         // unfinished ones are read again.
         // After a restore: once the restored data opens, the data set aside before it can go.
         container.appScope.launch { runCatching { c.backup.afterStart() }.onFailure { c.log.error("afterRestore", it) } }
+        // Documents saved before kinds were read get theirs (once), and delivery notes are matched to invoices.
+        container.appScope.launch {
+            runCatching { c.checks.backfill() }
+                .onSuccess { n -> if (n > 0) c.log.event("KINDS_READ", "documents" to n) }
+                .onFailure { c.log.error("kindsBackfill", it) }
+        }
         runCatching { c.importQueue.restore() }.onFailure { c.log.error("restoreQueue", it) }
         container.appScope.launch {
             runCatching { container.repository.cleanupOrphanFiles(c.importQueue.filePaths()) }

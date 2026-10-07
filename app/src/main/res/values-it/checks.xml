@@ -1,0 +1,81 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="checks_title">Controlli</string>
+    <string name="checks_tile_note">Cosa addebitano i fornitori</string>
+    <string name="checks_none">Niente da controllare. Le fatture corrispondono ai DDT e ai prezzi concordati.</string>
+    <string name="checks_intro">Calcolato su questo telefono dai documenti salvati. Tocca una riga per aprire il documento.</string>
+    <string name="checks_fine">Va bene</string>
+    <string name="checks_ask_credit">Chiedi un accredito</string>
+    <string name="checks_about">circa %1$s</string>
+    <string name="checks_hidden">%1$d segnati come a posto</string>
+    <string name="checks_show_hidden">Mostrali</string>
+
+    <string name="over_title">Pagato più del prezzo concordato</string>
+    <string name="over_row">Pagato %1$s al %2$s, concordato %3$s (+%4$s%%)</string>
+    <string name="over_credit_text">%1$s: pagato %2$s al %3$s invece di %4$s</string>
+
+    <string name="ddt_title">DDT e fatture</string>
+    <string name="ddt_invoice">Fattura %1$s del %2$s</string>
+    <string name="ddt_not_delivered">%1$s: fatturato %2$s %3$s, non presente nei DDT</string>
+    <string name="ddt_not_invoiced">%1$s: consegnato %2$s %3$s, non fatturato</string>
+    <string name="ddt_quantity">%1$s: fatturato %2$s %3$s, consegnato %4$s %3$s</string>
+    <string name="ddt_price">%1$s: %2$s al %3$s in fattura, %4$s nel DDT</string>
+    <string name="ddt_missing">Cita il DDT %1$s, che non è salvato</string>
+    <string name="ddt_covered_by">Fatturato con la fattura %1$s del %2$s: conteggiato lì, non qui</string>
+    <string name="ddt_not_yet">Nessuna fattura salvata cita ancora questo DDT</string>
+    <string name="ddt_notes_of_invoice">DDT di questa fattura: %1$s</string>
+    <string name="ddt_all_match">Corrisponde ai suoi DDT</string>
+
+    <string name="credits_title">Accrediti che aspetti</string>
+    <string name="credits_none">Nessun accredito aperto.</string>
+    <string name="credits_received">Ricevuto</string>
+    <string name="credits_add">Aggiungi un accredito</string>
+    <string name="credits_since">dal %1$s</string>
+    <string name="credits_supplier">Fornitore</string>
+    <string name="credits_what">Per cosa</string>
+    <string name="credits_amount">Importo (€), se lo sai</string>
+    <string name="credits_save">Salva</string>
+    <string name="credits_added">Aggiunto agli accrediti che aspetti.</string>
+    <string name="credits_notes_title">Note di credito ricevute</string>
+    <string name="credits_notes_hint">Segna come ricevuti gli accrediti qui sopra quando una nota di credito li salda.</string>
+
+    <string name="agreed_title">Prezzi concordati</string>
+    <string name="agreed_none">Nessun prezzo concordato. Impostalo nella pagina di un prodotto: gli acquisti sopra quel prezzo compariranno qui.</string>
+    <string name="agreed_any_supplier">qualsiasi fornitore</string>
+    <string name="agreed_row">%1$s al %2$s · %3$s</string>
+    <string name="agreed_card_title">Prezzo concordato</string>
+    <string name="agreed_card_hint">Il prezzo del listino del fornitore. Gli acquisti sopra questo prezzo compaiono in Controlli.</string>
+    <string name="agreed_price">Prezzo (€)</string>
+    <string name="agreed_per">al</string>
+    <string name="agreed_set">Salva prezzo concordato</string>
+    <string name="agreed_remove">Togli</string>
+    <string name="agreed_bad_price">Scrivi un prezzo, es. 8,50.</string>
+
+    <string name="kind_title">Tipo di documento</string>
+    <string name="kind_invoice">Fattura</string>
+    <string name="kind_delivery_note">DDT</string>
+    <string name="kind_receipt">Scontrino</string>
+    <string name="kind_credit_note">Nota di credito</string>
+    <string name="kind_unknown">Non noto</string>
+    <string name="kind_credit_note_hint">Una nota di credito è denaro restituito: viene sottratta dalla spesa.</string>
+
+    <string name="lots_title">Lotti e scadenze</string>
+    <string name="lots_tile_note">Richiami, scadenze</string>
+    <string name="lots_search">Numero di lotto o prodotto</string>
+    <string name="lots_search_hint">Scrivi un lotto (spazi e trattini non contano) o il nome di un prodotto, per vedere quando è arrivato, da chi e quanto.</string>
+    <string name="lots_none">Non trovato.</string>
+    <string name="lots_share">Condividi questo elenco</string>
+    <string name="lots_share_subject">Lotti ricevuti</string>
+    <string name="lots_lot">Lotto %1$s</string>
+    <string name="lots_expiry">scad. %1$s</string>
+    <string name="lots_no_lot">lotto non stampato</string>
+    <string name="expiry_title">In scadenza</string>
+    <string name="expiry_none">Niente di quanto stampato sui tuoi documenti scade nei prossimi 7 giorni.</string>
+    <string name="expiry_hint">Dalle scadenze stampate su DDT e fatture. L\'app non sa cosa c\'è ancora in frigo: tocca Fatto quando è usato o buttato.</string>
+    <string name="expiry_done">Fatto</string>
+    <string name="expiry_today">oggi</string>
+    <string name="expiry_ago">scaduto da %1$d g</string>
+    <string name="expiry_in">tra %1$d g</string>
+    <string name="expiry_home">%1$d in scadenza</string>
+    <string name="expiry_home_hint">Prossimo: %1$s</string>
+</resources>

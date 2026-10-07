@@ -527,7 +527,8 @@ const basisLabel = b => b === "EXCLUSIVE" ? t("noVat") : b === "INCLUSIVE" ? t("
 const catLabel = p => p.unassigned ? t("notClassified") : (t("cat")[p.category] || p.category);
 const sellerName = id => (DB.sellers.get(id) || {}).name || "?";
 function srcLabel(s) { return t(s === "e-invoice" ? "src_einvoice" : s === "dropped" ? "src_dropped" : s === "pdf" ? "src_pdf" : "src_photo"); }
-function docsIn(r) { return DB.documents.filter(d => inRange(d, r)); }
+/** Documents in the range. A delivery note charged on an invoice (coveredBy) is left out of spending and quantities: the invoice counts. */
+function docsIn(r, all) { return DB.documents.filter(d => inRange(d, r) && (all || !d.coveredBy)); }
 function sumTotals(docs) { return docs.reduce((a, d) => a + (d.total || 0), 0); }
 
 /** All purchase lines of the documents, each with its document, seller and product. */
@@ -756,7 +757,7 @@ function vPrices(r) {
 }
 function vDocuments(r) {
   const q = norm(state.q.documents);
-  let rows = docsIn(r);
+  let rows = docsIn(r, true);
   if (q) rows = rows.filter(d => norm([sellerName(d.sellerId), d.number, ...d.lines.map(l => l.d + " " + (l.lot || ""))].join(" ")).includes(q));
   const cols = [
     { key: "d", label: t("date"), val: d => d.date, cell: d => fmtDate(d.date) },
@@ -771,7 +772,7 @@ function vDocuments(r) {
 }
 function vLots(r) {
   const q = norm(state.q.lots);
-  let rows = purchases(docsIn(r)).filter(x => x.l.lot);
+  let rows = purchases(docsIn(r, true)).filter(x => x.l.lot);
   if (q) rows = rows.filter(x => norm([x.l.lot, x.p.name, x.l.d, sellerName(x.d.sellerId), x.d.number].join(" ")).includes(q));
   const cols = [
     { key: "l", label: t("lot"), val: x => x.l.lot, cell: x => h("span", { class: "mono" }, x.l.lot) },

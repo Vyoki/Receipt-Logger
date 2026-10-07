@@ -1,0 +1,84 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Checks screen -->
+    <string name="checks_title">Checks</string>
+    <string name="checks_tile_note">What suppliers charge</string>
+    <string name="checks_none">Nothing to check. Invoices match their delivery notes and the agreed prices.</string>
+    <string name="checks_intro">Worked out on this phone from your saved documents. Tap a row to open the document.</string>
+    <string name="checks_fine">It\'s fine</string>
+    <string name="checks_ask_credit">Ask for a credit</string>
+    <string name="checks_about">about %1$s</string>
+    <string name="checks_hidden">%1$d marked as fine</string>
+    <string name="checks_show_hidden">Show them</string>
+
+    <string name="over_title">Charged above the agreed price</string>
+    <string name="over_row">Paid %1$s per %2$s, agreed %3$s (+%4$s%%)</string>
+    <string name="over_credit_text">%1$s: paid %2$s per %3$s instead of %4$s</string>
+
+    <string name="ddt_title">Delivery notes and invoices</string>
+    <string name="ddt_invoice">Invoice %1$s of %2$s</string>
+    <string name="ddt_not_delivered">%1$s: charged %2$s %3$s, not on the delivery notes</string>
+    <string name="ddt_not_invoiced">%1$s: delivered %2$s %3$s, not charged</string>
+    <string name="ddt_quantity">%1$s: charged %2$s %3$s, delivered %4$s %3$s</string>
+    <string name="ddt_price">%1$s: %2$s per %3$s on the invoice, %4$s on the delivery note</string>
+    <string name="ddt_missing">Mentions delivery note %1$s, which is not saved</string>
+    <string name="ddt_covered_by">Charged on invoice %1$s of %2$s: counted there, not here</string>
+    <string name="ddt_not_yet">No saved invoice names this delivery note yet</string>
+    <string name="ddt_notes_of_invoice">Delivery notes on this invoice: %1$s</string>
+    <string name="ddt_all_match">Matches its delivery notes</string>
+
+    <string name="credits_title">Credits you are waiting for</string>
+    <string name="credits_none">No credits open.</string>
+    <string name="credits_received">Received</string>
+    <string name="credits_add">Add a credit</string>
+    <string name="credits_since">since %1$s</string>
+    <string name="credits_supplier">Supplier</string>
+    <string name="credits_what">What for</string>
+    <string name="credits_amount">Amount (€), if known</string>
+    <string name="credits_save">Save</string>
+    <string name="credits_added">Added to credits you are waiting for.</string>
+    <string name="credits_notes_title">Credit notes received</string>
+    <string name="credits_notes_hint">Mark the credits above as received when a credit note settles them.</string>
+
+    <string name="agreed_title">Agreed prices</string>
+    <string name="agreed_none">No agreed prices yet. Set one on a product\'s page: purchases above it will show here.</string>
+    <string name="agreed_any_supplier">any supplier</string>
+    <string name="agreed_row">%1$s per %2$s · %3$s</string>
+    <string name="agreed_card_title">Agreed price</string>
+    <string name="agreed_card_hint">The price in the supplier\'s price list. Purchases above it are listed in Checks.</string>
+    <string name="agreed_price">Price (€)</string>
+    <string name="agreed_per">per</string>
+    <string name="agreed_set">Save agreed price</string>
+    <string name="agreed_remove">Remove</string>
+    <string name="agreed_bad_price">Type a price, e.g. 8,50.</string>
+
+    <!-- Document kind -->
+    <string name="kind_title">Kind of document</string>
+    <string name="kind_invoice">Invoice</string>
+    <string name="kind_delivery_note">Delivery note</string>
+    <string name="kind_receipt">Receipt</string>
+    <string name="kind_credit_note">Credit note</string>
+    <string name="kind_unknown">Not known</string>
+    <string name="kind_credit_note_hint">A credit note is money back: it is subtracted from spending.</string>
+
+    <!-- Lots and expiry -->
+    <string name="lots_title">Lots and expiry</string>
+    <string name="lots_tile_note">Recalls, use-by dates</string>
+    <string name="lots_search">Lot number or product</string>
+    <string name="lots_search_hint">Type a lot (spaces and dashes don\'t matter) or a product name, to see when it arrived, from whom and how much.</string>
+    <string name="lots_none">Nothing found.</string>
+    <string name="lots_share">Share this list</string>
+    <string name="lots_share_subject">Lots received</string>
+    <string name="lots_lot">Lot %1$s</string>
+    <string name="lots_expiry">use by %1$s</string>
+    <string name="lots_no_lot">no lot printed</string>
+    <string name="expiry_title">Expiring</string>
+    <string name="expiry_none">Nothing printed on your documents expires in the next 7 days.</string>
+    <string name="expiry_hint">From the use-by dates printed on delivery notes and invoices. The app does not know what is still in the fridge: tap Done when it is used or thrown away.</string>
+    <string name="expiry_done">Done</string>
+    <string name="expiry_today">today</string>
+    <string name="expiry_ago">expired %1$d d ago</string>
+    <string name="expiry_in">in %1$d d</string>
+    <string name="expiry_home">%1$d expiring soon</string>
+    <string name="expiry_home_hint">Next: %1$s</string>
+</resources>

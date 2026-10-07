@@ -524,6 +524,29 @@ How the file is protected (`core/Backup.kt`): a zip stream encrypted with AES-25
 
 Tests: `BackupTest` (core: round trip, wrong password, not a backup, cut at many points, a changed byte, a dropped chunk, unsafe names) and `BackupRoundTripTest` (on the emulator: a real backup of the app's data, then the full check of it).
 
+## 7i. Checks: delivery notes, agreed prices, credits
+
+**Kind of document.** Every saved document gets a kind read from its printed title, in the usual languages: invoice, delivery note (DDT), receipt or credit note (`core/DeliveryNotes.kt`, `DocumentKinds`). The earliest title-like mention wins, so a DDT that says "la fattura seguirà" stays a DDT and an invoice listing "Rif. DDT 88" stays an invoice. Nothing printed → kind unknown. The kind shows on the document page and changes with one tap. Documents saved before this version get theirs once, at start-up, from their saved text. On the synthetic bench (440 documents with OCR noise) 433 come out right, 1 wrong, 6 unknown.
+
+**Delivery notes and invoices.** An invoice that names its delivery notes ("Rif. DDT n. 101 del 03/10/2026", or the e-invoice's `DatiDDT`) is matched to the saved DDTs of the same supplier: same number (leading zeros, letters and a year part aside) and compatible dates. Only explicit references count; nothing is matched by guesswork.
+- A matched DDT is **charged on the invoice**, so spending, quantities, averages and price changes count the invoice only (before this, scanning both counted the goods twice). Lots and expiry dates of the DDT stay searchable. Deleting the invoice makes the DDT count again.
+- The two are **compared line by line** (by product, else by description; kg/g and l/ml converted; lines without a quantity such as transport are not compared): charged but not delivered, delivered but not charged, a different quantity, a higher price than the DDT printed. Half a percent of difference is rounding, not a difference.
+- An invoice naming a DDT that is not saved says so.
+
+**Credit notes** (kind "credit note") are money back: subtracted from spending, never counted as purchases.
+
+**Agreed prices.** On a product's page: the price from the supplier's price list, per kg, l, piece…, with or without VAT, for one supplier or any. Purchases above it by more than half a percent are listed in Checks with the extra paid (what was paid = line total ÷ quantity, so discounts count; units convert only between kg/g, l/ml or the product's own conversions; VAT-inclusive and exclusive prices are never compared).
+
+**Checks** (home tile, with the number of things waiting): overcharges, DDT/invoice differences, and the **credits you are waiting for** (added from a difference or by hand; marked received when they arrive). Each row can be marked "It's fine" (remembered) or turned into a credit request.
+
+## 7j. Lots and expiry
+
+Home ▸ *Lots and expiry*:
+- **Lot search**: type a lot as printed or as heard on the phone (case, spaces, dots and dashes don't matter; "240187" finds "L.24/0187") or a product name. Each hit shows product, supplier, document, date, quantity and expiry. *Share this list* sends it as plain text, for a recall file or an inspector.
+- **Expiring**: use-by dates printed on the documents in the next 7 days or past in the last 14, soonest first; the same goods on a DDT and its invoice show once. The app does not know what is still in the fridge, so each row has *Done* (used or thrown away). The home screen shows a line when something is expiring.
+
+Tests: `DeliveryNotesTest`, `ChecksTest` (core), `ChecksRepositoryTest` and `MigrationTest.migrate7To8` (emulator). Database schema v8 adds `documents.kind / ddt_refs / covered_by`, `agreed_prices`, `credits`, `dismissed`.
+
 ## 8. MVP assumptions and limits
 
 - Main target: Italian supplier documents in EUR. Other currencies can be typed as a 3-letter code, but no conversion is done.

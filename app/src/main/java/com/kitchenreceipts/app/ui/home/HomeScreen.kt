@@ -20,6 +20,9 @@ import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Warehouse
 import androidx.compose.material.icons.filled.Warning
+import androidx.compose.material.icons.filled.Verified
+import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.kitchenreceipts.app.ui.components.Button
@@ -54,9 +57,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 
-class HomeViewModel(repo: ReceiptRepository) : ViewModel() {
+class HomeViewModel(repo: ReceiptRepository, checks: com.kitchenreceipts.app.data.ChecksRepository) : ViewModel() {
     val recent: StateFlow<List<DocumentListRow>?> =
         repo.recentDocuments(10).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+    val attention: StateFlow<Int> = checks.attention().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    val expiring: StateFlow<List<com.kitchenreceipts.core.ExpiringLine>> =
+        checks.expiring().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }
 
 @Composable
@@ -71,9 +77,13 @@ fun HomeScreen(
     onInventory: () -> Unit,
     onReviewJob: (String) -> Unit,
     onBackup: () -> Unit = {},
+    onChecks: () -> Unit = {},
+    onLots: () -> Unit = {},
 ) {
-    val vm = appViewModel { HomeViewModel(it.repository) }
+    val vm = appViewModel { HomeViewModel(it.repository, it.checks) }
     val recent by vm.recent.collectAsStateWithLifecycle()
+    val attention by vm.attention.collectAsStateWithLifecycle()
+    val expiring by vm.expiring.collectAsStateWithLifecycle()
 
     AppScaffold(
         title = stringResource(R.string.app_name),
@@ -92,6 +102,7 @@ fun HomeScreen(
             item("jobs") { JobsSection(onReview = onReviewJob, onOpenDocument = onOpenDocument) }
             item("scan") { ScanButton(onScan) }
             if (!recent.isNullOrEmpty()) item("backup") { BackupReminder(onBackup) }
+            if (expiring.isNotEmpty()) item("expiring") { ExpiringCard(expiring, onLots) }
             item("menu") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -101,6 +112,10 @@ fun HomeScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Tile(stringResource(R.string.documents), Icons.Filled.Description, onDocuments, Modifier.weight(1f))
                         Tile(stringResource(R.string.sellers), Icons.Filled.Storefront, onSellers, Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Tile(stringResource(R.string.checks_title), Icons.Filled.Verified, onChecks, Modifier.weight(1f), badge = attention)
+                        Tile(stringResource(R.string.lots_title), Icons.Filled.QrCode2, onLots, Modifier.weight(1f))
                     }
                     WideTile(stringResource(R.string.monthly_reports), stringResource(R.string.rep_home_tile), Icons.Filled.BarChart, onReports)
                 }
@@ -129,10 +144,14 @@ private fun ScanButton(onClick: () -> Unit) {
 }
 
 @Composable
-private fun Tile(label: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier) {
+private fun Tile(label: String, icon: ImageVector, onClick: () -> Unit, modifier: Modifier = Modifier, badge: Int = 0) {
     ClickCard(onClick = onClick, modifier = modifier.heightIn(min = 104.dp)) {
         Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp), tint = Palette.PhthaloBright)
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp), tint = Palette.PhthaloBright)
+                Spacer(Modifier.weight(1f))
+                if (badge > 0) Text(badge.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Palette.Orange)
+            }
             Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
@@ -195,6 +214,25 @@ private fun BackupReminder(onClick: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(stringResource(R.string.backup_reminder_hint), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
+        }
+    }
+}
+
+/** Use-by dates printed on the documents, in the next days: one line on the home screen. */
+@Composable
+private fun ExpiringCard(lines: List<com.kitchenreceipts.core.ExpiringLine>, onClick: () -> Unit) {
+    val first = lines.first()
+    ClickCard(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.EventBusy, contentDescription = null, modifier = Modifier.size(28.dp), tint = Palette.Orange)
+            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                Text(stringResource(R.string.expiry_home, lines.size), style = MaterialTheme.typography.titleMedium)
+                Text(
+                    stringResource(R.string.expiry_home_hint, (first.productName ?: first.description) + " · " + fmtDate(first.expiry)),
+                    style = MaterialTheme.typography.bodySmall, color = Palette.Orange, maxLines = 1, overflow = TextOverflow.Ellipsis,
+                )
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
         }

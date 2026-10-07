@@ -22,7 +22,7 @@ import java.time.LocalDate
 @RunWith(AndroidJUnit4::class)
 class BackupRoundTripTest {
 
-    @Test fun backupThenCheck() = runBlocking {
+    @Test fun backupThenCheck() = runBlocking<Unit> {
         val app = ApplicationProvider.getApplicationContext<KitchenReceiptsApp>()
         val c = app.container
         val original = File(app.filesDir, "documents/backup-test.jpg").apply { parentFile?.mkdirs(); writeBytes(ByteArray(300_000) { (it % 251).toByte() }) }

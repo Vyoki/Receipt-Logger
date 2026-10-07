@@ -54,6 +54,10 @@ object OfficeExport {
         /** "photo", "pdf" or "e-invoice". */
         val source: String,
         val lines: List<Line>,
+        /** A delivery note charged on this invoice: shown, but not counted in spending (the invoice is). */
+        val coveredBy: Long? = null,
+        /** INVOICE, DELIVERY_NOTE, RECEIPT, CREDIT_NOTE or null. */
+        val kind: String? = null,
     )
     data class Snapshot(
         val business: String?,
@@ -112,6 +116,8 @@ object OfficeExport {
             o.append(",\"number\":"); str(d.number); o.append(",\"currency\":"); str(d.currency)
             o.append(",\"subtotal\":"); num(d.subtotalCents); o.append(",\"vat\":"); num(d.vatCents); o.append(",\"total\":"); num(d.totalCents)
             o.append(",\"vatBasis\":"); str(d.vatBasis.name); o.append(",\"source\":"); str(d.source)
+            if (d.coveredBy != null) { o.append(",\"coveredBy\":"); num(d.coveredBy) }
+            if (d.kind != null) { o.append(",\"kind\":"); str(d.kind) }
             o.append(",\"lines\":"); arr(d.lines) { l ->
                 o.append("{\"d\":"); str(l.description); o.append(",\"p\":"); num(l.productId); o.append(",\"q\":"); dec(l.quantity)
                 o.append(",\"u\":"); str(l.unit); o.append(",\"pr\":"); dec(l.unitPrice); o.append(",\"t\":"); num(l.totalCents)
