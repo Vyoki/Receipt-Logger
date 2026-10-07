@@ -63,6 +63,7 @@
 
     <!-- Lots and expiry -->
     <string name="lots_title">Lots and expiry</string>
+    <string name="lots_tile">Lots</string>
     <string name="lots_tile_note">Recalls, use-by dates</string>
     <string name="lots_search">Lot number or product</string>
     <string name="lots_search_hint">Type a lot (spaces and dashes don\'t matter) or a product name, to see when it arrived, from whom and how much.</string>
