@@ -648,6 +648,12 @@ interface FoodDao {
     @Query("SELECT * FROM recipes WHERE id = :id")
     suspend fun recipe(id: Long): RecipeEntity?
 
+    @Query("SELECT * FROM recipes")
+    suspend fun recipesOnce(): List<RecipeEntity>
+
+    @Query("SELECT * FROM recipe_items")
+    suspend fun allItemsOnce(): List<RecipeItemEntity>
+
     @Query("SELECT * FROM recipe_items ORDER BY recipe_id, position")
     fun allItems(): Flow<List<RecipeItemEntity>>
 

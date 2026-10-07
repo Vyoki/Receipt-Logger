@@ -77,4 +77,16 @@
     <string name="order_send">Invia ordine</string>
     <string name="order_heading">Ordine per %1$s – %2$s</string>
     <string name="order_note">Nota per il fornitore (facoltativa)</string>
+    <string name="food_import">Importa i piatti da un foglio</string>
+    <string name="food_import_hint">Excel (.xlsx) o CSV con una riga per ingrediente: Piatto, Ingrediente, Quantità, Unità… Quando cambia il menu aggiorna il file e importalo di nuovo.</string>
+    <string name="food_import_title">Importare %1$d piatti?</string>
+    <string name="food_import_summary">Nuovi: %1$d · aggiornati: %2$d\nIngredienti collegati ai tuoi prodotti: %3$d\nCon il prezzo del foglio: %4$d\nSenza prezzo: %5$d</string>
+    <string name="food_import_skipped">Righe senza quantità, lasciate fuori: %1$d (completale nel foglio)</string>
+    <string name="food_import_empty">Piatti ancora senza ingredienti: %1$d</string>
+    <string name="food_import_remove">Elimina i %1$d piatti che non sono nel file</string>
+    <string name="food_import_go">Importa</string>
+    <string name="food_import_done">Piatti importati.</string>
+    <string name="food_import_bad">Questo file non ha le colonne «Piatto» e «Ingrediente».</string>
+    <string name="food_import_failed">Non è stato possibile leggere il file.</string>
+    <string name="food_no_ingredients">Nessun ingrediente ancora</string>
 </resources>
