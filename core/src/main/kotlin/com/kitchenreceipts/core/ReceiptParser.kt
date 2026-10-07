@@ -195,9 +195,17 @@ object ReceiptParser {
         val layouts = pages.map { LayoutRows.layout(it) }
         val text = layouts.joinToString("\n$PAGE_BREAK\n") { it.text }
         if (text.isBlank()) return ParsedDocument.EMPTY
+        val grid = runCatching { HeaderGrid.read(layouts) }.getOrDefault(HeaderGrid.Grid())
         fun read(o: ParseOptions): ParsedDocument {
             val table = runCatching { TableReader.read(layouts, o.layout?.headings.orEmpty()) }.getOrNull()
-            return parse(text, o, table)
+            val doc = parse(text, o, table)
+            // Discounts and charges are part of the sums, never products; values under their headings settle totals.
+            val marked = doc.copy(
+                lineItems = Adjustments.mark(doc.lineItems),
+                // A discount line is never the supplier ("Sconto inc." on a page whose letterhead is a picture).
+                sellerName = doc.sellerName?.takeUnless { Adjustments.isDiscount(it.value) },
+            )
+            return HeaderGrid.apply(marked, grid, o.today)
         }
         val plain = read(options.copy(layoutLookup = null))
         if (options.layout != null || options.layoutLookup == null) return plain

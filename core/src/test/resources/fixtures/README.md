@@ -28,3 +28,4 @@ They imitate the OCR text of typical Italian supplier documents:
 - `ai_answer_qwen3vl_2b.json`: the answer Qwen3-VL 2B gave in CI (job ai-model-check) for the synthetic
   "ABC S.r.l." invoice photo drawn by `tools/ai-cli/make_invoice.py`, with the app's prompt and grammar.
 - `menu_esempio.xlsx`: an invented menu sheet (two dishes and a cover charge) in the layout the app imports, made with openpyxl; one formula cell has no saved value, as in a file never opened in Excel.
+- `pdf_text_sconti.txt`: the text layer of a digital PDF invoice (line and word boxes, the format of `ocr_mlkit_lines_4_photos.txt`), with the supplier, customer, numbers and addresses removed or replaced by invented ones. It has a discount column, discount lines ("Sconto inc.", "Sconto del 4%"), and totals printed under their headings.

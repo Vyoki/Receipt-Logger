@@ -185,6 +185,7 @@ object AiTargets {
         val provenByVat = doc.vatChecks.isNotEmpty() && doc.vatChecks.all { it.ok }
         val doubtful = doc.lineItems.indices.filter { i ->
             val it = doc.lineItems[i]
+            if (it.adjustment) return@filter false // a discount or charge: no goods to check
             if (it.nameDoubt) return@filter true // numbers proven or not, the name needs a look
             if (provenByVat && ReceiptParser.workedOut(it)) return@filter false
             ParseWarning.LINE_TOTAL_MISMATCH in it.warnings || it.lineTotalCents == null ||
@@ -290,7 +291,7 @@ object AiTargets {
                 val qSure = q.confidence == Confidence.HIGH || (provenByVat && ReceiptParser.workedOut(it))
                 return qSure && p.confidence == Confidence.HIGH && t.confidence == Confidence.HIGH && ReceiptParser.matches(q.value, p.value, t.value)
             }
-            val open = doc.lineItems.indices.filter { i -> i !in asked && itemRow[i] != null && doc.lineItems[i].lineTotalCents != null }
+            val open = doc.lineItems.indices.filter { i -> i !in asked && itemRow[i] != null && !doc.lineItems[i].adjustment && doc.lineItems[i].lineTotalCents != null }
             // Everything proven: still one look at the largest amount, the line where a misread costs most.
             val candidates = open.filter { !proven(doc.lineItems[it]) }.ifEmpty { listOfNotNull(open.maxByOrNull { doc.lineItems[it].lineTotalCents!!.value }) }
             val worked = candidates.filter { ReceiptParser.workedOut(doc.lineItems[it]) }

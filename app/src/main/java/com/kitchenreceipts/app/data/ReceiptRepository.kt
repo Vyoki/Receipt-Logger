@@ -476,6 +476,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         val sellerId = if (sellerName.isNotBlank()) sellers.findByNormalizedSuspend(normalizeSeller(sellerName))?.id else null
         return items.map { item ->
             if (item.productId != null || item.description.text.isBlank()) return@map item
+            // Discounts and charges are never products: no link, no new product.
+            if (item.isCharge) return@map item.copy(newProductName = null, productSource = null)
             val remembered = sellerId?.let { rememberedProduct(it, item.description.text, item.itemCode) }
             if (remembered != null && names.containsKey(remembered)) {
                 return@map item.copy(productId = remembered, productName = names[remembered], productSource = ProductSource.REMEMBERED, newProductName = null)

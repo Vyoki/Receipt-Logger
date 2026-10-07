@@ -492,6 +492,11 @@
         <item quantity="one">%d prezzo cambiato del 5%% o più</item>
         <item quantity="other">%d prezzi cambiati del 5%% o più</item>
     </plurals>
+    <string name="notif_dish_line">%1$s: %2$s → %3$s (%4$s)</string>
+    <plurals name="notif_dish_title">
+        <item quantity="one">Un piatto ha superato il food cost del %2$s</item>
+        <item quantity="other">%1$d piatti hanno superato il food cost del %2$s</item>
+    </plurals>
     <string name="notif_price_not_saved">non ancora salvato, tocca per controllare</string>
     <string name="price_alerts">Notifiche variazioni di prezzo</string>
     <string name="price_alerts_hint" formatted="false">Dopo la lettura in background di un documento, avvisa quando un prezzo è più alto o più basso del 5% o più rispetto all\'ultimo acquisto.</string>

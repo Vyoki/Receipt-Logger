@@ -175,8 +175,18 @@ object TableReader {
     }
 
     /** Words of an OCR line with deskewed x positions, OCR slips repaired ("PREZZ0", "l4,50"), glued code+colli split. */
-    private fun words(line: OcrLine, slope: Double): List<Word> = rawWords(line, slope).flatMap { w ->
+    private fun words(line: OcrLine, slope: Double): List<Word> = rawWords(line, slope).mapNotNull { w ->
+        // A table's vertical rule read as "|" glued to a word ("26245 |KG").
+        val t = w.text.trim('|', '¦').trim()
+        if (t.isEmpty()) null else w.copy(text = t)
+    }.flatMap { w ->
         val text = OcrCleanup.fixWordToken(OcrCleanup.fixNumericToken(w.text))
+        val pd = PRICE_WITH_DISCOUNT.matchEntire(text)
+        if (pd != null) {
+            // "13,20010+10": the unit price and a cascaded discount printed without a space.
+            val cut = w.left + (w.right - w.left) * pd.groupValues[1].length / text.length
+            return@flatMap listOf(Word(pd.groupValues[1], w.left, cut), Word(pd.groupValues[2], cut, w.right))
+        }
         val m = CODE_WITH_COLLI.find(text)
         val g = GLUED_SIZE.matchEntire(text)
         if (g != null && m == null) {
@@ -222,6 +232,7 @@ object TableReader {
     private val AMOUNT_WITH_VAT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{2})(04|05|10|22|4|5)$")
     /** An amount whose decimal comma the OCR lost ("753" for 7,53). */
     private val DIGITS_ONLY = Regex("^\\d{3,6}$")
+    private val PRICE_WITH_DISCOUNT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{3,4}?)(\\d{1,2}(?:\\+\\d{1,2})+%?)$")
     private val GLUED_SIZE = Regex("^(?i)(KG|GR|LT|ML|CL|PZ)(\\d+(?:[.,]\\d+)?)$")
     private val TWO_LETTER = Regex("^[A-Z]{1,2}$")
     private val NUMBER_KINDS = setOf(Kind.QUANTITY, Kind.PRICE, Kind.DISCOUNT, Kind.AMOUNT, Kind.PACKAGES)
@@ -440,6 +451,19 @@ object TableReader {
      */
     private fun overflowLeft(cells: MutableMap<Kind, MutableList<Word>>, cols: List<Column>) {
         val order = cols.map { it.kind }.distinct()
+        // "9,000 10" under PREZZO with SCONTO empty: a discount printed closer to the price than to its heading.
+        val di = order.indexOf(Kind.DISCOUNT)
+        if (di > 0 && cells[Kind.DISCOUNT].orEmpty().none { isNumeric(it.text) || it.text.contains('+') }) {
+            val left = cells[order[di - 1]]
+            if (left != null && left.count { isNumeric(it.text) } > 1) {
+                val last = left.filter { isNumeric(it.text) }.maxBy { it.left }
+                val v = ItalianNumbers.parse(last.text.trimEnd('%'))
+                if (v != null && v.signum() > 0 && v < BigDecimal(100) && v.stripTrailingZeros().scale() <= 2 && !MONEY.matches(last.text) || last.text.endsWith("%")) {
+                    left.remove(last)
+                    cells.getOrPut(Kind.DISCOUNT) { mutableListOf() } += last
+                }
+            }
+        }
         for (k in listOf(Kind.AMOUNT, Kind.PRICE, Kind.DISCOUNT, Kind.QUANTITY)) {
             val list = cells[k] ?: continue
             val idx = order.indexOf(k)
@@ -568,7 +592,7 @@ object TableReader {
         if (total != null && price != null && commaLost) {
             val q = qty ?: BigDecimal.ONE
             if (!ReceiptParser.matches(q, price, total)) {
-                listOf(2, 3, 4).map { price.movePointLeft(it) }.firstOrNull { ReceiptParser.matches(q, it, total) }?.let {
+                listOf(2, 3, 4).map { price.movePointLeft(it) }.firstOrNull { ReceiptParser.matches(q, it, total) || discountMatches(q, it, discount, total) }?.let {
                     price = it; if (qty == null) { qty = BigDecimal.ONE; qtyWorkedOut = true }; priceRepaired = true; consistent = true
                 }
             }

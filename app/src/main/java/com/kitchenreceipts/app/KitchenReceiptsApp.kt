@@ -59,6 +59,8 @@ class AppContainer(context: Context) {
     }
 
     init {
+        // The PDF text reader needs its font tables from the app's files.
+        runCatching { com.tom_roush.pdfbox.android.PDFBoxResourceLoader.init(context.applicationContext) }
         // Documents of a supplier seen before are read with what its confirmed documents taught (phone only).
         settings.layoutLookup = { key -> learning.layout(key) }
         runCatching { learning.applyCategories() }
@@ -90,7 +92,25 @@ class AppContainer(context: Context) {
     val readingChecker = com.kitchenreceipts.app.diagnostics.ReadingChecker(context, repository, readings, settings, problems, log) { importQueue.busy }
 
     init {
-        importQueue.onAutoSaved = { id, pending -> readings.save(id, pending.rawLines) }
+        importQueue.onAutoSaved = { id, pending -> readings.save(id, pending.rawLines); checkDishes(id) }
+    }
+
+    /**
+     * After a document is saved (by hand or by the app): a notification for the dishes its prices pushed over the
+     * food cost target. Follows the price notification setting.
+     */
+    fun checkDishes(documentId: Long) {
+        if (!settings.priceAlerts) return
+        appScope.launch {
+            runCatching {
+                val target = settings.foodCostTarget
+                val alerts = food.dishAlerts(documentId, target)
+                if (alerts.isNotEmpty()) {
+                    log.event("DISH_ALERT", "doc" to documentId, "dishes" to alerts.size)
+                    notifier.dishesOverTarget(documentId, alerts, target)
+                }
+            }.onFailure { log.error("dishAlerts", it) }
+        }
     }
 
     /** Backup and restore of everything on this phone, to a file the operator keeps. */
