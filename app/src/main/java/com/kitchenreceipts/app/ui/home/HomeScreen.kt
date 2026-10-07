@@ -22,6 +22,8 @@ import androidx.compose.material.icons.filled.Warehouse
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Verified
 import androidx.compose.material.icons.filled.QrCode2
+import androidx.compose.material.icons.filled.Restaurant
+import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.EventBusy
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
@@ -79,6 +81,8 @@ fun HomeScreen(
     onBackup: () -> Unit = {},
     onChecks: () -> Unit = {},
     onLots: () -> Unit = {},
+    onFoodCost: () -> Unit = {},
+    onOrders: () -> Unit = {},
 ) {
     val vm = appViewModel { HomeViewModel(it.repository, it.checks) }
     val recent by vm.recent.collectAsStateWithLifecycle()
@@ -116,6 +120,10 @@ fun HomeScreen(
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Tile(stringResource(R.string.checks_title), Icons.Filled.Verified, onChecks, Modifier.weight(1f), badge = attention)
                         Tile(stringResource(R.string.lots_title), Icons.Filled.QrCode2, onLots, Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Tile(stringResource(R.string.food_title), Icons.Filled.Restaurant, onFoodCost, Modifier.weight(1f))
+                        Tile(stringResource(R.string.order_title), Icons.Filled.ShoppingCart, onOrders, Modifier.weight(1f))
                     }
                     WideTile(stringResource(R.string.monthly_reports), stringResource(R.string.rep_home_tile), Icons.Filled.BarChart, onReports)
                 }

@@ -38,6 +38,9 @@ class Converters {
         AgreedPriceEntity::class,
         CreditEntity::class,
         DismissedEntity::class,
+        RecipeEntity::class,
+        RecipeItemEntity::class,
+        RevenueEntity::class,
     ],
     version = AppDatabase.VERSION,
     exportSchema = true,
@@ -48,9 +51,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun sellerDao(): SellerDao
     abstract fun productDao(): ProductDao
     abstract fun checksDao(): ChecksDao
+    abstract fun foodDao(): FoodDao
 
     companion object {
-        const val VERSION = 8
+        const val VERSION = 9
         const val NAME = "kitchen_receipts.db"
 
         fun build(context: Context): AppDatabase =
@@ -74,6 +78,7 @@ abstract class AppDatabase : RoomDatabase() {
  * v6: + product_families, products.family_id / brand / family_dismissed (product groups)
  * v7: + line_items.pack_size (size of one pack: "500 g", "1 l")
  * v8: + documents.kind / ddt_refs / covered_by (delivery notes and invoices), agreed_prices, credits, dismissed
+ * v9: + recipes, recipe_items, revenue (food cost)
  */
 object Migrations {
 
@@ -174,5 +179,30 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
+    val MIGRATION_8_9 = object : Migration(8, 9) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `recipes` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `name` TEXT NOT NULL, `category` TEXT, " +
+                    "`sale_price_cents` INTEGER, `price_includes_vat` INTEGER NOT NULL, `vat_rate` TEXT NOT NULL, " +
+                    "`portions` TEXT NOT NULL, `created_at` INTEGER NOT NULL, `updated_at` INTEGER NOT NULL)",
+            )
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `recipe_items` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `recipe_id` INTEGER NOT NULL, `position` INTEGER NOT NULL, " +
+                    "`product_id` INTEGER, `name` TEXT NOT NULL, `quantity` TEXT NOT NULL, `unit` TEXT NOT NULL, " +
+                    "`waste_percent` TEXT NOT NULL, `manual_price` TEXT, `manual_unit` TEXT, " +
+                    "FOREIGN KEY(`recipe_id`) REFERENCES `recipes`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                    "FOREIGN KEY(`product_id`) REFERENCES `products`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipe_items_recipe_id` ON `recipe_items` (`recipe_id`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_recipe_items_product_id` ON `recipe_items` (`product_id`)")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `revenue` (`month` TEXT NOT NULL, `cents` INTEGER NOT NULL, " +
+                    "`includes_vat` INTEGER NOT NULL, `vat_rate` TEXT NOT NULL, PRIMARY KEY(`month`))",
+            )
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9)
 }

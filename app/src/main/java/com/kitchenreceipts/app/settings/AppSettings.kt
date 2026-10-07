@@ -98,6 +98,16 @@ class AppSettings(context: Context) {
         get() = prefs.getLong("last_backup_at", 0L)
         set(v) = prefs.edit().putLong("last_backup_at", v).apply()
 
+    /** Food cost the kitchen aims at, percent of the price without VAT. */
+    var foodCostTarget: java.math.BigDecimal
+        get() = prefs.getString("food_target", null)?.toBigDecimalOrNull() ?: com.kitchenreceipts.core.FoodCost.DEFAULT_TARGET
+        set(v) = prefs.edit().putString("food_target", v.toPlainString()).apply()
+
+    /** Share for staff and utilities added to a dish's food cost to show its full cost, percent (0 = none). */
+    var overheadPercent: java.math.BigDecimal
+        get() = prefs.getString("food_overhead", null)?.toBigDecimalOrNull() ?: java.math.BigDecimal.ZERO
+        set(v) = prefs.edit().putString("food_overhead", v.toPlainString()).apply()
+
     /** The app version that last re-read the saved documents (see ReadingChecker). */
     var readingCheckVersion: String
         get() = prefs.getString("reading_check_version", "") ?: ""

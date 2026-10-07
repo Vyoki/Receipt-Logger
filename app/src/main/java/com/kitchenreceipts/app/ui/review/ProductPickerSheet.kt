@@ -50,6 +50,8 @@ fun ProductPickerSheet(
     onCreate: (String) -> Unit,
     onClear: () -> Unit,
     onDismiss: () -> Unit,
+    /** What the "create" button says ("Create new product “%1$s”" by default). */
+    createLabel: Int = R.string.create_product,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by remember { mutableStateOf(ProductMatching.proposeName(description)) }
@@ -79,7 +81,7 @@ fun ProductPickerSheet(
             if (query.isNotBlank() && exact == null) {
                 TextButton(onClick = { onCreate(query.trim()) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                     Icon(Icons.Filled.Add, contentDescription = null)
-                    Text(stringResource(R.string.create_product, query.trim()))
+                    Text(stringResource(createLabel, query.trim()))
                 }
             }
             LazyColumn(Modifier.fillMaxWidth().heightIn(max = 420.dp)) {
