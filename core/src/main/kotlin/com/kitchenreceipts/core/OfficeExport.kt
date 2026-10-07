@@ -126,7 +126,10 @@ object OfficeExport {
 
     // ---------------------------------------------------------------- encryption
 
-    private fun key(password: CharArray, salt: ByteArray, iterations: Int): SecretKeySpec {
+    private fun key(password: CharArray, salt: ByteArray, iterations: Int): SecretKeySpec = keyFor(password, salt, iterations)
+
+    /** AES-256 key from a password (PBKDF2-SHA256); also used by [Backup]. */
+    fun keyFor(password: CharArray, salt: ByteArray, iterations: Int): SecretKeySpec {
         val spec = PBEKeySpec(password, salt, iterations, 256)
         try {
             val bytes = SecretKeyFactory.getInstance("PBKDF2WithHmacSHA256").generateSecret(spec).encoded

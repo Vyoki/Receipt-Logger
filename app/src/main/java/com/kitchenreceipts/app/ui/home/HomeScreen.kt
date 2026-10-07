@@ -19,6 +19,7 @@ import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Warehouse
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.kitchenreceipts.app.ui.components.Button
@@ -69,6 +70,7 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onInventory: () -> Unit,
     onReviewJob: (String) -> Unit,
+    onBackup: () -> Unit = {},
 ) {
     val vm = appViewModel { HomeViewModel(it.repository) }
     val recent by vm.recent.collectAsStateWithLifecycle()
@@ -89,6 +91,7 @@ fun HomeScreen(
         ) {
             item("jobs") { JobsSection(onReview = onReviewJob, onOpenDocument = onOpenDocument) }
             item("scan") { ScanButton(onScan) }
+            if (!recent.isNullOrEmpty()) item("backup") { BackupReminder(onBackup) }
             item("menu") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -176,3 +179,24 @@ fun DocumentRow(row: DocumentListRow, onClick: () -> Unit) {
 @Composable
 private fun pluralItems(n: Int): String =
     androidx.compose.ui.res.pluralStringResource(R.plurals.item_count, n, n)
+
+/** Shown when there is data and no backup for a week: losing the phone would lose everything. */
+@Composable
+private fun BackupReminder(onClick: () -> Unit) {
+    val last = com.kitchenreceipts.app.ui.appContainer().settings.lastBackupAt
+    val days = if (last <= 0L) -1L else (System.currentTimeMillis() - last) / 86_400_000L
+    if (days in 0..6) return
+    ClickCard(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Warning, contentDescription = null, modifier = Modifier.size(28.dp), tint = Palette.Orange)
+            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                Text(
+                    if (days < 0) stringResource(R.string.backup_reminder_never) else stringResource(R.string.backup_reminder, days.toInt()),
+                    style = MaterialTheme.typography.titleMedium,
+                )
+                Text(stringResource(R.string.backup_reminder_hint), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
+        }
+    }
+}

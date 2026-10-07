@@ -53,7 +53,7 @@ import com.kitchenreceipts.app.ui.components.SectionTitle
 import kotlinx.coroutines.launch
 
 @Composable
-fun SettingsScreen(onBack: () -> Unit) {
+fun SettingsScreen(onBack: () -> Unit, onBackup: () -> Unit = {}) {
     val c = appContainer()
     val s = c.settings
     val context = LocalContext.current
@@ -82,6 +82,14 @@ fun SettingsScreen(onBack: () -> Unit) {
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(16.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
+            // ---------------------------------------------------------------- backup
+            com.kitchenreceipts.app.ui.components.ClickCard(onClick = onBackup) {
+                Column {
+                    Text(stringResource(R.string.backup_title), style = MaterialTheme.typography.titleMedium)
+                    Text(stringResource(R.string.backup_settings_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
+                }
+            }
+
             // ---------------------------------------------------------------- language
             SectionTitle(stringResource(R.string.language))
             Panel {

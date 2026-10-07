@@ -39,6 +39,7 @@ object Routes {
     const val SELLERS = "sellers"
     const val REPORTS = "reports"
     const val SETTINGS = "settings"
+    const val BACKUP = "backup"
 
     fun edit(id: Long) = "edit/$id"
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
@@ -76,10 +77,14 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onSettings = { nav.navigate(Routes.SETTINGS) },
                 onInventory = { nav.navigate(Routes.INVENTORY) },
                 onReviewJob = { nav.navigate(Routes.review(it)) },
+                onBackup = { nav.navigate(Routes.BACKUP) },
             )
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = back)
+            SettingsScreen(onBack = back, onBackup = { nav.navigate(Routes.BACKUP) })
+        }
+        composable(Routes.BACKUP) {
+            com.kitchenreceipts.app.ui.settings.BackupScreen(onBack = back)
         }
         composable(Routes.CAPTURE) {
             CaptureScreen(
