@@ -71,6 +71,15 @@ data class DocumentEntity(
     @ColumnInfo(name = "ocr_text") val ocrText: String?,
     @ColumnInfo(name = "created_at") val createdAt: Long,
     @ColumnInfo(name = "updated_at") val updatedAt: Long,
+    /** v8: INVOICE, DELIVERY_NOTE, RECEIPT or CREDIT_NOTE (core DocKind), read from the title; null = not known. */
+    val kind: String? = null,
+    /** v8: the delivery notes this document refers to, "number|yyyy-mm-dd;..." (core DeliveryRef). */
+    @ColumnInfo(name = "ddt_refs") val ddtRefs: String? = null,
+    /**
+     * v8: for a delivery note, the invoice that names it. Its goods are charged on that invoice, so spending,
+     * quantities and averages count the invoice only. Worked out by the app from the references (see DeliveryMatching).
+     */
+    @ColumnInfo(name = "covered_by") val coveredBy: Long? = null,
 )
 
 @Entity(
@@ -176,4 +185,50 @@ data class UnitConversionEntity(
     @ColumnInfo(name = "from_unit") val fromUnit: String,
     @ColumnInfo(name = "to_unit") val toUnit: String,
     val factor: BigDecimal,
+)
+
+/** v8: a price agreed with a supplier (its price list) for a product; purchases above it are flagged. */
+@Entity(
+    tableName = "agreed_prices",
+    foreignKeys = [
+        ForeignKey(ProductEntity::class, ["id"], ["product_id"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(SellerEntity::class, ["id"], ["seller_id"], onDelete = ForeignKey.CASCADE),
+    ],
+    indices = [Index("product_id"), Index("seller_id")],
+)
+data class AgreedPriceEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "product_id") val productId: Long,
+    /** null = any supplier. */
+    @ColumnInfo(name = "seller_id") val sellerId: Long?,
+    val unit: String,
+    val price: BigDecimal,
+    @ColumnInfo(name = "vat_basis") val vatBasis: VatBasis,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+)
+
+/** v8: money a supplier owes back (goods missing, returned, charged twice), until the operator marks it received. */
+@Entity(
+    tableName = "credits",
+    foreignKeys = [
+        ForeignKey(SellerEntity::class, ["id"], ["seller_id"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(DocumentEntity::class, ["id"], ["document_id"], onDelete = ForeignKey.SET_NULL),
+    ],
+    indices = [Index("seller_id"), Index("document_id")],
+)
+data class CreditEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "seller_id") val sellerId: Long,
+    @ColumnInfo(name = "document_id") val documentId: Long?,
+    val description: String,
+    @ColumnInfo(name = "amount_cents") val amountCents: Long?,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "closed_at") val closedAt: Long? = null,
+)
+
+/** v8: notices the operator has dealt with ("checked, it's fine", "used up"): not shown again. */
+@Entity(tableName = "dismissed")
+data class DismissedEntity(
+    @PrimaryKey val notice: String,
+    val at: Long,
 )

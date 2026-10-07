@@ -227,6 +227,7 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
                 if (changes.isNotEmpty()) {
                     item("changes") { PriceChangesCard(changes.take(10)) }
                 }
+                item("agreed") { com.kitchenreceipts.app.ui.checks.AgreedPriceCard(productId, d.purchases) }
                 item { SectionTitle(stringResource(R.string.average_cost)) }
                 if (d.summary.averages.isEmpty()) {
                     item { EmptyState(stringResource(if (d.purchases.isEmpty()) R.string.no_purchases else R.string.no_average_yet)) }

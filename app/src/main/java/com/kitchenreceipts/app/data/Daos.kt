@@ -118,6 +118,7 @@ private const val PURCHASE_SELECT = """
     JOIN documents d ON d.id = li.document_id
     JOIN sellers s ON s.id = d.seller_id
     LEFT JOIN products p ON p.id = li.product_id
+    WHERE d.covered_by IS NULL AND IFNULL(d.kind, '') != 'CREDIT_NOTE'
 """
 
 @Dao
@@ -185,8 +186,10 @@ interface DocumentDao {
 
     @Query(
         "SELECT d.id AS id, s.name AS sellerName, d.document_date AS documentDate, d.document_number AS documentNumber, " +
-            "d.total_cents AS totalCents, (SELECT COUNT(*) FROM line_items li WHERE li.document_id = d.id) AS itemCount " +
-            "FROM documents d JOIN sellers s ON s.id = d.seller_id",
+            // A credit note is money back; a delivery note charged on an invoice is counted on the invoice.
+            "CASE WHEN d.kind = 'CREDIT_NOTE' THEN -d.total_cents ELSE d.total_cents END AS totalCents, " +
+            "(SELECT COUNT(*) FROM line_items li WHERE li.document_id = d.id) AS itemCount " +
+            "FROM documents d JOIN sellers s ON s.id = d.seller_id WHERE d.covered_by IS NULL",
     )
     fun reportRows(): Flow<List<ReportRow>>
 
@@ -207,13 +210,13 @@ interface DocumentDao {
     suspend fun allPurchasesOnce(): List<PurchaseRow>
 
     /** The purchases of a few products, in the same order as [allPurchasesOnce] (at most 900 ids per call). */
-    @Query("$PURCHASE_SELECT WHERE li.product_id IN (:productIds) ORDER BY d.document_date DESC, li.document_id DESC, li.position")
+    @Query("$PURCHASE_SELECT AND li.product_id IN (:productIds) ORDER BY d.document_date DESC, li.document_id DESC, li.position")
     suspend fun purchasesOfProductsOnce(productIds: List<Long>): List<PurchaseRow>
 
     @Query("SELECT DISTINCT product_id FROM line_items WHERE document_id = :documentId AND product_id IS NOT NULL")
     suspend fun productIdsOfDocument(documentId: Long): List<Long>
 
-    @Query("$PURCHASE_SELECT WHERE li.product_id = :productId ORDER BY (d.document_date IS NULL), d.document_date DESC, li.id DESC")
+    @Query("$PURCHASE_SELECT AND li.product_id = :productId ORDER BY (d.document_date IS NULL), d.document_date DESC, li.id DESC")
     fun purchasesForProduct(productId: Long): Flow<List<PurchaseRow>>
 }
 
@@ -233,7 +236,8 @@ interface SellerDao {
 
     @Query(
         """
-        SELECT s.id AS id, s.name AS name, COUNT(d.id) AS documentCount, SUM(d.total_cents) AS totalCents,
+        SELECT s.id AS id, s.name AS name, COUNT(d.id) AS documentCount,
+               SUM(CASE WHEN d.covered_by IS NOT NULL THEN 0 WHEN d.kind = 'CREDIT_NOTE' THEN -d.total_cents ELSE d.total_cents END) AS totalCents,
                MAX(d.document_date) AS lastDate
         FROM sellers s LEFT JOIN documents d ON d.seller_id = s.id
         GROUP BY s.id ORDER BY s.name COLLATE NOCASE
@@ -404,4 +408,204 @@ interface ProductDao {
 
     @Query("SELECT * FROM products WHERE family_id = :familyId ORDER BY name COLLATE NOCASE")
     fun productsInFamily(familyId: Long): Flow<List<ProductEntity>>
+}
+
+// ---------------------------------------------------------------- checks (v8)
+
+data class MatchDocRow(
+    val id: Long,
+    val sellerId: Long,
+    val kind: String?,
+    val documentNumber: String?,
+    val documentDate: LocalDate?,
+    val ddtRefs: String?,
+    val coveredBy: Long?,
+)
+
+data class KindlessRow(val id: Long, val ocrText: String?, val documentNumber: String?, val mimeType: String)
+
+data class CompareLineRow(
+    val lineItemId: Long,
+    val documentId: Long,
+    val productId: Long?,
+    val originalDescription: String,
+    val quantity: BigDecimal?,
+    val unit: String?,
+    val lineTotalCents: Long?,
+    val unitPrice: BigDecimal?,
+)
+
+data class CheckedLineRow(
+    val lineItemId: Long,
+    val documentId: Long,
+    val sellerId: Long,
+    val sellerName: String,
+    val documentNumber: String?,
+    val productId: Long?,
+    val productName: String?,
+    val originalDescription: String,
+    val documentDate: LocalDate?,
+    val quantity: BigDecimal?,
+    val unit: String?,
+    val unitPrice: BigDecimal?,
+    val lineTotalCents: Long?,
+    val vatBasis: VatBasis,
+)
+
+data class LotLineRow(
+    val lineItemId: Long,
+    val documentId: Long,
+    val sellerName: String,
+    val documentNumber: String?,
+    val documentDate: LocalDate?,
+    val kind: String?,
+    val productId: Long?,
+    val productName: String?,
+    val originalDescription: String,
+    val quantity: BigDecimal?,
+    val unit: String?,
+    val lotNumber: String?,
+    val expiryDate: LocalDate?,
+)
+
+data class AgreedPriceRow(
+    @Embedded val price: AgreedPriceEntity,
+    @ColumnInfo(name = "seller_name") val sellerName: String?,
+    @ColumnInfo(name = "product_name") val productName: String,
+)
+
+data class CreditRow(
+    @Embedded val credit: CreditEntity,
+    @ColumnInfo(name = "seller_name") val sellerName: String,
+    @ColumnInfo(name = "document_number") val documentNumber: String?,
+    @ColumnInfo(name = "document_date") val documentDate: LocalDate?,
+)
+
+private const val LOT_SELECT = """
+    SELECT li.id AS lineItemId, li.document_id AS documentId, s.name AS sellerName, d.document_number AS documentNumber,
+           d.document_date AS documentDate, d.kind AS kind, li.product_id AS productId, p.name AS productName,
+           li.original_description AS originalDescription, li.quantity AS quantity, li.unit AS unit,
+           li.lot_number AS lotNumber, li.expiry_date AS expiryDate
+    FROM line_items li
+    JOIN documents d ON d.id = li.document_id
+    JOIN sellers s ON s.id = d.seller_id
+    LEFT JOIN products p ON p.id = li.product_id
+"""
+
+@Dao
+interface ChecksDao {
+
+    @Query(
+        "SELECT id, seller_id AS sellerId, kind, document_number AS documentNumber, document_date AS documentDate, " +
+            "ddt_refs AS ddtRefs, covered_by AS coveredBy FROM documents",
+    )
+    suspend fun matchDocs(): List<MatchDocRow>
+
+    @Query(
+        "SELECT id, seller_id AS sellerId, kind, document_number AS documentNumber, document_date AS documentDate, " +
+            "ddt_refs AS ddtRefs, covered_by AS coveredBy FROM documents",
+    )
+    fun matchDocsFlow(): Flow<List<MatchDocRow>>
+
+    /** Documents saved before kinds were read (or whose kind could not be read: kind = '?' after one try). */
+    @Query("SELECT id, ocr_text AS ocrText, document_number AS documentNumber, mime_type AS mimeType FROM documents WHERE kind IS NULL")
+    suspend fun kindless(): List<KindlessRow>
+
+    @Query("UPDATE documents SET kind = :kind, ddt_refs = :refs WHERE id = :id")
+    suspend fun setKindAndRefs(id: Long, kind: String?, refs: String?)
+
+    @Query("UPDATE documents SET kind = :kind WHERE id = :id")
+    suspend fun setKind(id: Long, kind: String?)
+
+    @Query("UPDATE documents SET covered_by = :invoiceId WHERE id = :id")
+    suspend fun setCoveredBy(id: Long, invoiceId: Long?)
+
+    @Query(
+        "SELECT id AS lineItemId, document_id AS documentId, product_id AS productId, original_description AS originalDescription, " +
+            "quantity, unit, line_total_cents AS lineTotalCents, unit_price AS unitPrice FROM line_items WHERE document_id IN (:documentIds) ORDER BY document_id, position",
+    )
+    suspend fun compareLines(documentIds: List<Long>): List<CompareLineRow>
+
+    /** Lines of documents that count as purchases, linked to a product: checked against agreed prices. */
+    @Query(
+        """
+        SELECT li.id AS lineItemId, li.document_id AS documentId, d.seller_id AS sellerId, s.name AS sellerName,
+               d.document_number AS documentNumber, li.product_id AS productId, p.name AS productName,
+               li.original_description AS originalDescription, d.document_date AS documentDate, li.quantity AS quantity,
+               li.unit AS unit, li.unit_price AS unitPrice, li.line_total_cents AS lineTotalCents, d.vat_basis AS vatBasis
+        FROM line_items li
+        JOIN documents d ON d.id = li.document_id
+        JOIN sellers s ON s.id = d.seller_id
+        JOIN products p ON p.id = li.product_id
+        WHERE IFNULL(d.kind, '') != 'CREDIT_NOTE' AND d.covered_by IS NULL AND li.product_id IN (SELECT product_id FROM agreed_prices)
+        """,
+    )
+    fun linesWithAgreedPrices(): Flow<List<CheckedLineRow>>
+
+    @Query("$LOT_SELECT WHERE li.expiry_date IS NOT NULL AND li.expiry_date BETWEEN :fromDay AND :toDay")
+    fun expiring(fromDay: LocalDate, toDay: LocalDate): Flow<List<LotLineRow>>
+
+    @Query("$LOT_SELECT WHERE li.lot_number IS NOT NULL OR li.expiry_date IS NOT NULL ORDER BY (d.document_date IS NULL), d.document_date DESC, li.id DESC")
+    fun linesWithLots(): Flow<List<LotLineRow>>
+
+    @Query("$LOT_SELECT WHERE li.product_id = :productId ORDER BY (d.document_date IS NULL), d.document_date DESC, li.id DESC")
+    fun linesOfProduct(productId: Long): Flow<List<LotLineRow>>
+
+    // ---- agreed prices
+
+    @Query(
+        "SELECT a.*, s.name AS seller_name, p.name AS product_name FROM agreed_prices a JOIN products p ON p.id = a.product_id " +
+            "LEFT JOIN sellers s ON s.id = a.seller_id ORDER BY p.name COLLATE NOCASE",
+    )
+    fun agreedPrices(): Flow<List<AgreedPriceRow>>
+
+    @Query(
+        "SELECT a.*, s.name AS seller_name, p.name AS product_name FROM agreed_prices a JOIN products p ON p.id = a.product_id " +
+            "LEFT JOIN sellers s ON s.id = a.seller_id WHERE a.product_id = :productId",
+    )
+    fun agreedPricesFor(productId: Long): Flow<List<AgreedPriceRow>>
+
+    @Insert suspend fun insertAgreedPrice(p: AgreedPriceEntity): Long
+
+    @Query("DELETE FROM agreed_prices WHERE product_id = :productId AND ((:sellerId IS NULL AND seller_id IS NULL) OR seller_id = :sellerId) AND vat_basis = :basis")
+    suspend fun deleteAgreedPriceFor(productId: Long, sellerId: Long?, basis: VatBasis)
+
+    @Query("DELETE FROM agreed_prices WHERE id = :id")
+    suspend fun deleteAgreedPrice(id: Long)
+
+    // ---- credits
+
+    @Query(
+        "SELECT c.*, s.name AS seller_name, d.document_number AS document_number, d.document_date AS document_date FROM credits c " +
+            "JOIN sellers s ON s.id = c.seller_id LEFT JOIN documents d ON d.id = c.document_id " +
+            "WHERE c.closed_at IS NULL ORDER BY c.created_at",
+    )
+    fun openCredits(): Flow<List<CreditRow>>
+
+    @Insert suspend fun insertCredit(c: CreditEntity): Long
+
+    @Query("UPDATE credits SET closed_at = :at WHERE id = :id")
+    suspend fun closeCredit(id: Long, at: Long?)
+
+    @Query("DELETE FROM credits WHERE id = :id")
+    suspend fun deleteCredit(id: Long)
+
+    /** Credit notes saved after a date, per supplier: they may settle open credits. */
+    @Query(
+        "SELECT d.id AS id, d.seller_id AS sellerId, s.name AS sellerName, d.document_date AS documentDate, d.document_number AS documentNumber, " +
+            "d.total_cents AS totalCents, d.currency AS currency, d.mime_type AS mimeType, 0 AS itemCount " +
+            "FROM documents d JOIN sellers s ON s.id = d.seller_id WHERE d.kind = 'CREDIT_NOTE' ORDER BY d.created_at DESC",
+    )
+    fun creditNotes(): Flow<List<DocumentListRow>>
+
+    // ---- dismissed notices
+
+    @Query("SELECT notice FROM dismissed")
+    fun dismissed(): Flow<List<String>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun dismiss(d: DismissedEntity)
+
+    @Query("DELETE FROM dismissed WHERE notice = :notice")
+    suspend fun undismiss(notice: String)
 }

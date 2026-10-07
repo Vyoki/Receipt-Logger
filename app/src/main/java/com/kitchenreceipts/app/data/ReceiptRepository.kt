@@ -125,13 +125,14 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             val now = System.currentTimeMillis()
             val id = if (existingId == null) {
                 requireNotNull(file) { "A new document needs its original file" }
+                val (kind, refs) = readKind(ocrText, doc.number)
                 documents.insertDocument(
                     DocumentEntity(
                         sellerId = seller.id, documentDate = doc.date, documentNumber = doc.number,
                         currency = doc.currency, subtotalCents = doc.subtotalCents, vatCents = doc.vatCents,
                         totalCents = doc.totalCents, vatBasis = doc.vatBasis, filePath = file.relativePath,
                         mimeType = file.mimeType, pageCount = file.pageCount, fileSha256 = file.sha256,
-                        ocrText = ocrText, createdAt = now, updatedAt = now,
+                        ocrText = ocrText, createdAt = now, updatedAt = now, kind = kind, ddtRefs = refs,
                     ),
                 )
             } else {
@@ -181,6 +182,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                 }
             }
             sellers.deleteUnused()
+            // A new invoice may name delivery notes already saved (or a delivery note an invoice already names).
+            refreshCovers(db.checksDao())
             id
         }
 
@@ -188,6 +191,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         val doc = documents.documentById(id) ?: return
         db.withTransaction {
             documents.deleteDocument(id) // line items cascade
+            refreshCovers(db.checksDao())
             sellers.deleteUnused()
         }
         files.delete(doc.filePath)
@@ -625,6 +629,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                     lines[d.id].orEmpty().map { l ->
                         OfficeExport.Line(l.originalDescription, l.productId, l.quantity, l.unit, l.unitPrice, l.lineTotalCents, l.vatRate, l.lotNumber, l.expiryDate, l.packages, l.packSize)
                     },
+                    coveredBy = d.coveredBy,
+                    kind = d.kind,
                 )
             },
         )

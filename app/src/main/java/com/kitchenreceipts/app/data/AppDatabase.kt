@@ -35,6 +35,9 @@ class Converters {
         UnitConversionEntity::class,
         SellerAliasEntity::class,
         ProductFamilyEntity::class,
+        AgreedPriceEntity::class,
+        CreditEntity::class,
+        DismissedEntity::class,
     ],
     version = AppDatabase.VERSION,
     exportSchema = true,
@@ -44,9 +47,10 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun documentDao(): DocumentDao
     abstract fun sellerDao(): SellerDao
     abstract fun productDao(): ProductDao
+    abstract fun checksDao(): ChecksDao
 
     companion object {
-        const val VERSION = 7
+        const val VERSION = 8
         const val NAME = "kitchen_receipts.db"
 
         fun build(context: Context): AppDatabase =
@@ -69,6 +73,7 @@ abstract class AppDatabase : RoomDatabase() {
  * v5: + line_items.packages (colli)
  * v6: + product_families, products.family_id / brand / family_dismissed (product groups)
  * v7: + line_items.pack_size (size of one pack: "500 g", "1 l")
+ * v8: + documents.kind / ddt_refs / covered_by (delivery notes and invoices), agreed_prices, credits, dismissed
  */
 object Migrations {
 
@@ -142,5 +147,32 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7)
+    val MIGRATION_7_8 = object : Migration(7, 8) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `documents` ADD COLUMN `kind` TEXT")
+            db.execSQL("ALTER TABLE `documents` ADD COLUMN `ddt_refs` TEXT")
+            db.execSQL("ALTER TABLE `documents` ADD COLUMN `covered_by` INTEGER")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `agreed_prices` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `product_id` INTEGER NOT NULL, `seller_id` INTEGER, " +
+                    "`unit` TEXT NOT NULL, `price` TEXT NOT NULL, `vat_basis` TEXT NOT NULL, `created_at` INTEGER NOT NULL, " +
+                    "FOREIGN KEY(`product_id`) REFERENCES `products`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                    "FOREIGN KEY(`seller_id`) REFERENCES `sellers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE )",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agreed_prices_product_id` ON `agreed_prices` (`product_id`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_agreed_prices_seller_id` ON `agreed_prices` (`seller_id`)")
+            db.execSQL(
+                "CREATE TABLE IF NOT EXISTS `credits` (" +
+                    "`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `seller_id` INTEGER NOT NULL, `document_id` INTEGER, " +
+                    "`description` TEXT NOT NULL, `amount_cents` INTEGER, `created_at` INTEGER NOT NULL, `closed_at` INTEGER, " +
+                    "FOREIGN KEY(`seller_id`) REFERENCES `sellers`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                    "FOREIGN KEY(`document_id`) REFERENCES `documents`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+            )
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_credits_seller_id` ON `credits` (`seller_id`)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS `index_credits_document_id` ON `credits` (`document_id`)")
+            db.execSQL("CREATE TABLE IF NOT EXISTS `dismissed` (`notice` TEXT NOT NULL, `at` INTEGER NOT NULL, PRIMARY KEY(`notice`))")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8)
 }

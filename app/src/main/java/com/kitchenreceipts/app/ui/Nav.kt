@@ -40,6 +40,8 @@ object Routes {
     const val REPORTS = "reports"
     const val SETTINGS = "settings"
     const val BACKUP = "backup"
+    const val CHECKS = "checks"
+    const val LOTS = "lots"
 
     fun edit(id: Long) = "edit/$id"
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
@@ -78,10 +80,22 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onInventory = { nav.navigate(Routes.INVENTORY) },
                 onReviewJob = { nav.navigate(Routes.review(it)) },
                 onBackup = { nav.navigate(Routes.BACKUP) },
+                onChecks = { nav.navigate(Routes.CHECKS) },
+                onLots = { nav.navigate(Routes.LOTS) },
             )
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(onBack = back, onBackup = { nav.navigate(Routes.BACKUP) })
+        }
+        composable(Routes.CHECKS) {
+            com.kitchenreceipts.app.ui.checks.ChecksScreen(
+                onBack = back,
+                onOpenDocument = { nav.navigate(Routes.document(it)) },
+                onOpenProduct = { nav.navigate(Routes.product(it)) },
+            )
+        }
+        composable(Routes.LOTS) {
+            com.kitchenreceipts.app.ui.checks.LotsScreen(onBack = back, onOpenDocument = { nav.navigate(Routes.document(it)) })
         }
         composable(Routes.BACKUP) {
             com.kitchenreceipts.app.ui.settings.BackupScreen(onBack = back)
@@ -135,6 +149,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onEdit = { nav.navigate(Routes.edit(id)) },
                 onViewOriginal = { nav.navigate(Routes.viewer(id)) },
                 onOpenProduct = { nav.navigate(Routes.product(it)) },
+                onOpenDocument = { nav.navigate(Routes.document(it)) },
             )
         }
         composable(

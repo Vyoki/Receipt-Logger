@@ -103,6 +103,7 @@ fun DocumentDetailScreen(
     onEdit: () -> Unit,
     onViewOriginal: () -> Unit,
     onOpenProduct: (Long) -> Unit,
+    onOpenDocument: (Long) -> Unit = {},
 ) {
     val vm = appViewModel(key = "doc-$documentId") { DocumentDetailViewModel(it.repository, documentId, it.log) }
     val docResult by vm.document.collectAsStateWithLifecycle()
@@ -199,6 +200,7 @@ fun DocumentDetailScreen(
                             }
                         }
                     }
+                    item("kind") { com.kitchenreceipts.app.ui.checks.DocumentKindAndChecks(d, onOpenDocument) }
                     item("itemsTitle") { SectionTitle(stringResource(R.string.line_items_count, items.size)) }
                     if (items.isEmpty()) item("noItems") { EmptyState(stringResource(R.string.no_line_items)) }
                     items(items, key = { it.item.id }) { row -> SavedItemCard(row, d.currency, onOpenProduct) }
