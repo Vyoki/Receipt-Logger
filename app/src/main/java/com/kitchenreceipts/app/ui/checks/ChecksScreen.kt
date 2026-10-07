@@ -238,7 +238,7 @@ fun ChecksScreen(onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenProdu
 }
 
 /** € 8,50 (2 to 4 decimals as needed). */
-fun price(v: java.math.BigDecimal): String = "€ " + ItalianNumbers.formatDecimal(v.setScale(4, java.math.RoundingMode.HALF_UP).stripTrailingZeros().let { if (it.scale() < 2) it.setScale(2) else it }, maxScale = 4)
+fun price(v: java.math.BigDecimal): String = "€ " + ItalianNumbers.formatDecimal(v, minScale = 2, maxScale = 4)
 
 @Composable
 private fun overCreditText(row: CheckedLineRow, o: OverCharge): String =

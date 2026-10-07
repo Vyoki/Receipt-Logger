@@ -158,7 +158,7 @@ class ReportPdf(private val ctx: Context) {
         r.suppliers.forEachIndexed { i, s ->
             need(18f)
             row(i)
-            val barW = 150f * s.totalCents / max
+            val barW = 150f * s.totalCents.coerceAtLeast(0) / max
             canvas.drawRect(margin + 280, y - 8, margin + 280 + barW, y + 1, bar)
             text(s.sellerName, margin, paint(10f), 240f)
             canvas.drawText(s.documentCount.toString() + if (s.documentsMissingTotal > 0) "*" else "", margin + 250, y, paint(10f, muted))

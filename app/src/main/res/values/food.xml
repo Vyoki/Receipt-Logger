@@ -8,9 +8,12 @@
     <string name="food_add_dish">Add a dish</string>
     <string name="food_cost_line">Cost %1$s · price %2$s</string>
     <string name="food_percent">%1$s%%</string>
-    <string name="food_incomplete">%1$d ingredients without a price: the cost is too low</string>
-    <string name="food_target">Target food cost (%%)</string>
-    <string name="food_overhead">Extra for staff and utilities (%%)</string>
+    <plurals name="food_incomplete">
+        <item quantity="one">%1$d ingredient without a price: the cost is too low</item>
+        <item quantity="other">%1$d ingredients without a price: the cost is too low</item>
+    </plurals>
+    <string name="food_target" formatted="false">Target food cost (%)</string>
+    <string name="food_overhead" formatted="false">Extra for staff and utilities (%)</string>
     <string name="food_overhead_hint">Optional. Your sheet adds 20% + 10%: type 30 to see the same full cost.</string>
     <string name="food_months">Month by month</string>
     <string name="food_months_hint">Food and drink bought (without VAT) against your revenue. Purchases follow deliveries, not what was used: a month that stocks up looks dearer.</string>
@@ -36,7 +39,7 @@
     <string name="recipe_cat_other">Other</string>
     <string name="recipe_price">Menu price (€)</string>
     <string name="recipe_price_vat">Price includes VAT</string>
-    <string name="recipe_vat_rate">VAT %%</string>
+    <string name="recipe_vat_rate" formatted="false">VAT %</string>
     <string name="recipe_portions">Portions the ingredients make</string>
     <string name="recipe_ingredients">Ingredients</string>
     <string name="recipe_add_ingredient">Add an ingredient</string>
@@ -44,7 +47,7 @@
     <string name="recipe_pick_product">Pick from products</string>
     <string name="recipe_free_ingredient">Use “%1$s” without a product</string>
     <string name="recipe_quantity">Quantity</string>
-    <string name="recipe_waste">Waste %%</string>
+    <string name="recipe_waste" formatted="false">Waste %</string>
     <string name="recipe_manual_price">Price (€) per</string>
     <string name="recipe_manual_hint">No purchase of this yet: type a price, or link it to a product.</string>
     <string name="recipe_price_from">%1$s per %2$s · %3$s</string>
