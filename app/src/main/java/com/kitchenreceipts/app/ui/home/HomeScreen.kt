@@ -119,7 +119,7 @@ fun HomeScreen(
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Tile(stringResource(R.string.checks_title), Icons.Filled.Verified, onChecks, Modifier.weight(1f), badge = attention)
-                        Tile(stringResource(R.string.lots_title), Icons.Filled.QrCode2, onLots, Modifier.weight(1f))
+                        Tile(stringResource(R.string.lots_tile), Icons.Filled.QrCode2, onLots, Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Tile(stringResource(R.string.food_title), Icons.Filled.Restaurant, onFoodCost, Modifier.weight(1f))

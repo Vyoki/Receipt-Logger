@@ -60,6 +60,7 @@
     <string name="kind_credit_note_hint">Una nota di credito è denaro restituito: viene sottratta dalla spesa.</string>
 
     <string name="lots_title">Lotti e scadenze</string>
+    <string name="lots_tile">Lotti</string>
     <string name="lots_tile_note">Richiami, scadenze</string>
     <string name="lots_search">Numero di lotto o prodotto</string>
     <string name="lots_search_hint">Scrivi un lotto (spazi e trattini non contano) o il nome di un prodotto, per vedere quando è arrivato, da chi e quanto.</string>
