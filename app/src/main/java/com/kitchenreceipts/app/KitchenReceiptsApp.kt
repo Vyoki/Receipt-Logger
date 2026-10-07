@@ -89,6 +89,9 @@ class AppContainer(context: Context) {
         importQueue.onAutoSaved = { id, pending -> readings.save(id, pending.rawLines) }
     }
 
+    /** Backup and restore of everything on this phone, to a file the operator keeps. */
+    val backup = com.kitchenreceipts.app.backup.BackupManager(this)
+
     /** A screen to open, e.g. from a notification tap ("review/<job>", "document/<id>"). */
     val pendingRoute = MutableStateFlow<String?>(null)
 
@@ -121,6 +124,8 @@ class KitchenReceiptsApp : Application() {
         )
         // Documents that were being read when the app was closed: finished ones come back ready to check,
         // unfinished ones are read again.
+        // After a restore: once the restored data opens, the data set aside before it can go.
+        container.appScope.launch { runCatching { c.backup.afterStart() }.onFailure { c.log.error("afterRestore", it) } }
         runCatching { c.importQueue.restore() }.onFailure { c.log.error("restoreQueue", it) }
         container.appScope.launch {
             runCatching { container.repository.cleanupOrphanFiles(c.importQueue.filePaths()) }

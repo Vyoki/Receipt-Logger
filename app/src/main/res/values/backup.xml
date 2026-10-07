@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="backup_title">Backup</string>
+    <string name="backup_settings_hint">Save everything in one file, or bring it back on this or a new phone.</string>
+    <string name="backup_last">Last backup: %1$s</string>
+    <string name="backup_never">No backup made yet on this phone</string>
+    <string name="backup_what">One file with everything: documents with their photos and PDFs, products, prices, lots, what the app learned from you and your settings. Not included: the AI model and the log.</string>
+    <string name="backup_make_title">Make a backup</string>
+    <string name="backup_pw">Backup password</string>
+    <string name="backup_pw_again">Backup password again</string>
+    <string name="backup_pw_note">Without this password the backup cannot be opened, not even by you. Write it down and keep it apart from the file. Then choose where to save it: Drive, a folder, a USB stick.</string>
+    <string name="backup_make">Make backup</string>
+    <string name="backup_working">Working…</string>
+    <string name="backup_made">Backup saved: %1$d documents, %2$s.</string>
+    <string name="backup_failed">The backup could not be completed. Nothing on the phone was changed.</string>
+    <string name="backup_busy">Documents are being read. Wait until they are done, then try again.</string>
+    <string name="backup_restore_title">Restore a backup</string>
+    <string name="backup_restore_hint">Replaces everything on this phone with what is in the backup. The file is checked completely before anything is changed.</string>
+    <string name="backup_restore">Restore from a backup file</string>
+    <string name="backup_restore_pw">Type the password of this backup.</string>
+    <string name="backup_check">Check</string>
+    <string name="backup_wrong_password">Wrong password.</string>
+    <string name="backup_not_a_backup">This file is not a Kitchen Receipts backup.</string>
+    <string name="backup_damaged">The backup file is damaged or incomplete. Nothing on the phone was changed.</string>
+    <string name="backup_too_new">This backup was made by a newer version of the app. Update the app first.</string>
+    <string name="backup_confirm_title">Replace everything on this phone?</string>
+    <string name="backup_confirm_text">Backup made on %1$s, with %2$d documents (business: %3$s). Everything now on this phone will be replaced by it. The app will close and open again.</string>
+    <string name="backup_confirm">Replace and restart</string>
+    <string name="backup_reminder">No backup for %1$d days</string>
+    <string name="backup_reminder_never">No backup yet</string>
+    <string name="backup_reminder_hint">If the phone breaks or gets lost, everything recorded is gone. Tap to make one.</string>
+</resources>

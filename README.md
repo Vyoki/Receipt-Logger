@@ -514,6 +514,16 @@ How the data is protected:
 
 CI opens a sample copy (invented data) in Chrome with the network cut off. It checks a wrong and the right password, every tab, the detail windows, CSV export, dropping an e-invoice (including a duplicate), English, dark mode and phone width, and that no connection was attempted. Screenshots go to the `ci-office` branch.
 
+## 7h. Backup and restore
+
+Settings ▸ *Backup* (a reminder appears on the home screen when there is data and no backup for a week):
+- **Make backup**: choose a password (at least 8 characters), then where to save the file (Drive, a folder, a USB stick). One `.krbackup` file holds the database, every original photo and PDF, the saved OCR readings, what the app learned, the documents corrected by hand and the settings. Not included: the AI model and the knowledge pack (downloaded again) and the log.
+- **Restore**: pick the file and type its password. The whole file is decrypted and checked into a staging folder first (password, every chunk, SQLite `integrity_check`, database not newer than the app); only then does the app ask to replace everything. What was on the phone is moved aside and put back if anything fails half-way; it is deleted only after the restored data has opened once. The app restarts by itself.
+
+How the file is protected (`core/Backup.kt`): a zip stream encrypted with AES-256-GCM in 1 MB chunks (key from the password with PBKDF2-SHA256, 600,000 rounds). Each chunk's nonce carries its number and a "last chunk" flag, so a chunk that is changed, moved or dropped, or a file cut short, is refused. Memory use stays small whatever the size. The database is copied inside a write transaction (main file plus its write-ahead log), so the copy is consistent. Nothing is sent anywhere by the app: the file goes only where the operator saves it.
+
+Tests: `BackupTest` (core: round trip, wrong password, not a backup, cut at many points, a changed byte, a dropped chunk, unsafe names) and `BackupRoundTripTest` (on the emulator: a real backup of the app's data, then the full check of it).
+
 ## 8. MVP assumptions and limits
 
 - Main target: Italian supplier documents in EUR. Other currencies can be typed as a 3-letter code, but no conversion is done.

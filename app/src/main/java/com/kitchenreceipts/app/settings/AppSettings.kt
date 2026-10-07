@@ -93,6 +93,11 @@ class AppSettings(context: Context) {
         get() = prefs.getLong("knowledge_checked_at", 0L)
         set(v) = prefs.edit().putLong("knowledge_checked_at", v).apply()
 
+    /** When the last backup was made on this phone (millis; 0 = never). Not restored with a backup. */
+    var lastBackupAt: Long
+        get() = prefs.getLong("last_backup_at", 0L)
+        set(v) = prefs.edit().putLong("last_backup_at", v).apply()
+
     /** The app version that last re-read the saved documents (see ReadingChecker). */
     var readingCheckVersion: String
         get() = prefs.getString("reading_check_version", "") ?: ""

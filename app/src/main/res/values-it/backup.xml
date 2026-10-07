@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="backup_title">Backup</string>
+    <string name="backup_settings_hint">Salva tutto in un file, o riportalo su questo o su un nuovo telefono.</string>
+    <string name="backup_last">Ultimo backup: %1$s</string>
+    <string name="backup_never">Nessun backup ancora fatto su questo telefono</string>
+    <string name="backup_what">Un file con tutto: documenti con foto e PDF, prodotti, prezzi, lotti, quello che l\'app ha imparato da te e le impostazioni. Non inclusi: il modello AI e il registro.</string>
+    <string name="backup_make_title">Fai un backup</string>
+    <string name="backup_pw">Password del backup</string>
+    <string name="backup_pw_again">Ripeti la password del backup</string>
+    <string name="backup_pw_note">Senza questa password il backup non si apre, nemmeno per te. Scrivila e tienila separata dal file. Poi scegli dove salvarlo: Drive, una cartella, una chiavetta USB.</string>
+    <string name="backup_make">Fai il backup</string>
+    <string name="backup_working">In corso…</string>
+    <string name="backup_made">Backup salvato: %1$d documenti, %2$s.</string>
+    <string name="backup_failed">Non è stato possibile completare il backup. Sul telefono non è cambiato nulla.</string>
+    <string name="backup_busy">Ci sono documenti in lettura. Aspetta che finiscano, poi riprova.</string>
+    <string name="backup_restore_title">Ripristina un backup</string>
+    <string name="backup_restore_hint">Sostituisce tutto quello che c\'è sul telefono con il contenuto del backup. Il file viene controllato per intero prima di cambiare qualsiasi cosa.</string>
+    <string name="backup_restore">Ripristina da un file di backup</string>
+    <string name="backup_restore_pw">Scrivi la password di questo backup.</string>
+    <string name="backup_check">Controlla</string>
+    <string name="backup_wrong_password">Password sbagliata.</string>
+    <string name="backup_not_a_backup">Questo file non è un backup di Kitchen Receipts.</string>
+    <string name="backup_damaged">Il file di backup è danneggiato o incompleto. Sul telefono non è cambiato nulla.</string>
+    <string name="backup_too_new">Questo backup è stato fatto con una versione più nuova dell\'app. Aggiorna prima l\'app.</string>
+    <string name="backup_confirm_title">Sostituire tutto su questo telefono?</string>
+    <string name="backup_confirm_text">Backup del %1$s, con %2$d documenti (attività: %3$s). Tutto quello che c\'è ora sul telefono verrà sostituito. L\'app si chiuderà e si riaprirà.</string>
+    <string name="backup_confirm">Sostituisci e riavvia</string>
+    <string name="backup_reminder">Nessun backup da %1$d giorni</string>
+    <string name="backup_reminder_never">Nessun backup ancora</string>
+    <string name="backup_reminder_hint">Se il telefono si rompe o si perde, tutto quello registrato è perso. Tocca per farne uno.</string>
+</resources>
