@@ -38,6 +38,16 @@ class MigrationTest {
         }
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
             db.execSQL("PRAGMA foreign_keys=OFF")
+            // v9 -> v8: no recipes, recipe items, revenue
+            db.execSQL("DROP TABLE recipe_items")
+            db.execSQL("DROP TABLE recipes")
+            db.execSQL("DROP TABLE revenue")
+            if (version == 8) {
+                insertRows(db)
+                db.execSQL("INSERT INTO products (id, name, normalized_name, created_at, category, family_id, brand, family_dismissed) VALUES (1, 'Mozzarella', 'mozzarella', 0, NULL, NULL, NULL, 0)")
+                db.version = 8
+                return@use
+            }
             // v8 -> v7: no agreed prices, credits, dismissed notices; documents without kind / ddt_refs / covered_by
             db.execSQL("DROP TABLE agreed_prices")
             db.execSQL("DROP TABLE credits")
@@ -163,6 +173,7 @@ class MigrationTest {
                 assertNull(doc.kind)
                 assertNull(doc.coveredBy)
                 assertEquals(0, migrated.checksDao().openCredits().first().size)
+                assertEquals(0, migrated.foodDao().recipes().first().size)
                 val item = migrated.documentDao().itemsOnce(1).single().item
                 assertEquals(0, java.math.BigDecimal("2.5").compareTo(item.quantity))
                 assertEquals("L24-118", item.lotNumber)
@@ -187,6 +198,11 @@ class MigrationTest {
         } finally {
             migrated.close()
         }
+    }
+
+    @Test fun migrate8To9() {
+        createOldDatabase(8)
+        openAndCheck()
     }
 
     @Test fun migrate7To8() {

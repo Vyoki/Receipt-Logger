@@ -25,7 +25,7 @@ class BackupRoundTripTest {
     @Test fun backupThenCheck() = runBlocking<Unit> {
         val app = ApplicationProvider.getApplicationContext<KitchenReceiptsApp>()
         val c = app.container
-        val original = File(app.filesDir, "documents/backup-test.jpg").apply { parentFile?.mkdirs(); writeBytes(ByteArray(300_000) { (it % 251).toByte() }) }
+        val original = File(app.filesDir, "documents/backup-test.jpg").apply { parentFile?.mkdirs(); writeBytes(kotlin.random.Random(42).nextBytes(300_000)) }
         c.repository.saveDocument(
             ValidDocument(
                 sellerName = "ABC S.r.l.", date = LocalDate.of(2026, 10, 1), number = "B26 204177", currency = "EUR",
@@ -37,7 +37,7 @@ class BackupRoundTripTest {
         val target = File(app.cacheDir, "test.${Backup.EXTENSION}")
         val made = c.backup.create(Uri.fromFile(target), "password-prova".toCharArray())
         assertTrue(made.documents >= 1)
-        assertTrue(target.length() > 300_000)
+        assertTrue(target.length() > 300_000) // random bytes do not compress
 
         try {
             c.backup.prepare(Uri.fromFile(target), "wrong-password".toCharArray())

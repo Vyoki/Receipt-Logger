@@ -188,7 +188,7 @@ OCR is behind the `OcrEngine` interface (`app/.../ocr/OcrEngine.kt`). To change 
 
 ### Database and migrations
 
-- Room database `kitchen_receipts.db`, currently **schema version 4**:
+- Room database `kitchen_receipts.db`, currently **schema version 9** (v5–v9 are listed in `AppDatabase.kt`):
   - v1 had sellers, documents, products, line_items and product_aliases.
   - v2 added `unit_conversions` (`MIGRATION_1_2`).
   - v3 added supplier learning: `sellers.vat_number`, `sellers.header_profile` and `seller_aliases` (`MIGRATION_2_3`).
@@ -546,6 +546,21 @@ Home ▸ *Lots and expiry*:
 - **Expiring**: use-by dates printed on the documents in the next 7 days or past in the last 14, soonest first; the same goods on a DDT and its invoice show once. The app does not know what is still in the fridge, so each row has *Done* (used or thrown away). The home screen shows a line when something is expiring.
 
 Tests: `DeliveryNotesTest`, `ChecksTest` (core), `ChecksRepositoryTest` and `MigrationTest.migrate7To8` (emulator). Database schema v8 adds `documents.kind / ddt_refs / covered_by`, `agreed_prices`, `credits`, `dismissed`.
+
+## 7k. Food cost and orders
+
+**Dishes** (Home ▸ *Food cost*): a dish has a course, a menu price (with or without VAT, rate 10% by default), the portions its ingredients make, and its ingredients: a product with quantity (g, kg, ml, l, pz) and waste %, or a name with a typed price.
+- The price of a product is its **last purchase**, VAT taken out (inclusive prices use the line's VAT rate; a price whose VAT can't be taken out is not used; a purchase with unknown VAT basis is used only when there is nothing else, and says so). It changes by itself when a new invoice arrives.
+- Waste follows the usual kitchen costing sheet: quantity × price, plus the waste percentage of that cost.
+- Units convert between g/kg and ml/l, and through the product's own conversions (1 pz = 60 g). An ingredient that can't be priced or converted is shown in red and the dish says its cost is too low: **a missing price never counts as zero**.
+- Shown per dish: food cost per portion, the price without VAT, food cost %, margin, and the menu price that gives the target food cost (30% by default, rounded up to 0,50 €). Optionally an extra % for staff and utilities shows the full cost (a costing sheet that adds 20% + 10% → 30).
+- The list puts the dishes with the highest food cost % first; above the target they are orange.
+
+**Month by month**: food and drink bought (everything except cleaning and disposables), VAT excluded, per category, against the month's revenue typed by the operator (with or without VAT). Purchases follow deliveries, not consumption, and the screen says so.
+
+**Orders** (Home ▸ *Orders*): pick a supplier; the app lists what they delivered in the last 8 weeks, with the usual quantity per delivery, how often, and when last (delivery notes count, an invoice that charges several of them does not count twice). Change the quantities (0 leaves a product out), add a note, and *Send order* opens the share sheet with a plain message. The app does not know the stock: the operator decides.
+
+Core: `FoodCost.kt`, `Reorder.kt` (`FoodCostTest`). Schema v9 adds `recipes`, `recipe_items`, `revenue`.
 
 ## 8. MVP assumptions and limits
 

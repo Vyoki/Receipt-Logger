@@ -232,3 +232,51 @@ data class DismissedEntity(
     @PrimaryKey val notice: String,
     val at: Long,
 )
+
+/** v9: a dish on the menu, for its food cost. Prices of linked products come from what was paid. */
+@Entity(tableName = "recipes")
+data class RecipeEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    val name: String,
+    /** antipasti, primi, secondi, contorni, dolci, drinks, other (free text from the app's list). */
+    val category: String?,
+    /** Menu price of one portion. */
+    @ColumnInfo(name = "sale_price_cents") val salePriceCents: Long?,
+    @ColumnInfo(name = "price_includes_vat") val priceIncludesVat: Boolean,
+    @ColumnInfo(name = "vat_rate") val vatRate: BigDecimal,
+    /** How many portions the ingredients make. */
+    val portions: BigDecimal,
+    @ColumnInfo(name = "created_at") val createdAt: Long,
+    @ColumnInfo(name = "updated_at") val updatedAt: Long,
+)
+
+/** v9: one ingredient of a dish: a product (its price follows purchases) or a name with a typed price. */
+@Entity(
+    tableName = "recipe_items",
+    foreignKeys = [
+        ForeignKey(RecipeEntity::class, ["id"], ["recipe_id"], onDelete = ForeignKey.CASCADE),
+        ForeignKey(ProductEntity::class, ["id"], ["product_id"], onDelete = ForeignKey.SET_NULL),
+    ],
+    indices = [Index("recipe_id"), Index("product_id")],
+)
+data class RecipeItemEntity(
+    @PrimaryKey(autoGenerate = true) val id: Long = 0,
+    @ColumnInfo(name = "recipe_id") val recipeId: Long,
+    val position: Int,
+    @ColumnInfo(name = "product_id") val productId: Long?,
+    val name: String,
+    val quantity: BigDecimal,
+    val unit: String,
+    @ColumnInfo(name = "waste_percent") val wastePercent: BigDecimal,
+    @ColumnInfo(name = "manual_price") val manualPrice: BigDecimal?,
+    @ColumnInfo(name = "manual_unit") val manualUnit: String?,
+)
+
+/** v9: the restaurant's revenue for a month ("2026-09"), typed by the operator, for food cost per month. */
+@Entity(tableName = "revenue")
+data class RevenueEntity(
+    @PrimaryKey val month: String,
+    val cents: Long,
+    @ColumnInfo(name = "includes_vat") val includesVat: Boolean,
+    @ColumnInfo(name = "vat_rate") val vatRate: BigDecimal,
+)

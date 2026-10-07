@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="food_title">Food cost</string>
+    <string name="food_tile_note">Dishes and months</string>
+    <string name="food_intro">From the prices you actually paid (last purchase, without VAT). A dish\'s cost changes by itself when a supplier changes a price.</string>
+    <string name="food_dishes">Dishes</string>
+    <string name="food_no_dishes">No dishes yet. Add your menu dishes with their ingredients and price.</string>
+    <string name="food_add_dish">Add a dish</string>
+    <string name="food_cost_line">Cost %1$s · price %2$s</string>
+    <string name="food_percent">%1$s%%</string>
+    <string name="food_incomplete">%1$d ingredients without a price: the cost is too low</string>
+    <string name="food_target">Target food cost (%%)</string>
+    <string name="food_overhead">Extra for staff and utilities (%%)</string>
+    <string name="food_overhead_hint">Optional. Your sheet adds 20% + 10%: type 30 to see the same full cost.</string>
+    <string name="food_months">Month by month</string>
+    <string name="food_months_hint">Food and drink bought (without VAT) against your revenue. Purchases follow deliveries, not what was used: a month that stocks up looks dearer.</string>
+    <string name="food_bought">Bought %1$s</string>
+    <string name="food_revenue">Revenue %1$s</string>
+    <string name="food_no_revenue">Tap to type the revenue</string>
+    <string name="food_uncertain">%1$s with VAT unknown, counted as printed</string>
+    <string name="food_revenue_title">Revenue of %1$s</string>
+    <string name="food_revenue_amount">Revenue (€)</string>
+    <string name="food_revenue_with_vat">Includes VAT</string>
+    <string name="food_save">Save</string>
+    <string name="food_clear">Clear</string>
+
+    <string name="recipe_title">Dish</string>
+    <string name="recipe_name">Name of the dish</string>
+    <string name="recipe_category">Course</string>
+    <string name="recipe_cat_starters">Starters</string>
+    <string name="recipe_cat_first">First courses</string>
+    <string name="recipe_cat_second">Main courses</string>
+    <string name="recipe_cat_sides">Sides</string>
+    <string name="recipe_cat_desserts">Desserts</string>
+    <string name="recipe_cat_drinks">Drinks</string>
+    <string name="recipe_cat_other">Other</string>
+    <string name="recipe_price">Menu price (€)</string>
+    <string name="recipe_price_vat">Price includes VAT</string>
+    <string name="recipe_vat_rate">VAT %%</string>
+    <string name="recipe_portions">Portions the ingredients make</string>
+    <string name="recipe_ingredients">Ingredients</string>
+    <string name="recipe_add_ingredient">Add an ingredient</string>
+    <string name="recipe_ingredient">Ingredient</string>
+    <string name="recipe_pick_product">Pick from products</string>
+    <string name="recipe_free_ingredient">Use “%1$s” without a product</string>
+    <string name="recipe_quantity">Quantity</string>
+    <string name="recipe_waste">Waste %%</string>
+    <string name="recipe_manual_price">Price (€) per</string>
+    <string name="recipe_manual_hint">No purchase of this yet: type a price, or link it to a product.</string>
+    <string name="recipe_price_from">%1$s per %2$s · %3$s</string>
+    <string name="recipe_price_typed">typed by you</string>
+    <string name="recipe_vat_unknown">VAT unknown</string>
+    <string name="recipe_no_price">No price</string>
+    <string name="recipe_units_dont_convert">Bought per %1$s: add a conversion on the product (e.g. 1 pz = 60 g)</string>
+    <string name="recipe_cost_portion">Food cost per portion</string>
+    <string name="recipe_full_cost">With staff and utilities</string>
+    <string name="recipe_net_price">Price without VAT</string>
+    <string name="recipe_margin">Margin</string>
+    <string name="recipe_for_target">Price for %1$s%% food cost</string>
+    <string name="recipe_save">Save dish</string>
+    <string name="recipe_delete">Delete dish</string>
+    <string name="recipe_delete_text">The dish and its ingredients are deleted. Products and purchases stay.</string>
+    <string name="recipe_name_needed">Type the name of the dish.</string>
+    <string name="recipe_remove_ingredient">Remove</string>
+
+    <string name="order_title">Orders</string>
+    <string name="order_tile_note">The usual order, ready to send</string>
+    <string name="order_pick_supplier">Pick a supplier</string>
+    <string name="order_last">last delivery %1$s</string>
+    <string name="order_hint">What this supplier usually brings (last 8 weeks). Change the quantities, set 0 to leave a product out, then send it from your phone.</string>
+    <string name="order_usual">usually %1$s · every %2$d days · last %3$s</string>
+    <string name="order_usual_once">bought once, %1$s on %2$s</string>
+    <string name="order_none">Nothing bought from this supplier in the last 8 weeks.</string>
+    <string name="order_send">Send order</string>
+    <string name="order_heading">Order for %1$s – %2$s</string>
+    <string name="order_note">Note for the supplier (optional)</string>
+</resources>

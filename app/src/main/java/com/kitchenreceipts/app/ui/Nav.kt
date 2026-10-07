@@ -42,6 +42,11 @@ object Routes {
     const val BACKUP = "backup"
     const val CHECKS = "checks"
     const val LOTS = "lots"
+    const val FOOD = "food"
+    const val RECIPE = "recipe/{id}"
+    const val ORDERS = "orders"
+
+    fun recipe(id: Long) = "recipe/$id"
 
     fun edit(id: Long) = "edit/$id"
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
@@ -82,6 +87,8 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onBackup = { nav.navigate(Routes.BACKUP) },
                 onChecks = { nav.navigate(Routes.CHECKS) },
                 onLots = { nav.navigate(Routes.LOTS) },
+                onFoodCost = { nav.navigate(Routes.FOOD) },
+                onOrders = { nav.navigate(Routes.ORDERS) },
             )
         }
         composable(Routes.SETTINGS) {
@@ -96,6 +103,15 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
         }
         composable(Routes.LOTS) {
             com.kitchenreceipts.app.ui.checks.LotsScreen(onBack = back, onOpenDocument = { nav.navigate(Routes.document(it)) })
+        }
+        composable(Routes.FOOD) {
+            com.kitchenreceipts.app.ui.food.FoodCostScreen(onBack = back, onOpenDish = { nav.navigate(Routes.recipe(it)) })
+        }
+        composable(Routes.RECIPE, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
+            com.kitchenreceipts.app.ui.food.RecipeScreen(recipeId = entry.arguments!!.getLong("id"), onBack = back)
+        }
+        composable(Routes.ORDERS) {
+            com.kitchenreceipts.app.ui.food.OrderScreen(onBack = back)
         }
         composable(Routes.BACKUP) {
             com.kitchenreceipts.app.ui.settings.BackupScreen(onBack = back)

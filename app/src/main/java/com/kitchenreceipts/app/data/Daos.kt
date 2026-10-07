@@ -609,3 +609,110 @@ interface ChecksDao {
     @Query("DELETE FROM dismissed WHERE notice = :notice")
     suspend fun undismiss(notice: String)
 }
+
+// ---------------------------------------------------------------- food cost and orders (v9)
+
+data class PricedRow(
+    val lineItemId: Long,
+    val productId: Long?,
+    val productName: String?,
+    val productCategory: String?,
+    val originalDescription: String,
+    val documentDate: LocalDate?,
+    val sellerName: String,
+    val quantity: BigDecimal?,
+    val unit: String?,
+    val unitPrice: BigDecimal?,
+    val lineTotalCents: Long?,
+    val vatBasis: VatBasis,
+    val vatRate: BigDecimal?,
+)
+
+data class BoughtRow(
+    val productId: Long?,
+    val name: String,
+    val documentId: Long,
+    val documentDate: LocalDate?,
+    val quantity: BigDecimal?,
+    val unit: String?,
+)
+
+data class SellerLastRow(val id: Long, val name: String, val lastDate: LocalDate?, val documents: Int)
+
+@Dao
+interface FoodDao {
+
+    @Query("SELECT * FROM recipes ORDER BY name COLLATE NOCASE")
+    fun recipes(): Flow<List<RecipeEntity>>
+
+    @Query("SELECT * FROM recipes WHERE id = :id")
+    suspend fun recipe(id: Long): RecipeEntity?
+
+    @Query("SELECT * FROM recipe_items ORDER BY recipe_id, position")
+    fun allItems(): Flow<List<RecipeItemEntity>>
+
+    @Query("SELECT * FROM recipe_items WHERE recipe_id = :recipeId ORDER BY position")
+    suspend fun items(recipeId: Long): List<RecipeItemEntity>
+
+    @Insert suspend fun insertRecipe(r: RecipeEntity): Long
+    @Update suspend fun updateRecipe(r: RecipeEntity)
+
+    @Query("DELETE FROM recipes WHERE id = :id")
+    suspend fun deleteRecipe(id: Long)
+
+    @Query("DELETE FROM recipe_items WHERE recipe_id = :recipeId")
+    suspend fun deleteItems(recipeId: Long)
+
+    @Insert suspend fun insertItems(items: List<RecipeItemEntity>)
+
+    /** Purchases that count (not a delivery note charged on an invoice, not a credit note), with their VAT rate. */
+    @Query(
+        """
+        SELECT li.id AS lineItemId, li.product_id AS productId, p.name AS productName, p.category AS productCategory,
+               li.original_description AS originalDescription, d.document_date AS documentDate, s.name AS sellerName,
+               li.quantity AS quantity, li.unit AS unit, li.unit_price AS unitPrice, li.line_total_cents AS lineTotalCents,
+               d.vat_basis AS vatBasis, li.vat_rate AS vatRate
+        FROM line_items li
+        JOIN documents d ON d.id = li.document_id
+        JOIN sellers s ON s.id = d.seller_id
+        LEFT JOIN products p ON p.id = li.product_id
+        WHERE d.covered_by IS NULL AND IFNULL(d.kind, '') != 'CREDIT_NOTE'
+        """,
+    )
+    fun pricedPurchases(): Flow<List<PricedRow>>
+
+    /**
+     * What a supplier delivered, delivery by delivery: delivery notes, and documents that cover none (an invoice
+     * charging several delivery notes would count them twice).
+     */
+    @Query(
+        """
+        SELECT li.product_id AS productId, COALESCE(p.name, li.original_description) AS name, li.document_id AS documentId,
+               d.document_date AS documentDate, li.quantity AS quantity, li.unit AS unit
+        FROM line_items li
+        JOIN documents d ON d.id = li.document_id
+        LEFT JOIN products p ON p.id = li.product_id
+        WHERE d.seller_id = :sellerId AND IFNULL(d.kind, '') != 'CREDIT_NOTE'
+          AND NOT EXISTS (SELECT 1 FROM documents x WHERE x.covered_by = d.id)
+        """,
+    )
+    suspend fun boughtFrom(sellerId: Long): List<BoughtRow>
+
+    @Query(
+        """
+        SELECT s.id AS id, s.name AS name, MAX(d.document_date) AS lastDate, COUNT(d.id) AS documents
+        FROM sellers s JOIN documents d ON d.seller_id = s.id
+        GROUP BY s.id ORDER BY (MAX(d.document_date) IS NULL), MAX(d.document_date) DESC
+        """,
+    )
+    fun sellersByLastDelivery(): Flow<List<SellerLastRow>>
+
+    @Query("SELECT * FROM revenue ORDER BY month DESC")
+    fun revenue(): Flow<List<RevenueEntity>>
+
+    @Insert(onConflict = OnConflictStrategy.REPLACE)
+    suspend fun upsertRevenue(r: RevenueEntity)
+
+    @Query("DELETE FROM revenue WHERE month = :month")
+    suspend fun deleteRevenue(month: String)
+}

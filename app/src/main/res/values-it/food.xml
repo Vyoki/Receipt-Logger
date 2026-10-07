@@ -1,0 +1,77 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="food_title">Food cost</string>
+    <string name="food_tile_note">Piatti e mesi</string>
+    <string name="food_intro">Dai prezzi pagati davvero (ultimo acquisto, senza IVA). Il costo di un piatto cambia da solo quando un fornitore cambia un prezzo.</string>
+    <string name="food_dishes">Piatti</string>
+    <string name="food_no_dishes">Nessun piatto ancora. Aggiungi i piatti del menu con ingredienti e prezzo.</string>
+    <string name="food_add_dish">Aggiungi un piatto</string>
+    <string name="food_cost_line">Costo %1$s · prezzo %2$s</string>
+    <string name="food_percent">%1$s%%</string>
+    <string name="food_incomplete">%1$d ingredienti senza prezzo: il costo è troppo basso</string>
+    <string name="food_target">Food cost obiettivo (%%)</string>
+    <string name="food_overhead">In più per personale e utenze (%%)</string>
+    <string name="food_overhead_hint">Facoltativo. Il tuo foglio aggiunge 20% + 10%: scrivi 30 per vedere lo stesso costo pieno.</string>
+    <string name="food_months">Mese per mese</string>
+    <string name="food_months_hint">Cibo e bevande acquistati (senza IVA) rispetto al tuo incasso. Gli acquisti seguono le consegne, non il consumo: un mese che fa scorta sembra più caro.</string>
+    <string name="food_bought">Acquistato %1$s</string>
+    <string name="food_revenue">Incasso %1$s</string>
+    <string name="food_no_revenue">Tocca per scrivere l\'incasso</string>
+    <string name="food_uncertain">%1$s con IVA non nota, contati come stampati</string>
+    <string name="food_revenue_title">Incasso di %1$s</string>
+    <string name="food_revenue_amount">Incasso (€)</string>
+    <string name="food_revenue_with_vat">IVA inclusa</string>
+    <string name="food_save">Salva</string>
+    <string name="food_clear">Cancella</string>
+
+    <string name="recipe_title">Piatto</string>
+    <string name="recipe_name">Nome del piatto</string>
+    <string name="recipe_category">Portata</string>
+    <string name="recipe_cat_starters">Antipasti</string>
+    <string name="recipe_cat_first">Primi</string>
+    <string name="recipe_cat_second">Secondi</string>
+    <string name="recipe_cat_sides">Contorni</string>
+    <string name="recipe_cat_desserts">Dolci</string>
+    <string name="recipe_cat_drinks">Bevande</string>
+    <string name="recipe_cat_other">Altro</string>
+    <string name="recipe_price">Prezzo nel menu (€)</string>
+    <string name="recipe_price_vat">Prezzo IVA inclusa</string>
+    <string name="recipe_vat_rate">IVA %%</string>
+    <string name="recipe_portions">Porzioni che fanno gli ingredienti</string>
+    <string name="recipe_ingredients">Ingredienti</string>
+    <string name="recipe_add_ingredient">Aggiungi un ingrediente</string>
+    <string name="recipe_ingredient">Ingrediente</string>
+    <string name="recipe_pick_product">Scegli tra i prodotti</string>
+    <string name="recipe_free_ingredient">Usa “%1$s” senza prodotto</string>
+    <string name="recipe_quantity">Quantità</string>
+    <string name="recipe_waste">Scarto %%</string>
+    <string name="recipe_manual_price">Prezzo (€) al</string>
+    <string name="recipe_manual_hint">Nessun acquisto ancora: scrivi un prezzo, o collegalo a un prodotto.</string>
+    <string name="recipe_price_from">%1$s al %2$s · %3$s</string>
+    <string name="recipe_price_typed">scritto da te</string>
+    <string name="recipe_vat_unknown">IVA non nota</string>
+    <string name="recipe_no_price">Senza prezzo</string>
+    <string name="recipe_units_dont_convert">Comprato al %1$s: aggiungi una conversione nel prodotto (es. 1 pz = 60 g)</string>
+    <string name="recipe_cost_portion">Food cost a porzione</string>
+    <string name="recipe_full_cost">Con personale e utenze</string>
+    <string name="recipe_net_price">Prezzo senza IVA</string>
+    <string name="recipe_margin">Margine</string>
+    <string name="recipe_for_target">Prezzo per un food cost del %1$s%%</string>
+    <string name="recipe_save">Salva piatto</string>
+    <string name="recipe_delete">Elimina piatto</string>
+    <string name="recipe_delete_text">Il piatto e i suoi ingredienti vengono eliminati. Prodotti e acquisti restano.</string>
+    <string name="recipe_name_needed">Scrivi il nome del piatto.</string>
+    <string name="recipe_remove_ingredient">Togli</string>
+
+    <string name="order_title">Ordini</string>
+    <string name="order_tile_note">L\'ordine solito, pronto da inviare</string>
+    <string name="order_pick_supplier">Scegli un fornitore</string>
+    <string name="order_last">ultima consegna %1$s</string>
+    <string name="order_hint">Cosa porta di solito questo fornitore (ultime 8 settimane). Cambia le quantità, metti 0 per togliere un prodotto, poi invialo dal telefono.</string>
+    <string name="order_usual">di solito %1$s · ogni %2$d giorni · ultima %3$s</string>
+    <string name="order_usual_once">comprato una volta, %1$s il %2$s</string>
+    <string name="order_none">Niente acquistato da questo fornitore nelle ultime 8 settimane.</string>
+    <string name="order_send">Invia ordine</string>
+    <string name="order_heading">Ordine per %1$s – %2$s</string>
+    <string name="order_note">Nota per il fornitore (facoltativa)</string>
+</resources>
