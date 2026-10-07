@@ -626,6 +626,7 @@ data class PricedRow(
     val lineTotalCents: Long?,
     val vatBasis: VatBasis,
     val vatRate: BigDecimal?,
+    val documentId: Long = 0,
 )
 
 data class BoughtRow(
@@ -677,7 +678,7 @@ interface FoodDao {
         SELECT li.id AS lineItemId, li.product_id AS productId, p.name AS productName, p.category AS productCategory,
                li.original_description AS originalDescription, d.document_date AS documentDate, s.name AS sellerName,
                li.quantity AS quantity, li.unit AS unit, li.unit_price AS unitPrice, li.line_total_cents AS lineTotalCents,
-               d.vat_basis AS vatBasis, li.vat_rate AS vatRate
+               d.vat_basis AS vatBasis, li.vat_rate AS vatRate, li.document_id AS documentId
         FROM line_items li
         JOIN documents d ON d.id = li.document_id
         JOIN sellers s ON s.id = d.seller_id

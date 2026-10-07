@@ -356,6 +356,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             val id = repo.saveDocument(doc, storedFile, ocrText, documentId, learning)
             // Files on the phone (queue, readings, corrections, what was learned): not on the screen's thread.
             withContext(Dispatchers.IO) { afterSave(id, doc, own, auto) }
+            c.checkDishes(id)
             _state.update { it.copy(saving = false, savedId = id, autoSaved = auto) }
         } catch (e: Exception) {
             c.log.error("save", e)

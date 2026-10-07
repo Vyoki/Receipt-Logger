@@ -40,14 +40,17 @@ object AutoAccept {
         if (d.items.isEmpty()) out += ReviewReason.NO_ITEMS
         if (d.uncertainCount > 0) out += ReviewReason.UNCERTAIN_VALUES
         // A VAT rate on some lines but not on others: one was not read.
-        val someRates = d.items.any { it.vatRate.text.isNotBlank() }
-        if (d.items.any { it.description.isMissing || ItalianNumbers.parse(it.quantity.text) == null || it.unit.isMissing || cents(it.lineTotal.text) == null } ||
-            (someRates && d.items.any { it.vatRate.text.isBlank() })
+        // Discount and charge lines need only their amount (no quantity, unit or VAT rate of their own).
+        val goods = d.items.filter { !it.isCharge }
+        val someRates = goods.any { it.vatRate.text.isNotBlank() }
+        if (goods.any { it.description.isMissing || ItalianNumbers.parse(it.quantity.text) == null || it.unit.isMissing } ||
+            d.items.any { cents(it.lineTotal.text) == null } ||
+            (someRates && goods.any { it.vatRate.text.isBlank() })
         ) {
             out += ReviewReason.INCOMPLETE_ITEMS
         }
         // Lots read on some lines but not on others: the missing ones were not read.
-        if (d.lotsPrinted && d.items.any { it.lot.text.isNotBlank() } && d.items.any { it.lot.text.isBlank() }) out += ReviewReason.LOTS_MISSING
+        if (d.lotsPrinted && goods.any { it.lot.text.isNotBlank() } && goods.any { it.lot.text.isBlank() }) out += ReviewReason.LOTS_MISSING
         val sumOk = sumMatches(d)
         if (d.items.isNotEmpty() && total != null && ReviewReason.INCOMPLETE_ITEMS !in out && !sumOk) {
             out += ReviewReason.SUM_MISMATCH
@@ -92,6 +95,7 @@ object AutoAccept {
     fun settleProven(d: DocumentDraft): DocumentDraft {
         if (d.items.isEmpty() || !sumMatches(d)) return d
         val lineOk = d.items.all { it ->
+            if (it.isCharge) return@all cents(it.lineTotal.text) != null
             val q = ItalianNumbers.parse(it.quantity.text) ?: return@all false
             val p = ItalianNumbers.parse(it.unitPrice.text) ?: return@all false
             val t = cents(it.lineTotal.text) ?: return@all false

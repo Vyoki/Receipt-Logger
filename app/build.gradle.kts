@@ -100,6 +100,8 @@ dependencies {
     implementation(libs.kotlinx.coroutines.android)
     // Bundled on-device model: works offline from first launch, no Google Play download, no API key.
     implementation(libs.mlkit.text.recognition)
+    // The text of digital PDFs, read on the phone (exact where the OCR of the page image can slip).
+    implementation(libs.pdfbox.android)
 
     testImplementation(libs.junit)
     androidTestImplementation(libs.androidx.test.ext.junit)

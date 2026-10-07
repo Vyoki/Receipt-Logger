@@ -157,6 +157,37 @@ class ReadingNotifier(private val context: Context) {
         manager.notify(("price" + job.id).hashCode(), n)
     }
 
+    /** Dishes a new document's prices pushed over the food cost target (tap opens the dish, or the list). */
+    fun dishesOverTarget(documentId: Long, alerts: List<com.kitchenreceipts.core.FoodCost.DishAlert>, target: java.math.BigDecimal) {
+        if (alerts.isEmpty() || !canPost()) return
+        val c = localized()
+        fun pc(v: java.math.BigDecimal) = ItalianNumbers.formatDecimal(v, minScale = 1, maxScale = 1) + "%"
+        val lines = alerts.map { a ->
+            c.getString(
+                R.string.notif_dish_line,
+                a.cost.recipe.name,
+                a.beforePercent?.let(::pc) ?: "–",
+                pc(a.nowPercent),
+                a.changed.joinToString(", "),
+            )
+        }
+        val title = c.resources.getQuantityString(R.plurals.notif_dish_title, alerts.size, alerts.size, pc(target))
+        val style = NotificationCompat.InboxStyle()
+        lines.take(6).forEach { style.addLine(it) }
+        if (lines.size > 6) style.setSummaryText("+" + (lines.size - 6))
+        val route = alerts.singleOrNull()?.let { "recipe/${it.cost.recipe.id}" } ?: "food"
+        val n = NotificationCompat.Builder(context, CHANNEL_PRICES)
+            .setSmallIcon(R.drawable.ic_stat_reading)
+            .setContentTitle(title)
+            .setContentText(lines.first())
+            .setStyle(style)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openIntent(route, ("dish$documentId").hashCode()))
+            .build()
+        manager.notify(("dish$documentId").hashCode(), n)
+    }
+
     fun cancelFor(jobId: String) = manager.cancel(jobId.hashCode())
 
     private fun canPost(): Boolean =

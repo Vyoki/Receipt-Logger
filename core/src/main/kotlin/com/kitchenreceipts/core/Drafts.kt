@@ -45,7 +45,16 @@ data class LineItemDraft(
     val packSize: DraftField = DraftField(),
     /** What the AI read for this line where it differs (see ParsedLineItem.aiRead): offered as replacements. */
     val aiRead: Map<String, String> = emptyMap(),
+    /** Read as a discount or charge line (see Adjustments). */
+    val adjustment: Boolean = false,
 ) {
+    /**
+     * A discount or charge ("Sconto del 4%", "Spese bancarie"), not goods: no product, quantity or unit needed.
+     * Also true for such a line of a saved document opened again, worked out from its words and amount.
+     */
+    val isCharge: Boolean
+        get() = productId == null && (adjustment || Adjustments.isAdjustment(description.text, ItalianNumbers.parseCents(lineTotal.text), ItalianNumbers.parse(quantity.text)))
+
     /** "4 × 500 g = 2 kg": the total amount the packs hold, or null when there is no size or the unit is not a count. */
     fun packTotal(): Pair<BigDecimal, String>? {
         val size = PackSizes.fromText(packSize.text)?.base ?: return null
@@ -139,6 +148,7 @@ data class DocumentDraft(
                         choices = it.choices,
                         packSize = f(it.packSize) { s -> s },
                         aiRead = it.aiRead,
+                        adjustment = it.adjustment,
                     )
                 },
                 warnings = p.warnings,
@@ -236,7 +246,7 @@ object DraftValidator {
             }
             ValidLineItem(
                 desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry, it.itemCode,
-                newProductName = it.newProductName?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null },
+                newProductName = it.newProductName?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null && !it.isCharge },
                 newProductBrand = it.newProductBrand?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null },
                 packages = packages,
                 packSize = packSize,

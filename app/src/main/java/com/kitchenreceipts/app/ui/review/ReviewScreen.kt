@@ -542,6 +542,26 @@ private fun ItemCard(
     onPickChoice: (LineChoice) -> Unit = {},
 ) {
     val status = LocalStatusColors.current
+    if (item.isCharge) {
+        // A discount or charge: part of the document's total, never a product (no quantity, unit or price history).
+        Panel {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                Row(verticalAlignment = Alignment.Top) {
+                    ItemInput(item, errors, onChange, onConfirm, ItemField.DESCRIPTION, R.string.description_on_document, Modifier.weight(1f))
+                    IconButton(onClick = onRemove, modifier = Modifier.size(56.dp)) {
+                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.remove_item))
+                    }
+                }
+                Text(stringResource(R.string.charge_line_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    ItemInput(item, errors, onChange, onConfirm, ItemField.LINE_TOTAL, R.string.line_total, Modifier.weight(1f), FieldKind.DECIMAL)
+                    ItemInput(item, errors, onChange, onConfirm, ItemField.VAT_RATE, R.string.vat_rate, Modifier.weight(0.6f), FieldKind.DECIMAL, optional = true)
+                }
+                TextButton(onClick = onPickProduct, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.charge_line_is_product)) }
+            }
+        }
+        return
+    }
     Panel {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Row(verticalAlignment = Alignment.Top) {

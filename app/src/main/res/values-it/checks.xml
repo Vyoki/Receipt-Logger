@@ -79,4 +79,6 @@
     <string name="expiry_in">tra %1$d g</string>
     <string name="expiry_home">%1$d in scadenza</string>
     <string name="expiry_home_hint">Prossimo: %1$s</string>
+    <string name="charge_line_note">Sconto o spesa: conta nel totale, non è un prodotto.</string>
+    <string name="charge_line_is_product">È un prodotto: assegnalo</string>
 </resources>

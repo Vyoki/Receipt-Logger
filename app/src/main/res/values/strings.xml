@@ -504,6 +504,11 @@
         <item quantity="one">%d price changed by 5%% or more</item>
         <item quantity="other">%d prices changed by 5%% or more</item>
     </plurals>
+    <string name="notif_dish_line">%1$s: %2$s → %3$s (%4$s)</string>
+    <plurals name="notif_dish_title">
+        <item quantity="one">A dish went over %2$s food cost</item>
+        <item quantity="other">%1$d dishes went over %2$s food cost</item>
+    </plurals>
     <string name="notif_price_not_saved">not saved yet, tap to check</string>
     <string name="price_alerts">Price change notifications</string>
     <string name="price_alerts_hint" formatted="false">After a document is read in the background, notify when a price is 5% or more above or below the last purchase.</string>

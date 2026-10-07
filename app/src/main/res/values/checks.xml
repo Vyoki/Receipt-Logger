@@ -82,4 +82,6 @@
     <string name="expiry_in">in %1$d d</string>
     <string name="expiry_home">%1$d expiring soon</string>
     <string name="expiry_home_hint">Next: %1$s</string>
+    <string name="charge_line_note">Discount or charge: counted in the total, not a product.</string>
+    <string name="charge_line_is_product">It is a product: assign it</string>
 </resources>

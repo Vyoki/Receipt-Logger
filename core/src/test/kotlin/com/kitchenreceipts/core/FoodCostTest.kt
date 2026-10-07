@@ -117,4 +117,19 @@ class FoodCostTest {
         eq("1", Reorder.round(BigDecimal("0.2"), "pz"))
         assertEquals("Order\n- Pomodori: 10 kg", Reorder.message("Order", listOf("Pomodori" to "10 kg"), null))
     }
+
+    @Test fun dishPushedOverTarget() {
+        fun price(v: String) = IngredientPrice(BigDecimal(v), "kg", null, null, manual = false)
+        val dish = Recipe(1, "Tagliata", null, 2200, ingredients = listOf(RecipeIngredient(7, "Manzo", BigDecimal("0.25"), "kg")))
+        val other = Recipe(2, "Insalata", null, 900, ingredients = listOf(RecipeIngredient(8, "Lattuga", BigDecimal("0.2"), "kg")))
+        // 20,00 €/kg x 0,25 = 5,00 on 20,00 net = 25%; at 28,00 €/kg = 35%.
+        val alerts = FoodCost.dishAlerts(listOf(dish, other), mapOf(7L to price("20"), 8L to price("2")), mapOf(7L to price("28"), 8L to price("2")), targetPercent = BigDecimal(30))
+        assertEquals(listOf("Tagliata"), alerts.map { it.cost.recipe.name })
+        eq("25.0", alerts[0].beforePercent); eq("35.0", alerts[0].nowPercent)
+        assertEquals(listOf("Manzo"), alerts[0].changed)
+        // Already over and barely moved: not repeated.
+        assertTrue(FoodCost.dishAlerts(listOf(dish), mapOf(7L to price("28")), mapOf(7L to price("28.5")), targetPercent = BigDecimal(30)).isEmpty())
+        // A cheaper price never alerts.
+        assertTrue(FoodCost.dishAlerts(listOf(dish), mapOf(7L to price("28")), mapOf(7L to price("20")), targetPercent = BigDecimal(30)).isEmpty())
+    }
 }

@@ -104,6 +104,14 @@ class ImportProcessor(private val renderer: PageRenderer) {
             return renderer.renderForReading(file.relativePath, file.mimeType, i, OCR_LONG_SIDE).also { bmp = it; page = i }
         }
 
+        /** The PDF's own text of each page (see PdfText), read once for every pass; null = none to use. */
+        private val text = HashMap<Int, List<com.kitchenreceipts.core.TextLayer.Glyph>?>()
+
+        suspend fun textOf(i: Int): List<com.kitchenreceipts.core.TextLayer.Glyph>? {
+            if (file.mimeType != com.kitchenreceipts.app.files.FileStore.MIME_PDF) return null
+            return text.getOrPut(i) { withContext(Dispatchers.IO) { renderer.pdfText(file.relativePath, i) } }
+        }
+
         fun release() {
             bmp?.recycle()
             bmp = null
@@ -190,7 +198,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val first = readAll(images, engine, pages, 1) { p, of -> onProgress(ImportProgress(p, of, 1)) }
         var best = first
         var passes = 1
-        if (first.error == null && first.lines.isNotEmpty() && !ReceiptParser.isConfident(first.parsed(options)) && engine.worksOffline && engine !== NoOcrEngine) {
+        // Pages read from the PDF's own text gain nothing from a sharper image.
+        if (first.error == null && first.lines.isNotEmpty() && first.textPages < first.lines.size && !ReceiptParser.isConfident(first.parsed(options)) && engine.worksOffline && engine !== NoOcrEngine) {
             val second = try {
                 readAll(images, engine, first.lines.size, 2) { p, of -> onProgress(ImportProgress(p, of, 2)) }
             } catch (e: CancellationException) {
@@ -246,8 +255,10 @@ class ImportProcessor(private val renderer: PageRenderer) {
             layoutNote?.let { aiNote = "$it; $aiNote" }
         }
         return rebuild(
-            file, best.lines, best.widths, best.error, engine.displayName, aiRaw, aiNote, aiTargeted,
-            "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else ""),
+            file, best.lines, best.widths, best.error, if (best.textPages > 0) "PDF text + ${engine.displayName}" else engine.displayName,
+            aiRaw, aiNote, aiTargeted,
+            "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else "") +
+                (if (best.textPages > 0) ", text of the PDF on ${best.textPages} of ${best.lines.size} page(s)" else ""),
             options, System.currentTimeMillis() - started, aiSpot, aiLayout,
             // Worked out above from the same reading: not again.
             preParsed = parsed, preTargets = targets,
@@ -362,7 +373,14 @@ class ImportProcessor(private val renderer: PageRenderer) {
         return notes.joinToString("; ")
     }
 
-    private inner class Reading(val lines: List<List<OcrLine>>, val widths: List<Int>, val error: String?, val pass: Int) {
+    private inner class Reading(
+        val lines: List<List<OcrLine>>,
+        val widths: List<Int>,
+        val error: String?,
+        val pass: Int,
+        /** Pages read from the PDF's own text (with the OCR only where it has none). */
+        val textPages: Int = 0,
+    ) {
         private var cache: ParsedDocument? = null
         val text: String get() = lines.joinToString("\n${ReceiptParser.PAGE_BREAK}\n") { LayoutRows.toText(it) }
         suspend fun parsed(options: ParseOptions): ParsedDocument = cache ?: withContext(Dispatchers.Default) {
@@ -380,17 +398,33 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val raw = mutableListOf<List<OcrLine>>()
         val widths = mutableListOf<Int>()
         var error: String? = null
+        var textPages = 0
+        // A digital PDF's own text where it has some: exact, where the OCR can slip. The OCR still reads the page
+        // for what is printed as a picture (often the letterhead), and to check the text is what is printed.
+        suspend fun withText(i: Int, seen: List<OcrLine>, w: Int, h: Int): List<OcrLine> {
+            val glyphs = runCatching { images.textOf(i) }.getOrNull()
+            if (glyphs.isNullOrEmpty()) return seen
+            return withContext(Dispatchers.Default) {
+                val text = com.kitchenreceipts.core.TextLayer.lines(PdfText.scaled(glyphs, w, h))
+                val merged = com.kitchenreceipts.core.TextLayer.merge(text, seen)
+                if (merged !== seen) textPages++
+                merged
+            }
+        }
         for (i in 0 until pages) {
             onProgress(i + 1, pages)
             try {
                 // The page image stays with [images] (freed when the next page is read or the document is done).
                 val bmp = images.get(i)
                 if (pass == 1) {
-                    raw += engine.recognize(bmp)
+                    raw += withText(i, engine.recognize(bmp), bmp.width, bmp.height)
                     widths += bmp.width
                 } else {
                     val enhanced = withContext(Dispatchers.Default) { ImageEnhancer.enhance(bmp) }
-                    try { raw += engine.recognize(enhanced); widths += enhanced.width } finally { enhanced.recycle() }
+                    try {
+                        raw += withText(i, engine.recognize(enhanced), enhanced.width, enhanced.height)
+                        widths += enhanced.width
+                    } finally { enhanced.recycle() }
                 }
             } catch (e: CancellationException) {
                 throw e
@@ -399,7 +433,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 break
             }
         }
-        return Reading(raw, widths, error, pass)
+        return Reading(raw, widths, error, pass, textPages)
     }
 
     companion object {

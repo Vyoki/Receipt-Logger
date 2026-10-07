@@ -15,6 +15,7 @@ import com.kitchenreceipts.core.UnitConversion
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
@@ -49,6 +50,28 @@ class FoodRepository(private val db: AppDatabase) {
             val c = conversions(conv)
             recipes.map { r -> FoodCost.cost(r.toCore(byRecipe[r.id].orEmpty()), { prices[it] }, { c[it].orEmpty() }, overheadPercent) }
         }.flowOn(Dispatchers.Default)
+
+    /**
+     * Dishes the prices of document [documentId] pushed over [target] food cost: prices without that document
+     * against prices with it (see FoodCost.dishAlerts).
+     */
+    suspend fun dishAlerts(documentId: Long, target: BigDecimal): List<FoodCost.DishAlert> = withContext(Dispatchers.IO) {
+        val recipes = dao.recipesOnce()
+        if (recipes.isEmpty()) return@withContext emptyList()
+        val rows = dao.pricedPurchases().first().filter { it.productId != null }
+        if (rows.none { it.documentId == documentId }) return@withContext emptyList()
+        fun pricesOf(list: List<PricedRow>) = list.groupBy { it.productId!! }
+            .mapNotNull { (pid, l) -> FoodCost.lastPrice(l.map { it.toPurchase() })?.let { pid to it } }.toMap()
+        val items = dao.allItemsOnce().groupBy { it.recipeId }
+        val conv = conversions(products.allConversions().first())
+        withContext(Dispatchers.Default) {
+            FoodCost.dishAlerts(
+                recipes.map { it.toCore(items[it.id].orEmpty()) },
+                pricesOf(rows.filter { it.documentId != documentId }), pricesOf(rows),
+                { conv[it].orEmpty() }, target,
+            )
+        }
+    }
 
     suspend fun draft(id: Long): RecipeDraft? = withContext(Dispatchers.IO) {
         val r = dao.recipe(id) ?: return@withContext null

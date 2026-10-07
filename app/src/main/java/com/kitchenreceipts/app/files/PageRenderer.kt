@@ -33,6 +33,10 @@ class PageRenderer(private val files: FileStore) {
     /** The stored file's bytes (an e-invoice is read from its XML, not from pictures). */
     fun bytes(relativePath: String): ByteArray = files.file(relativePath).readBytes()
 
+    /** The text a digital PDF carries on a page (see PdfText); null when there is none to use. */
+    fun pdfText(relativePath: String, pageIndex: Int): List<com.kitchenreceipts.core.TextLayer.Glyph>? =
+        com.kitchenreceipts.app.ocr.PdfText.glyphs(files.file(relativePath), pageIndex)
+
     /** An e-invoice page: the invoice laid out as text on a white sheet (A4 proportions). */
     private fun renderInvoiceText(f: File, pageIndex: Int, targetWidth: Int): Bitmap {
         val text = runCatching { com.kitchenreceipts.core.EInvoice.read(f.readBytes()).text }.getOrElse { "E-invoice could not be read: ${it.message}" }

@@ -192,6 +192,44 @@ object FoodCost {
         return p.multiply(BigDecimal(2)).setScale(0, RoundingMode.CEILING).divide(BigDecimal(2)).setScale(2)
     }
 
+    /** A dish whose food cost went over the target because of new prices. */
+    data class DishAlert(
+        val cost: RecipeCost,
+        /** Food cost % with the prices before the document; null when the dish had no price before. */
+        val beforePercent: BigDecimal?,
+        val nowPercent: BigDecimal,
+        /** The ingredients whose price changed. */
+        val changed: List<String>,
+    )
+
+    /**
+     * Dishes pushed over [targetPercent] by a change of prices ([before] → [after], e.g. without and with a new
+     * invoice): a dish is named when it uses a product whose price changed, its food cost is now over the target,
+     * and it either was not over before or rose by a point or more. A dish already over that barely moved is not
+     * repeated each delivery.
+     */
+    fun dishAlerts(
+        recipes: List<Recipe>,
+        before: Map<Long, IngredientPrice>,
+        after: Map<Long, IngredientPrice>,
+        conversionsOf: (Long) -> List<UnitConversion> = { emptyList() },
+        targetPercent: BigDecimal = DEFAULT_TARGET,
+    ): List<DishAlert> {
+        val changed = after.filter { (pid, p) -> before[pid].let { b -> b == null || b.unit != p.unit || b.price.compareTo(p.price) != 0 } }.keys
+        if (changed.isEmpty()) return emptyList()
+        return recipes.mapNotNull { r ->
+            val touched = r.ingredients.filter { it.productId != null && it.productId in changed }
+            if (touched.isEmpty()) return@mapNotNull null
+            val now = cost(r, { after[it] }, conversionsOf)
+            val nowP = now.foodCostPercent ?: return@mapNotNull null
+            if (nowP <= targetPercent) return@mapNotNull null
+            val beforeP = cost(r, { before[it] }, conversionsOf).foodCostPercent?.takeIf { it.signum() > 0 }
+            val rose = beforeP == null || beforeP <= targetPercent || nowP.subtract(beforeP) >= BigDecimal.ONE
+            if (!rose) return@mapNotNull null
+            DishAlert(now, beforeP, nowP, touched.map { it.name })
+        }.sortedByDescending { it.nowPercent }
+    }
+
     // ------------------------------------------------------------------ month by month
 
     data class MonthRevenue(val month: YearMonth, val cents: Long, val includesVat: Boolean, val vatRatePercent: BigDecimal = BigDecimal.TEN)
