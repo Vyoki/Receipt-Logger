@@ -294,8 +294,16 @@ object EInvoice {
                 val lot = (lotData?.text("RiferimentoTesto") ?: lotData?.text("RiferimentoNumero"))?.let { sure(it, src) } ?: scan.lot
                 val expiry = (expData?.text("RiferimentoData")?.let(::date) ?: date(expData?.text("RiferimentoTesto")))?.let { sure(it, src) } ?: scan.expiry
                 // The unit price after the line's discounts, so price = amount / quantity (what was really paid).
-                val discounted = line.kids("ScontoMaggiorazione").isNotEmpty()
+                val discounts = line.kids("ScontoMaggiorazione")
+                val discounted = discounts.isNotEmpty()
+                // Percent discounts (SC 30, or SC 10 then SC 5) kept as printed, with the printed price, when they
+                // give the amount; anything else (a fixed amount, a surcharge) as the price really paid.
+                val discountText = discounts.takeIf { d -> d.isNotEmpty() && d.all { (it.text("Tipo") ?: "").uppercase() == "SC" && dec(it.text("Percentuale")) != null } }
+                    ?.joinToString("+") { ItalianNumbers.toEditText(dec(it.text("Percentuale"))) }
+                    ?.let { LineDiscount.normalize(it) }
+                    ?.takeIf { d -> qty != null && price != null && LineDiscount.matches(qty, price, d, total) }
                 val unitPrice = when {
+                    discountText != null -> price
                     qty != null && qty.signum() != 0 && (discounted || price == null) -> totalDec.divide(qty, 4, RoundingMode.HALF_UP).stripTrailingZeros()
                     else -> price
                 }
@@ -315,13 +323,14 @@ object EInvoice {
                     lotNumber = lot,
                     expiryDate = expiry,
                     itemCode = code,
+                    discount = discountText?.let { sure(it, src) },
                 )
                 groups[rate.stripTrailingZeros()] = (groups[rate.stripTrailingZeros()] ?: 0L) + total
                 groupLines[rate.stripTrailingZeros()] = (groupLines[rate.stripTrailingZeros()] ?: 0) + 1
                 text.append(listOfNotNull(code, description).joinToString("  "))
                 text.append("  ").append(qty?.let { num(it) + (unitRaw?.let { u -> " $u" } ?: "") } ?: "")
                 text.append(price?.let { "  x " + num(it) } ?: "")
-                if (discounted) text.append(" (sconto)")
+                if (discounted) text.append(discountText?.let { " sconto $it%" } ?: " (sconto)")
                 text.append("  = ").append(money(total)).append("  IVA ").append(num(rate)).append('%')
                 lot?.let { text.append("  Lotto ").append(it.value) }
                 expiry?.let { text.append("  Scad. ").append(ItalianDates.format(it.value)) }

@@ -67,6 +67,8 @@ data class ParsedLineItem(
     val nameDoubt: Boolean = false,
     /** A discount or charge line ("Sconto del 4%", "Spese bancarie"): part of the total, never a product (see Adjustments). */
     val adjustment: Boolean = false,
+    /** The discount printed on the line, in percent ("30", "10+5"): quantity x price less it is the amount (see LineDiscount). */
+    val discount: Extracted<String>? = null,
     /**
      * What the AI read for this line where it differs and was not taken ("description", "quantity", "amount"):
      * offered to the operator as a replacement, never applied by itself.

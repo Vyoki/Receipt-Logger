@@ -59,10 +59,11 @@ class RealOcrTest {
         assertDec("10", olio.quantity?.value)
         assertDec("7.50", olio.unitPrice?.value)
         assertEquals("l", olio.unit?.value)
-        val pasta = d.lineItems[1] // 10% discount column: kept as printed, flagged for review
+        val pasta = d.lineItems[1] // 10% discount column: kept with the line, so the line adds up
         assertDec("20", pasta.quantity?.value)
         assertDec("1.60", pasta.unitPrice?.value)
-        assertEquals(Confidence.LOW, pasta.lineTotalCents?.confidence)
+        assertEquals("10", pasta.discount?.value)
+        assertEquals(2880L, pasta.lineTotalCents?.value)
         val pomodoro = d.lineItems[2] // description split over two rows
         assertTrue(pomodoro.originalDescription.contains("Pomodoro San Marzano"))
         assertEquals("conf", pomodoro.unit?.value)

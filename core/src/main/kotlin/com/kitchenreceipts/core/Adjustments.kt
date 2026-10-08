@@ -50,7 +50,7 @@ object Adjustments {
             if (isDiscount(it.originalDescription) && t.value > 0) t.copy(value = -t.value, confidence = Confidence.LOW) else t
         }
         it.copy(
-            quantity = null, unit = null, unitPrice = null, lineTotalCents = total, packSize = null, packages = null,
+            quantity = null, unit = null, unitPrice = null, lineTotalCents = total, packSize = null, packages = null, discount = null,
             choices = emptyList(), lotNumber = null, expiryDate = null, adjustment = true,
             warnings = it.warnings - ParseWarning.LINE_TOTAL_MISMATCH,
         )

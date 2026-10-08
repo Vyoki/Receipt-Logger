@@ -38,6 +38,25 @@ class MigrationTest {
         }
         SQLiteDatabase.openDatabase(context.getDatabasePath(name).path, null, SQLiteDatabase.OPEN_READWRITE).use { db ->
             db.execSQL("PRAGMA foreign_keys=OFF")
+            // v10 -> v9: line_items without discount
+            db.execSQL(
+                "CREATE TABLE `line_items_v9` (`id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL, `document_id` INTEGER NOT NULL, " +
+                    "`position` INTEGER NOT NULL, `original_description` TEXT NOT NULL, `product_id` INTEGER, `quantity` TEXT, " +
+                    "`unit` TEXT, `unit_price` TEXT, `line_total_cents` INTEGER, `vat_rate` TEXT, `lot_number` TEXT, `expiry_date` INTEGER, " +
+                    "`packages` TEXT, `pack_size` TEXT, " +
+                    "FOREIGN KEY(`document_id`) REFERENCES `documents`(`id`) ON UPDATE NO ACTION ON DELETE CASCADE , " +
+                    "FOREIGN KEY(`product_id`) REFERENCES `products`(`id`) ON UPDATE NO ACTION ON DELETE SET NULL )",
+            )
+            db.execSQL("DROP TABLE line_items")
+            db.execSQL("ALTER TABLE line_items_v9 RENAME TO line_items")
+            db.execSQL("CREATE INDEX `index_line_items_document_id` ON `line_items` (`document_id`)")
+            db.execSQL("CREATE INDEX `index_line_items_product_id` ON `line_items` (`product_id`)")
+            if (version == 9) {
+                insertRows(db)
+                db.execSQL("INSERT INTO products (id, name, normalized_name, created_at, category, family_id, brand, family_dismissed) VALUES (1, 'Mozzarella', 'mozzarella', 0, NULL, NULL, NULL, 0)")
+                db.version = 9
+                return@use
+            }
             // v9 -> v8: no recipes, recipe items, revenue
             db.execSQL("DROP TABLE recipe_items")
             db.execSQL("DROP TABLE recipes")
@@ -179,6 +198,7 @@ class MigrationTest {
                 assertEquals("L24-118", item.lotNumber)
                 assertNull(item.packages)
                 assertNull(item.packSize)
+                assertNull(item.discount)
                 val seller = migrated.sellerDao().allOnce().single()
                 assertNull(seller.vatNumber)
                 assertEquals(0, migrated.sellerDao().allAliases().size)
@@ -198,6 +218,11 @@ class MigrationTest {
         } finally {
             migrated.close()
         }
+    }
+
+    @Test fun migrate9To10() {
+        createOldDatabase(9)
+        openAndCheck()
     }
 
     @Test fun migrate8To9() {

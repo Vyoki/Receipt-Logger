@@ -82,7 +82,7 @@
     <string name="unit_price">Unit price</string>
     <string name="line_total">Line total</string>
     <string name="use_computed_total">Use qty × price = %1$s</string>
-    <string name="line_mismatch">qty × price = %1$s, different from the line total. Check both.</string>
+    <string name="line_mismatch">qty × price (less discount) = %1$s, different from the line total. Check both.</string>
     <string name="lot">Lot</string>
     <string name="lot_missing_hint">No lot read – type it only if printed</string>
     <string name="vat_rate" formatted="false">VAT %</string>
@@ -504,6 +504,7 @@
         <item quantity="one">%d price changed by 5%% or more</item>
         <item quantity="other">%d prices changed by 5%% or more</item>
     </plurals>
+    <string name="discount_percent">Discount %</string>
     <string name="notif_dish_line">%1$s: %2$s → %3$s (%4$s)</string>
     <plurals name="notif_dish_title">
         <item quantity="one">A dish went over %2$s food cost</item>

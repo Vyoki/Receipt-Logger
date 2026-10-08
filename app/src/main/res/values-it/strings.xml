@@ -78,7 +78,7 @@
     <string name="unit_price">Prezzo unitario</string>
     <string name="line_total">Totale riga</string>
     <string name="use_computed_total">Usa q.tà × prezzo = %1$s</string>
-    <string name="line_mismatch">q.tà × prezzo = %1$s, diverso dal totale riga. Controlla entrambi.</string>
+    <string name="line_mismatch">q.tà × prezzo (meno sconto) = %1$s, diverso dal totale riga. Controlla entrambi.</string>
     <string name="lot">Lotto</string>
     <string name="lot_missing_hint">Nessun lotto letto – scrivilo solo se stampato</string>
     <string name="vat_rate" formatted="false">IVA %</string>
@@ -492,6 +492,7 @@
         <item quantity="one">%d prezzo cambiato del 5%% o più</item>
         <item quantity="other">%d prezzi cambiati del 5%% o più</item>
     </plurals>
+    <string name="discount_percent">Sconto %</string>
     <string name="notif_dish_line">%1$s: %2$s → %3$s (%4$s)</string>
     <plurals name="notif_dish_title">
         <item quantity="one">Un piatto ha superato il food cost del %2$s</item>

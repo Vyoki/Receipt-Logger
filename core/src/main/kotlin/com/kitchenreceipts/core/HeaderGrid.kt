@@ -42,7 +42,7 @@ object HeaderGrid {
     private val MONEY = rx("^(?:€|E|EUR|EURO)?\\s*(-?\\d{1,3}(?:\\.\\d{3})*,\\s?\\d{2})\\s*(?:€|EUR)?$")
 
     private fun kind(text: String): K? {
-        val t = norm(text)
+        val t = norm(text).replace(rx("^TOT "), "TOTALE ")
         if (t.isEmpty() || t.any(Char::isDigit)) return null
         if (t.count(Char::isLetter) < 3) return null
         return when {
@@ -67,9 +67,12 @@ object HeaderGrid {
             val rows = layout.rows.map { r -> r.filter { it.text.isNotBlank() }.sortedBy { it.left } }
             for (i in 0 until rows.size - 1) {
                 val labels = rows[i]
-                val kinds = labels.map { kind(it.text) }
+                val summary = labels.any { VAT_SUMMARY.containsMatchIn(norm(it.text)) }
+                // A VAT summary row (COD.IVA IMPONIBILE ALIQ. IMPOSTA) may end with the document's totals
+                // (TOT. IMPONIBILE, TOT. DOCUMENTO): only those, the rest is per VAT rate.
+                val kinds = labels.map { l -> kind(l.text)?.let { k -> if (summary && !norm(l.text).startsWith("TOT")) K.OTHER else k } }
                 if (kinds.any { it == null } || kinds.size < 2) continue
-                if (kinds.none { it != K.OTHER } || labels.any { VAT_SUMMARY.containsMatchIn(norm(it.text)) }) continue
+                if (kinds.none { it != K.OTHER }) continue
                 val values = rows[i + 1]
                 // A row of values: amounts, dates, codes, a word ("FATTURA"); not a row of descriptions (an item, an address).
                 if (values.isEmpty() || values.any { v -> v.text.split(' ').count { w -> w.count(Char::isLetter) >= 3 } >= 2 }) continue

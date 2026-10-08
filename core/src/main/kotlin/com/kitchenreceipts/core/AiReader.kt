@@ -667,6 +667,10 @@ object AiReader {
             warnings = if (qty != null && price != null && amount != null && !consistent) setOf(ParseWarning.LINE_TOTAL_MISMATCH) else emptySet(),
             itemCode = code,
             packages = colli?.let { Extracted(it.lowercase().replace('×', 'x').replace(" ", ""), if (ev.hasText(it)) Confidence.HIGH else Confidence.LOW, source) },
+            discount = LineDiscount.normalize(a.discount)?.takeIf { d ->
+                val q = qty; val p = price
+                q != null && p != null && amount != null && !ReceiptParser.matches(q, p, amount) && LineDiscount.matches(q, p, d, amount)
+            }?.let { Extracted(it, qpConf, source) },
         )
     }
 
