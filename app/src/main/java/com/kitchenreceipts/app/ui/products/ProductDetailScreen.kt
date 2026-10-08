@@ -417,6 +417,15 @@ private fun PurchaseCard(p: PurchaseRow, onClick: () -> Unit) {
                 else -> "—"
             }
             Text("$qty · $price", style = MaterialTheme.typography.bodyMedium)
+            // A line discount: the printed price is before it; what was paid per unit is below.
+            if (p.discount != null) {
+                val paid = com.kitchenreceipts.app.ui.documents.paidPerUnit(p.quantity, p.lineTotalCents)
+                Text(
+                    stringResource(R.string.discount_value, p.discount) +
+                        (paid?.let { " · " + stringResource(R.string.paid_per_unit, fmtDecimal(it, 4), p.unit ?: "?") } ?: ""),
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
             Text(
                 vatBasisLabel(p.vatBasis) + " · " + (p.lotNumber?.let { stringResource(R.string.lot_value, it) } ?: stringResource(R.string.lot_not_recorded)),
                 style = MaterialTheme.typography.bodyMedium,
