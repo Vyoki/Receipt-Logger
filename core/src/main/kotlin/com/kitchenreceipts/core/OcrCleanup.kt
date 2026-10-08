@@ -41,7 +41,7 @@ object OcrCleanup {
     private fun splitGluedFlag(token: String): String =
         GLUED_FLAG.find(token)?.let { m -> m.groupValues[1] + " " + m.groupValues[2].uppercase() } ?: token
 
-    /** A number with a table's vertical rule read on its side ("143,15)", "10,00}", "|1.860,95|"). */
+    /** A number with a table's vertical rule read on its side ("12,40)", "10,00}", "|1.234,56|"). */
     private val RULED_NUMBER = Regex("^[|¦\\[\\](){}]*(-?\\d[\\d.,]*%?)[|¦\\[\\](){}]+$|^[|¦\\[\\](){}]+(-?\\d[\\d.,]*%?)$")
     private val RULE_ONLY = Regex("^[|¦]+$")
 
