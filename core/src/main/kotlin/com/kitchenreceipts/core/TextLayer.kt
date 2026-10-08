@@ -14,6 +14,9 @@ import kotlin.math.min
  */
 object TextLayer {
 
+    /** The confidence given to the PDF's own text: exact (below 1, which means "not said"). */
+    const val EXACT = 0.99f
+
     /** One printed character, in the pixels of the page image (top-left origin). */
     data class Glyph(val text: String, val left: Float, val top: Float, val right: Float, val bottom: Float) {
         val height: Float get() = (bottom - top).coerceAtLeast(1f)
@@ -66,11 +69,13 @@ object TextLayer {
             OcrLine(
                 w.joinToString("") { it.text }, w.minOf { it.left }.toInt(), w.minOf { it.top }.toInt(),
                 kotlin.math.ceil(w.maxOf { it.right }.toDouble()).toInt(), kotlin.math.ceil(w.maxOf { it.bottom }.toDouble()).toInt(),
+                confidence = EXACT,
             )
         }
         return OcrLine(
             ws.joinToString(" ") { it.text }, ws.minOf { it.left }, ws.minOf { it.top }, ws.maxOf { it.right }, ws.maxOf { it.bottom },
             words = if (ws.size > 1) ws else emptyList(),
+            confidence = EXACT,
         )
     }
 

@@ -44,9 +44,10 @@ class MlKitOcrEngine : OcrEngine {
                     // Word boxes let the parser read table columns by position.
                     val words = line.elements.mapNotNull { e ->
                         val b = e.boundingBox ?: return@mapNotNull null
-                        OcrLine(e.text, b.left, b.top, b.right, b.bottom, e.angle)
+                        // How sure ML Kit is of the word: low on handwriting (see core Handwriting).
+                        OcrLine(e.text, b.left, b.top, b.right, b.bottom, e.angle, confidence = e.confidence)
                     }
-                    OcrLine(line.text, box.left, box.top, box.right, box.bottom, line.angle, words)
+                    OcrLine(line.text, box.left, box.top, box.right, box.bottom, line.angle, words, line.confidence)
                 }
                 cont.resume(lines)
             }

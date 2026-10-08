@@ -14,6 +14,8 @@ data class OcrLine(
     val angle: Float = 0f,
     /** The single words of the line with their own boxes, when the engine provides them (used to read table columns). */
     val words: List<OcrLine> = emptyList(),
+    /** How sure the OCR engine is of this text (0..1), when it says; 1 when it does not. Low on handwriting. */
+    val confidence: Float = 1f,
 ) {
     val width: Int get() = (right - left).coerceAtLeast(1)
     val height: Int get() = (bottom - top).coerceAtLeast(1)

@@ -27,7 +27,8 @@ object TableReader {
     /** [qtyPzOrKg]: the quantity heading says "PZ/KG" (pieces or kilos, depending on the product). */
     data class Header(val columns: List<Column>, val hasLotColumn: Boolean = false, val qtyPzOrKg: Boolean = false)
 
-    private data class Word(val text: String, val left: Double, val right: Double) {
+    /** [conf]: how sure the OCR was of the word (1 = not said). */
+    private data class Word(val text: String, val left: Double, val right: Double, val conf: Float = 1f) {
         val center: Double get() = (left + right) / 2
     }
 
@@ -102,6 +103,12 @@ object TableReader {
         if (w.length >= 6 && w.all { it.isLetter() }) {
             val near = LONG_HEADINGS.filter { (k, _) -> k[0] == w[0] && SmartMatcher.damerau(k, w, 1) <= 1 }
             if (near.map { it.value }.distinct().size == 1) return near.first().value
+        }
+        // A long heading cut at the edge of a box or a photo ("ZIONE" for DESCRIZIONE, "ARTICO" for ARTICOLO):
+        // the start or the end of exactly one known heading.
+        if (w.length >= 5 && w.all { it.isLetter() }) {
+            val cut = LONG_HEADINGS.filter { (k, _) -> k.length >= w.length + 2 && (k.startsWith(w) || k.endsWith(w)) }
+            if (cut.map { it.value }.distinct().size == 1) return cut.first().value
         }
         learned.get()?.let { m -> (m[w] ?: m[SupplierLayouts.headingKey(word)])?.let { return hOf(it) } }
         return null
@@ -213,7 +220,7 @@ object TableReader {
     private fun rawWords(line: OcrLine, slope: Double): List<Word> {
         val y = line.centerY
         if (line.words.isNotEmpty()) {
-            return line.words.filter { it.text.isNotBlank() }.map { Word(it.text.trim(), it.left + slope * it.centerY, it.right + slope * it.centerY) }
+            return line.words.filter { it.text.isNotBlank() }.map { Word(it.text.trim(), it.left + slope * it.centerY, it.right + slope * it.centerY, it.confidence) }
         }
         val text = line.text
         if (text.isBlank()) return emptyList()
@@ -224,7 +231,7 @@ object TableReader {
             if (text[i] == ' ') { i++; continue }
             val start = i
             while (i < text.length && text[i] != ' ') i++
-            out += Word(text.substring(start, i), line.left + start * perChar + slope * y, line.left + i * perChar + slope * y)
+            out += Word(text.substring(start, i), line.left + start * perChar + slope * y, line.left + i * perChar + slope * y, line.confidence)
         }
         return out
     }
@@ -244,6 +251,10 @@ object TableReader {
     private val PRICE_WITH_DISCOUNT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{3,4}?)(\\d{1,2}(?:\\+\\d{1,2})+%?)$")
     private val GLUED_SIZE = Regex("^(?i)(KG|GR|LT|ML|CL|PZ)(\\d+(?:[.,]\\d+)?)$")
     private val TWO_LETTER = Regex("^[A-Z]{1,2}$")
+    /** The OCR's confidence above which a word that no arithmetic checks (a lot) is taken as read. */
+    private const val SURE_WORD = 0.9f
+    /** A discount as printed: "10", "12,5", "10+10", "5%". */
+    private val CASCADE = Regex("^\\d{1,2}(?:[.,]\\d{1,2})?(?:\\+\\d{1,2}(?:[.,]\\d{1,2})?)*%?$")
     private val NUMBER_KINDS = setOf(Kind.QUANTITY, Kind.PRICE, Kind.DISCOUNT, Kind.AMOUNT, Kind.PACKAGES)
 
     private fun isNumeric(t: String) = NUMBER.matches(t.trim('€', ' '))
@@ -290,9 +301,124 @@ object TableReader {
                     body[firstItem] = (body[firstItem] + stray).sortedBy { it.left }
                 }
             }
-            items += readRows(body, header)
+            var read = readRows(body, header)
+            // The headings are a hint; the arithmetic decides. When the numbers show the columns better than the
+            // headings do ("Prezzo totale" for the amount, "Prezzo / unitario" over two lines, the unit after the
+            // price), the columns the numbers show are used.
+            solveColumns(body, header)?.let { solved ->
+                val alt = readRows(body, solved)
+                if (proven(alt) > proven(read)) read = alt
+            }
+            items += read
         }
         return if (any) items else null
+    }
+
+    /** Lines whose quantity x price (less the discount) is their amount. */
+    private fun proven(items: List<ParsedLineItem>) =
+        items.count { it.quantity != null && it.unitPrice != null && it.lineTotalCents != null && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings }
+
+    /**
+     * The number columns of the table as the numbers themselves show them, whatever the headings say: numbers
+     * printed one under the other form a column; the columns where quantity x price = amount on the most rows
+     * (less a discount when a column of percentages makes it work) are quantity, price and amount; a column of
+     * VAT rates (4, 5, 10, 22) is VAT. Which of the two factors is the quantity comes from the headings when
+     * they say so, otherwise from the order (quantity first, as Italian documents print it). Null when the
+     * numbers prove nothing.
+     */
+    private fun solveColumns(body: List<List<Word>>, header: Header): Header? {
+        val rows = mutableListOf<List<Word>>()
+        for (r in body) {
+            if (ReceiptParser.isFooterRow(r.joinToString(" ") { it.text })) break
+            rows += r
+        }
+        /** [disc]: the word read as a discount ("10", "10+10", "5%"), when it can be one. */
+        class N(val row: Int, val w: Word, val v: BigDecimal, val disc: String?)
+        val nums = rows.flatMapIndexed { i, r ->
+            r.mapNotNull { w ->
+                val t = w.text.trim('|', '¦', '€', ' ')
+                val disc = t.takeIf { CASCADE.matches(it) }?.let { LineDiscount.normalize(it) }
+                if (!isNumeric(t) && !isMoney(t) && disc == null) return@mapNotNull null
+                if (LONG_CODE.matches(t) && t.length >= 5) return@mapNotNull null // an article code or a lot
+                // A cascaded discount ("10+10") is no single number: its total percent stands for it.
+                val v = ItalianNumbers.parse(t.trimEnd('%')) ?: disc?.let { LineDiscount.percent(it) } ?: return@mapNotNull null
+                N(i, w, v, disc)
+            }
+        }
+        if (nums.size < 3) return null
+        // Columns: numbers on different rows whose boxes overlap side to side.
+        val clusters = mutableListOf<MutableList<N>>()
+        for (n in nums.sortedBy { it.w.left }) {
+            val touching = clusters.filter { c -> c.any { o -> o.w.right + 4 > n.w.left && o.w.left - 4 < n.w.right } }
+            if (touching.isEmpty()) { clusters += mutableListOf(n); continue }
+            val into = touching.first()
+            touching.drop(1).forEach { into += it; clusters.remove(it) }
+            into += n
+        }
+        // One value per row and column; a column with two numbers on one row says nothing about that row.
+        val cols = clusters.map { c -> c.groupBy { it.row }.filterValues { it.size == 1 }.mapValues { it.value.single().v } to c }
+            .sortedBy { (_, c) -> c.minOf { it.w.left } }
+        fun discountAt(i: Int, row: Int) = cols[i].second.firstOrNull { it.row == row }?.disc
+        if (cols.size < 3) return null
+        val n = cols.size
+        fun left(i: Int) = cols[i].second.minOf { it.w.left }
+        fun right(i: Int) = cols[i].second.maxOf { it.w.right }
+        fun money(i: Int) = cols[i].first.values.all { it.stripTrailingZeros().scale() <= 2 }
+        data class Pick(val q: Int, val p: Int, val a: Int, val d: Int?, val score: Int)
+        var best: Pick? = null
+        for (a in 0 until n) {
+            if (!money(a)) continue
+            for (x in 0 until n) for (y in x + 1 until n) {
+                if (x == a || y == a) continue
+                // A discount column: percentages on at least two rows, or under a SCONTO heading; never a number
+                // inside the description ("DETERSIVO LT 5").
+                val discounts = (0 until n).filter { i ->
+                    i != a && i != x && i != y && cols[i].second.all { it.disc != null } &&
+                        (cols[i].first.size >= 2 || header.columns.any { c -> c.kind == Kind.DISCOUNT && c.right + 8 > left(i) && c.left - 8 < right(i) }) &&
+                        left(i) > (header.columns.firstOrNull { it.kind == Kind.DESCRIPTION }?.right ?: 0.0)
+                }
+                for (d in listOf<Int?>(null) + discounts) {
+                    var score = 0
+                    for ((row, total) in cols[a].first) {
+                        val qx = cols[x].first[row] ?: continue
+                        val py = cols[y].first[row] ?: continue
+                        val cents = ItalianNumbers.toCents(total)
+                        val disc = d?.let { discountAt(it, row) }
+                        if (ReceiptParser.matches(qx, py, cents) || (disc != null && kotlin.math.abs(LineDiscount.net(qx, py, disc) - cents) <= 1)) score++
+                    }
+                    // A discount column must earn its place: it must explain more rows than no discount.
+                    val b = best
+                    if (score > 0 && (b == null || score > b.score || (score == b.score && d == null && b.d != null && b.a == a) ||
+                            (score == b.score && b.d == null == (d == null) && a > b.a))) {
+                        best = Pick(x, y, a, d, score)
+                    }
+                }
+            }
+        }
+        val pick = best ?: return null
+        val rowsWithAmount = cols[pick.a].first.size
+        if (pick.score < 2 && !(pick.score == 1 && rowsWithAmount == 1)) return null
+        if (pick.score * 5 < rowsWithAmount * 3) return null
+        // Which factor is the quantity: the headings when one of them stands over it, otherwise the left one.
+        fun under(k: Kind, i: Int) = header.columns.any { c -> c.kind == k && c.right + 8 > left(i) && c.left - 8 < right(i) }
+        val (qi, pi) = when {
+            under(Kind.QUANTITY, pick.q) || under(Kind.PRICE, pick.p) -> pick.q to pick.p
+            under(Kind.QUANTITY, pick.p) || under(Kind.PRICE, pick.q) -> pick.p to pick.q
+            else -> pick.q to pick.p
+        }
+        val vatCol = (0 until n).firstOrNull { i ->
+            i != pick.q && i != pick.p && i != pick.a && i != pick.d && cols[i].first.size >= pick.score &&
+                cols[i].first.values.all { it.stripTrailingZeros().toPlainString() in VAT_RATES }
+        }
+        val solved = mutableListOf(
+            Column(Kind.QUANTITY, left(qi), right(qi)), Column(Kind.PRICE, left(pi), right(pi)), Column(Kind.AMOUNT, left(pick.a), right(pick.a)),
+        )
+        pick.d?.let { solved += Column(Kind.DISCOUNT, left(it), right(it)) }
+        vatCol?.let { solved += Column(Kind.VAT, left(it), right(it)) }
+        val numberKinds = setOf(Kind.QUANTITY, Kind.PRICE, Kind.AMOUNT, Kind.DISCOUNT, Kind.VAT)
+        val kept = header.columns.filter { c -> c.kind !in numberKinds && solved.none { s -> c.right > s.left && c.left < s.right } }
+        if (kept.none { it.kind == Kind.DESCRIPTION }) return null
+        return header.copy(columns = (kept + solved).sortedBy { it.left })
     }
 
     /** A line of headings under (or over) the main heading row: heading words, no article code, no product. */
@@ -425,8 +551,9 @@ object TableReader {
                 // The first word of the name printed close to the code or Pkgs ("1x10 LATTE ARBOREA", "1 COPPA SUINO").
                 !numeric && letters >= 2 && kind in setOf(Kind.CODE, Kind.PACKAGES) && !(t.length == 1 && lastKind == null) &&
                     Units.normalizeKnown(t.trimEnd('.')) == null -> Kind.DESCRIPTION
-                // A unit word under a number column ("NR 40,000" with no U.M. heading).
-                !numeric && Units.normalizeKnown(t.trimEnd('.')) != null && kind in NUMBER_KINDS -> Kind.UNIT
+                // A unit word under a number column ("NR 40,000" with no U.M. heading), or next to the lot when the
+                // U.M. heading was not read ("26218 KG").
+                !numeric && Units.normalizeKnown(t.trimEnd('.')) != null && (kind in NUMBER_KINDS || (kind == Kind.LOT && cols.none { it.kind == Kind.UNIT })) -> Kind.UNIT
                 // Words spill over from the description into the columns on its right.
                 !numeric && letters >= 1 && kind !in setOf(Kind.DESCRIPTION, Kind.UNIT, Kind.PACK_TYPE, Kind.PACK_SIZE, Kind.LOT, Kind.CODE, Kind.VAT, Kind.EXPIRY) ->
                     if (lastKind == Kind.DESCRIPTION || x < cols[idx].left) Kind.DESCRIPTION else Kind.PACK_TYPE
@@ -669,7 +796,8 @@ object TableReader {
             unitPrice = price?.let { Extracted(it, if (priceRepaired) Confidence.LOW else conf, source) },
             lineTotalCents = total?.let { Extracted(it, if (!amountRepaired && (consistent || (qty == null && price == null))) Confidence.HIGH else Confidence.LOW, source) },
             vatRatePercent = vat?.let { Extracted(it.stripTrailingZeros(), Confidence.HIGH, source) },
-            lotNumber = lotWord?.let { Extracted(it.text, Confidence.LOW, source) },
+            // A lot cannot be checked by arithmetic: sure only when the OCR said it was sure of it (or the PDF's text).
+            lotNumber = lotWord?.let { Extracted(it.text, if (it.conf >= SURE_WORD && it.conf < 1f) Confidence.HIGH else Confidence.LOW, source) },
             expiryDate = null,
             warnings = warnings,
             itemCode = code,

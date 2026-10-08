@@ -116,6 +116,19 @@ object AiReader {
     val ROW_GRAMMAR: String = grammarFor(ITEM_KEYS)
     val HEADER_GRAMMAR: String = grammarFor(listOf("seller", "seller_vat", "number", "date"))
     val TOTALS_GRAMMAR: String = grammarFor(listOf("subtotal", "vat", "total"))
+    val SUPPLIER_GRAMMAR: String = grammarFor(listOf("name", "vat"))
+
+    fun supplierInstruction(boxText: String, lang: Lang = defaultLang): String = if (lang == Lang.IT) {
+        "L'immagine mostra il riquadro del fornitore (cedente/prestatore) di un documento italiano. Restituisci: name = il nome " +
+            "dell'azienda (dopo 'Denominazione' o 'Ragione sociale', anche se continua sulla riga sotto), vat = la sua Partita IVA " +
+            "(11 cifre, senza IT). Copia esattamente come stampato, a mano o a macchina; null se assente.\n" +
+            "L'OCR ha letto il riquadro come: " + boxText.take(400) + " (può avere errori)\n"
+    } else {
+        "The picture shows the supplier's box (cedente/prestatore) of an Italian document. Return: name = the company name (after " +
+            "'Denominazione' or 'Ragione sociale', even when it continues on the next line), vat = its Partita IVA (11 digits, " +
+            "without IT). Copy exactly as printed, typed or handwritten; null if absent.\n" +
+            "The regular OCR read the box as: " + boxText.take(400) + " (it may have errors)\n"
+    }
 
     /**
      * One product line. [examples] are lines of the same supplier the operator confirmed before ("row text" to the
@@ -130,6 +143,9 @@ object AiReader {
             append("code = codice articolo, colli = colonna COLLI, description = solo il nome del prodotto, unit = U.M., ")
             append("quantity = QUANTITA'/QTA/TOT., price = prezzo unitario (PREZZO), discount = SC.%, amount = IMPORTO della riga, ")
             append("vat_rate = % IVA, lot = numero di lotto se stampato.\n")
+            append("Le intestazioni hanno molti sinonimi e possono stare su due righe: amount = IMPORTO / PREZZO TOTALE / TOTALE / VALORE; ")
+            append("price = PREZZO / PREZZO UNITARIO / P.U.; quantity = QUANTITA' / Q.TA' / QTA / PESO; discount = SCONTO / SC. / SCONTO O MAGG.; ")
+            append("vat_rate = IVA / %IVA / ALIQ. Il documento può essere scritto a mano.\n")
             append("L'OCR ha letto le intestazioni come: ").append(headerText.take(300)).append('\n')
             append("e la riga come: ").append(rowText.take(400)).append(" (può essere letta male o mescolata con una riga vicina)\n")
             if (examples.isNotEmpty()) append("Righe già confermate dello stesso fornitore, con la risposta giusta:\n")
@@ -140,6 +156,9 @@ object AiReader {
             append("with the Italian comma; do not calculate or guess; null for an empty column.\n")
             append("code = article code, colli = COLLI column, description = product name only, unit = U.M., quantity = QUANTITA'/QTA/TOT., ")
             append("price = unit price (PREZZO), discount = SC.%, amount = line total (IMPORTO), vat_rate = % IVA, lot = lot number if printed.\n")
+            append("Headings have many synonyms and may be printed on two lines: amount = IMPORTO / PREZZO TOTALE / TOTALE / VALORE; ")
+            append("price = PREZZO / PREZZO UNITARIO / P.U.; quantity = QUANTITA' / Q.TA' / QTA / PESO; discount = SCONTO / SC. / SCONTO O MAGG.; ")
+            append("vat_rate = IVA / %IVA / ALIQ. The document may be handwritten.\n")
             append("The regular OCR read the headings as: ").append(headerText.take(300)).append('\n')
             append("and the line as: ").append(rowText.take(400)).append(" (it may be misread or mixed with a neighbouring line)\n")
             if (examples.isNotEmpty()) append("Lines of the same supplier already confirmed, with the right answer:\n")
@@ -435,17 +454,37 @@ object AiReader {
                         ?.let { headerRead["seller"] = it }
                     str(m, "number")?.trim()?.takeIf { it.isNotEmpty() && d.documentNumber?.value?.let { n -> docNumberKey(n) == docNumberKey(it) } != true }?.let { headerRead["number"] = it }
                     parsed.documentDate?.value?.takeIf { it != d.documentDate?.value }?.let { headerRead["date"] = ItalianDates.format(it) }
+                    // A name cannot be proven by arithmetic: the AI's never replaces one the reading found (it is
+                    // offered as the replacement); it fills the field only when the reading found none, highlighted.
+                    val aiSeller = parsed.sellerName?.let { s -> if (d.sellerName == null) s.copy(confidence = Confidence.LOW) else null }
                     d = d.copy(
-                        sellerName = check(d.sellerName, parsed.sellerName, "supplier") { a, b -> sameName(a, b) },
+                        sellerName = if (d.sellerName == null) aiSeller else check(d.sellerName, parsed.sellerName?.takeIf { d.sellerName.confidence == Confidence.HIGH }, "supplier") { a, b -> sameName(a, b) },
                         documentNumber = check(d.documentNumber, parsed.documentNumber, "number") { a, b -> docNumberKey(a) == docNumberKey(b) },
                         documentDate = check(d.documentDate, parsed.documentDate, "date") { a, b -> a == b },
                     )
                     // The AI spells the supplier differently, even where the OCR never saw its spelling ("ABC" for the
                     // OCR's "ABG"): one of the two is misread, so the name is looked at, with the AI's offered.
-                    val aiSeller = headerRead["seller"]
+                    val aiSellerRead = headerRead["seller"]
                     val ours = d.sellerName
-                    if (aiSeller != null && ours != null && ours.confidence == Confidence.HIGH && !sameName(ours.value, aiSeller)) {
-                        d = d.copy(sellerName = flag(ours, "supplier", aiSeller))
+                    if (aiSellerRead != null && ours != null && ours.confidence == Confidence.HIGH && !sameName(ours.value, aiSellerRead)) {
+                        d = d.copy(sellerName = flag(ours, "supplier", aiSellerRead))
+                    }
+                }
+                is AiTarget.Supplier -> {
+                    val m = obj(raw) ?: continue
+                    val name = str(m, "name")?.let { cleanText(it) }?.takeIf { it.count(Char::isLetter) >= 3 } ?: continue
+                    if (options.ownBusinessName?.let { own -> SellerProfiles.sameCompany(own, name) } == true) continue
+                    val ours = d.sellerName
+                    if (ours != null && sameName(ours.value, name)) continue
+                    // Taken (still highlighted, for one tap) when the reading had no sure name and the AI's shares a
+                    // word with what the OCR read in that box; otherwise only offered.
+                    val boxWords = normalize(target.boxText).split(' ').filter { it.length >= 4 }.toSet()
+                    val shares = normalize(name).split(' ').any { it.length >= 4 && it in boxWords }
+                    if ((ours == null || ours.confidence == Confidence.LOW) && shares) {
+                        d = d.copy(sellerName = Extracted(name, Confidence.LOW, "AI, supplier box: " + target.boxText.take(120)))
+                        ours?.let { headerRead["seller"] = it.value }
+                    } else {
+                        headerRead["seller"] = name
                     }
                 }
                 is AiTarget.Totals -> {
@@ -461,10 +500,28 @@ object AiReader {
                     for ((k, old) in listOf("subtotal" to d.subtotalCents, "vat" to d.vatCents, "total" to d.totalCents)) {
                         money(k)?.value?.takeIf { it != old?.value }?.let { headerRead[k] = ItalianNumbers.centsToEditText(it) }
                     }
-                    d = d.copy(
+                    val next = d.copy(
                         subtotalCents = check(d.subtotalCents, money("subtotal"), "taxable amount"),
                         vatCents = check(d.vatCents, money("vat"), "VAT"),
                         totalCents = check(d.totalCents, money("total"), "total"),
+                    )
+                    // The AI's totals fill or replace the reading's only when the document then adds up: taxable + VAT
+                    // = total when all three are known, otherwise the lines add up to the taxable amount or the total.
+                    // Otherwise they are only offered.
+                    fun addsUp(x: ParsedDocument): Boolean {
+                        val sub = x.subtotalCents?.value; val vat = x.vatCents?.value; val tot = x.totalCents?.value
+                        if (sub != null && vat != null && tot != null) return kotlin.math.abs(sub + vat - tot) <= 2
+                        val sums = x.lineItems.mapNotNull { it.lineTotalCents?.value }
+                        if (sums.size != x.lineItems.size || sums.isEmpty()) return sub == null || tot == null || sub <= tot
+                        val s = sums.sum(); val tol = maxOf(2L, sums.size.toLong())
+                        return listOfNotNull(sub, tot).any { kotlin.math.abs(it - s) <= tol }
+                    }
+                    val changed = next.subtotalCents?.value != d.subtotalCents?.value || next.vatCents?.value != d.vatCents?.value || next.totalCents?.value != d.totalCents?.value
+                    d = if (!changed || addsUp(next)) next else d.copy(
+                        // Values read with confidence keep the double-check's highlight, if any.
+                        subtotalCents = next.subtotalCents?.takeIf { it.value == d.subtotalCents?.value } ?: d.subtotalCents,
+                        vatCents = next.vatCents?.takeIf { it.value == d.vatCents?.value } ?: d.vatCents,
+                        totalCents = next.totalCents?.takeIf { it.value == d.totalCents?.value } ?: d.totalCents,
                     )
                 }
             }
@@ -483,7 +540,7 @@ object AiReader {
 
     /** The AI's text is something else than ours (not only spacing, case or punctuation). */
     private fun differs(ours: String, ai: String?): Boolean =
-        !ai.isNullOrBlank() && normalize(ours).replace(" ", "") != normalize(ai).replace(" ", "")
+        !ai.isNullOrBlank() && ai.count(Char::isLetter) >= 3 && normalize(ours).replace(" ", "") != normalize(ai).replace(" ", "")
 
     private fun sameName(a: String, b: String): Boolean {
         val x = DuplicateDetector.normalizeSeller(a) ?: return false

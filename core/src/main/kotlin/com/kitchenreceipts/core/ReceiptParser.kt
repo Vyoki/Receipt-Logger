@@ -191,11 +191,13 @@ object ReceiptParser {
      * and the item table is also read by columns ([TableReader]). The column reading is used when it explains
      * the document better (more lines where quantity x price = amount, lines adding up to the total).
      */
-    fun parsePages(pages: List<List<OcrLine>>, options: ParseOptions = ParseOptions()): ParsedDocument {
+    fun parsePages(read: List<List<OcrLine>>, options: ParseOptions = ParseOptions()): ParsedDocument {
+        val pages = read.map { OcrCleanup.stripRules(it) }
         val layouts = pages.map { LayoutRows.layout(it) }
         val text = layouts.joinToString("\n$PAGE_BREAK\n") { it.text }
         if (text.isBlank()) return ParsedDocument.EMPTY
         val grid = runCatching { HeaderGrid.read(layouts) }.getOrDefault(HeaderGrid.Grid())
+        val supplier = runCatching { Parties.supplier(layouts, options.ownVatNumber) }.getOrNull()
         fun read(o: ParseOptions): ParsedDocument {
             val table = runCatching { TableReader.read(layouts, o.layout?.headings.orEmpty()) }.getOrNull()
             val doc = parse(text, o, table)
@@ -205,7 +207,7 @@ object ReceiptParser {
                 // A discount line is never the supplier ("Sconto inc." on a page whose letterhead is a picture).
                 sellerName = doc.sellerName?.takeUnless { Adjustments.isDiscount(it.value) },
             )
-            return HeaderGrid.apply(marked, grid, o.today)
+            return Handwriting.mark(Parties.apply(HeaderGrid.apply(marked, grid, o.today), supplier), pages)
         }
         val plain = read(options.copy(layoutLookup = null))
         if (options.layout != null || options.layoutLookup == null) return plain

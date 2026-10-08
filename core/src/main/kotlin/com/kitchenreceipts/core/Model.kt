@@ -107,6 +107,8 @@ data class ParsedDocument(
     val layout: SupplierLayout? = null,
     /** Lot numbers were found on the row under each item. */
     val lotsUnderItems: Boolean = false,
+    /** Most likely handwritten (or a very poor photo): the OCR was unsure of many words (see Handwriting). */
+    val handwritten: Boolean = false,
 ) {
     companion object {
         val EMPTY = ParsedDocument(
