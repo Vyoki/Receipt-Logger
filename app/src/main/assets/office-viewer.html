@@ -285,7 +285,16 @@ function loadSnapshot(j) {
   for (const x of j.sellers) DB.sellers.set(x.id, x);
   for (const x of j.families) DB.families.set(x.id, x);
   for (const x of j.products) DB.products.set(x.id, x);
-  for (const d of j.documents) DB.documents.push(d);
+  for (const d of j.documents) {
+    // A line discount ("30", "10+5" percent): prices are compared as paid, the printed price is kept to show.
+    for (const l of d.lines || []) {
+      if (!l.sc || l.pr == null) continue;
+      const keep = String(l.sc).split("+").reduce((k, p) => k * (1 - Number(p.replace(",", ".")) / 100), 1);
+      if (!(keep > 0 && keep < 1)) continue;
+      l.prPrinted = l.pr; l.pr = String(Number(l.pr) * keep);
+    }
+    DB.documents.push(d);
+  }
 }
 
 const b64bytes = b => Uint8Array.from(atob(b), c => c.charCodeAt(0));
@@ -799,7 +808,7 @@ function openDocument(d) {
     { key: "d", label: t("description"), val: l => l.d, cell: l => h("div", null, l.d, l.p != null && DB.products.has(l.p) && DB.products.get(l.p).name !== l.d ? h("div", { class: "muted", style: "font-size:12px" }, "→ " + DB.products.get(l.p).name) : null) },
     { key: "q", label: t("qty"), num: true, val: l => l.q == null ? null : Number(l.q), cell: l => l.q == null ? "—" : dec(l.q) },
     { key: "u", label: t("unit"), val: l => l.u },
-    { key: "p", label: t("price"), num: true, val: l => l.pr == null ? null : Number(l.pr), cell: l => l.pr == null ? "—" : dec(l.pr, 4) },
+    { key: "p", label: t("price"), num: true, val: l => l.pr == null ? null : Number(l.pr), cell: l => l.pr == null ? "—" : l.prPrinted != null ? `${dec(l.prPrinted, 4)} −${l.sc}%` : dec(l.pr, 4) },
     { key: "t", label: t("amount"), num: true, val: l => l.t, cell: l => money(l.t, d.currency) },
     { key: "v", label: t("vat"), num: true, val: l => l.v == null ? null : Number(l.v), cell: l => l.v == null ? "—" : dec(l.v) + "%" },
     { key: "l", label: t("lot"), val: l => l.lot, cell: l => l.lot ? h("span", { class: "mono" }, l.lot) : "—" },

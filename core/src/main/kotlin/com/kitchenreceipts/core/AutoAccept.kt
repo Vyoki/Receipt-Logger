@@ -99,7 +99,7 @@ object AutoAccept {
             val q = ItalianNumbers.parse(it.quantity.text) ?: return@all false
             val p = ItalianNumbers.parse(it.unitPrice.text) ?: return@all false
             val t = cents(it.lineTotal.text) ?: return@all false
-            ReceiptParser.matches(q, p, t)
+            LineDiscount.matches(q, p, it.discount.text, t)
         }
         if (!lineOk) return d
         val sub = cents(d.subtotal.text); val vat = cents(d.vat.text); val tot = cents(d.total.text)
@@ -112,7 +112,7 @@ object AutoAccept {
         fun settle(f: DraftField, provenBy: Boolean) = if (provenBy && !disputed(f)) f.copy(uncertain = false) else f
         fun clear(f: DraftField) = if (disputed(f)) f else f.copy(uncertain = false)
         return d.copy(
-            items = d.items.map { it.copy(quantity = clear(it.quantity), unitPrice = clear(it.unitPrice), lineTotal = clear(it.lineTotal)) },
+            items = d.items.map { it.copy(quantity = clear(it.quantity), unitPrice = clear(it.unitPrice), lineTotal = clear(it.lineTotal), discount = clear(it.discount)) },
             subtotal = settle(d.subtotal, sub != null && kotlin.math.abs(sub - sum) <= tolerance),
             total = settle(d.total, tot != null && (kotlin.math.abs(tot - sum) <= tolerance || (sub != null && vat != null && kotlin.math.abs(sub + vat - tot) <= 1 && kotlin.math.abs(sub - sum) <= tolerance))),
             vat = settle(d.vat, vat != null && sub != null && tot != null && kotlin.math.abs(sub + vat - tot) <= 1 && kotlin.math.abs(sub - sum) <= tolerance),

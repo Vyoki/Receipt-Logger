@@ -152,6 +152,8 @@ data class LineItemEntity(
     val packages: String? = null,
     /** v7: how much one pack holds ("500 g", "1 l"), when the quantity counts packs. */
     @ColumnInfo(name = "pack_size") val packSize: String? = null,
+    /** v10: the line's discount in percent ("30", "10+5"), as printed. */
+    val discount: String? = null,
 )
 
 /**

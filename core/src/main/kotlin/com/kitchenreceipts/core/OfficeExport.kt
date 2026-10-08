@@ -40,6 +40,8 @@ object OfficeExport {
         val expiry: LocalDate?,
         val packages: String?,
         val packSize: String?,
+        /** The line's discount in percent ("30", "10+5"), as printed. */
+        val discount: String? = null,
     )
     data class Document(
         val id: Long,
@@ -122,7 +124,9 @@ object OfficeExport {
                 o.append("{\"d\":"); str(l.description); o.append(",\"p\":"); num(l.productId); o.append(",\"q\":"); dec(l.quantity)
                 o.append(",\"u\":"); str(l.unit); o.append(",\"pr\":"); dec(l.unitPrice); o.append(",\"t\":"); num(l.totalCents)
                 o.append(",\"v\":"); dec(l.vatRate); o.append(",\"lot\":"); str(l.lot); o.append(",\"exp\":"); str(l.expiry?.toString())
-                o.append(",\"pk\":"); str(l.packages); o.append(",\"ps\":"); str(l.packSize); o.append('}')
+                o.append(",\"pk\":"); str(l.packages); o.append(",\"ps\":"); str(l.packSize)
+                if (l.discount != null) { o.append(",\"sc\":"); str(l.discount) }
+                o.append('}')
             }
             o.append('}')
         }

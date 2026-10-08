@@ -628,6 +628,8 @@ private fun ItemCard(
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT_PRICE, R.string.unit_price, Modifier.weight(1f), FieldKind.DECIMAL)
+                // The discount printed on the line ("30", "10+5"): quantity x price less it is the amount.
+                ItemInput(item, errors, onChange, onConfirm, ItemField.DISCOUNT, R.string.discount_percent, Modifier.weight(0.7f), FieldKind.CODE, optional = true)
                 ItemInput(item, errors, onChange, onConfirm, ItemField.LINE_TOTAL, R.string.line_total, Modifier.weight(1f), FieldKind.DECIMAL)
             }
             // The numbers add up in more than one way: one tap picks the right reading (remembered for this supplier).
@@ -644,11 +646,8 @@ private fun ItemCard(
             }
             // qty x price hint: offered, never applied without a tap.
             val computed = item.computedTotalCents()
-            val printed = ItalianNumbers.parseCents(item.lineTotal.text)
-            val q = ItalianNumbers.parse(item.quantity.text)
-            val p = ItalianNumbers.parse(item.unitPrice.text)
             // (A missing amount gets qty x price offered under the field itself, with the other replacements.)
-            if (q != null && p != null && printed != null && !ReceiptParser.matches(q, p, printed)) {
+            if (item.addsUp() == false) {
                 Text(
                     stringResource(R.string.line_mismatch, ItalianNumbers.formatCents(computed ?: 0)),
                     color = status.uncertainBorder,

@@ -180,6 +180,14 @@ object TableReader {
         val t = w.text.trim('|', '¦').trim()
         if (t.isEmpty()) null else w.copy(text = t)
     }.flatMap { w ->
+        val mark = NUMBERS_WITH_MARK.matchEntire(w.text)
+        if (mark != null) {
+            // "18,90§30,0": two numbers of neighbouring columns joined by a sign the program prints (a price
+            // and its discount); the sign is neither.
+            val cut = w.left + (w.right - w.left) * mark.groupValues[1].length / w.text.length
+            val after = w.left + (w.right - w.left) * (mark.groupValues[1].length + 1) / w.text.length
+            return@flatMap listOf(Word(mark.groupValues[1], w.left, cut), Word(mark.groupValues[2], after, w.right))
+        }
         val text = OcrCleanup.fixWordToken(OcrCleanup.fixNumericToken(w.text))
         val pd = PRICE_WITH_DISCOUNT.matchEntire(text)
         if (pd != null) {
@@ -232,6 +240,7 @@ object TableReader {
     private val AMOUNT_WITH_VAT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{2})(04|05|10|22|4|5)$")
     /** An amount whose decimal comma the OCR lost ("753" for 7,53). */
     private val DIGITS_ONLY = Regex("^\\d{3,6}$")
+    private val NUMBERS_WITH_MARK = Regex("^(-?\\d{1,3}(?:\\.\\d{3})*,\\d+)[^\\p{L}\\p{N}\\s.,%+\\-/|¦](-?\\d{1,3}(?:[.,]\\d+)*%?)$")
     private val PRICE_WITH_DISCOUNT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{3,4}?)(\\d{1,2}(?:\\+\\d{1,2})+%?)$")
     private val GLUED_SIZE = Regex("^(?i)(KG|GR|LT|ML|CL|PZ)(\\d+(?:[.,]\\d+)?)$")
     private val TWO_LETTER = Regex("^[A-Z]{1,2}$")
@@ -532,7 +541,8 @@ object TableReader {
         // "4,45KG" in the quantity column
         if (unit == null) cell(Kind.QUANTITY).firstNotNullOfOrNull { rx("^[\\d.,]+([A-Za-z]{1,3})\\.?$").find(it.text)?.groupValues?.get(1)?.let(Units::normalizeKnown) }?.let { unit = it }
         var price = cell(Kind.PRICE).mapNotNull { numberIn(it.text) }.lastOrNull()
-        val discount = discountOf(cell(Kind.DISCOUNT).joinToString("") { it.text })
+        val discountText = cell(Kind.DISCOUNT).joinToString("") { it.text }
+        val discount = discountOf(discountText)
         var vat = cell(Kind.VAT).mapNotNull { numberIn(it.text) }.firstOrNull { it.stripTrailingZeros().toPlainString() in VAT_RATES }
 
         var code: String? = null
@@ -665,6 +675,11 @@ object TableReader {
             itemCode = code,
             packSize = packSize?.takeIf { unit == "pz" || unit == null }?.let { Extracted(it.text, conf, source) },
             packages = packages?.let { p -> Extracted(p.map { c -> when (c) { 'l', 'I', 'L' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString(""), Confidence.HIGH, source) },
+            // Kept when the amount works out only with it.
+            discount = LineDiscount.normalize(discountText)?.takeIf { d ->
+                val q = qty; val p = price; val t = total
+                q != null && p != null && t != null && !ReceiptParser.matches(q, p, t) && LineDiscount.matches(q, p, d, t)
+            }?.let { Extracted(it, Confidence.HIGH, source) },
         )
     }
 

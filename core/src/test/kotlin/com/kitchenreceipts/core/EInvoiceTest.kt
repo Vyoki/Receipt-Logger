@@ -35,7 +35,9 @@ class EInvoiceTest {
         assertEquals("2222443", pasta.itemCode) // the supplier's code, not the barcode
         assertEquals(0, BigDecimal(12).compareTo(pasta.quantity!!.value))
         assertEquals("pz", pasta.unit?.value)
-        assertEquals(0, BigDecimal("0.81").compareTo(pasta.unitPrice!!.value)) // after the 10% discount
+        // The printed price and its 10% discount, kept apart: 12 x 0,90 less 10% = 9,72.
+        assertEquals(0, BigDecimal("0.90").compareTo(pasta.unitPrice!!.value))
+        assertEquals("10", pasta.discount?.value)
         assertEquals(972L, pasta.lineTotalCents?.value)
         val meat = d.lineItems[1]
         assertEquals("L26-0915", meat.lotNumber?.value)

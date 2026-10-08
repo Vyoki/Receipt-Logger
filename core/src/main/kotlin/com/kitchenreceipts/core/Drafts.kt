@@ -47,6 +47,8 @@ data class LineItemDraft(
     val aiRead: Map<String, String> = emptyMap(),
     /** Read as a discount or charge line (see Adjustments). */
     val adjustment: Boolean = false,
+    /** The discount printed on the line, in percent ("30", "10+5"); see LineDiscount. */
+    val discount: DraftField = DraftField(),
 ) {
     /**
      * A discount or charge ("Sconto del 4%", "Spese bancarie"), not goods: no product, quantity or unit needed.
@@ -69,17 +71,26 @@ data class LineItemDraft(
         unitPrice = unitPrice.confirmed(ItalianNumbers.toEditText(c.unitPrice)),
         lineTotal = lineTotal.confirmed(ItalianNumbers.centsToEditText(c.lineTotalCents)),
         unit = if (c.unit != null) unit.confirmed(c.unit) else unit,
+        discount = c.discountPercent?.let { d -> discount.confirmed(LineDiscount.normalize(ItalianNumbers.toEditText(d)) ?: "") } ?: discount,
         choices = emptyList(),
     )
 
     val uncertainCount: Int
-        get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry, packages, packSize).count { it.uncertain }
+        get() = listOf(description, quantity, unit, unitPrice, lineTotal, vatRate, lot, expiry, packages, packSize, discount).count { it.uncertain }
 
-    /** qty x price, offered as a one-tap suggestion when the line total is missing. Never auto-applied. */
+    /** qty x price (less the discount), offered as a one-tap suggestion when the line total is missing. Never auto-applied. */
     fun computedTotalCents(): Long? {
         val q = ItalianNumbers.parse(quantity.text) ?: return null
         val p = ItalianNumbers.parse(unitPrice.text) ?: return null
-        return ItalianNumbers.toCents(q.multiply(p))
+        return LineDiscount.net(q, p, discount.text)
+    }
+
+    /** Quantity x price, less the discount, equals the amount (null when a number is missing). */
+    fun addsUp(): Boolean? {
+        val q = ItalianNumbers.parse(quantity.text) ?: return null
+        val p = ItalianNumbers.parse(unitPrice.text) ?: return null
+        val t = ItalianNumbers.parseCents(lineTotal.text) ?: return null
+        return LineDiscount.matches(q, p, discount.text, t)
     }
 }
 
@@ -149,6 +160,7 @@ data class DocumentDraft(
                         packSize = f(it.packSize) { s -> s },
                         aiRead = it.aiRead,
                         adjustment = it.adjustment,
+                        discount = f(it.discount) { d -> d },
                     )
                 },
                 warnings = p.warnings,
@@ -182,6 +194,8 @@ data class ValidLineItem(
     val packages: String? = null,
     /** "500 g": one pack's size (normalised, see PackSizes). */
     val packSize: String? = null,
+    /** The discount printed on the line, in percent ("30", "10+5"), normalised (see LineDiscount). */
+    val discount: String? = null,
 )
 
 data class ValidDocument(
@@ -244,12 +258,16 @@ object DraftValidator {
                 val s = PackSizes.fromText(t) ?: PackSizes.parse(t.split(' ').reversed()) ?: PackSizes.parse(t.split(' '))
                 if (s == null) { errors += FieldError("$p.packSize", ErrorCode.INVALID_NUMBER); null } else s.text
             }
+            val discount = it.discount.text.trim().ifEmpty { null }?.let { t ->
+                LineDiscount.normalize(t) ?: run { errors += FieldError("$p.discount", ErrorCode.INVALID_NUMBER); null }
+            }
             ValidLineItem(
                 desc, it.productId, qty, unit, price, lineTotal, rate, lot, expiry, it.itemCode,
                 newProductName = it.newProductName?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null && !it.isCharge },
                 newProductBrand = it.newProductBrand?.trim()?.ifEmpty { null }?.takeIf { _ -> it.productId == null },
                 packages = packages,
                 packSize = packSize,
+                discount = discount,
             )
         }
 

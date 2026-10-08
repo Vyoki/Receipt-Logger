@@ -160,6 +160,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                         vatRate = it.vatRatePercent, lotNumber = it.lotNumber, expiryDate = it.expiryDate,
                         packages = it.packages,
                         packSize = it.packSize,
+                        discount = it.discount,
                     )
                 },
             )
@@ -629,7 +630,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                     d.id, d.sellerId, d.documentDate, d.documentNumber, d.currency, d.subtotalCents, d.vatCents, d.totalCents, d.vatBasis,
                     when (d.mimeType) { FileStore.MIME_XML -> "e-invoice"; FileStore.MIME_PDF -> "pdf"; else -> "photo" },
                     lines[d.id].orEmpty().map { l ->
-                        OfficeExport.Line(l.originalDescription, l.productId, l.quantity, l.unit, l.unitPrice, l.lineTotalCents, l.vatRate, l.lotNumber, l.expiryDate, l.packages, l.packSize)
+                        OfficeExport.Line(l.originalDescription, l.productId, l.quantity, l.unit, l.unitPrice, l.lineTotalCents, l.vatRate, l.lotNumber, l.expiryDate, l.packages, l.packSize, l.discount)
                     },
                     coveredBy = d.coveredBy,
                     kind = d.kind,

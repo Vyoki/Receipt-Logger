@@ -9,7 +9,7 @@ data class LineChoice(
     val unitPrice: BigDecimal,
     val lineTotalCents: Long,
     val unit: String? = null,
-    /** The amount only works out with this discount % printed on the line (not stored: the line stays for review). */
+    /** The amount only works out with this discount % printed on the line. */
     val discountPercent: BigDecimal? = null,
     /** Where quantity and price were on the line: how many numbers come after each (for [ChoiceRule]). */
     val qtyFromEnd: Int = -1,
@@ -172,8 +172,10 @@ object LineSolver {
         val total = item.lineTotalCents
         val fitting = if (total != null && total.confidence == Confidence.HIGH) readings.filter { it.lineTotalCents == total.value } else readings
         when {
-            // A discount the app does not store: the numbers are right, but the line is still shown for a look.
-            fitting.size == 1 && fitting.single().discountPercent != null -> item
+            // Adds up only with a discount printed on the line: kept with its discount, shown for a look.
+            fitting.size == 1 && fitting.single().discountPercent != null -> fitting.single().let { r ->
+                apply(item, r, source).copy(discount = LineDiscount.normalize(ItalianNumbers.toEditText(r.discountPercent))?.let { Extracted(it, Confidence.LOW, source) })
+            }
             fitting.size == 1 -> apply(item, fitting.single(), source)
             fitting.size > 1 -> item.copy(choices = fitting.take(4))
             else -> item
