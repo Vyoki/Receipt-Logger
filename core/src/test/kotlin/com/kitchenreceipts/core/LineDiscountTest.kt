@@ -22,17 +22,17 @@ class LineDiscountTest {
     }
 
     @Test fun amountLessTheDiscount() {
-        // 6,800 kg x 18,90 less 30% = 89,96
-        assertEquals(8996L, LineDiscount.net(BigDecimal("6.8"), BigDecimal("18.90"), "30"))
-        assertTrue(LineDiscount.matches(BigDecimal("6.8"), BigDecimal("18.90"), "30", 8996))
-        assertFalse(LineDiscount.matches(BigDecimal("6.8"), BigDecimal("18.90"), null, 8996))
-        assertTrue(LineDiscount.matches(BigDecimal("2"), BigDecimal("29.80"), null, 5960))
+        // 4,000 kg x 20,00 less 30% = 56,00
+        assertEquals(5600L, LineDiscount.net(BigDecimal("4"), BigDecimal("20.00"), "30"))
+        assertTrue(LineDiscount.matches(BigDecimal("4"), BigDecimal("20.00"), "30", 5600))
+        assertFalse(LineDiscount.matches(BigDecimal("4"), BigDecimal("20.00"), null, 5600))
+        assertTrue(LineDiscount.matches(BigDecimal("3"), BigDecimal("25.00"), null, 7500))
     }
 
     @Test fun draftKeepsTheDiscountAndChecksIt() {
         val line = LineItemDraft(
-            key = 1, description = DraftField("ALETTA DI SPALLA"), quantity = DraftField("6,800"), unit = DraftField("kg"),
-            unitPrice = DraftField("18,90"), lineTotal = DraftField("89,96"), vatRate = DraftField("10"), discount = DraftField("30"),
+            key = 1, description = DraftField("ALETTA DI SPALLA"), quantity = DraftField("4,000"), unit = DraftField("kg"),
+            unitPrice = DraftField("20,00"), lineTotal = DraftField("56,00"), vatRate = DraftField("10"), discount = DraftField("30"),
         )
         assertEquals(true, line.addsUp())
         assertEquals(false, line.copy(discount = DraftField("")).addsUp())
@@ -51,26 +51,26 @@ class LineDiscountTest {
             put("ARTICOLO", 118f, 1109f) + put("DESCRIZIONE", 571f, 1109f) + put("LOTTO", 1153f, 1109f) + put("U.M.", 1364f, 1109f) +
             put("QUANTITA'", 1460f, 1109f) + put("PREZZO", 1661f, 1109f) + put("SCONTO", 1848f, 1109f) + put("IMPORTO TOTALE", 2020f, 1109f) + put("IVA", 2261f, 1109f) +
             put("AB006", 113f, 1323f) + put("CONTROFILETTO BOVINO", 276f, 1323f) + put("1111111111", 1057f, 1323f) + put("KG", 1366f, 1323f) +
-            put("7,400", 1496f, 1323f) + put("31,40", 1707f, 1323f) + put("232,36", 2114f, 1323f) + put("10", 2276f, 1323f) +
+            put("5,200", 1496f, 1323f) + put("30,00", 1707f, 1323f) + put("156,00", 2114f, 1323f) + put("10", 2276f, 1323f) +
             put("AB042", 113f, 1425f) + put("ALETTA DI SPALLA", 276f, 1425f) + put("2222222222", 1057f, 1425f) + put("KG", 1366f, 1425f) +
-            put("6,800", 1496f, 1425f) + put("18,90§30,0", 1707f, 1425f) + put("89,96", 2130f, 1425f) + put("10", 2276f, 1425f) +
+            put("4,000", 1496f, 1425f) + put("20,00§30,0", 1707f, 1425f) + put("56,00", 2130f, 1425f) + put("10", 2276f, 1425f) +
             put("CD520", 113f, 1528f) + put("TARTARE DI SALMONE", 276f, 1528f) + put("3333333333", 1057f, 1528f) + put("NR", 1366f, 1528f) +
-            put("2", 1561f, 1528f) + put("29,80", 1707f, 1528f) + put("59,60", 2130f, 1528f) + put("10", 2276f, 1528f) +
+            put("3", 1561f, 1528f) + put("25,00", 1707f, 1528f) + put("75,00", 2130f, 1528f) + put("10", 2276f, 1528f) +
             put("COD.IVA", 99f, 2159f) + put("IMPONIBILE", 300f, 2159f) + put("ALIQ.", 701f, 2159f) + put("IMPOSTA O ESENZIONE", 872f, 2159f) +
             put("SCADENZE", 1273f, 2159f) + put("TOT. IMPONIBILE", 1702f, 2159f) + put("TOT. DOCUMENTO", 2017f, 2159f) +
-            put("10", 113f, 2195f) + put("381,92", 504f, 2195f) + put("10", 731f, 2195f) + put("38,19", 992f, 2195f) + put("7/10/26", 1317f, 2195f) +
-            put("420,11", 1528f, 2195f) + put("381,92", 1837f, 2195f) + put("420,11", 2130f, 2195f) +
-            put("TOT. IVA", 1702f, 2343f) + put("NETTO A PAGARE", 2017f, 2343f) + put("38,19", 1821f, 2400f) + put("420,11EUR", 2081f, 2400f)
+            put("10", 113f, 2195f) + put("287,00", 504f, 2195f) + put("10", 731f, 2195f) + put("28,70", 992f, 2195f) + put("7/10/26", 1317f, 2195f) +
+            put("315,70", 1528f, 2195f) + put("287,00", 1837f, 2195f) + put("315,70", 2130f, 2195f) +
+            put("TOT. IVA", 1702f, 2343f) + put("NETTO A PAGARE", 2017f, 2343f) + put("28,70", 1821f, 2400f) + put("315,70EUR", 2081f, 2400f)
         val d = ReceiptParser.parsePages(listOf(TextLayer.lines(g)), ParseOptions(today = LocalDate.of(2026, 10, 8)))
         assertEquals(listOf("1111111111", "2222222222", "3333333333"), d.lineItems.map { it.lotNumber?.value })
         val aletta = d.lineItems[1]
-        assertEquals(0, BigDecimal("18.90").compareTo(aletta.unitPrice?.value))
-        assertEquals(0, BigDecimal("6.8").compareTo(aletta.quantity?.value))
+        assertEquals(0, BigDecimal("20.00").compareTo(aletta.unitPrice?.value))
+        assertEquals(0, BigDecimal("4").compareTo(aletta.quantity?.value))
         assertEquals("30", aletta.discount?.value)
-        assertEquals(8996L, aletta.lineTotalCents?.value)
-        assertEquals(38192L, d.subtotalCents?.value)
-        assertEquals(3819L, d.vatCents?.value)
-        assertEquals(42011L, d.totalCents?.value)
+        assertEquals(5600L, aletta.lineTotalCents?.value)
+        assertEquals(28700L, d.subtotalCents?.value)
+        assertEquals(2870L, d.vatCents?.value)
+        assertEquals(31570L, d.totalCents?.value)
         assertTrue(d.warnings.toString(), d.warnings.isEmpty())
     }
 }

@@ -63,6 +63,42 @@ class AiTargetsTest {
         assertNotNull(t.firstOrNull { it is AiTarget.Totals })
     }
 
+    @Test fun totalsThatDoNotAddUpAreOnlyOffered() {
+        val noTotal = lines.filterNot { it.text.startsWith("TOTALE") || it.text == "70,03" || it.text == "76,43" }
+        val doc = ReceiptParser.parsePages(listOf(noTotal))
+        val target = AiTargets.plan(listOf(noTotal), doc)!!.filterIsInstance<AiTarget.Totals>().first()
+        val text = LayoutRows.toText(lines) + "\n6,40"
+        // Taxable and VAT swapped: they do not add up to the total, nothing is taken.
+        val swapped = AiReader.applyTargets(doc, listOf(target to """{"subtotal":"76,43","vat":"70,03","total":"76,43"}"""), text)
+        assertNull(swapped.subtotalCents)
+        assertEquals("76,43", swapped.aiCheck?.header?.get("subtotal"))
+        // Read right: taxable + VAT = total, taken.
+        val right = AiReader.applyTargets(doc, listOf(target to """{"subtotal":"70,03","vat":"6,40","total":"76,43"}"""), text)
+        assertEquals(7003L, right.subtotalCents?.value)
+        assertEquals(7643L, right.totalCents?.value)
+    }
+
+    @Test fun supplierBoxNameSharesAWordOrIsOnlyOffered() {
+        val boxed = page(listOf(
+            listOf("Cedente/prestatore (fornitore)" to 40, "Cessionario/committente (cliente)" to 500),
+            listOf("Identificativo fiscale ai fini IVA: IT01234567897" to 40, "Identificativo fiscale ai fini IVA: IT09876543217" to 500),
+            listOf("Codice fiscale: NLCDA ROSSI DI ROSSI" to 40, "Denominazione: RISTORANTE PROVA SAS" to 500),
+            listOf("MARIO" to 40),
+            listOf("FATTURA N. 45 DEL 12/09/2026" to 40),
+        )) + lines.drop(2)
+        val doc = ReceiptParser.parsePages(listOf(boxed), ParseOptions(ownVatNumber = "09876543217"))
+        assertTrue(doc.sellerName!!.value.contains("ROSSI"))
+        assertEquals(Confidence.LOW, doc.sellerName!!.confidence)
+        val target = AiTargets.plan(listOf(boxed), doc)!!.filterIsInstance<AiTarget.Supplier>().single()
+        assertTrue(target.boxText.contains("ROSSI"))
+        val text = LayoutRows.toText(boxed)
+        val taken = AiReader.applyTargets(doc, listOf(target to """{"name":"MACELLERIA ROSSI DI ROSSI MARIO","vat":"01234567897"}"""), text)
+        assertEquals("MACELLERIA ROSSI DI ROSSI MARIO", taken.sellerName?.value)
+        assertEquals(Confidence.LOW, taken.sellerName?.confidence) // still for the operator's tap
+        val other = AiReader.applyTargets(doc, listOf(target to """{"name":"MARIO","vat":null}"""), text)
+        assertTrue(other.sellerName!!.value.contains("ROSSI"))
+    }
+
     @Test fun grammarsAreWellFormed() {
         assertTrue(AiReader.ROW_GRAMMAR.startsWith("root ::= \"{\" ws \"\\\"code\\\":\" ws value"))
         assertTrue(AiReader.TOTALS_GRAMMAR.contains("\"\\\"total\\\":\" ws value ws \"}\""))

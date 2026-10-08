@@ -71,6 +71,9 @@ sealed interface AiTarget {
 
     /** Taxable amount, VAT and total (bottom of the last page). */
     data class Totals(override val page: Int, override val boxes: List<PageBox>, val verify: Boolean = false) : AiTarget
+
+    /** The supplier's box ("Cedente/prestatore", "Fornitore"): its company name, when the reading is not sure of it. */
+    data class Supplier(override val page: Int, override val boxes: List<PageBox>, val boxText: String) : AiTarget
 }
 
 /**
@@ -274,8 +277,20 @@ object AiTargets {
             val area = rowsL.filter { it.index >= from }.map { it.box }
             return if (area.isEmpty()) null else last to bounds(area)
         }
-        val headerDoubt = doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW || doc.documentDate == null || doc.documentDate.confidence == Confidence.LOW
+        val supplierBox = if (doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW) runCatching { Parties.supplier(layouts, null) }.getOrNull() else null
+        // The supplier's name is asked on its own box when the document has one (below); the header question then
+        // only has the number and date to settle.
+        val headerDoubt = (supplierBox == null && (doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW)) ||
+            doc.documentDate == null || doc.documentDate.confidence == Confidence.LOW
         if (headerDoubt || spotCheck) headerArea()?.let { targets += AiTarget.Header(0, listOf(it), verify = !headerDoubt) }
+        // The supplier's own box, labelled as such: the AI copies the name printed in it (a sharper question than
+        // "who issued this" over the whole top of the page, where the customer's box sits next to it).
+        run {
+            supplierBox?.let { s ->
+                val h = (s.box.height / 6).coerceIn(6, 40)
+                targets += AiTarget.Supplier(0, listOf(PageBox(s.box.left - h, s.box.top - h, s.box.right + h, s.box.bottom + h)), s.name?.source ?: "")
+            }
+        }
         val totalsDoubt = doc.totalCents == null || doc.totalCents.confidence == Confidence.LOW
         if (totalsDoubt || spotCheck) totalsArea()?.let { (p, box) -> targets += AiTarget.Totals(p, listOf(box), verify = !totalsDoubt) }
 

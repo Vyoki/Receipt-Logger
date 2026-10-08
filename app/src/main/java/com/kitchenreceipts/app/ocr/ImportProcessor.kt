@@ -63,9 +63,12 @@ data class PendingImport(
         rawLines.forEachIndexed { p, lines ->
             append("\n=== Raw lines, page ").append(p + 1).append(" (left,top,right,bottom,angle) ===\n")
             lines.forEach { l ->
-                append("${l.left},${l.top},${l.right},${l.bottom},${"%.1f".format(java.util.Locale.ROOT, l.angle)} | ${l.text}")
-                // Word positions, so a column-reading problem can be reproduced exactly.
-                if (l.words.size > 1) append("  [").append(l.words.joinToString(" ") { w -> "${w.left}-${w.right}:${w.text}" }).append(']')
+                val conf = if (l.confidence < 1f) ",${"%.2f".format(java.util.Locale.ROOT, l.confidence)}" else ""
+                append("${l.left},${l.top},${l.right},${l.bottom},${"%.1f".format(java.util.Locale.ROOT, l.angle)}$conf | ${l.text}")
+                // Word positions (and how sure the OCR was, when unsure), so a reading problem can be reproduced exactly.
+                if (l.words.size > 1 || l.words.any { it.confidence < 0.8f }) append("  [").append(l.words.joinToString(" ") { w ->
+                    "${w.left}-${w.right}:${w.text}" + if (w.confidence < 0.8f) "@${"%.2f".format(java.util.Locale.ROOT, w.confidence)}" else ""
+                }).append(']')
                 append('\n')
             }
         }
@@ -303,6 +306,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 is AiTarget.Number -> (if (t.verify) "check-" else "") + (if (t.field == AiTarget.Field.AMOUNT) "amount" else "qty") + "${t.itemIndex + 1}"
                 is AiTarget.Header -> if (t.verify) "check-header" else "header"
                 is AiTarget.Totals -> if (t.verify) "check-totals" else "totals"
+                is AiTarget.Supplier -> "supplier"
             }
         } + ") lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
         val started = System.currentTimeMillis()
@@ -322,6 +326,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                     is AiTarget.Number -> AiReader.numberInstruction(t.column, t.headerText, t.rowText) to AiReader.NUMBER_GRAMMAR
                     is AiTarget.Header -> AiReader.headerInstruction() to AiReader.HEADER_GRAMMAR
                     is AiTarget.Totals -> AiReader.totalsInstruction() to AiReader.TOTALS_GRAMMAR
+                    is AiTarget.Supplier -> AiReader.supplierInstruction(t.boxText) to AiReader.SUPPLIER_GRAMMAR
                 }
                 val step = done
                 val r = reader.readRegions(bmp, best.lines[t.page], best.widths.getOrElse(t.page) { bmp.width }, t.boxes, instruction, grammar) { stage, count ->
@@ -488,7 +493,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             }
             PendingImport(
                 file, text, parsed, engineName, lines.size, error, lines, ocrMillis,
-                readingNote = "$readingNote, items read by ${parsed.itemsReadBy}" +
+                readingNote = "$readingNote, items read by ${parsed.itemsReadBy}" + (if (parsed.handwritten) ", handwritten or unclear" else "") +
                     (parsed.layout?.takeIf { it.documents > 0 }?.let { ", supplier layout learned from ${it.documents} document(s)" } ?: "") +
                     (if (aiLayout != null) ", column headings from the AI" else ""),
                 aiNote = aiNote,

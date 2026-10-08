@@ -41,6 +41,32 @@ object OcrCleanup {
     private fun splitGluedFlag(token: String): String =
         GLUED_FLAG.find(token)?.let { m -> m.groupValues[1] + " " + m.groupValues[2].uppercase() } ?: token
 
+    /** A number with a table's vertical rule read on its side ("143,15)", "10,00}", "|1.860,95|"). */
+    private val RULED_NUMBER = Regex("^[|¦\\[\\](){}]*(-?\\d[\\d.,]*%?)[|¦\\[\\](){}]+$|^[|¦\\[\\](){}]+(-?\\d[\\d.,]*%?)$")
+    private val RULE_ONLY = Regex("^[|¦]+$")
+
+    /**
+     * Table rules read as characters: a "|" on its own is dropped, and a bracket or bar stuck to a number is taken
+     * off it (a number never ends in ")" or "}" on a document). Words keep their boxes; the line's text is rebuilt.
+     */
+    fun stripRules(lines: List<OcrLine>): List<OcrLine> = lines.mapNotNull { l ->
+        fun fix(t: String): String? {
+            if (RULE_ONLY.matches(t)) return null
+            val m = RULED_NUMBER.matchEntire(t) ?: return t
+            val n = m.groupValues[1].ifEmpty { m.groupValues[2] }
+            return if (ItalianNumbers.parse(n.trimEnd('%')) != null) n else t
+        }
+        if (l.words.isNotEmpty()) {
+            val ws = l.words.mapNotNull { w -> fix(w.text)?.let { w.copy(text = it) } }
+            if (ws.isEmpty()) return@mapNotNull null
+            if (ws.size == l.words.size && ws.zip(l.words).all { (a, b) -> a.text == b.text }) l
+            else l.copy(text = ws.joinToString(" ") { it.text }, words = ws, left = ws.minOf { it.left }, right = ws.maxOf { it.right })
+        } else {
+            val t = l.text.split(' ').filter { it.isNotEmpty() }.mapNotNull(::fix).joinToString(" ")
+            if (t.isBlank()) null else if (t == l.text) l else l.copy(text = t)
+        }
+    }
+
     fun clean(text: String): String = text.lines().joinToString("\n") { cleanLine(it) }
 
     fun cleanLine(line: String): String {

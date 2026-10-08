@@ -13,8 +13,9 @@ object OcrLineCodec {
 
     fun encode(pages: List<List<OcrLine>>): String = pages.joinToString("\n$PAGE\n") { lines ->
         lines.joinToString("\n") { l ->
-            val words = l.words.joinToString(RS.toString()) { w -> "${w.left},${w.top},${w.right},${w.bottom}$US${clean(w.text)}" }
-            "${l.left},${l.top},${l.right},${l.bottom},${l.angle}\t${clean(l.text)}\t$words"
+            fun conf(c: Float) = if (c < 1f) ",$c" else ""
+            val words = l.words.joinToString(RS.toString()) { w -> "${w.left},${w.top},${w.right},${w.bottom}${conf(w.confidence)}$US${clean(w.text)}" }
+            "${l.left},${l.top},${l.right},${l.bottom},${l.angle}${conf(l.confidence)}\t${clean(l.text)}\t$words"
         }
     }
 
@@ -28,9 +29,12 @@ object OcrLineCodec {
                 if (n.size < 5) return@mapNotNull null
                 val words = parts.getOrNull(2).orEmpty().split(RS).filter { it.isNotEmpty() }.mapNotNull { w ->
                     val box = w.substringBefore(US).split(',')
-                    if (box.size < 4) null else OcrLine(w.substringAfter(US), box[0].toInt(), box[1].toInt(), box[2].toInt(), box[3].toInt())
+                    if (box.size < 4) null else OcrLine(
+                        w.substringAfter(US), box[0].toInt(), box[1].toInt(), box[2].toInt(), box[3].toInt(),
+                        confidence = box.getOrNull(4)?.toFloatOrNull() ?: 1f,
+                    )
                 }
-                OcrLine(parts[1], n[0].toInt(), n[1].toInt(), n[2].toInt(), n[3].toInt(), n[4].toFloat(), words)
+                OcrLine(parts[1], n[0].toInt(), n[1].toInt(), n[2].toInt(), n[3].toInt(), n[4].toFloat(), words, n.getOrNull(5)?.toFloatOrNull() ?: 1f)
             }
         }
     }
