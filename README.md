@@ -258,7 +258,7 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 
 **Labels and their values, everywhere.** A value printed under its label is read as that label's value, also when the label is printed over two or three lines ("Numero / documento") or shares its row with unrelated labels; the document number, date, taxable amount, VAT and total are taken this way when they add up. The parties' boxes ("Cedente/prestatore", "Fornitore", "Mittente" / "Cessionario", "Cliente", "Destinatario") are read box by box: the supplier is the name in its box (after "Denominazione"), never the customer's box beside it, and the box with the restaurant's own VAT number is never the supplier. Core: `HeaderGrid.kt`, `Parties.kt`.
 
-**Table rules read as characters** ("143,15)", "10,00}", a lone "|") are taken off the numbers before reading (`OcrCleanup.stripRules`).
+**Table rules read as characters** ("12,40)", "10,00}", a lone "|") are taken off the numbers before reading (`OcrCleanup.stripRules`).
 
 **The AI never overrules the arithmetic.** Its line readings are used only when quantity × price = amount; its totals only when taxable + VAT = total (or the lines add up to them); a supplier name it reads never replaces one the reading found, it is offered as the one-tap replacement, except when the reading was unsure and the AI's name shares a word with the supplier's box (then it is shown, still highlighted). Its questions now include the supplier's own box ("copy the company name in this box") and the headings' synonyms (IMPORTO / PREZZO TOTALE / TOTALE, PREZZO / PREZZO UNITARIO, SCONTO / SCONTO O MAGG., …).
 
