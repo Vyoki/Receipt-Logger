@@ -493,6 +493,8 @@
         <item quantity="other">%d prezzi cambiati del 5%% o più</item>
     </plurals>
     <string name="discount_percent">Sconto %</string>
+    <string name="discount_value">sconto %1$s%%</string>
+    <string name="paid_per_unit">pagato %1$s €/%2$s</string>
     <string name="notif_dish_line">%1$s: %2$s → %3$s (%4$s)</string>
     <plurals name="notif_dish_title">
         <item quantity="one">Un piatto ha superato il food cost del %2$s</item>

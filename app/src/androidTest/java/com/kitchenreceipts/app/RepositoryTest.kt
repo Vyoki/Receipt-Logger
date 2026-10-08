@@ -53,6 +53,14 @@ class RepositoryTest {
     private fun item(desc: String, productId: Long?, qty: String, unit: String, cents: Long) =
         ValidLineItem(desc, productId, BigDecimal(qty), unit, null, cents, null, null, null)
 
+    @Test fun lineDiscountIsSavedAndShownWithThePurchase() = runBlocking<Unit> {
+        val meat = repo.createProduct("Aletta di spalla")
+        val line = ValidLineItem("ALETTA DI SPALLA", meat.id, BigDecimal("6.8"), "kg", BigDecimal("18.90"), 8996, BigDecimal.TEN, "L1", null, discount = "30")
+        val id = repo.saveDocument(doc("ABC S.r.l.", "B26 305511", listOf(line), 8996), StoredFile("documents/sc.jpg", "image/jpeg", 1, "sha-sc"), null, null)
+        assertEquals("30", repo.itemsOnce(id).single().item.discount)
+        assertEquals("30", repo.purchasesForProduct(meat.id).first().single().discount)
+    }
+
     @Test fun saveLinksItemsRemembersAssignmentsAndAverages() = runBlocking {
         val mozz = repo.createProduct("Mozzarella fior di latte")
         val file = StoredFile("documents/test.jpg", "image/jpeg", 1, "sha-1")

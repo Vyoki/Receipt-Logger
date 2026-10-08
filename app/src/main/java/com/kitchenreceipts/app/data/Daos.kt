@@ -71,6 +71,8 @@ data class PurchaseRow(
     val lotNumber: String?,
     val currency: String?,
     val productCategory: String? = null,
+    /** The line's discount in percent ("30", "10+5"). */
+    val discount: String? = null,
 )
 
 data class SellerStatsRow(
@@ -113,7 +115,7 @@ private const val PURCHASE_SELECT = """
            d.document_date AS documentDate, s.name AS sellerName, d.document_number AS documentNumber,
            li.original_description AS originalDescription, li.quantity AS quantity, li.unit AS unit,
            li.unit_price AS unitPrice, li.line_total_cents AS lineTotalCents, d.vat_basis AS vatBasis,
-           li.lot_number AS lotNumber, d.currency AS currency, p.category AS productCategory
+           li.lot_number AS lotNumber, d.currency AS currency, p.category AS productCategory, li.discount AS discount
     FROM line_items li
     JOIN documents d ON d.id = li.document_id
     JOIN sellers s ON s.id = d.seller_id

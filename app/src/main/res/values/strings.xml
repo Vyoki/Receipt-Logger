@@ -505,6 +505,8 @@
         <item quantity="other">%d prices changed by 5%% or more</item>
     </plurals>
     <string name="discount_percent">Discount %</string>
+    <string name="discount_value">discount %1$s%%</string>
+    <string name="paid_per_unit">paid %1$s €/%2$s</string>
     <string name="notif_dish_line">%1$s: %2$s → %3$s (%4$s)</string>
     <plurals name="notif_dish_title">
         <item quantity="one">A dish went over %2$s food cost</item>

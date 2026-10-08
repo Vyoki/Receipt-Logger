@@ -242,10 +242,19 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
             val qty = if (it.quantity != null) "${fmtDecimal(it.quantity)} ${it.unit ?: ""}".trim() else null
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    listOfNotNull(qty, it.unitPrice?.let { p -> "× ${fmtDecimal(p, 4)}" }).joinToString(" ").ifEmpty { "—" },
+                    listOfNotNull(qty, it.unitPrice?.let { p -> "× ${fmtDecimal(p, 4)}" }, it.discount?.let { d -> stringResource(R.string.discount_value, d) })
+                        .joinToString(" ").ifEmpty { "—" },
                     modifier = Modifier.weight(1f),
                 )
                 Text(fmtMoney(it.lineTotalCents, currency), fontWeight = FontWeight.SemiBold)
+            }
+            // What one unit really cost after the discount (the price used for price changes and food cost).
+            if (it.discount != null) paidPerUnit(it.quantity, it.lineTotalCents)?.let { paid ->
+                Text(
+                    stringResource(R.string.paid_per_unit, fmtDecimal(paid, 4), it.unit ?: "?"),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 if (it.lotNumber != null) Text(stringResource(R.string.lot_value, it.lotNumber)) else MissingValue(stringResource(R.string.lot_not_recorded))
@@ -255,4 +264,10 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
             }
         }
     }
+}
+
+/** Amount / quantity: the price per unit really paid. */
+internal fun paidPerUnit(quantity: java.math.BigDecimal?, cents: Long?): java.math.BigDecimal? {
+    if (quantity == null || cents == null || quantity.signum() == 0) return null
+    return com.kitchenreceipts.core.ItalianNumbers.centsToDecimal(cents).divide(quantity, 4, java.math.RoundingMode.HALF_EVEN)
 }
