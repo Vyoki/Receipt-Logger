@@ -14,8 +14,17 @@ object Handwriting {
     /** Below this the OCR engine is guessing (ML Kit gives about 0.9 and more on clean print). */
     const val UNSURE = 0.6f
 
-    private fun words(pages: List<List<OcrLine>>) = pages.flatten().flatMap { l -> l.words.ifEmpty { listOf(l) } }
-        .filter { w -> w.text.count(Char::isLetterOrDigit) >= 2 }
+    /**
+     * The words that make the document: not its small print (conditions of sale, privacy and legal notices, printed
+     * much smaller than the rest) nor long lines of prose. A blurred footer must not make a clear page "unclear", nor
+     * make a product name doubtful because the same word was unsure down there.
+     */
+    private fun words(pages: List<List<OcrLine>>) = pages.flatMap { page ->
+        val lines = page.filter { l -> (l.words.ifEmpty { listOf(l) }).size <= 12 }
+        val heights = lines.flatMap { l -> l.words.ifEmpty { listOf(l) } }.map { it.height }.sorted()
+        val usual = heights.getOrNull(heights.size / 2) ?: 0
+        lines.flatMap { l -> l.words.ifEmpty { listOf(l) } }.filter { w -> w.height >= usual * 0.75 }
+    }.filter { w -> w.text.count(Char::isLetterOrDigit) >= 2 }
 
     /** The OCR gave no confidence at all (another engine, or an older reading): nothing to say. */
     fun known(pages: List<List<OcrLine>>) = words(pages).any { it.confidence < 1f }

@@ -17,8 +17,8 @@ import java.time.LocalDate
  */
 class DdtBoxesTest {
 
-    private fun pages(): List<List<OcrLine>> {
-        val text = javaClass.classLoader!!.getResource("fixtures/ddt_surgelati_boxes.txt")!!.readText()
+    private fun pages(edit: (String) -> String = { it }): List<List<OcrLine>> {
+        val text = edit(javaClass.classLoader!!.getResource("fixtures/ddt_surgelati_boxes.txt")!!.readText())
         val pages = mutableListOf<MutableList<OcrLine>>()
         val word = Regex("(-?\\d+)-(-?\\d+):(\\S+)")
         for (l in text.lines()) {
@@ -106,5 +106,14 @@ class DdtBoxesTest {
         // Every line adds up as printed: one look at the largest amount (and the worked-out quantity, unless the VAT summary proves it).
         assertTrue(numbers.size in 1..2)
         assertTrue(numbers.all { it.boxes.isNotEmpty() && it.boxes.all { b -> b.width > 0 && b.height > 0 } })
+    }
+
+    @Test fun lotsAreReadWhenTheLotHeadingCarriesACameraSlip() {
+        // On a real photo of this layout the heading came out "ID LOTTO0": one stray character switched every lot off.
+        val clean = parse().lineItems.map { it.lotNumber?.value }
+        val slipped = ReceiptParser.parsePages(pages { it.replace("ID LOTTO  [469-506:ID 524-621:LOTTO]", "ID LOTTO0  [469-506:ID 524-621:LOTTO0]") }, options)
+            .lineItems.map { it.lotNumber?.value }
+        assertTrue(clean.count { it != null } >= 5)
+        assertEquals(clean, slipped)
     }
 }

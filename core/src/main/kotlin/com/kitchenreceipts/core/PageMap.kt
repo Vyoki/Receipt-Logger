@@ -107,7 +107,7 @@ object PageMap {
         val out = mutableListOf<Placed>()
         val blocks = mutableListOf<ItemBlock>()
         val items = doc.lineItems
-        pages.forEachIndexed { p, lines ->
+        pages.map { OcrCleanup.repairLabels(OcrCleanup.stripRules(it)) }.forEachIndexed { p, lines ->
             if (lines.isEmpty()) return@forEachIndexed
             val layout = LayoutRows.layout(lines)
             val rows = layout.rows.mapIndexed { r, row -> row.flatMap { piece -> wordsOf(piece) }.map { it.copy(page = p, row = r) } }
@@ -245,6 +245,11 @@ object PageMap {
         val raw = w.text.trim().trimEnd('|', '}', ']', ')', '{')
         // The whole word first ("13/15" in a name), then its parts ("7/CINGHIALE": packages glued to the name).
         if (raw.contains('/') && norm(raw) in descWords(it.originalDescription)) return "description"
+        // "4TORTA": the packages column glued to the name by the camera.
+        rx("^(\\d{1,3})([A-Za-z].{2,})$").matchEntire(raw)?.let { m ->
+            val a = itemField1(it, w.copy(text = m.groupValues[1])); val b = itemField1(it, w.copy(text = m.groupValues[2]))
+            if (a != null && b == "description") return "description"
+        }
         val parts = raw.split('/').filter { p -> p.isNotBlank() }
         if (parts.size > 1) return parts.map { p -> itemField1(it, w.copy(text = p)) }.takeIf { fs -> fs.all { f -> f != null } }?.first()
         if (raw.endsWith('%') && norm(raw) in descWords(it.originalDescription)) return "description"

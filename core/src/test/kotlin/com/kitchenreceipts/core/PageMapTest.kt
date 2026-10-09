@@ -43,12 +43,13 @@ class PageMapTest {
         val doc = ReceiptParser.parsePages(listOf(lines))
         val map = PageMap.build(listOf(lines), doc)
         val left = map.unexplained.filter { it.region == PageMap.Region.TABLE }
-        // Either the reading took them as lots, or the map reports them, under the code column of their own item.
-        val lots = doc.lineItems.mapNotNull { it.lotNumber?.value }
-        if (lots.size < 2) {
-            assertTrue(map.describeUnexplained(), left.any { it.word.text == "2610263" && it.item == 0 && it.column == "CODICE" })
-            assertTrue(map.describeUnexplained(), left.any { it.word.text == "2610297" && it.item == 1 && it.column == "CODICE" })
-        }
+        // The same kind of code in the same place under both items: their lots, shown for a check (no heading proves them).
+        assertEquals(listOf("2610263", "2610297"), doc.lineItems.map { it.lotNumber?.value })
+        assertTrue(doc.lineItems.all { it.lotNumber?.confidence == Confidence.LOW })
+        assertTrue(map.describeUnexplained(), left.isEmpty())
+        // Without the reading's lots the map reports them, under the column they sit in, with their own item.
+        val raw = PageMap.build(listOf(lines), doc.copy(lineItems = doc.lineItems.map { it.copy(lotNumber = null) }))
+        assertTrue(raw.describeUnexplained(), raw.unexplained.any { it.word.text == "2610263" && it.item == 0 && it.column == "CODICE" })
     }
 
     @Test fun theSecondLineOfANameInTheSupplierBoxIsNoticed() {

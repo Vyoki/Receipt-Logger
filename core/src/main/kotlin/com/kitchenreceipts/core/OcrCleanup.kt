@@ -1,5 +1,7 @@
 package com.kitchenreceipts.core
 
+import java.text.Normalizer
+
 /**
  * Repairs the most common OCR misreads on receipts before parsing. Only touches characters inside
  * tokens that are clearly numeric (amounts, dates, quantities), never words.
@@ -66,6 +68,62 @@ object OcrCleanup {
             if (t.isBlank()) null else if (t == l.text) l else l.copy(text = t)
         }
     }
+
+    /**
+     * Heading and label words with a camera slip ("ID LOTTO0", "T0TALE", "QUANTlTA", "IMP0NIBILE") restored to their
+     * proper spelling, before any part of the reading looks for them: one stray character must not switch off a whole
+     * column or a total. Only in rows that are labels (another label word on the row, no prose), only for words of
+     * five letters or more, and only when exactly one label word is that close (look-alike letters folded, at most
+     * one letter more, less or different). Product names are never touched: their rows hold no label words.
+     */
+    fun repairLabels(lines: List<OcrLine>): List<OcrLine> = lines.map { l ->
+        val tokens = if (l.words.isNotEmpty()) l.words.map { it.text } else l.text.split(' ').filter { it.isNotEmpty() }
+        val exact = tokens.count { t -> isLabelWord(t) }
+        if (exact == 0 || tokens.size > 10) return@map l
+        fun fix(t: String): String {
+            if (isLabelWord(t)) return t
+            val core = t.trimEnd('.', ':', ',', '|')
+            if (core.count(Char::isLetter) < 4 || core.length < 5) return t
+            // A camera slip leaves a trace: a digit or a symbol inside a word, or a small letter inside a capitalised
+            // one. A clean word is left alone, even when it is close to a label ("FORNITURE" is a word, not a slip).
+            val letters = core.filter(Char::isLetter)
+            val trace = core.any { !it.isLetter() } || (letters.count(Char::isUpperCase) >= letters.length - 2 && letters.any(Char::isLowerCase))
+            if (!trace) return t
+            val f = foldLabel(core)
+            // The label it is once the look-alikes are folded; failing that, the one label a single letter away.
+            val near = LABEL_VOCAB.filter { w -> foldLabel(w) == f }
+                .ifEmpty { LABEL_VOCAB.filter { w -> SmartMatcher.damerau(foldLabel(w), f, 1) <= 1 && w.length >= 5 } }
+            return if (near.size == 1) near.single() + t.substring(core.length) else t
+        }
+        if (l.words.isNotEmpty()) {
+            val ws = l.words.map { w -> fix(w.text).let { if (it == w.text) w else w.copy(text = it) } }
+            if (ws.zip(l.words).all { (a, b) -> a.text == b.text }) l else l.copy(text = ws.joinToString(" ") { it.text }, words = ws)
+        } else {
+            val t = tokens.joinToString(" ") { fix(it) }
+            if (t == tokens.joinToString(" ")) l else l.copy(text = t)
+        }
+    }
+
+    /** Label and heading words of supplier documents (Italian; the reading's other languages have their own). */
+    private val LABEL_VOCAB = listOf(
+        "LOTTO", "LOTTI", "TOTALE", "TOTALI", "IMPONIBILE", "IMPORTO", "QUANTITA", "PREZZO", "DESCRIZIONE", "CODICE",
+        "SCADENZA", "ARTICOLO", "ALIQUOTA", "SCONTO", "FATTURA", "DOCUMENTO", "NUMERO", "COLLI", "UNITARIO", "CONSEGNA",
+        "DESTINATARIO", "DESTINAZIONE", "FORNITORE", "CLIENTE", "PAGAMENTO", "TRASPORTO", "IMPOSTA", "NETTO",
+        "DENOMINAZIONE", "FISCALE", "PARTITA", "CEDENTE", "PRESTATORE", "CESSIONARIO", "COMMITTENTE", "RIEPILOGO",
+        "COMPLESSIVO", "PRODOTTO", "BENI", "MERCE",
+    )
+    /** Short words found only in labels (not units such as NR, which are printed on product rows too). */
+    private val SHORT_LABELS = setOf("ID", "QTA", "U.M", "UM", "DATA", "COD", "ART", "SC.%")
+
+    private fun isLabelWord(t: String): Boolean {
+        val u = Normalizer.normalize(t.uppercase(), Normalizer.Form.NFD).replace(rx("\\p{M}+"), "").trim('.', ':', ',', '|', '\'', '"')
+        return u in LABEL_VOCAB || u in SHORT_LABELS || u.split('.', '/').filter { it.isNotEmpty() }.let { ps -> ps.size > 1 && ps.any { p -> p in SHORT_LABELS || p in LABEL_VOCAB } && ps.all { p -> p in SHORT_LABELS || p in LABEL_VOCAB || p == "M" || p == "LOT" } }
+    }
+
+    /** The camera's look-alikes folded to letters: 0 O, 1 I, 5 S, 8 B, 6 G; accents dropped. */
+    private fun foldLabel(s: String): String = Normalizer.normalize(s.uppercase(), Normalizer.Form.NFD).replace(rx("\\p{M}+"), "")
+        .map { c -> when (c) { '0' -> 'O'; '1', 'L', '|' -> if (c == 'L') 'L' else 'I'; '5' -> 'S'; '8' -> 'B'; '6' -> 'G'; else -> c } }
+        .joinToString("").filter { it.isLetter() }
 
     fun clean(text: String): String = text.lines().joinToString("\n") { cleanLine(it) }
 
