@@ -26,7 +26,7 @@ data class KnowledgePack(
         if (byVat.isEmpty()) return null
         val vat = SellerProfiles.supplierVatNumber(documentText, ownVatNumber) ?: return null
         val s = byVat[vat] ?: return null
-        return Found(s, readName != null && SellerProfiles.sameCompany(readName, s.name))
+        return Found(s, readName != null && SellerProfiles.sameCompanyOrMisread(readName, s.name))
     }
 
     companion object {

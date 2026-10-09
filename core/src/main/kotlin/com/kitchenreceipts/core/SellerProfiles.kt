@@ -127,7 +127,7 @@ object SellerProfiles {
         var suspect: String? = null
         for (v in vatNumbers(documentText).filter { it != own }) {
             val c = candidates.firstOrNull { it.vatNumber == v } ?: continue
-            if (ocrSellerReliable && ocrSellerName != null && !sameCompany(c.name, ocrSellerName) &&
+            if (ocrSellerReliable && ocrSellerName != null && !sameCompanyOrMisread(c.name, ocrSellerName) &&
                 DuplicateDetector.normalizeSeller(ocrSellerName) !in c.aliasKeys
             ) {
                 suspect = v // "VERDE FRESCO S.p.A." clearly printed, but the VAT number was learned for "ABC S.r.l."
@@ -150,7 +150,7 @@ object SellerProfiles {
         val second = scored.getOrNull(1)?.second ?: 0.0
         val matchedWords = best.first.profile.keys.count { it in tokens }
         val layoutOk = best.second >= 0.6 && matchedWords >= 3 && best.second - second >= 0.15 &&
-            !(ocrSellerReliable && ocrSellerName != null && !sameCompany(best.first.name, ocrSellerName))
+            !(ocrSellerReliable && ocrSellerName != null && !sameCompanyOrMisread(best.first.name, ocrSellerName))
         return Identification(
             if (layoutOk) SellerMatch(best.first.id, best.first.name, SellerMatchReason.LAYOUT, best.second) else null,
             suspect,
@@ -166,6 +166,43 @@ object SellerProfiles {
         val ty = y.split(' ').filter { it.length > 2 }.toSet()
         if (tx.isEmpty() || ty.isEmpty()) return false
         return tx.intersect(ty).size.toDouble() / minOf(tx.size, ty.size) >= 0.5
+    }
+
+    /**
+     * The same company, or a name the camera misread by a letter or two ("ABE S.r.l." for "ABC S.r.l.": a stylised
+     * logo letter, a worn print). Used where other evidence already points to the company (its VAT number, its
+     * letterhead): a slip in the name read must not outvote it. Each word of the shorter name must match a word of
+     * the other with at most one wrong letter (two in words of 7+ letters); words of one or two letters are ignored.
+     */
+    fun sameCompanyOrMisread(a: String, b: String): Boolean {
+        if (sameCompany(a, b)) return true
+        val x = DuplicateDetector.normalizeSeller(a) ?: return false
+        val y = DuplicateDetector.normalizeSeller(b) ?: return false
+        val tx = x.split(' ').filter { it.length > 2 }
+        val ty = y.split(' ').filter { it.length > 2 }
+        if (tx.isEmpty() || ty.isEmpty()) return false
+        val (short, long) = if (tx.size <= ty.size) tx to ty else ty to tx
+        return short.all { w -> long.any { v -> nearlySame(w, v) } }
+    }
+
+    private fun nearlySame(a: String, b: String): Boolean {
+        if (a == b) return true
+        val allowed = if (minOf(a.length, b.length) >= 7) 2 else 1
+        if (kotlin.math.abs(a.length - b.length) > allowed) return false
+        // Edit distance, stopping early once it exceeds what is allowed.
+        var prev = IntArray(b.length + 1) { it }
+        for (i in 1..a.length) {
+            val cur = IntArray(b.length + 1)
+            cur[0] = i
+            var rowMin = cur[0]
+            for (j in 1..b.length) {
+                cur[j] = minOf(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + if (a[i - 1] == b[j - 1]) 0 else 1)
+                rowMin = minOf(rowMin, cur[j])
+            }
+            if (rowMin > allowed) return false
+            prev = cur
+        }
+        return prev[b.length] <= allowed
     }
 
     private val LETTERHEAD_HINT = Regex("(?i)(reg\\.?\\s*imp|\\breg\\.\\s|iscr|\\brea\\b|\\brea\\s?n\\b|cap\\.?\\s*soc|capitale|sede|c\\.\\s?f\\.\\s*(e|-|/)\\s*p\\.?\\s?iva|codice fiscale e partita)")
