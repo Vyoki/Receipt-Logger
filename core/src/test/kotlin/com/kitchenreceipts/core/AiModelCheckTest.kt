@@ -44,7 +44,7 @@ class AiModelCheckTest {
         for (lang in AiReader.Lang.entries) {
             File(dir, "choice-filetto-${lang.name.lowercase()}.txt").writeText(AiReader.choiceInstruction(head, FILETTO, FILETTO_CHOICES, lang))
         }
-        File(dir, "choice.gbnf").writeText(AiReader.CHOICE_GRAMMAR)
+        File(dir, "choice.gbnf").writeText(AiReader.choiceGrammar(FILETTO_CHOICES.size))
         // One number: the TOT. column of the FILETTO line (4,24).
         for (lang in AiReader.Lang.entries) {
             File(dir, "number-filetto-${lang.name.lowercase()}.txt").writeText(AiReader.numberInstruction("TOT.", head, FILETTO, lang))

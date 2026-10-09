@@ -272,6 +272,9 @@ object AiReader {
     /** The answer is one letter: which reading is printed on the line, or X when none is. */
     val CHOICE_GRAMMAR: String = "root ::= [A-DX]\n"
 
+    /** Only the letters actually offered (and X, none of them): a letter with no reading behind it cannot be answered. */
+    fun choiceGrammar(options: Int): String = "root ::= [" + "ABCD".take(options.coerceIn(1, 4)) + "X]\n"
+
     private val LETTERS = listOf("A", "B", "C", "D")
 
     /** Asks which of [choices] (all adding up) is what the line shows: one letter to write instead of a whole line. */
