@@ -586,6 +586,9 @@
     <string name="ai_check_disagree">AI double-check: %1$d of %2$d values read differently (highlighted):</string>
     <string name="scan_hint">Photo, gallery or PDF · several pages</string>
     <string name="brand_is">Brand: %1$s</string>
+    <string name="mark_storage">Storage</string>
+    <string name="mark_group">Group</string>
+    <string name="mark_code">Code</string>
     <string name="name_unknown">Not understood in the name: %1$s. Tap the product to write the name; the app learns it.</string>
     <string name="office_title">Office copy for a computer</string>
     <string name="office_hint">Everything recorded (documents, products, prices, lots) in one file for the owner\'s Mac or PC. It opens in the web browser, works offline and sends nothing anywhere. Photos and PDFs are not included.</string>

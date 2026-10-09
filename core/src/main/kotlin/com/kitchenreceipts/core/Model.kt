@@ -74,7 +74,26 @@ data class ParsedLineItem(
      * offered to the operator as a replacement, never applied by itself.
      */
     val aiRead: Map<String, String> = emptyMap(),
+    /**
+     * What the page says about this line through its own codes and group lines (see PageCodes): the storage letter
+     * and its meaning from the page's legend ("F" = "fresco"), the row type, the group printed above the line.
+     */
+    val marks: List<ItemMark> = emptyList(),
 )
+
+/** One code the page explains ([kind] "storage", "tipo riga", "group"...): [code] as printed (none for a group line), [meaning] from the page. */
+data class ItemMark(val kind: String, val code: String?, val meaning: String) {
+    companion object {
+        /** Kept in one text column: one mark per line, "kind<TAB>code<TAB>meaning" (null when there are none). */
+        fun encode(marks: List<ItemMark>): String? = marks.takeIf { it.isNotEmpty() }?.joinToString("\n") { m ->
+            listOf(m.kind, m.code ?: "", m.meaning).joinToString("\t") { it.replace('\t', ' ').replace('\n', ' ') }
+        }
+        fun decode(text: String?): List<ItemMark> = text.orEmpty().lines().mapNotNull { l ->
+            val p = l.split('\t')
+            if (p.size == 3 && p[0].isNotBlank() && p[2].isNotBlank()) ItemMark(p[0], p[1].ifEmpty { null }, p[2]) else null
+        }
+    }
+}
 
 /** The AI's double-check: how many values it read again, and where it read something else ("line 12 amount: 25,34 / AI 25,84"). */
 data class AiCheck(

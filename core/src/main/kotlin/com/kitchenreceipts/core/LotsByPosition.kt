@@ -16,7 +16,7 @@ object LotsByPosition {
     fun apply(doc: ParsedDocument, pages: List<List<OcrLine>>, ownVatNumber: String?): ParsedDocument {
         if (doc.lineItems.count { it.lotNumber == null && !it.adjustment } < 2) return doc
         val map = runCatching { PageMap.build(pages, doc, ownVatNumber) }.getOrNull() ?: return doc
-        val ownRow = map.items.associate { b -> (b.page to b.item) to b.rows.first }
+        val ownRow = map.items.associate { b -> (b.page to b.item) to b.own }
         // Candidates: leftover lot-like words under an item, not on its own first row.
         data class Cand(val item: Int, val text: String, val x: Int, val column: String?)
         val cands = map.unexplained.filter { p ->

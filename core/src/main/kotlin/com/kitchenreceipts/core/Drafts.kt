@@ -49,6 +49,8 @@ data class LineItemDraft(
     val adjustment: Boolean = false,
     /** The discount printed on the line, in percent ("30", "10+5"); see LineDiscount. */
     val discount: DraftField = DraftField(),
+    /** What the page's own codes and group lines say about the line (see PageCodes): shown with it, kept on save. */
+    val marks: List<ItemMark> = emptyList(),
 ) {
     /**
      * A discount or charge ("Sconto del 4%", "Spese bancarie"), not goods: no product, quantity or unit needed.
@@ -163,6 +165,7 @@ data class DocumentDraft(
                         aiRead = it.aiRead,
                         adjustment = it.adjustment,
                         discount = f(it.discount) { d -> d },
+                        marks = it.marks,
                     )
                 },
                 warnings = p.warnings,
@@ -199,6 +202,8 @@ data class ValidLineItem(
     val packSize: String? = null,
     /** The discount printed on the line, in percent ("30", "10+5"), normalised (see LineDiscount). */
     val discount: String? = null,
+    /** The page's codes and group lines for this line (see PageCodes). */
+    val marks: List<ItemMark> = emptyList(),
 )
 
 data class ValidDocument(
@@ -271,6 +276,7 @@ object DraftValidator {
                 packages = packages,
                 packSize = packSize,
                 discount = discount,
+                marks = it.marks,
             )
         }
 

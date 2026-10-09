@@ -2,6 +2,7 @@ package com.kitchenreceipts.app.data
 
 import androidx.room.withTransaction
 import com.kitchenreceipts.app.files.FileStore
+import com.kitchenreceipts.core.ItemMark
 import com.kitchenreceipts.core.OfficeExport
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.core.Categories
@@ -161,6 +162,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                         packages = it.packages,
                         packSize = it.packSize,
                         discount = it.discount,
+                        marks = ItemMark.encode(it.marks),
                     )
                 },
             )

@@ -574,6 +574,9 @@
     <string name="ai_check_disagree">Ricontrollo IA: %1$d valori su %2$d letti diversamente (evidenziati):</string>
     <string name="scan_hint">Foto, galleria o PDF · più pagine</string>
     <string name="brand_is">Marca: %1$s</string>
+    <string name="mark_storage">Conservazione</string>
+    <string name="mark_group">Gruppo</string>
+    <string name="mark_code">Codice</string>
     <string name="name_unknown">Non capito nel nome: %1$s. Tocca il prodotto per scrivere il nome; l\'app lo impara.</string>
     <string name="office_title">Copia per l\'ufficio (computer)</string>
     <string name="office_hint">Tutto ciò che è registrato (documenti, prodotti, prezzi, lotti) in un unico file per il Mac o il PC del titolare. Si apre nel browser, funziona senza internet e non invia nulla. Foto e PDF non sono inclusi.</string>
