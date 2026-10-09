@@ -87,6 +87,16 @@ class SupplierProofTest {
         assertEquals(SupplierProof.State.UNPROVEN, generic.state)
     }
 
+    @Test fun theOtherSpellingIsOfferedWithOneTap() {
+        val r = judge(listOf("ABE S.R.L.", "Fornitore: ABC S.r.l.") + customerBox, "ABE S.R.L.")
+        val parsed = SupplierProof.applyResult(ParsedDocument.EMPTY.copy(sellerName = reading("ABE S.R.L.")), r)
+        val draft = DocumentDraft.fromParsed(parsed)
+        assertTrue(draft.seller.uncertain)
+        val offered = Replacements.compute(draft)[Replacements.header("seller")].orEmpty()
+        assertTrue(offered.joinToString().contains("AB"))
+        assertTrue(offered.none { it == draft.seller.text })
+    }
+
     @Test fun theWholeReadingUsesIt() {
         // Through the parser: the logo misread, the footer and the email correct it, and the name is sure.
         val lines = listOf("ABE S.R.L.", "FATTURA N. 45 DEL 12/09/2026") + customerBox + listOf(

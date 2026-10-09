@@ -43,7 +43,9 @@ class AiLoop(
     fun candidates(): List<AiTarget> {
         if (answers.size >= maxQuestions) return emptyList()
         val planned = AiTargets.plan(lines, doc, spotCheck = true).orEmpty()
+        // The last questions are kept for doubts: double-checks of values that look right never use them up.
         val open = (planned + followUps(planned)).filter { key(it) !in asked }.distinctBy { key(it) }
+            .filter { answers.size < maxQuestions - RESERVED || priority(it) < 6 }
         // A question on the same picture as the last one comes next when it is about that line or its numbers: the
         // picture is already processed (the phone keeps it), and the line is finished before moving on.
         return open.withIndex().sortedWith(compareBy({ if (samePicture(it.value) && priority(it.value) <= 3) 0 else 1 }, { priority(it.value) }, { it.index }))
@@ -108,6 +110,9 @@ class AiLoop(
         /** Enough for a messy document; a clean one needs none or a couple. The caller also stops on its time limit. */
         const val MAX_QUESTIONS = 12
 
+        /** Questions kept for doubts (supplier, lines, totals, header): double-checks may not use them. */
+        const val RESERVED = 3
+
         /**
          * The document after the same questions with the same answers: the questions are listed the same way, and
          * [picks] says which one was asked each time (the AI may choose another than the planner's first).
@@ -116,7 +121,9 @@ class AiLoop(
             lines: List<List<OcrLine>>, text: String, options: ParseOptions, start: ParsedDocument, answers: List<String>,
             picks: List<Int> = emptyList(),
         ): ParsedDocument {
-            val loop = AiLoop(lines, text, options, start, maxQuestions = answers.size)
+            // The same limit as when the questions were asked (it decides which questions were open), then stop at
+            // the last answer.
+            val loop = AiLoop(lines, text, options, start, maxQuestions = maxOf(MAX_QUESTIONS, answers.size))
             for ((i, raw) in answers.withIndex()) {
                 val c = loop.candidates()
                 val pick = picks.getOrElse(i) { 0 }.coerceIn(0, maxOf(0, c.size - 1))

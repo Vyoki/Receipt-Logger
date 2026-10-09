@@ -46,7 +46,8 @@ object Replacements {
         val ai = d.aiCheck?.header.orEmpty()
 
         // ---- header
-        offer(header("seller"), d.seller, similarSellers(d.seller.text, knownSellers), ai["seller"], same = ::sameSeller)
+        // The other spellings printed on the document come first (each was read on the page), then saved suppliers.
+        offer(header("seller"), d.seller, d.sellerAlternatives + similarSellers(d.seller.text, knownSellers), ai["seller"], same = ::sameSeller)
         offer(header("number"), d.number, emptyList(), ai["number"])
         offer(header("date"), d.date, listOfNotNull(plausibleYear(d.date.text, today)), ai["date"], same = ::sameDate)
 

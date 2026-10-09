@@ -122,6 +122,8 @@ data class DocumentDraft(
     val vatGroupProblems: List<VatSummary.Check> = emptyList(),
     /** The AI's double-check, if it ran. */
     val aiCheck: AiCheck? = null,
+    /** Other spellings of the supplier read on the document when they disagree (see [SupplierProof]): one tap each. */
+    val sellerAlternatives: List<String> = emptyList(),
 ) {
     val uncertainCount: Int
         get() = listOf(seller, date, number, currency, subtotal, vat, total).count { it.uncertain } +
@@ -167,6 +169,7 @@ data class DocumentDraft(
                 lotsPrinted = p.lotsPrinted,
                 vatGroupProblems = p.vatChecks.filter { !it.ok },
                 aiCheck = p.aiCheck,
+                sellerAlternatives = p.supplierProof?.takeIf { p.sellerName?.confidence == Confidence.LOW }?.alternatives.orEmpty(),
             )
         }
     }
