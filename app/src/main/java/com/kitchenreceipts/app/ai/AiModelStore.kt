@@ -116,8 +116,17 @@ class AiModelStore(private val context: Context) {
 
     companion object {
         private const val HF = "https://huggingface.co/Qwen"
+        private const val TRAINED = "https://huggingface.co/ArdentSun/kitchen-reader-2b"
+        const val TRAINED_ID = "kitchen-2b"
         /** Checked in CI on a synthetic invoice: both read every line right when given the OCR text; 2B takes about half the time. */
         val OPTIONS = listOf(
+            // Qwen3-VL 2B trained on the app's own questions (invented documents only): see tools/training.
+            AiModelOption(
+                id = TRAINED_ID, label = "Kitchen reader 2B", approxGb = "1.6",
+                modelUrl = "$TRAINED/resolve/main/kitchen-reader-2b-Q4_K_M.gguf?download=true",
+                mmprojUrl = "$TRAINED/resolve/main/mmproj-kitchen-reader-2b-Q8_0.gguf?download=true",
+                minRamGb = 6,
+            ),
             AiModelOption(
                 id = "qwen3vl-2b", label = "Qwen3-VL 2B", approxGb = "1.5",
                 modelUrl = "$HF/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf?download=true",
