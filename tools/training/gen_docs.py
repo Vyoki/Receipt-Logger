@@ -20,6 +20,7 @@ import json
 import math
 import os
 import random
+import sys
 from dataclasses import dataclass, field
 
 import cv2
@@ -604,7 +605,9 @@ def load_font(path, size, bold):
         base = os.path.splitext(os.path.basename(path))[0]
         b = BOLD.get(base)
         if b:
-            path = os.path.join(os.path.dirname(path), b + os.path.splitext(path)[1])
+            bold_path = os.path.join(os.path.dirname(path), b + os.path.splitext(path)[1])
+            if os.path.exists(bold_path):   # no bold on this machine: the regular one
+                path = bold_path
     key = (path, size)
     if key not in _font_cache:
         _font_cache[key] = ImageFont.truetype(path, size)
@@ -767,39 +770,68 @@ def main():
     hand = []
     if args.fonts and os.path.isdir(args.fonts):
         hand = [os.path.join(args.fonts, f) for f in sorted(os.listdir(args.fonts)) if f.lower().endswith((".ttf", ".otf"))]
-    args.hand_fonts = hand or [f for f in FALLBACK_HAND if os.path.exists(f)] or [PRINT_FONTS[0]]
+    # Only fonts that open on this machine (a missing or broken file would stop the whole run).
+    PRINT_FONTS[:] = usable(PRINT_FONTS)
+    if not PRINT_FONTS:
+        sys.exit("No print font found: install fonts-liberation / fonts-dejavu-core (apt-get).")
+    args.hand_fonts = usable(hand) or usable(FALLBACK_HAND) or [PRINT_FONTS[0]]
+    print(f"fonts: {len(PRINT_FONTS)} print, {len(args.hand_fonts)} handwriting")
     os.makedirs(args.out, exist_ok=True)
+    made = failed = 0
     for k in range(args.count):
         seed = args.seed * 1_000_003 + k
         r = random.Random(seed)
-        doc = make_doc(r, args)
-        img, words = draw(doc, r)
-        strength = r.choice([0.3, 0.6, 1.0, 1.0, 1.4])
-        photo, S = photograph(img, r, strength)
-        lines = reading(doc, words, S, r, strength)
-        # Where each item's row is on the photo (to know which question is about which line).
-        rows = {}
-        for l in lines:
-            if l["tag"].startswith("item:"):
-                i = int(l["tag"].split(":")[1])
-                b = rows.setdefault(i, list(l["box"]))
-                rows[i] = [min(b[0], l["box"][0]), min(b[1], l["box"][1]), max(b[2], l["box"][2]), max(b[3], l["box"][3])]
-        for i, it in enumerate(doc.truth["items"]):
-            it["box"] = rows.get(i)
-        boxes = {}
-        for l in lines:
-            if l["tag"].startswith(("heading:", "box:", "field:", "label:")):
-                boxes.setdefault(l["tag"], []).append(l["box"])
-        doc.truth["boxes"] = boxes
-        doc.truth["photo"] = {"width": photo.shape[1], "height": photo.shape[0], "strength": strength}
-        d = os.path.join(args.out, f"doc{seed}")
-        os.makedirs(d, exist_ok=True)
-        cv2.imwrite(os.path.join(d, "page.jpg"), cv2.cvtColor(photo, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, r.randint(55, 90)])
-        with open(os.path.join(d, "reading.txt"), "w") as f:
-            f.write(report(lines))
-        with open(os.path.join(d, "truth.json"), "w") as f:
-            json.dump(doc.truth, f, ensure_ascii=False, indent=1)
-    print(f"{args.count} documents in {args.out}")
+        try:
+            write_doc(r, seed, args)
+            made += 1
+        except Exception as e:   # one bad document is skipped, not the whole run; many is an error
+            failed += 1
+            if failed <= 3:
+                print(f"document {seed} skipped: {type(e).__name__}: {e}", file=sys.stderr)
+    print(f"{made} documents in {args.out}" + (f" ({failed} skipped)" if failed else ""))
+    if made < args.count * 0.9:
+        sys.exit(f"Only {made} of {args.count} documents made: see the errors above.")
+
+
+def usable(paths):
+    ok = []
+    for p in paths:
+        try:
+            ImageFont.truetype(p, 20)
+            ok.append(p)
+        except Exception:
+            pass
+    return ok
+
+
+def write_doc(r, seed, args):
+    doc = make_doc(r, args)
+    img, words = draw(doc, r)
+    strength = r.choice([0.3, 0.6, 1.0, 1.0, 1.4])
+    photo, S = photograph(img, r, strength)
+    lines = reading(doc, words, S, r, strength)
+    # Where each item's row is on the photo (to know which question is about which line).
+    rows = {}
+    for l in lines:
+        if l["tag"].startswith("item:"):
+            i = int(l["tag"].split(":")[1])
+            b = rows.setdefault(i, list(l["box"]))
+            rows[i] = [min(b[0], l["box"][0]), min(b[1], l["box"][1]), max(b[2], l["box"][2]), max(b[3], l["box"][3])]
+    for i, it in enumerate(doc.truth["items"]):
+        it["box"] = rows.get(i)
+    boxes = {}
+    for l in lines:
+        if l["tag"].startswith(("heading:", "box:", "field:", "label:")):
+            boxes.setdefault(l["tag"], []).append(l["box"])
+    doc.truth["boxes"] = boxes
+    doc.truth["photo"] = {"width": photo.shape[1], "height": photo.shape[0], "strength": strength}
+    d = os.path.join(args.out, f"doc{seed}")
+    os.makedirs(d, exist_ok=True)
+    cv2.imwrite(os.path.join(d, "page.jpg"), cv2.cvtColor(photo, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, r.randint(55, 90)])
+    with open(os.path.join(d, "reading.txt"), "w") as f:
+        f.write(report(lines))
+    with open(os.path.join(d, "truth.json"), "w") as f:
+        json.dump(doc.truth, f, ensure_ascii=False, indent=1)
 
 
 if __name__ == "__main__":
