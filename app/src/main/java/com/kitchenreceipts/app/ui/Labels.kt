@@ -113,6 +113,7 @@ fun reviewReasonText(r: ReviewReason): String = stringResource(
         ReviewReason.VAT_GROUP_MISMATCH -> R.string.reason_vat_group
         ReviewReason.LOTS_MISSING -> R.string.reason_lots_missing
         ReviewReason.OTHER_BUYER -> R.string.reason_other_buyer
+        ReviewReason.UNUSUAL_PRICE -> R.string.reason_unusual_price
     },
 )
 

@@ -60,6 +60,14 @@ object PriceWatch {
     /** Changes worth a phone notification (the operator's choice: 5% or more, up or down). */
     val ALERT_THRESHOLD: BigDecimal = BigDecimal("5.0")
 
+    /**
+     * A price this far from what was paid before (30% or more, up or down) is plausible but unusual: the document is
+     * not saved without a look, and the line is shown. It is never changed: prices do jump.
+     */
+    val UNUSUAL_THRESHOLD: BigDecimal = BigDecimal("30.0")
+
+    fun unusual(changes: List<PriceChange>): List<PriceChange> = alerts(changes, UNUSUAL_THRESHOLD)
+
     /** The changes worth a notification, biggest first. */
     fun alerts(changes: List<PriceChange>, threshold: BigDecimal = ALERT_THRESHOLD): List<PriceChange> =
         changes.filter { it.percent.abs() >= threshold }.sortedByDescending { it.percent.abs() }

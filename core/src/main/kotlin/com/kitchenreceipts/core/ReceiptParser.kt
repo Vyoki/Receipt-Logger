@@ -215,6 +215,7 @@ object ReceiptParser {
             val withParties = Parties.apply(HeaderGrid.apply(marked, grid, o.today), supplier)
             // The supplier's name is sure only when independent places on the page agree (or the phone knows its VAT).
             val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o) }.getOrDefault(withParties)
+                .let { d -> runCatching { ReadingSanity.apply(d, text, o.ownVatNumber) }.getOrDefault(d) }
             return Handwriting.mark(proven, pages)
         }
         val plain = read(options.copy(layoutLookup = null))

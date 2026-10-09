@@ -574,6 +574,7 @@
     <string name="reason_vat_group">The lines of one VAT rate do not add up to the VAT summary:</string>
     <string name="warn_other_buyer">This e-invoice is addressed to another company (the buyer\'s VAT number is not yours).</string>
     <string name="reason_other_buyer">Addressed to another company.</string>
+    <string name="reason_unusual_price">A price is 30% or more away from what you paid before: worth a look.</string>
     <string name="reason_lots_missing">Some lines have no lot number, but this document prints lots.</string>
     <string name="vat_group_line">%1$s%%: lines %2$s, summary %3$s (difference %4$s)</string>
     <string name="pack_size">Pack size</string>

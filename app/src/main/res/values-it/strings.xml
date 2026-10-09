@@ -562,6 +562,7 @@
     <string name="reason_vat_group">Le righe di un\'aliquota IVA non tornano con il riepilogo IVA:</string>
     <string name="warn_other_buyer">Questa fattura elettronica è intestata a un\'altra azienda (la P.IVA del cliente non è la vostra).</string>
     <string name="reason_other_buyer">Intestata a un\'altra azienda.</string>
+    <string name="reason_unusual_price">Un prezzo si discosta del 30% o più da quanto pagato prima: da controllare.</string>
     <string name="reason_lots_missing">Alcune righe non hanno il lotto, ma il documento riporta i lotti.</string>
     <string name="vat_group_line">%1$s%%: righe %2$s, riepilogo %3$s (differenza %4$s)</string>
     <string name="pack_size">Formato</string>

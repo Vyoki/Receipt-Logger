@@ -103,8 +103,10 @@ class DraftPreparer(
             val settled = before - draft.items.count { it.choices.isNotEmpty() }
             if (settled > 0) log.event("CHOICE_REMEMBERED", "lines" to settled)
         }
-        val reasons = AutoAccept.reasons(draft)
         val changes = priceChanges(draft, null)
+        // A price far from what was paid before is plausible but unusual: never changed, but not saved without a look.
+        val reasons = AutoAccept.reasons(draft) +
+            (if (PriceWatch.unusual(changes).isNotEmpty()) listOf(ReviewReason.UNUSUAL_PRICE) else emptyList())
         logParsed(pending, draft, recognition, reasons, changes)
         return PreparedDraft(draft, initial, recognition, reasons, changes, ocrSellerRaw, supplierKey)
     }
