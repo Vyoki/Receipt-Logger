@@ -32,6 +32,9 @@ class AiLoop(
     val picks = mutableListOf<Int>()
 
     private val asked = mutableSetOf<String>()
+    /** The picture of the last question (its page and areas). */
+    private var lastPicture: Pair<Int, List<PageBox>>? = null
+    private fun samePicture(t: AiTarget) = lastPicture == (t.page to t.boxes)
     private val rowsRead = linkedMapOf<String, AiTarget.Row>()
     /** The AI's whole-line answer for a row, to tell it why a follow-up is asked (see [previous]). */
     private val rowAnswers = mutableMapOf<String, String>()
@@ -41,7 +44,10 @@ class AiLoop(
         if (answers.size >= maxQuestions) return emptyList()
         val planned = AiTargets.plan(lines, doc, spotCheck = true).orEmpty()
         val open = (planned + followUps(planned)).filter { key(it) !in asked }.distinctBy { key(it) }
-        return open.withIndex().sortedWith(compareBy({ priority(it.value) }, { it.index })).map { it.value }
+        // A question on the same picture as the last one comes next when it is about that line or its numbers: the
+        // picture is already processed (the phone keeps it), and the line is finished before moving on.
+        return open.withIndex().sortedWith(compareBy({ if (samePicture(it.value) && priority(it.value) <= 3) 0 else 1 }, { priority(it.value) }, { it.index }))
+            .map { it.value }
     }
 
     /** The next question, or null when there is nothing more to ask. */
@@ -53,6 +59,7 @@ class AiLoop(
     /** Applies the AI's [raw] answer to [target] ("" when the AI gave none: the question still counts as asked). */
     fun answer(target: AiTarget, raw: String, pick: Int = 0) {
         asked += key(target)
+        lastPicture = target.page to target.boxes
         answers += raw
         picks += pick
         if (target is AiTarget.Row) { rowsRead[target.rowText] = target; rowAnswers[target.rowText] = raw }
@@ -65,6 +72,7 @@ class AiLoop(
     /** The same loop at the same point, to try a question without changing this one (to learn which pays most). */
     fun copy(): AiLoop = AiLoop(lines, text, options, doc, maxQuestions).also { c ->
         c.answers += answers; c.picks += picks; c.asked += asked; c.rowsRead += rowsRead; c.rowAnswers += rowAnswers
+        c.lastPicture = lastPicture
     }
 
     /** How much is still not proven: open questions, lines that do not add up, unsure header and totals. */

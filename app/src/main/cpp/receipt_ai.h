@@ -39,6 +39,7 @@ struct Result {
     int prompt_tokens = 0;
     int generated_tokens = 0;
     double encode_seconds = 0;
+    bool picture_reused = false; // the same picture as the last question: only the question's words were processed
     double generate_seconds = 0;
     bool cancelled = false;
 };

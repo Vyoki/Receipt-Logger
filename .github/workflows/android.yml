@@ -292,6 +292,9 @@ jobs:
           RECEIPT_AI_REPEAT=1 runrow 2b filetto
           grep -h 'reuse=' ai-run/row-2b-filetto.log || true
           if grep -q 'reuse=DIFFERENT' ai-run/row-2b-filetto.log; then echo "::error::the second question on the same engine answered differently"; exit 1; fi
+          # A different question on the same picture (the processed picture reused) must answer as on a fresh engine.
+          RECEIPT_AI_THEN=ai-run/number-filetto-en.txt,ai-run/number.gbnf,ai-run/then-number-2b.txt runrow 2b filetto
+          grep -h 'then:' ai-run/row-2b-filetto.log || true
           runrow 2b candeggina
           runrow 4b filetto
           runrow 4b candeggina
@@ -309,6 +312,9 @@ jobs:
           # One number (a quantity the OCR missed): the answer is a few characters.
           runnumber() { t0=$(date +%s); ./build-cli/receipt-ai-cli models/$1.gguf models/$1-mmproj.gguf ai-run/row-filetto.ppm ai-run/number-filetto-$2.txt ai-run/number.gbnf > ai-run/numberanswer-$1-$2.txt 2> ai-run/number-$1-$2.log || true; echo "Elapsed seconds: $(( $(date +%s) - t0 ))" >> ai-run/number-$1-$2.log; grep -E 'prompt=|Elapsed|failed|error' ai-run/number-$1-$2.log; }
           runnumber 2b en
+          if ! diff -q <(tr -d '[:space:]' < ai-run/then-number-2b.txt) <(tr -d '[:space:]' < ai-run/numberanswer-2b-en.txt); then
+            echo "::error::reusing the processed picture changed the answer: $(cat ai-run/then-number-2b.txt) vs $(cat ai-run/numberanswer-2b-en.txt)"; exit 1
+          fi
           runnumber 2b it
           runnumber 4b en
           runnumber 4b it
