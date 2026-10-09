@@ -84,6 +84,28 @@ class SellerProfilesTest {
         assertEquals(1L, SellerProfiles.identifyDetailed(learnedWrong, ddt, null, null).match?.sellerId)
     }
 
+    @Test fun aMisreadLogoLetterDoesNotOutvoteTheVatNumber() {
+        // The supplier was saved correctly. On the next photo the logo's last letter is read as another one: the VAT
+        // number on the letterhead still names the supplier, and it must not be forgotten as "shared".
+        val known = listOf(SellerCandidate(1, "ABC S.r.l.", supplierVat, emptyMap(), emptySet()))
+        val doc = "ABE S.r.l.\nVia Roma 1 - C.F. e P.IVA $supplierVat\nFATTURA N. 12A/34567"
+        val r = SellerProfiles.identifyDetailed(known, doc, "ABE S.r.l.", null, ocrSellerReliable = true)
+        assertEquals(1L, r.match?.sellerId)
+        assertEquals("ABC S.r.l.", r.match?.name)
+        assertNull(r.suspectVatNumber)
+        // A clearly different company with the same number is still caught.
+        val other = SellerProfiles.identifyDetailed(known, doc.replace("ABE S.r.l.", "VERDE FRESCO S.p.A."), "VERDE FRESCO S.p.A.", null, ocrSellerReliable = true)
+        assertNull(other.match)
+        assertEquals(supplierVat, other.suspectVatNumber)
+    }
+
+    @Test fun misreadNamesAreCloseButDifferentCompaniesAreNot() {
+        assertTrue(SellerProfiles.sameCompanyOrMisread("ABC S.r.l.", "ABE SRL"))
+        assertTrue(SellerProfiles.sameCompanyOrMisread("Caseificio Valverde S.r.l.", "CASEIFIC1O VALVERDE"))
+        assertFalse(SellerProfiles.sameCompanyOrMisread("ABC S.r.l.", "VERDE FRESCO S.p.A."))
+        assertFalse(SellerProfiles.sameCompanyOrMisread("Caseificio Valverde", "Macelleria Rossi"))
+    }
+
     @Test fun supplierVatComesFromTheLetterheadNotTheCustomerBox() {
         val ddt = "VERDE FRESCO S.p.A.\nN.Iscr.Reg.Impr.RM, C.F. e P.IVA $supplierVat\nPARTITA IVA CODICE FISCALE\n$ownVat $ownVat RIMESSA DIRETTA"
         assertEquals(supplierVat, SellerProfiles.supplierVatNumber(ddt, null))
