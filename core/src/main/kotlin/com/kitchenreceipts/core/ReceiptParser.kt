@@ -216,8 +216,10 @@ object ReceiptParser {
             // The supplier's name is sure only when independent places on the page agree (or the phone knows its VAT).
             val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o) }.getOrDefault(withParties)
                 .let { d -> runCatching { ReadingSanity.apply(d, text, o.ownVatNumber) }.getOrDefault(d) }
+            // Codes the page explains (storage letters, row types) and group lines over the items (see PageCodes).
+            val coded = runCatching { PageCodes.apply(proven, pages, o.ownVatNumber) }.getOrDefault(proven)
             // Lots printed under the items with no heading: the same place under several items (see LotsByPosition).
-            val lotted = runCatching { LotsByPosition.apply(proven, pages, o.ownVatNumber) }.getOrDefault(proven)
+            val lotted = runCatching { LotsByPosition.apply(coded, pages, o.ownVatNumber) }.getOrDefault(coded)
             return Handwriting.mark(lotted, pages)
         }
         val plain = read(options.copy(layoutLookup = null))

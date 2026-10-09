@@ -54,7 +54,7 @@ abstract class AppDatabase : RoomDatabase() {
     abstract fun foodDao(): FoodDao
 
     companion object {
-        const val VERSION = 10
+        const val VERSION = 11
         const val NAME = "kitchen_receipts.db"
 
         fun build(context: Context): AppDatabase =
@@ -80,6 +80,7 @@ abstract class AppDatabase : RoomDatabase() {
  * v8: + documents.kind / ddt_refs / covered_by (delivery notes and invoices), agreed_prices, credits, dismissed
  * v9: + recipes, recipe_items, revenue (food cost)
  * v10: + line_items.discount (discount % printed on a line)
+ * v11: + line_items.marks (the page's codes for a line: storage letter, row type, group)
  */
 object Migrations {
 
@@ -211,5 +212,11 @@ object Migrations {
         }
     }
 
-    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10)
+    val MIGRATION_10_11 = object : Migration(10, 11) {
+        override fun migrate(db: SupportSQLiteDatabase) {
+            db.execSQL("ALTER TABLE `line_items` ADD COLUMN `marks` TEXT")
+        }
+    }
+
+    val ALL: Array<Migration> = arrayOf(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5, MIGRATION_5_6, MIGRATION_6_7, MIGRATION_7_8, MIGRATION_8_9, MIGRATION_9_10, MIGRATION_10_11)
 }

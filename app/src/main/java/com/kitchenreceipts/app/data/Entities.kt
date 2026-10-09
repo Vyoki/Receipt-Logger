@@ -154,6 +154,8 @@ data class LineItemEntity(
     @ColumnInfo(name = "pack_size") val packSize: String? = null,
     /** v10: the line's discount in percent ("30", "10+5"), as printed. */
     val discount: String? = null,
+    /** v11: what the page's own codes and group lines say about the line (storage letter, row type, group); see ItemMark.encode. */
+    val marks: String? = null,
 )
 
 /**

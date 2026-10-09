@@ -239,6 +239,10 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
             } else {
                 Text(stringResource(R.string.no_product_assigned), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            val marks = com.kitchenreceipts.core.ItemMark.decode(it.marks)
+            if (marks.isNotEmpty()) {
+                Text(com.kitchenreceipts.app.ui.review.marksLine(marks), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             val qty = if (it.quantity != null) "${fmtDecimal(it.quantity)} ${it.unit ?: ""}".trim() else null
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(

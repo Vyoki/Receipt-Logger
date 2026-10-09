@@ -31,9 +31,12 @@ object PageMap {
     data class Placed(val word: Word, val region: Region, val role: Role, val field: String? = null, val item: Int? = null, val column: String? = null)
 
     /** One item of the table: its row and the rows under it up to the next item. */
-    data class ItemBlock(val page: Int, val item: Int, val rows: IntRange)
+    data class ItemBlock(val page: Int, val item: Int, val rows: IntRange, val own: Int = rows.first)
 
-    data class Map(val words: List<Placed>, val items: List<ItemBlock>) {
+    /** The item table of a page: its heading row and its foot (the first row after it). */
+    data class TableSpan(val page: Int, val head: Int, val foot: Int)
+
+    data class Map(val words: List<Placed>, val items: List<ItemBlock>, val tables: List<TableSpan> = emptyList()) {
         val unexplained: List<Placed> get() = words.filter { it.role == Role.UNEXPLAINED }
         /** Left over with a digit in it: a lot, a code, a quantity or a price the reading did not take (the costliest). */
         val unexplainedNumbers: List<Placed> get() = unexplained.filter { p -> p.word.text.any(Char::isDigit) }
@@ -84,12 +87,12 @@ object PageMap {
     /** An id: a VAT number, a tax code, a postcode, a phone number, a long code: explained as print outside the table. */
     private val ID = rx("^(IT)?[0-9OIl]{11}$|^[A-Z]{6}[0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{2}[A-Z][0-9LMNPQRSTUV]{3}[A-Z]$|^\\d{5}$|^\\+?\\d[\\d ./-]{7,}$")
 
-    private fun norm(s: String) = s.lowercase().trim().trim('.', ',', ':', ';', '(', ')', '[', ']', '{', '}', '|', '/', '-', '*', '"', '\'', '?', '!')
+    internal fun norm(s: String) = s.lowercase().trim().trim('.', ',', ':', ';', '(', ')', '[', ']', '{', '}', '|', '/', '-', '*', '"', '\'', '?', '!')
 
     /** Words that need no explaining anywhere: punctuation, single letters, labels, dates, money signs. */
     private val FOLDED_LABELS: Set<String> by lazy { LABEL_WORDS.map(::fold).toSet() }
 
-    private fun isPrint(t: String): Boolean {
+    internal fun isPrint(t: String): Boolean {
         val n = norm(t)
         if (n.isEmpty() || n.length == 1) return true
         if (n in LABEL_WORDS || fold(n) in FOLDED_LABELS) return true
@@ -106,6 +109,7 @@ object PageMap {
     fun build(pages: List<List<OcrLine>>, doc: ParsedDocument, ownVatNumber: String? = null): Map {
         val out = mutableListOf<Placed>()
         val blocks = mutableListOf<ItemBlock>()
+        val tables = mutableListOf<TableSpan>()
         val items = doc.lineItems
         pages.map { OcrCleanup.repairLabels(OcrCleanup.stripRules(it)) }.forEachIndexed { p, lines ->
             if (lines.isEmpty()) return@forEachIndexed
@@ -117,6 +121,7 @@ object PageMap {
                 .takeIf { it >= 0 } ?: texts.indexOfFirst { ReceiptParser.isTableHeader(it) }
             val foot = if (head >= 0) (head + 1 until rows.size).firstOrNull { ReceiptParser.isFooterRow(texts[it]) } ?: rows.size else -1
             val headings = if (head >= 0) rows[head] else emptyList()
+            if (head >= 0) tables += TableSpan(p, head, foot)
 
             // Each item's own row: the row that holds its amount and the most words of its description.
             val itemRow = mutableMapOf<Int, Int>()
@@ -154,7 +159,7 @@ object PageMap {
                     if (owner != null) rowItem[r] = owner.key
                 }
             }
-            rowItem.entries.groupBy({ it.value }, { it.key }).forEach { (item, rs) -> blocks += ItemBlock(p, item, rs.min()..rs.max()) }
+            rowItem.entries.groupBy({ it.value }, { it.key }).forEach { (item, rs) -> blocks += ItemBlock(p, item, rs.min()..rs.max(), itemRow[item] ?: rs.min()) }
 
             // Rows between the heading row and the first item: the heading's own second row ("ID LOTTO QTA.LOT.").
             val firstItemRow = rowItem.keys.minOrNull() ?: foot
@@ -163,8 +168,15 @@ object PageMap {
             val box = if (p == 0) runCatching { Parties.supplier(listOf(layout), ownVatNumber) }.getOrNull()?.box else null
             val sellerWords = doc.sellerName?.value?.let(::descWords).orEmpty()
 
-            rows.forEachIndexed { r, ws ->
-                val printLine = PRINT_LINE.containsMatchIn(texts[r])
+            // Group lines the reading kept on the items ("Merce non alimentare"): the row is that group.
+            val groups = items.flatMap { it.marks.filter { m -> m.kind == PageCodes.GROUP }.map { m -> PageCodes.groupKey(m.meaning) } }.toSet()
+            rows.forEachIndexed rowLoop@{ r, ws ->
+                val printLine = PRINT_LINE.containsMatchIn(texts[r]) || PageCodes.parse(texts[r]) != null
+                val owner = rowItem[r]
+                if (head >= 0 && r > head && r < foot && (owner == null || itemRow[owner] != r) && PageCodes.groupKey(ws.joinToString(" ") { it.text }) in groups) {
+                    ws.forEach { w -> out += Placed(w, Region.TABLE, Role.FIELD, "group", owner, null) }
+                    return@rowLoop
+                }
                 for (w in ws) {
                     val inBox = box != null && w.box.left >= box.left - 8 && w.box.right <= box.right + 8 && w.box.top >= box.top - 4 && w.box.bottom <= box.bottom + 4
                     // The table first: a box drawn by the reading never reaches into it.
@@ -204,7 +216,7 @@ object PageMap {
                 }
             }
         }
-        return Map(out, blocks)
+        return Map(out, blocks, tables)
     }
 
     /** A header or total value of the document: its number, the supplier's VAT number, the totals. */
@@ -254,9 +266,15 @@ object PageMap {
         if (parts.size > 1) return parts.map { p -> itemField1(it, w.copy(text = p)) }.takeIf { fs -> fs.all { f -> f != null } }?.first()
         if (raw.endsWith('%') && norm(raw) in descWords(it.originalDescription)) return "description"
         val t = raw.trimEnd('%')
-        // A storage letter glued to a number ("40,000C"): the number alone, only when the word as printed means nothing.
+        // A code the page explains (a storage letter, a row type) printed on the line.
+        val codes = it.marks.mapNotNull { m -> m.code }
+        if (raw.trim('.', ',', ':', '*') in codes) return "mark"
+        // A storage letter glued to a number ("40,000C", "24,000CN"): the number alone, only when the word as printed means nothing.
         if (t.length >= 4 && t.last().isLetter() && t[t.length - 2].isDigit() && (t.contains(',') || t.contains('.'))) {
             itemField(it, w.copy(text = t.dropLast(1)))?.let { f -> return f }
+        }
+        rx("^([0-9.,]{3,})([A-Z]{2,3})$").matchEntire(t)?.let { m ->
+            if (m.groupValues[2] in codes) itemField(it, w.copy(text = m.groupValues[1]))?.let { f -> return f }
         }
         val n = norm(t)
         val num = ItalianNumbers.parse(t.trim('€', ' '))
@@ -301,7 +319,7 @@ object PageMap {
     private fun cents(t: String): Long? = ItalianNumbers.parse(t.trim('€', ' '))?.takeIf { t.contains(',') || t.contains('.') }?.let { ItalianNumbers.toCents(it) }
 
     /** Folds the camera's look-alikes to one form: O/0, I/l/1, S/5, B/8, G/6, Z/2. */
-    private fun fold(s: String): String = s.lowercase().map { c ->
+    internal fun fold(s: String): String = s.lowercase().map { c ->
         when (c) { 'o' -> '0'; 'i', 'l' -> '1'; 's' -> '5'; 'b' -> '8'; 'g' -> '6'; 'z' -> '2'; else -> c }
     }.joinToString("")
 

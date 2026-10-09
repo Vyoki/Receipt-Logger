@@ -604,6 +604,10 @@ private fun ItemCard(
                     Text(stringResource(R.string.name_unknown, item.nameUnknown.joinToString(", ")), style = MaterialTheme.typography.bodySmall, color = status.uncertainBorder)
                 }
             }
+            // What the page's own codes say about the line ("Storage: F (fresco)"), read from its legend.
+            if (item.marks.isNotEmpty()) {
+                Text(marksLine(item.marks), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 ItemInput(item, errors, onChange, onConfirm, ItemField.QUANTITY, R.string.quantity, Modifier.weight(1f), FieldKind.DECIMAL)
                 ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT, R.string.unit, Modifier.weight(1f))
@@ -747,4 +751,11 @@ private fun ItemInput(
         highlightMissing = !optional,
         replacements = LocalReplacements.current[com.kitchenreceipts.core.Replacements.item(item.key, field.key)].orEmpty(),
     )
+}
+
+/** "Conservazione: F (fresco) · Gruppo: Merce non alimentare": the page's codes for a line, in the app's language. */
+@Composable
+internal fun marksLine(marks: List<com.kitchenreceipts.core.ItemMark>): String {
+    val kinds = mapOf("storage" to stringResource(R.string.mark_storage), "group" to stringResource(R.string.mark_group), "code" to stringResource(R.string.mark_code))
+    return marks.joinToString(" · ") { m -> (kinds[m.kind] ?: m.kind.replaceFirstChar { it.uppercase() }) + ": " + (m.code?.let { "$it (${m.meaning})" } ?: m.meaning) }
 }

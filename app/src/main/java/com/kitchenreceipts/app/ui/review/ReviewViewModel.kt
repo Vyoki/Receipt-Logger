@@ -10,6 +10,7 @@ import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.data.SellerLearning
 import com.kitchenreceipts.app.data.SellerRecognition
 import com.kitchenreceipts.app.ocr.PendingImport
+import com.kitchenreceipts.core.ItemMark
 import com.kitchenreceipts.core.AutoAccept
 import com.kitchenreceipts.core.Confidence
 import com.kitchenreceipts.core.PriceChange
@@ -196,6 +197,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                     packages = DraftField(it.packages ?: ""),
                     packSize = DraftField(it.packSize ?: ""),
                     discount = DraftField(it.discount ?: ""),
+                    marks = ItemMark.decode(it.marks),
                 )
             },
         )
