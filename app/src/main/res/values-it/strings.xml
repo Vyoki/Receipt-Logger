@@ -484,7 +484,13 @@
         <item quantity="one">Lettura di %d documento</item>
         <item quantity="other">Lettura di %d documenti</item>
     </plurals>
-    <string name="ai_checking">L\'IA ricontrolla %1$d di %2$d</string>
+    <string name="ai_topic_supplier">il riquadro del fornitore</string>
+    <string name="ai_topic_missed">una riga non letta</string>
+    <string name="ai_topic_line">riga %1$d</string>
+    <string name="ai_topic_totals">i totali</string>
+    <string name="ai_topic_header">numero e data</string>
+    <string name="ai_topic_check">ricontrollo</string>
+    <string name="ai_checking">Domanda all\'IA %1$d</string>
     <!-- notifiche prezzi -->
     <string name="notif_channel_prices">Variazioni di prezzo</string>
     <string name="notif_price_line">%1$s %2$s (%3$s → %4$s €/%5$s)</string>

@@ -3,6 +3,7 @@ package com.kitchenreceipts.app.ocr
 import com.kitchenreceipts.app.files.PageRenderer
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.ai.AiPageReader
+import com.kitchenreceipts.core.AiLoop
 import com.kitchenreceipts.core.AiReader
 import com.kitchenreceipts.core.AiTarget
 import com.kitchenreceipts.core.AiTargets
@@ -79,7 +80,26 @@ data class PendingImport(
 @Volatile var appVersion: String = "?"
 
 /** Progress of an import: which page of how many, and which reading (1 = photo, 2 = enhanced photo, 3 = AI whole page, 4 = AI checks). */
-data class ImportProgress(val page: Int, val of: Int, val pass: Int, val aiStage: Int = 0, val aiCount: Int = 0)
+data class ImportProgress(
+    val page: Int,
+    val of: Int,
+    val pass: Int,
+    val aiStage: Int = 0,
+    val aiCount: Int = 0,
+    /** What the AI is being asked about (pass 4): "supplier", "missed", "line:3", "totals", "header", "check". */
+    val aiTopic: String? = null,
+)
+
+/** What the AI is being asked about, in words for the operator. */
+fun aiTopicText(res: android.content.res.Resources, topic: String?): String? = when {
+    topic == null -> null
+    topic == "supplier" -> res.getString(com.kitchenreceipts.app.R.string.ai_topic_supplier)
+    topic == "missed" -> res.getString(com.kitchenreceipts.app.R.string.ai_topic_missed)
+    topic.startsWith("line:") -> res.getString(com.kitchenreceipts.app.R.string.ai_topic_line, topic.substringAfter(':').toIntOrNull() ?: 0)
+    topic == "totals" -> res.getString(com.kitchenreceipts.app.R.string.ai_topic_totals)
+    topic == "header" -> res.getString(com.kitchenreceipts.app.R.string.ai_topic_header)
+    else -> res.getString(com.kitchenreceipts.app.R.string.ai_topic_check)
+}
 
 /**
  * How the on-phone AI reader should be used for this import (null = not at all). [examples]: lines of the same
@@ -226,7 +246,6 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val aiRaw = mutableListOf<String>()
         val aiTargeted = mutableListOf<String>()
         var aiSpot = false
-        var targets: List<AiTarget>? = null
         if (ai != null && shared != null && best.error == null && best.lines.isNotEmpty()) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
             // totals and key lines of every document before the operator sees it. Whole pages only when the regular
@@ -247,13 +266,13 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 }
             }
             val planned = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed, spotCheck = true) }
-            targets = planned
+            // aiSpot marks the question loop (the answers are replayed through it after a restart).
             aiSpot = planned != null
             aiNote = when {
                 planned == null -> runAi(images, best, ai, shared, options, onProgress, aiRaw, parsed)
                 // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
                 planned.isEmpty() -> "nothing to ask"
-                else -> runTargets(images, best, shared, planned, onProgress, aiTargeted, ai.examples(parsed, best.text))
+                else -> runLoop(images, best, shared, parsed, options, onProgress, aiTargeted, ai.examples(parsed, best.text)).second
             }
             layoutNote?.let { aiNote = "$it; $aiNote" }
         }
@@ -263,8 +282,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
             "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else "") +
                 (if (best.textPages > 0) ", text of the PDF on ${best.textPages} of ${best.lines.size} page(s)" else ""),
             options, System.currentTimeMillis() - started, aiSpot, aiLayout,
-            // Worked out above from the same reading: not again.
-            preParsed = parsed, preTargets = targets,
+            // Worked out above from the same reading: not again (the AI's answers are replayed on it).
+            preParsed = parsed,
         )
     }
 
@@ -287,60 +306,74 @@ class ImportProcessor(private val renderer: PageRenderer) {
         return (if (r.error == null) r.raw else null) to "${q.headings.size} headings, ${r.millis / 100 / 10.0}s answer='${r.raw.take(40)}'" + (r.error?.let { " error=$it" } ?: "")
     }
 
-    /** Asks the AI the small questions of [targets], collecting its answers in [answers]; returns a note for the log. */
-    private suspend fun runTargets(
+    /** The instruction and answer grammar of one question. */
+    private fun question(t: AiTarget, examples: List<AiReader.RowExample>): Pair<String, String> = when (t) {
+        is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText, examples = examples) to AiReader.ROW_GRAMMAR
+        is AiTarget.Choice -> AiReader.choiceInstruction(t.headerText, t.rowText, t.choices) to AiReader.CHOICE_GRAMMAR
+        is AiTarget.Number -> AiReader.numberInstruction(t.column, t.headerText, t.rowText) to AiReader.NUMBER_GRAMMAR
+        is AiTarget.Header -> AiReader.headerInstruction() to AiReader.HEADER_GRAMMAR
+        is AiTarget.Totals -> AiReader.totalsInstruction() to AiReader.TOTALS_GRAMMAR
+        is AiTarget.Supplier -> AiReader.supplierInstruction(t.boxText) to AiReader.SUPPLIER_GRAMMAR
+    }
+
+    private fun label(t: AiTarget): String = when (t) {
+        is AiTarget.Row -> t.itemIndex?.let { "line${it + 1}" } ?: "missed"
+        is AiTarget.Choice -> "choice${t.itemIndex + 1}"
+        is AiTarget.Number -> (if (t.verify) "check-" else "") + (if (t.field == AiTarget.Field.AMOUNT) "amount" else "qty") + "${t.itemIndex + 1}"
+        is AiTarget.Header -> if (t.verify) "check-header" else "header"
+        is AiTarget.Totals -> if (t.verify) "check-totals" else "totals"
+        is AiTarget.Supplier -> "supplier"
+    }
+
+    /**
+     * Asks the AI one question at a time (see core AiLoop): each chosen from the document as the previous answer left
+     * it, until nothing is left to prove, [AiLoop.MAX_QUESTIONS], or [AI_TIME_LIMIT_MS]. The answers, in order, go to
+     * [answers]; returns the document as the answers left it and a note for the log.
+     */
+    private suspend fun runLoop(
         images: PageImages,
         best: Reading,
         shared: SharedReader,
-        targets: List<AiTarget>,
+        start: ParsedDocument,
+        options: ParseOptions,
         onProgress: (ImportProgress) -> Unit,
         answers: MutableList<String>,
         examples: List<AiReader.RowExample> = emptyList(),
-    ): String {
-        onProgress(ImportProgress(1, targets.size, 4))
-        val reader = shared.get().getOrElse { return "not started: ${it.message}" }
-        val notes = mutableListOf("checks ${targets.size} (" + targets.joinToString(",") { t ->
-            when (t) {
-                is AiTarget.Row -> t.itemIndex?.let { "line${it + 1}" } ?: "missed"
-                is AiTarget.Choice -> "choice${t.itemIndex + 1}"
-                is AiTarget.Number -> (if (t.verify) "check-" else "") + (if (t.field == AiTarget.Field.AMOUNT) "amount" else "qty") + "${t.itemIndex + 1}"
-                is AiTarget.Header -> if (t.verify) "check-header" else "header"
-                is AiTarget.Totals -> if (t.verify) "check-totals" else "totals"
-                is AiTarget.Supplier -> "supplier"
-            }
-        } + ") lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
+    ): Pair<ParsedDocument, String> {
+        val loop = AiLoop(best.lines, best.text, options, start)
+        val reader = shared.get().getOrElse { return start to "not started: ${it.message}" }
         val started = System.currentTimeMillis()
-        // Each question is independent (a fresh context every time), so they are asked page by page: only one page
-        // image is in memory, however long the document. Answers are kept in the planned order.
-        val got = arrayOfNulls<String>(targets.size)
-        val byNote = arrayOfNulls<String>(targets.size)
-        var done = 0
-        run {
-            for ((i, t) in targets.withIndex().sortedBy { it.value.page }) {
-                done++
-                onProgress(ImportProgress(done, targets.size, 4))
-                val bmp = images.get(t.page)
-                val (instruction, grammar) = when (t) {
-                    is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText, examples = examples) to AiReader.ROW_GRAMMAR
-                    is AiTarget.Choice -> AiReader.choiceInstruction(t.headerText, t.rowText, t.choices) to AiReader.CHOICE_GRAMMAR
-                    is AiTarget.Number -> AiReader.numberInstruction(t.column, t.headerText, t.rowText) to AiReader.NUMBER_GRAMMAR
-                    is AiTarget.Header -> AiReader.headerInstruction() to AiReader.HEADER_GRAMMAR
-                    is AiTarget.Totals -> AiReader.totalsInstruction() to AiReader.TOTALS_GRAMMAR
-                    is AiTarget.Supplier -> AiReader.supplierInstruction(t.boxText) to AiReader.SUPPLIER_GRAMMAR
-                }
-                val step = done
-                val r = reader.readRegions(bmp, best.lines[t.page], best.widths.getOrElse(t.page) { bmp.width }, t.boxes, instruction, grammar) { stage, count ->
-                    onProgress(ImportProgress(step, targets.size, 4, stage, count))
-                }
-                if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
-                got[i] = if (r.error == null) r.raw else ""
-                byNote[i] = "c${i + 1}: ${r.millis / 100 / 10.0}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "")
+        val notes = mutableListOf("loop lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
+        var stopped = "nothing left to prove"
+        while (true) {
+            if (System.currentTimeMillis() - started > AI_TIME_LIMIT_MS) { stopped = "time limit"; break }
+            val t = withContext(Dispatchers.Default) { loop.next() } ?: run {
+                if (loop.answers.size >= loop.maxQuestions) stopped = "question limit"
+                null
+            } ?: break
+            val step = loop.answers.size + 1
+            val topic = when (t) {
+                is AiTarget.Supplier -> "supplier"
+                is AiTarget.Row -> t.itemIndex?.let { "line:${it + 1}" } ?: "missed"
+                is AiTarget.Choice -> "line:${t.itemIndex + 1}"
+                is AiTarget.Number -> if (t.verify) "check" else "line:${t.itemIndex + 1}"
+                is AiTarget.Totals -> if (t.verify) "check" else "totals"
+                is AiTarget.Header -> if (t.verify) "check" else "header"
             }
+            onProgress(ImportProgress(step, loop.maxQuestions, 4, aiTopic = topic))
+            val bmp = images.get(t.page)
+            val (instruction, grammar) = question(t, examples)
+            val r = reader.readRegions(bmp, best.lines[t.page], best.widths.getOrElse(t.page) { bmp.width }, t.boxes, instruction, grammar) { stage, count ->
+                onProgress(ImportProgress(step, loop.maxQuestions, 4, stage, count, topic))
+            }
+            if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
+            val raw = if (r.error == null) r.raw else ""
+            withContext(Dispatchers.Default) { loop.answer(t, raw) }
+            notes += "q$step ${label(t)}: ${r.millis / 100 / 10.0}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "")
         }
-        got.forEach { answers += it ?: "" }
-        byNote.forEach { n -> n?.let { notes += it } }
-        notes += "total ${(System.currentTimeMillis() - started) / 1000}s"
-        return notes.joinToString("; ")
+        answers += loop.answers
+        notes += "${loop.answers.size} questions, $stopped, total ${(System.currentTimeMillis() - started) / 1000}s"
+        return loop.doc to notes.joinToString("; ")
     }
 
     /**
@@ -458,13 +491,12 @@ class ImportProcessor(private val renderer: PageRenderer) {
             readingNote: String,
             options: ParseOptions,
             ocrMillis: Long,
-            /** The AI's questions included the double-check (so they are planned the same way again). */
+            /** The AI's answers come from the question loop (see AiLoop): they are replayed through it. */
             aiSpot: Boolean = false,
             /** The AI's answer about the column headings, when it was used (see [withAiLayout]). */
             aiLayout: String? = null,
-            /** The reading (with the AI's headings) and the questions, when just worked out from the same lines. */
+            /** The reading (with the AI's headings), when just worked out from the same lines. */
             preParsed: ParsedDocument? = null,
-            preTargets: List<AiTarget>? = null,
         ): PendingImport = withContext(Dispatchers.Default) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
@@ -474,11 +506,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 p
             }
             if (aiTargeted.isNotEmpty()) {
-                // The questions are worked out again from the same reading, so they pair up with the stored answers.
-                val targets = preTargets ?: AiTargets.plan(lines, parsed, spotCheck = aiSpot)
-                if (targets != null && targets.size == aiTargeted.size) {
-                    parsed = AiReader.applyTargets(parsed, targets.zip(aiTargeted).filter { it.second.isNotBlank() }, text, options)
-                }
+                // The questions are chosen again the same way from the same reading, so they pair up with the stored answers.
+                parsed = AiLoop.replay(lines, text, options, parsed, aiTargeted)
             }
             if (aiRaw.size == lines.size && aiRaw.any { it.isNotBlank() }) {
                 val aiPages = aiRaw.mapIndexed { i, raw ->
@@ -516,6 +545,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
         }
 
         const val MAX_OCR_PAGES = 20
+        /** The AI's questions stop after this long on one document, on any phone (a slow one asks fewer). */
+        const val AI_TIME_LIMIT_MS = 150_000L
         const val OCR_LONG_SIDE = 2400
     }
 }

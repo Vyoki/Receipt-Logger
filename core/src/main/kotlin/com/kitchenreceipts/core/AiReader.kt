@@ -420,11 +420,25 @@ object AiReader {
                     // (the amount for the quantity, "3,90" for 5) and the line, which adds up as read, stays as it is.
                     val price = old.unitPrice?.value
                     val fits = when (target.field) {
-                        AiTarget.Field.QUANTITY -> price != null && old.lineTotalCents != null && ReceiptParser.matches(read, price, old.lineTotalCents.value)
-                        AiTarget.Field.AMOUNT -> price != null && old.quantity != null && ReceiptParser.matches(old.quantity.value, price, ItalianNumbers.toCents(read))
+                        AiTarget.Field.QUANTITY -> price != null && old.lineTotalCents != null && LineDiscount.matches(read, price, old.discount?.value, old.lineTotalCents.value)
+                        AiTarget.Field.AMOUNT -> price != null && old.quantity != null && LineDiscount.matches(old.quantity.value, price, old.discount?.value, ItalianNumbers.toCents(read))
                     }
                     if (!agrees && !fits) continue
                     val line = "line ${idx + 1}"
+                    // A line that did not add up, asked one number at a time: the AI's number that makes it add up is
+                    // two sources agreeing (its reading and the arithmetic), and is taken.
+                    val wasProven = old.quantity != null && price != null && old.lineTotalCents != null &&
+                        LineDiscount.matches(old.quantity.value, price, old.discount?.value, old.lineTotalCents.value)
+                    if (!target.verify && !agrees && fits && !wasProven) {
+                        checked++
+                        items[idx] = when (target.field) {
+                            AiTarget.Field.QUANTITY -> old.copy(quantity = Extracted(read, Confidence.HIGH, "${target.rowText} (AI read $answer)"),
+                                warnings = old.warnings - ParseWarning.LINE_TOTAL_MISMATCH)
+                            AiTarget.Field.AMOUNT -> old.copy(lineTotalCents = Extracted(ItalianNumbers.toCents(read), Confidence.HIGH, "${target.rowText} (AI read $answer)"),
+                                warnings = old.warnings - ParseWarning.LINE_TOTAL_MISMATCH)
+                        }
+                        continue
+                    }
                     items[idx] = when (target.field) {
                         // The AI read the same number the arithmetic gives: two independent sources agree, the line is proven.
                         AiTarget.Field.QUANTITY -> old.quantity?.let { q ->
@@ -534,7 +548,7 @@ object AiReader {
         }
         val aiCheck = if (checked > 0 || headerRead.isNotEmpty()) AiCheck(checked, disagreements, headerRead) else d.aiCheck
         return ReceiptParser.finish(
-            d.copy(lineItems = out, itemsReadBy = if (answers.isEmpty()) d.itemsReadBy else d.itemsReadBy + "+ai", aiCheck = aiCheck), text,
+            d.copy(lineItems = out, itemsReadBy = if (answers.isEmpty() || d.itemsReadBy.endsWith("+ai")) d.itemsReadBy else d.itemsReadBy + "+ai", aiCheck = aiCheck), text,
         )
     }
 
