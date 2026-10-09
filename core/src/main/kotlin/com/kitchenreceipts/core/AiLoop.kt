@@ -28,26 +28,52 @@ class AiLoop(
     /** The answers given so far, in the order asked. */
     val answers = mutableListOf<String>()
 
+    /** Which of [candidates] was asked each time (0 = the planner's first), for [replay]. */
+    val picks = mutableListOf<Int>()
+
     private val asked = mutableSetOf<String>()
     private val rowsRead = linkedMapOf<String, AiTarget.Row>()
+    /** The AI's whole-line answer for a row, to tell it why a follow-up is asked (see [previous]). */
+    private val rowAnswers = mutableMapOf<String, String>()
 
-    /** The next question, or null when there is nothing more to ask. */
-    fun next(): AiTarget? {
-        if (answers.size >= maxQuestions) return null
+    /** What is still open, the planner's choice first (what settles most). Empty: nothing more to ask. */
+    fun candidates(): List<AiTarget> {
+        if (answers.size >= maxQuestions) return emptyList()
         val planned = AiTargets.plan(lines, doc, spotCheck = true).orEmpty()
-        val open = (planned + followUps(planned)).filter { key(it) !in asked }
-        return open.withIndex().minWithOrNull(compareBy({ priority(it.value) }, { it.index }))?.value
+        val open = (planned + followUps(planned)).filter { key(it) !in asked }.distinctBy { key(it) }
+        return open.withIndex().sortedWith(compareBy({ priority(it.value) }, { it.index })).map { it.value }
     }
 
+    /** The next question, or null when there is nothing more to ask. */
+    fun next(): AiTarget? = candidates().firstOrNull()
+
+    /** For a follow-up on a line the AI read whole: its earlier answer for that line (the reason it is asked again). */
+    fun previous(target: AiTarget): String? = (target as? AiTarget.Number)?.takeIf { !it.verify }?.let { rowAnswers[it.rowText] }
+
     /** Applies the AI's [raw] answer to [target] ("" when the AI gave none: the question still counts as asked). */
-    fun answer(target: AiTarget, raw: String) {
+    fun answer(target: AiTarget, raw: String, pick: Int = 0) {
         asked += key(target)
         answers += raw
-        if (target is AiTarget.Row) rowsRead[target.rowText] = target
+        picks += pick
+        if (target is AiTarget.Row) { rowsRead[target.rowText] = target; rowAnswers[target.rowText] = raw }
         if (raw.isBlank()) return
         val before = doc.aiCheck
         val after = AiReader.applyTargets(doc, listOf(target to raw), text, options)
         doc = after.copy(aiCheck = merge(before, after.aiCheck))
+    }
+
+    /** The same loop at the same point, to try a question without changing this one (to learn which pays most). */
+    fun copy(): AiLoop = AiLoop(lines, text, options, doc, maxQuestions).also { c ->
+        c.answers += answers; c.picks += picks; c.asked += asked; c.rowsRead += rowsRead; c.rowAnswers += rowAnswers
+    }
+
+    /** How much is still not proven: open questions, lines that do not add up, unsure header and totals. */
+    fun doubt(): Int {
+        val d = doc
+        val lines = d.lineItems.count { !it.adjustment && !proven(it) }
+        val head = listOf(d.sellerName, d.documentNumber, d.documentDate).count { it == null || it.confidence == Confidence.LOW }
+        val tot = listOf(d.subtotalCents, d.vatCents, d.totalCents).count { it == null || it.confidence == Confidence.LOW }
+        return 3 * lines + head + tot
     }
 
     /**
@@ -74,12 +100,20 @@ class AiLoop(
         /** Enough for a messy document; a clean one needs none or a couple. The caller also stops on its time limit. */
         const val MAX_QUESTIONS = 12
 
-        /** The document after the same questions with the same answers (the questions are chosen the same way). */
-        fun replay(lines: List<List<OcrLine>>, text: String, options: ParseOptions, start: ParsedDocument, answers: List<String>): ParsedDocument {
+        /**
+         * The document after the same questions with the same answers: the questions are listed the same way, and
+         * [picks] says which one was asked each time (the AI may choose another than the planner's first).
+         */
+        fun replay(
+            lines: List<List<OcrLine>>, text: String, options: ParseOptions, start: ParsedDocument, answers: List<String>,
+            picks: List<Int> = emptyList(),
+        ): ParsedDocument {
             val loop = AiLoop(lines, text, options, start, maxQuestions = answers.size)
-            for (raw in answers) {
-                val t = loop.next() ?: break
-                loop.answer(t, raw)
+            for ((i, raw) in answers.withIndex()) {
+                val c = loop.candidates()
+                val pick = picks.getOrElse(i) { 0 }.coerceIn(0, maxOf(0, c.size - 1))
+                val t = c.getOrNull(pick) ?: break
+                loop.answer(t, raw, pick)
             }
             return loop.doc
         }

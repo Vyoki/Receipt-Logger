@@ -583,6 +583,10 @@ Tests: `DeliveryNotesTest`, `ChecksTest` (core), `ChecksRepositoryTest` and `Mig
 
 Core: `FoodCost.kt`, `Reorder.kt` (`FoodCostTest`). Schema v9 adds `recipes`, `recipe_items`, `revenue`.
 
+## 7l. Training the document reader
+
+`tools/training/` trains the on-phone model (Qwen3-VL 2B) on exactly the questions the app asks, in Italian and English, from invented documents only: `gen_docs.py` invents supplier documents as phone photos (with what the OCR would read and the truth), `export.sh` runs the app's own reading, question loop and prompts on them answering from the truth (including follow-ups that correct a wrong whole-line answer, and the agent's choice of what to ask next), `build_dataset.py` cuts each question's picture as the phone does, and `train_colab.ipynb` trains on a free Colab GPU, compares with today's model on documents it never saw, converts for the phone and uploads to Hugging Face only when clearly better. A model whose file name contains `kitchen` is asked with short prompts (core `AiTasks.Style.COMPACT`, several times faster to read) and chooses which open question comes next (`AiTasks.decide`); the arithmetic still decides every value. See `tools/training/README.md`.
+
 ## 8. MVP assumptions and limits
 
 - Main target: Italian supplier documents in EUR. Other currencies can be typed as a 3-letter code, but no conversion is done.

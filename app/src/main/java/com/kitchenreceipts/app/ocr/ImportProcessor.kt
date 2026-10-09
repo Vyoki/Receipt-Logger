@@ -45,6 +45,8 @@ data class PendingImport(
     val aiSpot: Boolean = false,
     /** The AI's answer about column headings the app did not know (encoded SupplierLayout), if it was used. */
     val aiLayout: String? = null,
+    /** Which open question was asked each time (0 = the app's first; the trained model may choose another): see AiLoop. */
+    val aiPicks: List<Int> = emptyList(),
 ) {
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
@@ -109,6 +111,10 @@ class AiUse(
     val reader: suspend () -> AiPageReader,
     val always: Boolean,
     val examples: (ParsedDocument, String) -> List<AiReader.RowExample> = { _, _ -> emptyList() },
+    /** How the model is asked: the long instructions, or the short ones the trained model knows (faster). */
+    val style: com.kitchenreceipts.core.AiTasks.Style = com.kitchenreceipts.core.AiTasks.Style.FULL,
+    /** The model chooses which open question comes next (the trained model); otherwise the app's order. */
+    val agent: Boolean = false,
 )
 
 class ImportProcessor(private val renderer: PageRenderer) {
@@ -245,6 +251,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         var aiNote: String? = null
         val aiRaw = mutableListOf<String>()
         val aiTargeted = mutableListOf<String>()
+        val aiPicks = mutableListOf<Int>()
         var aiSpot = false
         if (ai != null && shared != null && best.error == null && best.lines.isNotEmpty()) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
@@ -255,7 +262,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             if (!ai.always) {
                 val q = withContext(Dispatchers.Default) { AiTargets.layoutQuestion(best.lines, parsed) }
                 if (q != null) {
-                    val (raw, note) = askLayout(images, best, shared, q, onProgress)
+                    val (raw, note) = askLayout(images, best, shared, q, onProgress, ai.style)
                     val answer = raw?.let { AiReader.decodeLayout(it, q) }
                     val better = answer?.let { a -> withContext(Dispatchers.Default) { withAiLayout(best.lines, options, parsed, a) } }
                     if (better != null && answer != null) {
@@ -272,7 +279,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 planned == null -> runAi(images, best, ai, shared, options, onProgress, aiRaw, parsed)
                 // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
                 planned.isEmpty() -> "nothing to ask"
-                else -> runLoop(images, best, shared, parsed, options, onProgress, aiTargeted, ai.examples(parsed, best.text)).second
+                else -> runLoop(images, best, shared, parsed, options, onProgress, aiTargeted, aiPicks, ai, ai.examples(parsed, best.text)).second
             }
             layoutNote?.let { aiNote = "$it; $aiNote" }
         }
@@ -283,7 +290,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 (if (best.textPages > 0) ", text of the PDF on ${best.textPages} of ${best.lines.size} page(s)" else ""),
             options, System.currentTimeMillis() - started, aiSpot, aiLayout,
             // Worked out above from the same reading: not again (the AI's answers are replayed on it).
-            preParsed = parsed,
+            preParsed = parsed, aiPicks = aiPicks,
         )
     }
 
@@ -294,26 +301,18 @@ class ImportProcessor(private val renderer: PageRenderer) {
         shared: SharedReader,
         q: LayoutQuestion,
         onProgress: (ImportProgress) -> Unit,
+        style: com.kitchenreceipts.core.AiTasks.Style = com.kitchenreceipts.core.AiTasks.Style.FULL,
     ): Pair<String?, String> {
         onProgress(ImportProgress(1, 1, 4))
         val reader = shared.get().getOrElse { return null to "not started: ${it.message}" }
         val bmp = images.get(q.page)
-        val r = reader.readRegions(
-            bmp, best.lines[q.page], best.widths.getOrElse(q.page) { bmp.width }, q.boxes,
-            AiReader.layoutInstruction(q.headings), AiReader.layoutGrammar(q.headings.size),
-        ) { stage, count -> onProgress(ImportProgress(1, 1, 4, stage, count)) }
+        val (instruction, grammar) = if (style == com.kitchenreceipts.core.AiTasks.Style.COMPACT) com.kitchenreceipts.core.AiTasks.layout(q.headings)
+            else AiReader.layoutInstruction(q.headings) to AiReader.layoutGrammar(q.headings.size)
+        val r = reader.readRegions(bmp, best.lines[q.page], best.widths.getOrElse(q.page) { bmp.width }, q.boxes, instruction, grammar) { stage, count ->
+            onProgress(ImportProgress(1, 1, 4, stage, count))
+        }
         if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
         return (if (r.error == null) r.raw else null) to "${q.headings.size} headings, ${r.millis / 100 / 10.0}s answer='${r.raw.take(40)}'" + (r.error?.let { " error=$it" } ?: "")
-    }
-
-    /** The instruction and answer grammar of one question. */
-    private fun question(t: AiTarget, examples: List<AiReader.RowExample>): Pair<String, String> = when (t) {
-        is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText, examples = examples) to AiReader.ROW_GRAMMAR
-        is AiTarget.Choice -> AiReader.choiceInstruction(t.headerText, t.rowText, t.choices) to AiReader.CHOICE_GRAMMAR
-        is AiTarget.Number -> AiReader.numberInstruction(t.column, t.headerText, t.rowText) to AiReader.NUMBER_GRAMMAR
-        is AiTarget.Header -> AiReader.headerInstruction() to AiReader.HEADER_GRAMMAR
-        is AiTarget.Totals -> AiReader.totalsInstruction() to AiReader.TOTALS_GRAMMAR
-        is AiTarget.Supplier -> AiReader.supplierInstruction(t.boxText) to AiReader.SUPPLIER_GRAMMAR
     }
 
     private fun label(t: AiTarget): String = when (t) {
@@ -338,19 +337,35 @@ class ImportProcessor(private val renderer: PageRenderer) {
         options: ParseOptions,
         onProgress: (ImportProgress) -> Unit,
         answers: MutableList<String>,
+        picks: MutableList<Int>,
+        ai: AiUse,
         examples: List<AiReader.RowExample> = emptyList(),
     ): Pair<ParsedDocument, String> {
         val loop = AiLoop(best.lines, best.text, options, start)
         val reader = shared.get().getOrElse { return start to "not started: ${it.message}" }
+        // The agent's choice has no picture to look at: the smallest blank image keeps it fast.
+        val blank = android.graphics.Bitmap.createBitmap(28, 28, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.WHITE) }
         val started = System.currentTimeMillis()
-        val notes = mutableListOf("loop lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
+        val notes = mutableListOf("loop ${ai.style.name.lowercase()}${if (ai.agent) " agent" else ""} lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
         var stopped = "nothing left to prove"
         while (true) {
             if (System.currentTimeMillis() - started > AI_TIME_LIMIT_MS) { stopped = "time limit"; break }
-            val t = withContext(Dispatchers.Default) { loop.next() } ?: run {
+            val open = withContext(Dispatchers.Default) { loop.candidates() }
+            if (open.isEmpty()) {
                 if (loop.answers.size >= loop.maxQuestions) stopped = "question limit"
-                null
-            } ?: break
+                break
+            }
+            // The trained model chooses what to look at next from a short summary (no picture: under a second);
+            // its choice is only an order, the arithmetic still decides every value.
+            var pick = 0
+            if (ai.agent && com.kitchenreceipts.core.AiTasks.worthDeciding(open)) {
+                val (instruction, grammar) = com.kitchenreceipts.core.AiTasks.decide(loop.doc, open)
+                val d = reader.readRegions(blank, emptyList(), blank.width, listOf(com.kitchenreceipts.core.PageBox(0, 0, blank.width, blank.height)), instruction, grammar) { _, _ -> }
+                if (d.error == "cancelled") throw CancellationException("AI reading cancelled")
+                pick = (if (d.error == null) com.kitchenreceipts.core.AiTasks.decodeDecide(d.raw, open) else null) ?: 0
+                notes += "decide: ${"ABCDEF".getOrNull(pick)} of ${minOf(open.size, com.kitchenreceipts.core.AiTasks.MAX_OPTIONS)} ${d.millis / 100 / 10.0}s"
+            }
+            val t = open[pick]
             val step = loop.answers.size + 1
             val topic = when (t) {
                 is AiTarget.Supplier -> "supplier"
@@ -362,16 +377,18 @@ class ImportProcessor(private val renderer: PageRenderer) {
             }
             onProgress(ImportProgress(step, loop.maxQuestions, 4, aiTopic = topic))
             val bmp = images.get(t.page)
-            val (instruction, grammar) = question(t, examples)
+            val (instruction, grammar) = com.kitchenreceipts.core.AiTasks.question(t, ai.style, examples = examples, previous = loop.previous(t))
             val r = reader.readRegions(bmp, best.lines[t.page], best.widths.getOrElse(t.page) { bmp.width }, t.boxes, instruction, grammar) { stage, count ->
                 onProgress(ImportProgress(step, loop.maxQuestions, 4, stage, count, topic))
             }
             if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
             val raw = if (r.error == null) r.raw else ""
-            withContext(Dispatchers.Default) { loop.answer(t, raw) }
+            withContext(Dispatchers.Default) { loop.answer(t, raw, pick) }
             notes += "q$step ${label(t)}: ${r.millis / 100 / 10.0}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "")
         }
         answers += loop.answers
+        picks += loop.picks
+        blank.recycle()
         notes += "${loop.answers.size} questions, $stopped, total ${(System.currentTimeMillis() - started) / 1000}s"
         return loop.doc to notes.joinToString("; ")
     }
@@ -497,6 +514,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
             aiLayout: String? = null,
             /** The reading (with the AI's headings), when just worked out from the same lines. */
             preParsed: ParsedDocument? = null,
+            /** Which open question was asked each time (see AiLoop.replay). */
+            aiPicks: List<Int> = emptyList(),
         ): PendingImport = withContext(Dispatchers.Default) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
@@ -507,7 +526,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             }
             if (aiTargeted.isNotEmpty()) {
                 // The questions are chosen again the same way from the same reading, so they pair up with the stored answers.
-                parsed = AiLoop.replay(lines, text, options, parsed, aiTargeted)
+                parsed = AiLoop.replay(lines, text, options, parsed, aiTargeted, aiPicks)
             }
             if (aiRaw.size == lines.size && aiRaw.any { it.isNotBlank() }) {
                 val aiPages = aiRaw.mapIndexed { i, raw ->
@@ -531,6 +550,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 ocrWidths = widths,
                 aiSpot = aiSpot,
                 aiLayout = aiLayout,
+                aiPicks = aiPicks,
             )
         }
 
