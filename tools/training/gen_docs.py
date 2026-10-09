@@ -170,6 +170,15 @@ ROW_TYPES = {
                                                                     "Tipo riga: O=offerta S=sconto C=cambio prezzo"]),
     "en": ({"P": "promotion", "D": "discount"}, ["LINE TYPE: P - PROMOTION | D - DISCOUNT"]),
 }
+# A page that goes on, and the next page that carries on from it.
+CARRIED = {"it": {"to": ["SEGUE", "SEGUE >>>", "CONTINUA", "SEGUE A PAGINA SUCCESSIVA", "*** SEGUE ***"], "from": ["RIPORTO", "SEGUE DA PAGINA PRECEDENTE", "CONTINUAZIONE"]},
+           "en": {"to": ["CONTINUED", "CONTINUED OVERLEAF", "--> NEXT PAGE"], "from": ["CONTINUED FROM PREVIOUS PAGE", "BROUGHT FORWARD"]}}
+CONDITIONS = {"it": ["Condizioni generali di vendita", "1) La merce viaggia a rischio e pericolo del committente.",
+                     "2) Eventuali reclami devono pervenire entro 8 giorni dal ricevimento.", "3) Non si accettano resi senza autorizzazione.",
+                     "4) Per ogni controversia e' competente il foro del venditore.", "Informativa sul trattamento dei dati personali (Reg. UE 2016/679).",
+                     "Interessi di mora nella misura prevista dal D.Lgs. 231/2002."],
+              "en": ["General terms of sale", "1) Goods travel at the buyer's risk.", "2) Claims within 8 days of delivery.",
+                     "3) No returns without authorisation.", "Personal data are processed under Regulation (EU) 2016/679."]}
 PACK_TYPES = ["CS", "NC", "BT", "CF", "PT", "SK", "VA", "CT", "FL", "PC", "SQ", "VS"]
 GROUPS = {"it": {"surgelati": "Merce non deperibile - Congelato", "carni": "Merce deperibile - Fresco", "latticini": "Merce deperibile - Fresco",
                  "ortofrutta": "Merce deperibile - Fresco", "pulizia": "Merce non alimentare", "monouso": "Merce non alimentare", "_": "Merce non deperibile - Fresco"},
@@ -275,6 +284,7 @@ class Cell:
     hand: bool = False
     tag: str = ""        # what it is: "heading:qty", "item:3:amount", "field:total", ...
     align: str = "left"  # left/right: x is the left or the right edge
+    page: int = 0
 
 
 @dataclass
@@ -284,9 +294,10 @@ class Doc:
     width: int
     height: int
     cells: list = field(default_factory=list)
-    rules: list = field(default_factory=list)   # (x1, y1, x2, y2) table lines
-    shapes: list = field(default_factory=list)  # ("rect" | "ellipse", x1, y1, x2, y2, width): logos and marks
+    rules: list = field(default_factory=list)   # (page, x1, y1, x2, y2) table lines
+    shapes: list = field(default_factory=list)  # (page, "rect" | "ellipse", x1, y1, x2, y2, width): logos and marks
     truth: dict = field(default_factory=dict)
+    page: int = 0                               # the page being written
 
 
 # ---------------------------------------------------------------------------------------------- the document
@@ -321,7 +332,8 @@ def make_doc(r, args):
     size = r.randint(22, 28)
 
     def put(text, x, y, sz=None, bold=False, tag="", align="left", handwritten=False):
-        doc.cells.append(Cell(text, x, y, sz or size, hand_font if handwritten else font, bold, handwritten, tag, align))
+        doc.cells.append(Cell(text, x, y, sz or size, hand_font if handwritten else font, bold, handwritten, tag, align, doc.page))
+        return doc.cells[-1]
 
     margin = r.randint(70, 130)
     y = r.randint(70, 140)
@@ -367,13 +379,13 @@ def make_doc(r, args):
             bs = int(big * 1.6)
             for k_, ch in enumerate(logo):
                 bx = margin + k_ * (bs + 6)
-                doc.shapes.append(("rect", bx, y, bx + bs, y + bs, 4))
+                doc.shapes.append((doc.page, "rect", bx, y, bx + bs, y + bs, 4))
                 put(ch, bx + bs * 0.22, y + bs * 0.12, sz=int(bs * 0.8), bold=True, tag="logo")
             y += bs + size * 0.6
         elif style_logo == "oval":
             logo = words_[0] if words_ else seller.split()[0]
             lw = int(len(logo) * big * 0.9)
-            doc.shapes.append(("ellipse", margin - 20, y - 10, margin + lw + 30, y + big * 2.2, 5))
+            doc.shapes.append((doc.page, "ellipse", margin - 20, y - 10, margin + lw + 30, y + big * 2.2, 5))
             put(logo, margin + 8, y + big * 0.35, sz=int(big * 1.3), bold=True, tag="logo")
             y += big * 2.6
         else:
@@ -410,7 +422,7 @@ def make_doc(r, args):
         approval_mark = f"IT {code} CE"
         if r.random() < 0.5:
             ox, oy = int(width * 0.78), 60
-            doc.shapes.append(("ellipse", ox, oy, ox + 170, oy + 120, 4))
+            doc.shapes.append((doc.page, "ellipse", ox, oy, ox + 170, oy + 120, 4))
             put("IT", ox + 70, oy + 12, sz=24, bold=True, tag="approval")
             put(code, ox + 35, oy + 44, sz=26, bold=True, tag="approval")
             put("CE", ox + 68, oy + 80, sz=24, bold=True, tag="approval")
@@ -469,7 +481,10 @@ def make_doc(r, args):
     if not show_prices:
         cols = [c for c in cols if c not in ("price", "disc", "amount", "vat")]
     # The lines first, so each column is as wide as what it holds (as an invoicing program lays it out).
-    n = r.randint(2, 6) if hand else r.randint(2, 14)
+    # Some documents run over several pages (the items continue on the next, the totals on the last page with items or
+    # alone on a page of their own, sometimes followed by a page of conditions): each page is photographed on its own.
+    multi = kind in ("invoice", "ddt", "printout") and r.random() < 0.18
+    n = r.randint(2, 6) if hand else (r.randint(18, 34) if multi else r.randint(2, 14))
     items = []
     unit_words = UNITS[lang]
     price_dec = r.choice([2, 2, 3, 4])
@@ -564,34 +579,75 @@ def make_doc(r, args):
         x += need[c]
     numeric = {"qty", "price", "disc", "amount", "vat", "colli"}
     right_aligned = {c: c in numeric and r.random() < 0.85 for c in cols}
-    head_y = y
-    for c in cols:
-        h = heading_texts[c]
-        x0, x1 = xs[c]
-        def hx(t):
-            return (x1 - 8, "right") if right_aligned[c] and r.random() < 0.5 else (x0 + 6, "left")
-        if two_row and " " in h:
-            a, b = h.split(" ", 1)
-            px, al = hx(a)
-            put(a, px, y, sz=hsize, bold=True, tag=f"heading:{c}", align=al)
-            put(b, px, y + size, sz=hsize, bold=True, tag=f"heading:{c}", align=al)
-        else:
-            px, al = hx(h)
-            put(h, px, y + (size * 0.5 if two_row else 0), sz=hsize, bold=True, tag=f"heading:{c}", align=al)
-    if lot_heading:
-        # The heading's second row, small, under the description heading: "ID LOTTO   QTA.LOT."
-        put(r.choice(["ID LOTTO", "LOTTO", "N. LOTTO", "LOTTO / SCAD."] if lang == "it" else ["LOT", "BATCH NO."]),
-            xs["desc"][0] + 6, y + size * (2.6 if two_row else 1.8) - size * 0.9, sz=int(hsize * 0.85), tag="heading:lot")
-        y += size * 0.9
-    y += size * (2.6 if two_row else 1.8)
+    def draw_headings(y):
+        head_y = y
+        for c in cols:
+            h = heading_texts[c]
+            x0, x1 = xs[c]
+            def hx(t):
+                return (x1 - 8, "right") if right_aligned[c] and r.random() < 0.5 else (x0 + 6, "left")
+            if two_row and " " in h:
+                a, b = h.split(" ", 1)
+                px, al = hx(a)
+                put(a, px, y, sz=hsize, bold=True, tag=f"heading:{c}", align=al)
+                put(b, px, y + size, sz=hsize, bold=True, tag=f"heading:{c}", align=al)
+            else:
+                px, al = hx(h)
+                put(h, px, y + (size * 0.5 if two_row else 0), sz=hsize, bold=True, tag=f"heading:{c}", align=al)
+        if lot_heading:
+            # The heading's second row, small, under the description heading: "ID LOTTO   QTA.LOT."
+            put(r.choice(["ID LOTTO", "LOTTO", "N. LOTTO", "LOTTO / SCAD."] if lang == "it" else ["LOT", "BATCH NO."]),
+                xs["desc"][0] + 6, y + size * (2.6 if two_row else 1.8) - size * 0.9, sz=int(hsize * 0.85), tag="heading:lot")
+            y += size * 0.9
+        y += size * (2.6 if two_row else 1.8)
+        return y, head_y
+
+    y, head_y = draw_headings(y)
+
     ruled = r.random() < 0.5
-    if ruled:
-        doc.rules.append((margin, head_y - 8, width - margin, head_y - 8))
-        doc.rules.append((margin, y - 10, width - margin, y - 10))
-        for c in cols[1:]:
-            doc.rules.append((xs[c][0], head_y - 8, xs[c][0], head_y - 8 + size * (2.6 if two_row else 1.8) + size * 1.5 * len(items)))
+    def open_table(y, head_y):
+        if ruled:
+            doc.rules.append((doc.page, margin, head_y - 8, width - margin, head_y - 8))
+            doc.rules.append((doc.page, margin, y - 10, width - margin, y - 10))
+
+    def close_table(y, head_y):
+        if ruled:
+            for c in cols[1:]:
+                doc.rules.append((doc.page, xs[c][0], head_y - 8, xs[c][0], y))
+            doc.rules.append((doc.page, margin, y, width - margin, y))
+
+    page_labels = []   # "PAG. 1" cells, completed with the page count at the end
+
+    def new_page(continued):
+        """The next sheet: a short header (supplier, VAT number, document, page) as invoicing programs repeat it."""
+        doc.page += 1
+        y = r.randint(70, 140)
+        put(seller, margin, y, sz=int(size * 1.1), bold=True, tag="repeat:seller")
+        put(f"{r.choice(L['vat_id'])} {seller_vat}", int(width * 0.55), y, sz=int(size * 0.85), tag="repeat:seller_vat")
+        y += size * 1.8
+        put(f"{title} {r.choice(L['number'])} {number} {r.choice(L['date'])} {date_text}", margin, y, bold=True, tag="repeat:number_date")
+        page_labels.append(put("", width - margin, y, sz=int(size * 0.85), align="right", tag="page"))
+        y += size * 2.4
+        if continued:
+            put(r.choice(CARRIED[lang]["from"]), margin, y, sz=int(size * 0.85), tag="continued")
+            y += size * 1.4
+        return y
+
+    foot_room = r.randint(300, 900)   # the foot each sheet keeps free (some print totals boxes or notes there)
+    if multi:
+        page_labels.append(put("", width - margin, head_y - size * 1.3, sz=int(size * 0.85), align="right", tag="page"))
+    open_table(y, head_y)
     last_group = None
     for i, item in enumerate(items):
+        if multi and y > height - foot_room:
+            # The page is full: "SEGUE" at its foot, the items go on under the same headings on the next.
+            close_table(y, head_y)
+            put(r.choice(CARRIED[lang]["to"]), int(width * 0.6), y + size * 1.2, bold=True, tag="continued")
+            y = new_page(True)
+            y, head_y = draw_headings(y)
+            open_table(y, head_y)
+            last_group = None
+        item["page"] = doc.page
         if grouped and item["group"] != last_group:
             put(item["group"], xs["desc"][0] + 6, y, bold=r.random() < 0.5, tag=f"group:{i}")
             last_group = item["group"]
@@ -625,14 +681,20 @@ def make_doc(r, args):
                       "colli": None, "discount": None, "vat": None, "lot": None, "vat_rate": 22})
         put(label, xs["desc"][0] + 6, y, tag=f"item:{len(items) - 1}:desc")
         put(items[-1]["amount"], xs["amount"][1] - 10, y, tag=f"item:{len(items) - 1}:amount", align="right")
+        items[-1]["page"] = doc.page
         y += size * 1.5
-    if ruled:
-        doc.rules.append((margin, y, width - margin, y))
+    close_table(y, head_y)
     y += size * 2
+    # No room left for the totals: they go on a page of their own.
+    if multi and show_prices and y > height - 420:
+        put(r.choice(CARRIED[lang]["to"]), int(width * 0.6), y, bold=True, tag="continued")
+        y = new_page(False)
 
     # ---- totals
     truth_totals = {}
+    totals_page = None
     if show_prices:
+        totals_page = doc.page
         sub = sum(it["amount_cents"] for it in items)
         vat_by = {}
         for it in items:
@@ -672,13 +734,23 @@ def make_doc(r, args):
             break
         put(r.choice(L["notes"]), margin, y, sz=int(size * 0.75))
         y += size * 1.2
+    if multi and r.random() < 0.3:
+        # A last page of sale conditions: the totals are not on the last page.
+        y = new_page(False)
+        for _ in range(r.randint(8, 16)):
+            put(r.choice(L["notes"] + CONDITIONS[lang]), margin, y, sz=int(size * 0.75), tag="conditions")
+            y += size * 1.2
+    pages = doc.page + 1
+    page_form = r.choice(["PAG. {k}", "PAG. {k}/{n}", "Pagina {k} di {n}" if lang == "it" else "Page {k} of {n}"])   # one program, one form
+    for k, c in enumerate(page_labels):
+        c.text = page_form.format(k=k + 1, n=pages)
 
     doc.truth = {
         "lang": lang, "style": style, "kind": kind, "seller": seller, "seller_vat": seller_vat, "customer": customer,
         "number": number, "date": f"{date[0]}-{date[1]:02d}-{date[2]:02d}", "date_text": date_text,
         "items": items, "totals": truth_totals, "headings": heading_texts, "columns": cols, "supplier_box": bool(supplier_box),
         "handwritten": hand, "lot_place": lot_place, "lot_heading": lot_heading, "legends": legends, "logo": logo,
-        "approval_mark": approval_mark,
+        "approval_mark": approval_mark, "pages": pages, "totals_page": totals_page,
     }
     return doc
 
@@ -748,18 +820,24 @@ def load_font(path, size, bold):
     return _font_cache[key]
 
 
-def draw(doc, r):
-    """Renders the page; returns the image and every word's box on it (before the photo is taken)."""
+def draw(doc, r, page=0):
+    """Renders one page; returns the image and every word's box on it (before the photo is taken)."""
     paper = tuple(int(v) for v in np.clip(np.array([250, 248, 242]) + r.randint(-10, 5), 220, 255))
     img = Image.new("RGB", (doc.width, doc.height), paper)
     d = ImageDraw.Draw(img)
     ink = (r.randint(0, 50),) * 3
     words = []   # (cell index, word text, x0, y0, x1, y1)
-    for x1, y1, x2, y2 in doc.rules:
+    for pg, x1, y1, x2, y2 in doc.rules:
+        if pg != page:
+            continue
         d.line([(x1, y1), (x2, y2)], fill=(90, 90, 90), width=2)
-    for kind_, x1, y1, x2, y2, lw in doc.shapes:
+    for pg, kind_, x1, y1, x2, y2, lw in doc.shapes:
+        if pg != page:
+            continue
         (d.rectangle if kind_ == "rect" else d.ellipse)([x1, y1, x2, y2], outline=ink, width=lw)
     for ci, c in enumerate(doc.cells):
+        if c.page != page:
+            continue
         f = load_font(c.font, c.size if not c.hand else int(c.size * 1.25), c.bold)
         text_w = f.getlength(c.text)
         x = c.x - text_w if c.align == "right" else c.x
@@ -1056,35 +1134,41 @@ def usable(paths):
 
 def write_doc(r, seed, args):
     doc = make_doc(r, args)
-    img, words = draw(doc, r)
+    pages = doc.truth.get("pages", 1)
     strength = r.choice([0.3, 0.6, 1.0, 1.0, 1.4])
-    photo, S, other_words = photograph(img, r, strength)
-    lines = reading(doc, words, S, r, strength)
-    # Print of another page showing at the edge of the photo: the OCR reads it too (not part of the document).
-    for t, x0, y0, x1, y1 in other_words:
-        lines.append({"text": t, "box": [x0, y0, x1, y1], "angle": 0.0, "conf": round(r.uniform(0.6, 0.95), 2),
-                      "words": [(t, x0, y0, x1, y1, 0.9)], "tag": "other-page"})
-    lines.sort(key=lambda l: (l["box"][1], l["box"][0]))
-    # Where each item's row is on the photo (to know which question is about which line).
-    rows = {}
-    for l in lines:
-        if l["tag"].startswith("item:"):
-            i = int(l["tag"].split(":")[1])
-            b = rows.setdefault(i, list(l["box"]))
-            rows[i] = [min(b[0], l["box"][0]), min(b[1], l["box"][1]), max(b[2], l["box"][2]), max(b[3], l["box"][3])]
-    for i, it in enumerate(doc.truth["items"]):
-        it["box"] = rows.get(i)
-    boxes = {}
-    for l in lines:
-        if l["tag"].startswith(("heading:", "box:", "field:", "label:")):
-            boxes.setdefault(l["tag"], []).append(l["box"])
-    doc.truth["boxes"] = boxes
-    doc.truth["photo"] = {"width": photo.shape[1], "height": photo.shape[0], "strength": strength}
     d = os.path.join(args.out, f"doc{seed}")
     os.makedirs(d, exist_ok=True)
-    cv2.imwrite(os.path.join(d, "page.jpg"), cv2.cvtColor(photo, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, r.randint(55, 90)])
-    with open(os.path.join(d, "reading.txt"), "w") as f:
-        f.write(report(lines))
+    rows, boxes, photos = {}, {}, []
+    for page in range(pages):
+        # Each sheet photographed on its own: its own angle, light and bend.
+        img, words = draw(doc, r, page)
+        photo, S, other_words = photograph(img, r, strength)
+        lines = reading(doc, words, S, r, strength)
+        # Print of another page showing at the edge of the photo: the OCR reads it too (not part of the document).
+        for t, x0, y0, x1, y1 in other_words:
+            lines.append({"text": t, "box": [x0, y0, x1, y1], "angle": 0.0, "conf": round(r.uniform(0.6, 0.95), 2),
+                          "words": [(t, x0, y0, x1, y1, 0.9)], "tag": "other-page"})
+        lines.sort(key=lambda l: (l["box"][1], l["box"][0]))
+        # Where each item's row is on its photo (to know which question is about which line).
+        for l in lines:
+            if l["tag"].startswith("item:"):
+                i = int(l["tag"].split(":")[1])
+                b = rows.setdefault(i, list(l["box"]))
+                rows[i] = [min(b[0], l["box"][0]), min(b[1], l["box"][1]), max(b[2], l["box"][2]), max(b[3], l["box"][3])]
+            # The labelled areas, on the page they are printed on (the totals may be on a later page).
+            if l["tag"].startswith(("heading:", "box:", "field:", "label:")):
+                boxes.setdefault(l["tag"], []).append(l["box"] + [page])
+        photos.append({"width": photo.shape[1], "height": photo.shape[0]})
+        name = "" if page == 0 else str(page + 1)
+        cv2.imwrite(os.path.join(d, f"page{name}.jpg"), cv2.cvtColor(photo, cv2.COLOR_RGB2BGR), [cv2.IMWRITE_JPEG_QUALITY, r.randint(55, 90)])
+        with open(os.path.join(d, f"reading{name}.txt"), "w") as f:
+            f.write(report(lines))
+    for i, it in enumerate(doc.truth["items"]):
+        it["box"] = rows.get(i)
+        it.setdefault("page", 0)
+    doc.truth["boxes"] = boxes
+    doc.truth["photo"] = dict(photos[0], strength=strength)
+    doc.truth["photos"] = photos
     with open(os.path.join(d, "truth.json"), "w") as f:
         json.dump(doc.truth, f, ensure_ascii=False, indent=1)
 

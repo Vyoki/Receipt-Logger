@@ -63,11 +63,12 @@ def main():
             if s["image"] is None:
                 img_path = blank_path
             else:
-                if s["doc"] not in pages:
+                key = (s["doc"], s["image"])   # a document may have several pages
+                if key not in pages:
                     if len(pages) > 8:
                         pages.clear()
-                    pages[s["doc"]] = Image.open(os.path.join(a.docs, s["doc"], s["image"])).convert("RGB")
-                img = stack(pages[s["doc"]], s["boxes"], s["scale"])
+                    pages[key] = Image.open(os.path.join(a.docs, s["doc"], s["image"])).convert("RGB")
+                img = stack(pages[key], s["boxes"], s["scale"])
                 img_path = f"images/{n:07d}.jpg"
                 img.save(os.path.join(a.out, img_path), quality=a.quality)
             rec = {
