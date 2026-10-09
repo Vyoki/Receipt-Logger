@@ -344,6 +344,9 @@ jobs:
           def note(title, text):
               text = text[:3800].replace('%', '%25').replace('\r', '').replace('\n', '%0A')
               print(f'::notice title={title}::{text}')
+          if os.path.exists('ai-run/row-2b-filetto.log'):
+              lines = [l for l in open('ai-run/row-2b-filetto.log', errors='replace').read().splitlines() if 'prompt=' in l or 'reuse=' in l or 'then:' in l]
+              note('AI picture reuse (first question, then the same picture again)', '\n'.join(lines))
           if os.path.exists('ai-run/layout-report.txt'):
               note('AI column headings report', open('ai-run/layout-report.txt').read())
           if os.path.exists('ai-run/number-report.txt'):
