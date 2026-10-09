@@ -197,7 +197,7 @@ object ReceiptParser {
      * the document better (more lines where quantity x price = amount, lines adding up to the total).
      */
     fun parsePages(read: List<List<OcrLine>>, options: ParseOptions = ParseOptions()): ParsedDocument {
-        val pages = read.map { OcrCleanup.stripRules(it) }
+        val pages = read.map { OcrCleanup.repairLabels(OcrCleanup.stripRules(it)) }
         val layouts = pages.map { LayoutRows.layout(it) }
         val text = layouts.joinToString("\n$PAGE_BREAK\n") { it.text }
         if (text.isBlank()) return ParsedDocument.EMPTY
@@ -216,7 +216,9 @@ object ReceiptParser {
             // The supplier's name is sure only when independent places on the page agree (or the phone knows its VAT).
             val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o) }.getOrDefault(withParties)
                 .let { d -> runCatching { ReadingSanity.apply(d, text, o.ownVatNumber) }.getOrDefault(d) }
-            return Handwriting.mark(proven, pages)
+            // Lots printed under the items with no heading: the same place under several items (see LotsByPosition).
+            val lotted = runCatching { LotsByPosition.apply(proven, pages, o.ownVatNumber) }.getOrDefault(proven)
+            return Handwriting.mark(lotted, pages)
         }
         val plain = read(options.copy(layoutLookup = null))
         if (options.layout != null || options.layoutLookup == null) return plain
