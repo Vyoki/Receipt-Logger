@@ -154,7 +154,14 @@ fun AiSettingsSection(c: AppContainer) {
                     ) {
                         RadioButton(selected = option == o, onClick = null)
                         Text(
-                            stringResource(if (o == AiModelStore.OPTIONS.first()) R.string.ai_option_best else R.string.ai_option_fast, o.label, o.approxGb),
+                            stringResource(
+                                when (o.id) {
+                                    AiModelStore.TRAINED_ID -> R.string.ai_option_trained
+                                    "qwen3vl-2b" -> R.string.ai_option_best
+                                    else -> R.string.ai_option_fast
+                                },
+                                o.label, o.approxGb,
+                            ),
                             modifier = Modifier.padding(start = 12.dp),
                         )
                     }

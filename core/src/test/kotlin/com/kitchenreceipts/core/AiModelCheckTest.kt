@@ -55,6 +55,17 @@ class AiModelCheckTest {
             File(dir, "layout-${lang.name.lowercase()}.txt").writeText(AiReader.layoutInstruction(LAYOUT_HEADINGS, lang))
         }
         File(dir, "layout.gbnf").writeText(AiReader.layoutGrammar(LAYOUT_HEADINGS.size))
+        // The same questions in the short form the app sends to the trained model (a name containing "kitchen").
+        val c = AiTasks.Style.COMPACT
+        val box = listOf(PageBox(0, 0, 1, 1))
+        for ((name, row) in listOf("filetto" to FILETTO, "candeggina" to CANDEGGINA)) {
+            File(dir, "row-$name-compact.txt").writeText(AiTasks.question(AiTarget.Row(0, box, 0, 0, row, head), c).first)
+        }
+        File(dir, "choice-filetto-compact.txt").writeText(AiTasks.question(AiTarget.Choice(0, box, 0, FILETTO_CHOICES, FILETTO, head), c).first)
+        File(dir, "number-filetto-compact.txt").writeText(
+            AiTasks.question(AiTarget.Number(0, box, 0, "TOT.", java.math.BigDecimal("4.24"), FILETTO, head), c).first,
+        )
+        File(dir, "layout-compact.txt").writeText(AiTasks.layout(LAYOUT_HEADINGS).first)
     }
 
     /** The heading answers: code, colli, description, (pack: unit or other), quantity, price, amount, VAT. */

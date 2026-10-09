@@ -267,6 +267,13 @@ jobs:
           get $base/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3VL-4B-Instruct-Q4_K_M.gguf 4b.gguf
           get $base/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf 4b-mmproj.gguf
           ls -la
+      - name: Download the trained model (not cached, it is replaced when trained again)
+        continue-on-error: true
+        run: |
+          kr=https://huggingface.co/ArdentSun/kitchen-reader-2b/resolve/main
+          curl -fsSL --retry 3 -o models/kr.gguf $kr/kitchen-reader-2b-Q4_K_M.gguf
+          curl -fsSL --retry 3 -o models/kr-mmproj.gguf $kr/mmproj-kitchen-reader-2b-Q8_0.gguf
+          ls -la models/kr*
       - name: Prompt, grammar and invoice photo
         run: |
           pip install --quiet pillow
@@ -310,6 +317,16 @@ jobs:
           runlayout 2b en
           runlayout 2b it
           runlayout 4b en
+          # The trained model, asked exactly as the app asks it (short questions), next to the 2B it was trained from.
+          if [ -s models/kr.gguf ] && [ -s models/kr-mmproj.gguf ]; then
+            cp ai-run/row-filetto.ppm ai-run/row-filetto-compact.ppm; cp ai-run/row-candeggina.ppm ai-run/row-candeggina-compact.ppm
+            for m in kr 2b; do
+              runrow $m filetto-compact; runrow $m candeggina-compact
+              runchoice $m compact; runnumber $m compact; runlayout $m compact
+            done
+          else
+            echo "::warning::trained model not downloaded: not checked"
+          fi
       - name: Check the answers
         run: AI_ANSWER_DIR=$PWD/ai-run ./gradlew :core:test --tests '*AiModelCheckTest.check*' --rerun --quiet
       - name: Publish results
