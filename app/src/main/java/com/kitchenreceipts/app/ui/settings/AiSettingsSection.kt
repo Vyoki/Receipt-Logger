@@ -104,6 +104,10 @@ fun AiSettingsSection(c: AppContainer) {
                     stringResource(R.string.ai_installed, name ?: "", String.format(Locale.ROOT, "%.1f", store.sizeBytes / 1e9)),
                     fontWeight = FontWeight.SemiBold,
                 )
+                if (!AiModelStore.isTrained(name)) {
+                    // Installed before only the trained model was offered: it still works, but reads worse and slower.
+                    Text(stringResource(R.string.ai_general_installed), color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
+                }
                 Text(stringResource(R.string.ai_when), style = MaterialTheme.typography.titleSmall)
                 listOf(
                     AppSettings.AiMode.WHEN_NEEDED to R.string.ai_mode_needed,
@@ -147,25 +151,7 @@ fun AiSettingsSection(c: AppContainer) {
                 }
             } else {
                 Text(stringResource(R.string.ai_step1), style = MaterialTheme.typography.titleSmall)
-                AiModelStore.OPTIONS.forEach { o ->
-                    Row(
-                        Modifier.fillMaxWidth().heightIn(min = 56.dp).selectable(option == o, role = Role.RadioButton, onClick = { option = o }),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        RadioButton(selected = option == o, onClick = null)
-                        Text(
-                            stringResource(
-                                when (o.id) {
-                                    AiModelStore.TRAINED_ID -> R.string.ai_option_trained
-                                    "qwen3vl-2b" -> R.string.ai_option_best
-                                    else -> R.string.ai_option_fast
-                                },
-                                o.label, o.approxGb,
-                            ),
-                            modifier = Modifier.padding(start = 12.dp),
-                        )
-                    }
-                }
+                Text(stringResource(R.string.ai_option_trained, option.label, option.approxGb), modifier = Modifier.heightIn(min = 48.dp))
                 Text(stringResource(R.string.ai_step2), style = MaterialTheme.typography.titleSmall)
                 OutlinedButton(onClick = { open(option.modelUrl) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
                     Text(stringResource(R.string.ai_download_model))

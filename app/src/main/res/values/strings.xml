@@ -381,16 +381,16 @@
     <string name="ai_testing">Loading…</string>
     <string name="ai_remove">Remove AI model</string>
     <string name="ai_remove_text">The model files are deleted from the app. You can load them again at any time.</string>
-    <string name="ai_step1">1. Choose the model</string>
-    <string name="ai_option_trained">%1$s – recommended: trained for kitchen documents in Italian and English, shortest and fastest questions (about %2$s GB)</string>
-    <string name="ai_option_best">%1$s – general model: reads well (about %2$s GB)</string>
-    <string name="ai_option_fast">%1$s – larger, about twice as slow (about %2$s GB)</string>
+    <string name="ai_step1">1. The model</string>
+    <string name="ai_general_installed">This is a general model, not the one trained for kitchen documents: remove it and load Kitchen reader 2B for better and faster reading.</string>
+    <string name="ai_only_trained">\"%1$s\" is not the Kitchen reader model: only the model trained for kitchen documents can be loaded.</string>
+    <string name="ai_option_trained">%1$s – trained for kitchen documents in Italian and English (about %2$s GB)</string>
     <string name="ai_step2">2. Download both files with your browser</string>
     <string name="ai_download_model">Download the model file</string>
     <string name="ai_download_vision">Download the vision file (mmproj)</string>
     <string name="ai_step3">3. When both downloads have finished</string>
     <string name="ai_load_files">Load the 2 downloaded files</string>
-    <string name="ai_download_note">Files come from huggingface.co (Qwen-based models, Apache 2.0 licence). The app does not download the model itself: you do, in the browser. After loading, you can delete the files from your Downloads.</string>
+    <string name="ai_download_note">Files come from huggingface.co (Kitchen reader, based on Qwen3-VL, Apache 2.0 licence). The app does not download the model itself: you do, in the browser. After loading, you can delete the files from your Downloads.</string>
     <string name="ai_copying">Copying the model into the app…</string>
 
     <!-- owner report -->
