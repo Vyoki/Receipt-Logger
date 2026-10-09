@@ -27,7 +27,7 @@ object AiTasks {
     ): Pair<String, String> = when (style) {
         Style.FULL -> when (t) {
             is AiTarget.Row -> AiReader.rowInstruction(t.headerText, t.rowText, lang, examples) to AiReader.ROW_GRAMMAR
-            is AiTarget.Choice -> AiReader.choiceInstruction(t.headerText, t.rowText, t.choices, lang) to AiReader.CHOICE_GRAMMAR
+            is AiTarget.Choice -> AiReader.choiceInstruction(t.headerText, t.rowText, t.choices, lang) to AiReader.choiceGrammar(t.choices.size)
             is AiTarget.Number -> AiReader.numberInstruction(t.column, t.headerText, t.rowText, lang) +
                 (previous?.let { why(it, lang) } ?: "") to AiReader.NUMBER_GRAMMAR
             is AiTarget.Header -> AiReader.headerInstruction(lang) to AiReader.HEADER_GRAMMAR
@@ -42,7 +42,7 @@ object AiTasks {
                     append('\n').append("ABCD"[i]).append(": ").append(n(c.quantity)).append(" | ").append(n(c.unitPrice))
                         .append(" | ").append(money(c.lineTotalCents))
                 }
-            } to AiReader.CHOICE_GRAMMAR
+            } to AiReader.choiceGrammar(t.choices.size)
             is AiTarget.Number -> buildString {
                 append(if (t.field == AiTarget.Field.AMOUNT) "AMOUNT" else "QTY").append(" ").append(t.column)
                 append("\nH: ").append(t.headerText.take(200)).append("\nOCR: ").append(t.rowText.take(250))
