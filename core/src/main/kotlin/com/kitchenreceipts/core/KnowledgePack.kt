@@ -29,6 +29,9 @@ data class KnowledgePack(
         return Found(s, readName != null && SellerProfiles.sameCompanyOrMisread(readName, s.name))
     }
 
+    /** The registered name for a VAT number (without country prefix), or null. */
+    fun nameOf(vat: String): String? = byVat[vat.filter(Char::isLetterOrDigit).uppercase()]?.name
+
     companion object {
         const val FORMAT = 1
         val EMPTY = KnowledgePack("0000-00-00")

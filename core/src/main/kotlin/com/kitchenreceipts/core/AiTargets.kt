@@ -277,10 +277,27 @@ object AiTargets {
             val area = rowsL.filter { it.index >= from }.map { it.box }
             return if (area.isEmpty()) null else last to bounds(area)
         }
-        val supplierBox = if (doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW) runCatching { Parties.supplier(layouts, null) }.getOrNull() else null
-        // The supplier's name is asked on its own box when the document has one (below); the header question then
+        val sellerOpen = doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW
+        val supplierBox = if (sellerOpen) runCatching { Parties.supplier(layouts, null) }.getOrNull() else null
+        // The supplier not proven (see SupplierProof): the AI is shown the places its name was read (the supplier's box,
+        // or the logo, letterhead and footer lines) and asked who issued the document, even when each reading looked
+        // clear. Its answer counts only if it matches one of those places.
+        val identity: AiTarget.Supplier? = if (!sellerOpen) null else supplierBox?.let { sb ->
+            val h = (sb.box.height / 6).coerceIn(6, 40)
+            AiTarget.Supplier(0, listOf(PageBox(sb.box.left - h, sb.box.top - h, sb.box.right + h, sb.box.bottom + h)), sb.name?.source ?: "")
+        } ?: doc.supplierProof?.let { proof ->
+            fun norm(t: String) = t.uppercase().filter(Char::isLetterOrDigit)
+            val places = proof.sources.filter { it.page >= 0 && (it.anchor || it.kind == SupplierProof.Kind.WEB) }
+                .distinctBy { it.page to norm(it.line) }
+            val rows = places.mapNotNull { src -> allRows.firstOrNull { it.page == src.page && norm(src.line).isNotEmpty() && norm(it.text).contains(norm(src.line).take(40)) } }
+                .distinctBy { it.page to it.index }.sortedWith(compareBy({ it.page }, { it.index })).take(4)
+            val page = rows.firstOrNull()?.page ?: return@let null
+            val onPage = rows.filter { it.page == page }
+            AiTarget.Supplier(page, onPage.map { it.box }, onPage.joinToString(" / ") { it.text }.take(250))
+        }
+        // The supplier's name is asked on its own (above) when there is something to show; the header question then
         // only has the number and date to settle.
-        val headerDoubt = (supplierBox == null && (doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW)) ||
+        val headerDoubt = (identity == null && sellerOpen) ||
             doc.documentDate == null || doc.documentDate.confidence == Confidence.LOW
         // Number and date read under their own labels ("Numero documento", "Data"): the page's structure confirms them,
         // a second look adds nothing.
@@ -288,12 +305,7 @@ object AiTargets {
         if (headerDoubt || (spotCheck && !headerByLabels)) headerArea()?.let { targets += AiTarget.Header(0, listOf(it), verify = !headerDoubt) }
         // The supplier's own box, labelled as such: the AI copies the name printed in it (a sharper question than
         // "who issued this" over the whole top of the page, where the customer's box sits next to it).
-        run {
-            supplierBox?.let { s ->
-                val h = (s.box.height / 6).coerceIn(6, 40)
-                targets += AiTarget.Supplier(0, listOf(PageBox(s.box.left - h, s.box.top - h, s.box.right + h, s.box.bottom + h)), s.name?.source ?: "")
-            }
-        }
+        identity?.let { targets += it }
         val totalsDoubt = doc.totalCents == null || doc.totalCents.confidence == Confidence.LOW
         // Totals proven by the arithmetic (taxable + VAT = total, and the lines add up to them): nothing to double-check.
         val totalsProven = run {

@@ -492,12 +492,21 @@ object AiReader {
                     val name = str(m, "name")?.let { cleanText(it) }?.takeIf { it.count(Char::isLetter) >= 3 } ?: continue
                     if (options.ownBusinessName?.let { own -> SellerProfiles.sameCompany(own, name) } == true) continue
                     val ours = d.sellerName
-                    if (ours != null && sameName(ours.value, name)) continue
-                    // Taken (still highlighted, for one tap) when the reading had no sure name and the AI's shares a
-                    // word with what the OCR read in that box; otherwise only offered.
-                    val boxWords = normalize(target.boxText).split(' ').filter { it.length >= 4 }.toSet()
-                    val shares = normalize(name).split(' ').any { it.length >= 4 && it in boxWords }
-                    if ((ours == null || ours.confidence == Confidence.LOW) && shares) {
+                    if (ours != null && ours.confidence == Confidence.HIGH) continue // proven: nothing to settle
+                    // The AI's reading counts only when it matches one of the places the name was read on the page
+                    // (see SupplierProof): then it is one more independent reading, and two that agree prove the name.
+                    val proof = d.supplierProof
+                    val judged = proof?.let { SupplierProof.withAi(it, name) }
+                    if (judged != null) {
+                        val before = ours?.value
+                        d = SupplierProof.applyResult(d, judged)
+                        before?.takeIf { b -> d.sellerName?.value != b }?.let { headerRead["seller"] = it }
+                    } else if (proof == null && ours != null && sameName(ours.value, name)) {
+                        continue
+                    } else if (proof == null && (ours == null || ours.confidence == Confidence.LOW) &&
+                        normalize(name).split(' ').any { w -> w.length >= 4 && w in normalize(target.boxText).split(' ').filter { it.length >= 4 } }
+                    ) {
+                        // A reading without its places (an older saved reading): the AI's name sharing a word with the box.
                         d = d.copy(sellerName = Extracted(name, Confidence.LOW, "AI, supplier box: " + target.boxText.take(120)))
                         ours?.let { headerRead["seller"] = it.value }
                     } else {
