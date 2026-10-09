@@ -22,6 +22,8 @@ enum class ReviewReason {
     LOTS_MISSING,
     /** An e-invoice addressed to another company. */
     OTHER_BUYER,
+    /** A price 30% or more away from what was paid before for the product (plausible, but worth a look). */
+    UNUSUAL_PRICE,
 }
 
 /**
