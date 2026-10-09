@@ -6,6 +6,7 @@ import com.kitchenreceipts.core.DraftField
 import com.kitchenreceipts.core.DuplicateDetector
 import com.kitchenreceipts.core.ItalianDates
 import com.kitchenreceipts.core.ItalianNumbers
+import com.kitchenreceipts.core.PageMap
 import com.kitchenreceipts.core.ParseOptions
 import com.kitchenreceipts.core.ReceiptParser
 import com.kitchenreceipts.core.SmartMatcher
@@ -38,6 +39,11 @@ class Scorecard {
     var autoRight = 0
     var autoWrong = 0
     var allRight = 0
+    /** Words of the item table and the supplier's box that the page map could not explain (see [PageMap]). */
+    var unexplainedWords = 0
+    var unexplainedNumbers = 0
+    var docsWithUnexplained = 0
+    val unexplainedExamples = mutableListOf<String>()
     val worst = mutableListOf<String>()
     /** Documents the app would save without the operator although something is wrong: the costliest mistakes. */
     val savedWithErrors = mutableListOf<String>()
@@ -113,6 +119,16 @@ class Scorecard {
             }
         }
         docs++
+        if (doc.text == null) {
+            val map = PageMap.build(doc.pages, parsed, doc.ownVat)
+            val left = map.unexplained.filter { it.region == PageMap.Region.TABLE || it.region == PageMap.Region.SUPPLIER_BOX }
+            unexplainedWords += left.size
+            unexplainedNumbers += left.count { p -> p.word.text.any(Char::isDigit) }
+            if (left.isNotEmpty()) {
+                docsWithUnexplained++
+                if (unexplainedExamples.size < 40) unexplainedExamples += "${doc.name}: " + map.describeUnexplained().take(200)
+            }
+        }
         val right = outcomes.none { it == Outcome.FLAGGED || it == Outcome.SILENT }
         if (right) allRight++
         val reasons = AutoAccept.reasons(draft)
@@ -129,6 +145,7 @@ class Scorecard {
         append("== $title: $docs documents\n")
         append("documents fully right: ${pct(allRight)}  saved without review: right ${pct(autoRight)}, WITH ERRORS ${pct(autoWrong)}\n")
         if (heldBack.isNotEmpty()) append("fully right but sent to review, because: ").append(heldBack.entries.joinToString(", ") { "${it.key} ${it.value}" }).append('\n')
+        append("unexplained words (item table, supplier box): $unexplainedWords ($unexplainedNumbers with digits), in ${pct(docsWithUnexplained)} of documents\n")
         append(String.format("%-12s %7s %7s %7s %7s %7s\n", "field", "right", "sure", "check", "fixed", "SILENT"))
         fields.forEach { (name, s) ->
             append(String.format("%-12s %6.1f%% %6.1f%% %6.1f%% %6.1f%% %6.1f%%  (n=%d)\n", name, s.right, s.pct(Outcome.SURE), s.pct(Outcome.CHECK), s.pct(Outcome.FLAGGED), s.pct(Outcome.SILENT), s.total))

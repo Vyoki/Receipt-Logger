@@ -113,6 +113,8 @@ class BenchTest {
             byGroup.toSortedMap().forEach { (g, s) -> append('\n').append(s.report(g)) }
             append("\n== Saved without review although something is wrong\n")
             all.savedWithErrors.forEach { append(it).append('\n') }
+            append("\n== Words the page map could not explain (examples)\n")
+            all.unexplainedExamples.forEach { append(it).append('\n') }
             append("\n== Examples of what went wrong\n")
             all.worst.forEach { append(it).append('\n') }
         }

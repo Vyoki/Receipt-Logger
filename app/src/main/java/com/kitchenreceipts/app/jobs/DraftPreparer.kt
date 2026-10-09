@@ -166,6 +166,14 @@ class DraftPreparer(
             "warnings" to p.warnings.joinToString(",").ifEmpty { null },
         )
         log.block("recognised text", pending.ocrText.lines().filter { it.isNotBlank() })
+        // The page map (stage 1, changes nothing): words of the item table and the supplier's box that the reading
+        // did not explain. On the phone this measures what the reading misses on real documents.
+        runCatching {
+            val map = com.kitchenreceipts.core.PageMap.build(pending.rawLines, p, settings.ownVatNumber.ifBlank { null })
+            val left = map.unexplained.filter { it.region == com.kitchenreceipts.core.PageMap.Region.TABLE || it.region == com.kitchenreceipts.core.PageMap.Region.SUPPLIER_BOX }
+            log.event("PAGE_MAP", "unexplained" to left.size, "withDigits" to left.count { w -> w.word.text.any(Char::isDigit) })
+            if (left.isNotEmpty()) log.block("unexplained words", listOf(map.describeUnexplained()))
+        }.onFailure { log.error("pageMap", it) }
         log.event(
             "AUTO_CHECK",
             "reasons" to reasons.joinToString(",").ifEmpty { "none" },
