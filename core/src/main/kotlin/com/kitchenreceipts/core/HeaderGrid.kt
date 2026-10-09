@@ -197,11 +197,16 @@ object HeaderGrid {
             if (ok) d = d.copy(warnings = d.warnings - ParseWarning.ITEMS_SUM_MISMATCH)
         }
         // The number under its heading wins over a number found next to other words ("... lett. 177").
-        g.number?.let { n -> if (d.documentNumber?.value != n || d.documentNumber?.confidence == Confidence.LOW) d = d.copy(documentNumber = Extracted(n, Confidence.HIGH, "number under its heading")) }
+        g.number?.let { n ->
+            val cur = d.documentNumber
+            d = d.copy(documentNumber = if (cur != null && cur.value == n && cur.confidence == Confidence.HIGH) cur.copy(source = cur.source + " (number under its heading)")
+                else Extracted(n, Confidence.HIGH, "number under its heading"))
+        }
         val gd = g.date
         if (gd != null && (today == null || (!gd.isAfter(today.plusDays(1)) && !gd.isBefore(today.minusYears(2))))) {
             val cur = d.documentDate
-            if (cur == null || cur.value != gd) d = d.copy(documentDate = Extracted(gd, Confidence.HIGH, "DATA under its heading"))
+            d = d.copy(documentDate = if (cur != null && cur.value == gd && cur.confidence == Confidence.HIGH) cur.copy(source = cur.source + " (DATA under its heading)")
+                else Extracted(gd, Confidence.HIGH, "DATA under its heading"))
         }
         return d
     }

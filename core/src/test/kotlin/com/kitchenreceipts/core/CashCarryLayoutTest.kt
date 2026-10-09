@@ -146,7 +146,8 @@ class CashCarryLayoutTest {
         val pages = listOf(page1, page2, page3)
         val t = AiTargets.plan(pages, d, spotCheck = true)!!
         assertTrue(t.any { it is AiTarget.Header && it.verify })
-        assertTrue(t.any { it is AiTarget.Totals && it.verify })
+        // Taxable + VAT = total and the lines add up to them: the totals are proven, no second look.
+        assertTrue(t.none { it is AiTarget.Totals })
         val numbers = t.filterIsInstance<AiTarget.Number>()
         // Every line is proven (printed, or worked out and confirmed by the VAT summary): one look at the largest amount.
         assertEquals(1, numbers.size)

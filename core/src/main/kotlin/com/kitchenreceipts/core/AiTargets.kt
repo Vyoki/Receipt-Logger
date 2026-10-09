@@ -282,7 +282,10 @@ object AiTargets {
         // only has the number and date to settle.
         val headerDoubt = (supplierBox == null && (doc.sellerName == null || doc.sellerName.confidence == Confidence.LOW)) ||
             doc.documentDate == null || doc.documentDate.confidence == Confidence.LOW
-        if (headerDoubt || spotCheck) headerArea()?.let { targets += AiTarget.Header(0, listOf(it), verify = !headerDoubt) }
+        // Number and date read under their own labels ("Numero documento", "Data"): the page's structure confirms them,
+        // a second look adds nothing.
+        val headerByLabels = doc.documentNumber?.source?.contains("under its heading") == true && doc.documentDate?.source?.contains("under its heading") == true
+        if (headerDoubt || (spotCheck && !headerByLabels)) headerArea()?.let { targets += AiTarget.Header(0, listOf(it), verify = !headerDoubt) }
         // The supplier's own box, labelled as such: the AI copies the name printed in it (a sharper question than
         // "who issued this" over the whole top of the page, where the customer's box sits next to it).
         run {
@@ -292,7 +295,14 @@ object AiTargets {
             }
         }
         val totalsDoubt = doc.totalCents == null || doc.totalCents.confidence == Confidence.LOW
-        if (totalsDoubt || spotCheck) totalsArea()?.let { (p, box) -> targets += AiTarget.Totals(p, listOf(box), verify = !totalsDoubt) }
+        // Totals proven by the arithmetic (taxable + VAT = total, and the lines add up to them): nothing to double-check.
+        val totalsProven = run {
+            val sub = doc.subtotalCents?.value; val vat = doc.vatCents?.value; val tot = doc.totalCents?.value
+            val sums = doc.lineItems.mapNotNull { it.lineTotalCents?.value }
+            sub != null && vat != null && tot != null && kotlin.math.abs(sub + vat - tot) <= 2 && sums.size == doc.lineItems.size &&
+                sums.isNotEmpty() && kotlin.math.abs(sums.sum() - sub) <= maxOf(2L, sums.size.toLong())
+        }
+        if (totalsDoubt || (spotCheck && !totalsProven)) totalsArea()?.let { (p, box) -> targets += AiTarget.Totals(p, listOf(box), verify = !totalsDoubt) }
 
         if (spotCheck) {
             val asked = targets.mapNotNull { t ->
@@ -304,7 +314,7 @@ object AiTargets {
                 val q = it.quantity ?: return false; val p = it.unitPrice ?: return false; val t = it.lineTotalCents ?: return false
                 // A quantity worked out as amount / price is proven too when every VAT group adds up.
                 val qSure = q.confidence == Confidence.HIGH || (provenByVat && ReceiptParser.workedOut(it))
-                return qSure && p.confidence == Confidence.HIGH && t.confidence == Confidence.HIGH && ReceiptParser.matches(q.value, p.value, t.value)
+                return qSure && p.confidence == Confidence.HIGH && t.confidence == Confidence.HIGH && LineDiscount.matches(q.value, p.value, it.discount?.value, t.value)
             }
             val open = doc.lineItems.indices.filter { i -> i !in asked && itemRow[i] != null && !doc.lineItems[i].adjustment && doc.lineItems[i].lineTotalCents != null }
             // Everything proven: still one look at the largest amount, the line where a misread costs most.

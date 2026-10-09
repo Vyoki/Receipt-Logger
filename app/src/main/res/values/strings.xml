@@ -496,7 +496,13 @@
         <item quantity="one">Reading %d document</item>
         <item quantity="other">Reading %d documents</item>
     </plurals>
-    <string name="ai_checking">AI double-checking %1$d of %2$d</string>
+    <string name="ai_topic_supplier">the supplier\'s box</string>
+    <string name="ai_topic_missed">a line not read</string>
+    <string name="ai_topic_line">line %1$d</string>
+    <string name="ai_topic_totals">the totals</string>
+    <string name="ai_topic_header">number and date</string>
+    <string name="ai_topic_check">double-check</string>
+    <string name="ai_checking">AI question %1$d</string>
     <!-- price notifications -->
     <string name="notif_channel_prices">Price changes</string>
     <string name="notif_price_line">%1$s %2$s (%3$s → %4$s €/%5$s)</string>

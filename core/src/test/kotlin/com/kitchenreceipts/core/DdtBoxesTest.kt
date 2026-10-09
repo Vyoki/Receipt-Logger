@@ -99,7 +99,8 @@ class DdtBoxesTest {
         val plan = AiTargets.plan(pages, d, spotCheck = true)
         assertNotNull("headings not recognised must not mean reading the whole page", plan)
         assertTrue(plan!!.any { it is AiTarget.Header })
-        assertTrue(plan.any { it is AiTarget.Totals })
+        // The totals add up with the lines: proven, not asked again.
+        assertTrue(plan.none { it is AiTarget.Totals })
         assertTrue(plan.none { it is AiTarget.Row && it.itemIndex == null })
         val numbers = plan.filterIsInstance<AiTarget.Number>()
         // Every line adds up as printed: one look at the largest amount (and the worked-out quantity, unless the VAT summary proves it).
