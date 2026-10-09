@@ -64,8 +64,8 @@ Java_com_kitchenreceipts_app_ai_NativeAi_nativeGenerate(JNIEnv * env, jclass, jl
     env->SetObjectArrayElement(out, 0, env->NewStringUTF(r.text.c_str()));
     env->SetObjectArrayElement(out, 1, env->NewStringUTF(r.cancelled ? "cancelled" : r.error.c_str()));
     char stats[160];
-    snprintf(stats, sizeof(stats), "prompt=%d generated=%d encode=%.1fs write=%.1fs", r.prompt_tokens, r.generated_tokens,
-             r.encode_seconds, r.generate_seconds);
+    snprintf(stats, sizeof(stats), "prompt=%d generated=%d encode=%.1fs write=%.1fs%s", r.prompt_tokens, r.generated_tokens,
+             r.encode_seconds, r.generate_seconds, r.picture_reused ? " picture=reused" : "");
     env->SetObjectArrayElement(out, 2, env->NewStringUTF(stats));
     return out;
 }

@@ -22,7 +22,19 @@ struct Engine {
     // clears hundreds of MB each time). Emptied before every question, so each still starts from nothing.
     llama_context * lctx = nullptr;
     int lctx_n_ctx = 0;
+    // The picture of the last question, already processed: the start of the working memory up to the end of the
+    // picture is kept, and a next question on the same picture (same bytes) only processes its new words. Reading
+    // a picture is most of the time a question takes.
+    uint64_t img_hash = 0;
+    int img_w = 0, img_h = 0;
+    llama_pos prefix_n_past = -1; // position after the picture; -1 = nothing kept
 };
+
+static uint64_t fnv1a(const uint8_t * p, size_t n) {
+    uint64_t h = 1469598103934665603ULL;
+    for (size_t i = 0; i < n; i++) { h ^= p[i]; h *= 1099511628211ULL; }
+    return h;
+}
 
 void cancel(Engine * e) { if (e) e->cancel = true; }
 
@@ -103,7 +115,7 @@ static Result generate_once(Engine * e, const Request & req, const std::function
 Result generate(Engine * e, const Request & req, const std::function<bool(int, int)> & progress) {
     Result r = generate_once(e, req, progress);
     // After a stop or an error the working memory is not trusted again: the next question makes a new one.
-    if ((r.cancelled || !r.error.empty()) && e->lctx) { llama_free(e->lctx); e->lctx = nullptr; e->lctx_n_ctx = 0; }
+    if ((r.cancelled || !r.error.empty()) && e->lctx) { llama_free(e->lctx); e->lctx = nullptr; e->lctx_n_ctx = 0; e->prefix_n_past = -1; }
     return r;
 }
 
@@ -121,10 +133,21 @@ static Result generate_once(Engine * e, const Request & req, const std::function
     cp.abort_callback = abort_cb;
     cp.abort_callback_data = &e->cancel;
     if (e->lctx && e->lctx_n_ctx != req.n_ctx) { llama_free(e->lctx); e->lctx = nullptr; e->lctx_n_ctx = 0; }
+    const uint64_t hash = fnv1a(req.rgb, (size_t) req.width * (size_t) req.height * 3);
+    bool reuse = e->lctx && e->prefix_n_past > 0 && hash == e->img_hash && req.width == e->img_w && req.height == e->img_h;
+    const llama_pos kept = e->prefix_n_past;
+    e->prefix_n_past = -1; // valid again only once this question's picture is in the working memory
     if (!e->lctx) {
+        reuse = false;
         e->lctx = llama_init_from_model(e->model, cp);
         if (!e->lctx) { r.error = "Not enough memory for the AI reader"; return r; }
         e->lctx_n_ctx = req.n_ctx;
+    } else if (reuse) {
+        // Same picture: keep it, drop the words of the previous question and its answer.
+        if (!llama_memory_seq_rm(llama_get_memory(e->lctx), 0, kept, -1)) {
+            llama_memory_clear(llama_get_memory(e->lctx), true);
+            reuse = false;
+        }
     } else {
         llama_memory_clear(llama_get_memory(e->lctx), true); // nothing of the previous question remains
     }
@@ -162,12 +185,25 @@ static Result generate_once(Engine * e, const Request & req, const std::function
 
     if (progress && !progress(0, 0)) { cleanup(); r.cancelled = true; return r; }
     auto t0 = clock::now();
-    llama_pos n_past = 0;
-    if (mtmd_helper_eval_chunks(e->mtmd, lctx, chunks, 0, 0, (int32_t) cp.n_batch, true, &n_past) != 0) {
-        cleanup();
-        if (e->cancel) r.cancelled = true; else r.error = "The AI could not read the image";
-        return r;
+    // The prompt is: the start of the chat turn, the picture, the question. With the same picture as the last
+    // question, the working memory already holds the first two: only the question is processed.
+    const size_t n_chunks = mtmd_input_chunks_size(chunks);
+    size_t img_idx = n_chunks;
+    for (size_t i = 0; i < n_chunks; i++) {
+        if (mtmd_input_chunk_get_type(mtmd_input_chunks_get(chunks, i)) == MTMD_INPUT_CHUNK_TYPE_IMAGE) { img_idx = i; break; }
     }
+    if (img_idx == n_chunks) reuse = false;
+    llama_pos n_past = reuse ? kept : 0;
+    for (size_t i = reuse ? img_idx + 1 : 0; i < n_chunks; i++) {
+        if (mtmd_helper_eval_chunk_single(e->mtmd, lctx, mtmd_input_chunks_get(chunks, i), n_past, 0, (int32_t) cp.n_batch,
+                                          i + 1 == n_chunks, &n_past) != 0) {
+            cleanup();
+            if (e->cancel) r.cancelled = true; else r.error = "The AI could not read the image";
+            return r;
+        }
+        if (i == img_idx) { e->img_hash = hash; e->img_w = req.width; e->img_h = req.height; e->prefix_n_past = n_past; }
+    }
+    if (reuse) { e->prefix_n_past = kept; r.picture_reused = true; }
     auto t1 = clock::now();
     r.encode_seconds = std::chrono::duration<double>(t1 - t0).count();
 
