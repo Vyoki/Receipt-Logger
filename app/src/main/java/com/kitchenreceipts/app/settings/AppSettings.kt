@@ -125,7 +125,13 @@ class AppSettings(context: Context) {
     /** Finds what was learned about a supplier's documents (set by the app container; see LearningStore). */
     @Volatile var layoutLookup: ((String) -> com.kitchenreceipts.core.SupplierLayout?)? = null
 
-    fun parseOptions() = ParseOptions(ownBusinessName.ifBlank { null }, ownVatNumber.ifBlank { null }, layoutLookup = layoutLookup, today = java.time.LocalDate.now())
+    /** The supplier saved on this phone (or in the knowledge pack) under a VAT number (set by the app container). */
+    @Volatile var supplierLookup: ((String) -> String?)? = null
+
+    fun parseOptions() = ParseOptions(
+        ownBusinessName.ifBlank { null }, ownVatNumber.ifBlank { null }, layoutLookup = layoutLookup, today = java.time.LocalDate.now(),
+        supplierByVat = supplierLookup,
+    )
 
     companion object {
         const val FILE = "settings"

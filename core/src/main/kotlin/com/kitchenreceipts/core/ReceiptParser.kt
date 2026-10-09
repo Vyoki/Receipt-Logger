@@ -29,6 +29,11 @@ data class ParseOptions(
      * ("2078" for "2018") or an old paper: shown for checking. Null: no such check (tests, old documents).
      */
     val today: java.time.LocalDate? = null,
+    /**
+     * The name of the supplier saved on this phone under a VAT number, or null when that number is not known. A known
+     * number (its check digit valid) proves the supplier whatever its logo looks like (see [SupplierProof]).
+     */
+    val supplierByVat: ((String) -> String?)? = null,
 )
 
 object ReceiptParser {
@@ -207,7 +212,10 @@ object ReceiptParser {
                 // A discount line is never the supplier ("Sconto inc." on a page whose letterhead is a picture).
                 sellerName = doc.sellerName?.takeUnless { Adjustments.isDiscount(it.value) },
             )
-            return Handwriting.mark(Parties.apply(HeaderGrid.apply(marked, grid, o.today), supplier), pages)
+            val withParties = Parties.apply(HeaderGrid.apply(marked, grid, o.today), supplier)
+            // The supplier's name is sure only when independent places on the page agree (or the phone knows its VAT).
+            val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o) }.getOrDefault(withParties)
+            return Handwriting.mark(proven, pages)
         }
         val plain = read(options.copy(layoutLookup = null))
         if (options.layout != null || options.layoutLookup == null) return plain

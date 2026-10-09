@@ -52,12 +52,14 @@ class AiLoopTest {
     @Test fun theLineThatDoesNotAddUpIsAskedFirstAndSettled() {
         val good = """{"code":"10003","colli":null,"description":"SALE MARINO FINO","unit":"NR","quantity":"10","price":"0,422","discount":null,"amount":"4,22","vat_rate":null,"lot":null}"""
         val (loop, asked) = run(ai(good))
-        assertTrue(asked.first() is AiTarget.Row)
+        // The supplier's name is printed in one place only (not proven): who issued it is asked first, then the line.
+        assertTrue(asked.first() is AiTarget.Supplier)
+        assertTrue(asked[1] is AiTarget.Row)
         assertEquals(422L, loop.doc.lineItems[2].lineTotalCents?.value)
         // Never the same question twice; stops on its own, well under the limit.
         assertEquals(asked.size, asked.map { AiLoop.key(it) }.distinct().size)
         assertTrue(asked.size < AiLoop.MAX_QUESTIONS)
-        assertTrue(asked.none { it is AiTarget.Row && it.rowText.contains("SALE") && asked.indexOf(it) > 0 })
+        assertEquals(1, asked.count { it is AiTarget.Row && it.rowText.contains("SALE") })
     }
 
     @Test fun aWholeLineNotProvenIsAskedAgainOneNumberAtATime() {

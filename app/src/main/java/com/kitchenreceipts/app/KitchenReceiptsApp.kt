@@ -97,6 +97,12 @@ class AppContainer(context: Context) {
 
     init {
         importQueue.onAutoSaved = { id, pending -> readings.save(id, pending.rawLines); checkDishes(id) }
+        // A supplier already saved under a VAT number proves the supplier of a new document with that number. Read on
+        // the reading's background thread; never on the main thread (the database refuses it, and nothing is lost).
+        settings.supplierLookup = { vat ->
+            runCatching { database.sellerDao().byVatNumber(vat)?.name }.getOrNull()
+                ?: runCatching { knowledge.pack.value.nameOf(vat) }.getOrNull()
+        }
     }
 
     /**

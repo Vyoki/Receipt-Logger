@@ -109,6 +109,8 @@ data class ParsedDocument(
     val lotsUnderItems: Boolean = false,
     /** Most likely handwritten (or a very poor photo): the OCR was unsure of many words (see Handwriting). */
     val handwritten: Boolean = false,
+    /** Where the supplier's name was read and whether those places agree (see [SupplierProof]); null = not checked. */
+    val supplierProof: SupplierProof.Result? = null,
 ) {
     companion object {
         val EMPTY = ParsedDocument(
