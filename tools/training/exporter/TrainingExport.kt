@@ -56,27 +56,33 @@ fun main(args: Array<String>) {
 
 private class Exporter(private val dir: File, private val r: Random) {
     private val truth = Json.parse(File(dir, "truth.json").readText()) as Map<*, *>
-    private val lines = parseReport(File(dir, "reading.txt").readText())
+    /** Each page's reading: reading.txt, then reading2.txt, reading3.txt... (one photo per sheet). */
+    private val pages: List<List<OcrLine>> = (0 until (truth["pages"]?.let(::int) ?: 1)).map { p ->
+        parseReport(File(dir, "reading${if (p == 0) "" else (p + 1).toString()}.txt").readText())
+    }
     private val lang = truth["lang"] as String
     private val items = (truth["items"] as List<*>).map { it as Map<*, *> }
     private val options = ParseOptions(ownVatNumber = "09876543217", today = LocalDate.of(2026, 12, 31))
-    private val text = LayoutRows.toText(lines)
-    private val photo = truth["photo"] as Map<*, *>
-    private val scale = AiImagePlan.plan(lines, int(photo["width"]), int(photo["height"])).scale
+    private val text = pages.joinToString("\n${ReceiptParser.PAGE_BREAK}\n") { LayoutRows.toText(it) }
+    private val photos = (truth["photos"] as? List<*>)?.map { it as Map<*, *> } ?: listOf(truth["photo"] as Map<*, *>)
+    private val scales = pages.mapIndexed { p, lines -> AiImagePlan.plan(lines, int(photos[p]["width"]), int(photos[p]["height"])).scale }
+    /** The page the totals are printed on (null: no prices); a totals question about another page has nothing to read. */
+    private val totalsPage = if (truth.containsKey("totals_page")) truth["totals_page"]?.let(::int) else if ((truth["totals"] as? Map<*, *>)?.isNotEmpty() == true) 0 else null
     private val out = mutableListOf<String>()
 
     fun export(): List<String> {
-        val start = ReceiptParser.parsePages(listOf(lines), options)
+        val start = ReceiptParser.parsePages(pages, options)
         // 1. Single looks at every kind of area: every line, the header, the totals, the supplier's box (as if each
         //    were in doubt), and the planner's own double-checks.
-        val doubted = doubt(start)
-        val singles = (AiTargets.plan(listOf(lines), doubted, spotCheck = false).orEmpty() +
-            AiTargets.plan(listOf(lines), start, spotCheck = true).orEmpty()).distinctBy { AiLoop.key(it) }
+        //    The lines in groups of eight: the planner stops when more than half of a long document is in doubt (on the
+        //    phone that is a page not understood), so a long document doubted all at once would give no line looks.
+        val singles = (start.lineItems.indices.chunked(8).flatMap { group -> AiTargets.plan(pages, doubt(start, group.toSet()), spotCheck = false).orEmpty() } +
+            AiTargets.plan(pages, start, spotCheck = true).orEmpty()).distinctBy { AiLoop.key(it) }
         for (t in singles) look(t, "look", null)
-        AiTargets.layoutQuestion(listOf(lines), start.copy(itemsReadBy = "text", layout = null))?.let { q -> layout(q.boxes, q.headings) }
+        AiTargets.layoutQuestion(pages, start.copy(itemsReadBy = "text", layout = null))?.let { q -> layout(q.page, q.boxes, q.headings) }
         // 2. The loop, as the phone runs it, with the right answers, some whole-line answers that do not add up (as a
         //    small model gives them) and the follow-ups that correct them, and the choice of what to ask next.
-        val loop = AiLoop(listOf(lines), text, options, start)
+        val loop = AiLoop(pages, text, options, start)
         while (true) {
             val open = loop.candidates()
             if (open.isEmpty()) break
@@ -110,7 +116,7 @@ private class Exporter(private val dir: File, private val r: Random) {
         }
     }
 
-    private fun layout(boxes: List<PageBox>, headings: List<String>) {
+    private fun layout(page: Int, boxes: List<PageBox>, headings: List<String>) {
         val cols = (truth["headings"] as Map<*, *>).entries.associate { (k, v) -> norm(v as String) to k as String }
         val letters = headings.map { h ->
             val n = norm(h)
@@ -118,15 +124,15 @@ private class Exporter(private val dir: File, private val r: Random) {
             LAYOUT[col?.value] ?: "K"
         }
         val (prompt, grammar) = AiTasks.layout(headings)
-        emit("look", 0, boxes, prompt, letters.joinToString(","), "compact", grammar)
+        emit("look", page, boxes, prompt, letters.joinToString(","), "compact", grammar)
     }
 
     private fun emit(kind: String, page: Int?, boxes: List<PageBox>, prompt: String, answer: String, style: String, grammar: String) {
         out += buildString {
             append("{\"doc\":").append(q(dir.name)).append(",\"kind\":").append(q(kind)).append(",\"style\":").append(q(style))
-            append(",\"lang\":").append(q(lang)).append(",\"image\":").append(if (page == null) "null" else q("page.jpg"))
+            append(",\"lang\":").append(q(lang)).append(",\"image\":").append(if (page == null) "null" else q("page${if (page == 0) "" else (page + 1).toString()}.jpg"))
             append(",\"boxes\":[").append(boxes.joinToString(",") { "[${it.left},${it.top},${it.right},${it.bottom}]" }).append("]")
-            append(",\"scale\":").append(scale).append(",\"prompt\":").append(q(prompt)).append(",\"answer\":").append(q(answer))
+            append(",\"scale\":").append(scales.getOrElse(page ?: 0) { scales[0] }).append(",\"prompt\":").append(q(prompt)).append(",\"answer\":").append(q(answer))
             append(",\"grammar\":").append(q(grammar)).append("}")
         }
     }
@@ -141,7 +147,8 @@ private class Exporter(private val dir: File, private val r: Random) {
         val strip = t.boxes.lastOrNull() ?: return null
         val rowText = when (t) { is AiTarget.Row -> t.rowText; is AiTarget.Number -> t.rowText; is AiTarget.Choice -> t.rowText; else -> return null }
         val ocr = words(rowText)
-        val scored = items.map { it to score(it, ocr, rowText) + 0.001 * overlap(it, strip) }
+        val onPage = items.filter { (it["page"]?.let(::int) ?: 0) == t.page }
+        val scored = onPage.map { it to score(it, ocr, rowText) + 0.001 * overlap(it, strip) }
         val best = scored.maxByOrNull { it.second } ?: return null
         return best.first.takeIf { best.second >= 0.4 }
     }
@@ -186,7 +193,8 @@ private class Exporter(private val dir: File, private val r: Random) {
             if (i >= 0) "ABCD"[i].toString() else "X"
         }
         is AiTarget.Header -> obj("seller" to truth["seller"], "seller_vat" to truth["seller_vat"], "number" to truth["number"], "date" to truth["date_text"])
-        is AiTarget.Totals -> (truth["totals"] as Map<*, *>).let { tt -> obj("subtotal" to tt["subtotal"], "vat" to tt["vat"], "total" to tt["total"]) }
+        is AiTarget.Totals -> (truth["totals"] as Map<*, *>).takeIf { t.page == totalsPage }
+            .let { tt -> obj("subtotal" to tt?.get("subtotal"), "vat" to tt?.get("vat"), "total" to tt?.get("total")) }
         is AiTarget.Supplier -> obj("name" to truth["seller"], "vat" to truth["seller_vat"])
     }
 
@@ -226,12 +234,14 @@ private class Exporter(private val dir: File, private val r: Random) {
 
     // ------------------------------------------------------------------ helpers
 
-    /** Every value in doubt, so the planner asks about every line, the header, the totals and the supplier's box. */
-    private fun doubt(d: ParsedDocument): ParsedDocument = d.copy(
+    /** [lines], the header, the totals and the supplier's box in doubt, so the planner asks about each of them. */
+    private fun doubt(d: ParsedDocument, lines: Set<Int>): ParsedDocument = d.copy(
         sellerName = d.sellerName?.copy(confidence = Confidence.LOW),
         documentDate = d.documentDate?.copy(confidence = Confidence.LOW),
         totalCents = d.totalCents?.copy(confidence = Confidence.LOW),
-        lineItems = d.lineItems.map { it.copy(quantity = it.quantity?.copy(confidence = Confidence.LOW), unitPrice = it.unitPrice?.copy(confidence = Confidence.LOW)) },
+        lineItems = d.lineItems.mapIndexed { i, it ->
+            if (i !in lines) it else it.copy(quantity = it.quantity?.copy(confidence = Confidence.LOW), unitPrice = it.unitPrice?.copy(confidence = Confidence.LOW))
+        },
     )
 
     /** A number from the JSON reader (which keeps numbers as text). */

@@ -22,8 +22,13 @@ Nothing real is used: every document is invented.
 **Documents** (`gen_docs.py`): invoices, delivery notes, deferred invoices printed from the e-invoice, cash & carry
 receipts, handwritten delivery notes; Italian and English; heading synonyms (IMPORTO / PREZZO TOTALE / TOTALE / AMOUNT …),
 headings on two lines, any column order, discounts (10+5), lots, discount and charge lines, supplier boxes and
-letterheads, totals as lines or grids; photos tilted, in perspective, shadowed, blurred, noisy; the OCR's usual slips
-(0/O, 1/l, a lost decimal comma, a table rule read as "|"). Handwriting fonts are downloaded in Colab (Google Fonts).
+letterheads, totals as lines or grids; logos (block letters, a word in an oval), approval marks, storage letters and
+row types with the legend that explains them, group lines, lots under the code or the name, origin / category / calibre
+lines; documents over several pages (one photo per sheet: "SEGUE" at the foot, the header and headings repeated, the
+totals on the last page with items or alone, sometimes a page of sale conditions after them; a totals question on a page
+without totals is answered `null`); photos tilted, in perspective, bent, folded, in poor light, with a finger or another
+page at the edge, blurred, noisy; the OCR's usual slips (0/O, 1/l, a lost decimal comma, a table rule read as "|").
+Handwriting fonts are downloaded in Colab (Google Fonts). Long documents are looked at line by line in groups of eight.
 
 **The app** uses the trained model when its file name contains `kitchen` (`kitchen-reader-2b-Q4_K_M.gguf`): short
 prompts, and the model chooses what to look at next; the arithmetic still decides every value.
