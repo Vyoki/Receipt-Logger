@@ -49,9 +49,13 @@ class AppContainer(context: Context) {
     fun aiUse(): AiUse? {
         val mode = settings.aiMode
         if (mode == AppSettings.AiMode.OFF || !aiModels.installed || !aiModels.deviceSupport().nativeOk) return null
+        // The model trained for this app ("kitchen-reader-…"): short questions, and it chooses what to look at next.
+        val trained = aiModels.installedName?.contains("kitchen", ignoreCase = true) == true
         return AiUse(
             reader = { AiPageReader.open(aiModels, nativeLibDir) },
             always = mode == AppSettings.AiMode.ALWAYS,
+            style = if (trained) com.kitchenreceipts.core.AiTasks.Style.COMPACT else com.kitchenreceipts.core.AiTasks.Style.FULL,
+            agent = trained,
             examples = { parsed, text ->
                 learning.examples(SupplierMemory.key(text, settings.ownVatNumber.ifBlank { null }, parsed.sellerName?.value))
             },
