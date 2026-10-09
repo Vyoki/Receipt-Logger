@@ -80,6 +80,7 @@ class AiModelStore(private val context: Context) {
         val mm = picked.firstOrNull { it.name.contains("mmproj", ignoreCase = true) }
             ?: picked.minByOrNull { if (it.size < 0) Long.MAX_VALUE else it.size }!!
         val model = picked.first { it !== mm }
+        if (!isTrained(model.name)) throw IOException(context.getString(com.kitchenreceipts.app.R.string.ai_only_trained, model.name))
         val total = picked.sumOf { maxOf(0L, it.size) }
         var copied = 0L
         val tmpModel = File(dir, "model.part")
@@ -115,10 +116,12 @@ class AiModelStore(private val context: Context) {
     }
 
     companion object {
-        private const val HF = "https://huggingface.co/Qwen"
         private const val TRAINED = "https://huggingface.co/ArdentSun/kitchen-reader-2b"
         const val TRAINED_ID = "kitchen-2b"
-        /** Checked in CI on a synthetic invoice: both read every line right when given the OCR text; 2B takes about half the time. */
+
+        /** The trained model's files are named kitchen-reader-…; the app's short questions are made for it alone. */
+        fun isTrained(fileName: String?): Boolean = fileName?.contains("kitchen", ignoreCase = true) == true
+        /** Only the model trained for kitchen documents: the general models need long instructions and read worse. */
         val OPTIONS = listOf(
             // Qwen3-VL 2B trained on the app's own questions (invented documents only): see tools/training.
             AiModelOption(
@@ -126,18 +129,6 @@ class AiModelStore(private val context: Context) {
                 modelUrl = "$TRAINED/resolve/main/kitchen-reader-2b-Q4_K_M.gguf?download=true",
                 mmprojUrl = "$TRAINED/resolve/main/mmproj-kitchen-reader-2b-Q8_0.gguf?download=true",
                 minRamGb = 6,
-            ),
-            AiModelOption(
-                id = "qwen3vl-2b", label = "Qwen3-VL 2B", approxGb = "1.5",
-                modelUrl = "$HF/Qwen3-VL-2B-Instruct-GGUF/resolve/main/Qwen3VL-2B-Instruct-Q4_K_M.gguf?download=true",
-                mmprojUrl = "$HF/Qwen3-VL-2B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-2B-Instruct-Q8_0.gguf?download=true",
-                minRamGb = 6,
-            ),
-            AiModelOption(
-                id = "qwen3vl-4b", label = "Qwen3-VL 4B", approxGb = "3",
-                modelUrl = "$HF/Qwen3-VL-4B-Instruct-GGUF/resolve/main/Qwen3VL-4B-Instruct-Q4_K_M.gguf?download=true",
-                mmprojUrl = "$HF/Qwen3-VL-4B-Instruct-GGUF/resolve/main/mmproj-Qwen3VL-4B-Instruct-Q8_0.gguf?download=true",
-                minRamGb = 8,
             ),
         )
     }

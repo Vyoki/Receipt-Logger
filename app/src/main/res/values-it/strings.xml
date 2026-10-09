@@ -369,16 +369,16 @@
     <string name="ai_testing">Caricamento…</string>
     <string name="ai_remove">Rimuovi modello IA</string>
     <string name="ai_remove_text">I file del modello vengono cancellati dall\'app. Puoi caricarli di nuovo quando vuoi.</string>
-    <string name="ai_step1">1. Scegli il modello</string>
-    <string name="ai_option_trained">%1$s – consigliato: addestrato sui documenti di cucina in italiano e inglese, domande più brevi e veloci (circa %2$s GB)</string>
-    <string name="ai_option_best">%1$s – modello generico: legge bene (circa %2$s GB)</string>
-    <string name="ai_option_fast">%1$s – più grande, circa due volte più lento (circa %2$s GB)</string>
+    <string name="ai_step1">1. Il modello</string>
+    <string name="ai_general_installed">Questo è un modello generico, non quello addestrato sui documenti di cucina: rimuovilo e carica Kitchen reader 2B per una lettura migliore e più veloce.</string>
+    <string name="ai_only_trained">\"%1$s\" non è il modello Kitchen reader: si può caricare solo il modello addestrato sui documenti di cucina.</string>
+    <string name="ai_option_trained">%1$s – addestrato sui documenti di cucina in italiano e inglese (circa %2$s GB)</string>
     <string name="ai_step2">2. Scarica i due file con il browser</string>
     <string name="ai_download_model">Scarica il file del modello</string>
     <string name="ai_download_vision">Scarica il file visione (mmproj)</string>
     <string name="ai_step3">3. Quando i due download sono finiti</string>
     <string name="ai_load_files">Carica i 2 file scaricati</string>
-    <string name="ai_download_note">I file provengono da huggingface.co (modelli basati su Qwen, licenza Apache 2.0). Il modello non lo scarica l\'app: lo scarichi tu, dal browser. Dopo il caricamento puoi cancellare i file dai Download.</string>
+    <string name="ai_download_note">I file provengono da huggingface.co (Kitchen reader, basato su Qwen3-VL, licenza Apache 2.0). Il modello non lo scarica l\'app: lo scarichi tu, dal browser. Dopo il caricamento puoi cancellare i file dai Download.</string>
     <string name="ai_copying">Copia del modello nell\'app…</string>
 
     <!-- owner report -->
