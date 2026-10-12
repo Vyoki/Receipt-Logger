@@ -655,4 +655,5 @@
         <item quantity="other">%1$d cose da guardare</item>
     </plurals>
     <string name="err_ambiguous_number">1.500 può voler dire 1500 o 1,5: scrivi 1500 oppure 1,5</string>
+    <string name="job_stopped_twice">L\'app si è fermata due volte leggendo questo documento. Riprova, oppure scartalo.</string>
 </resources>

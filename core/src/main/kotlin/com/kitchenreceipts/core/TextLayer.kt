@@ -103,7 +103,10 @@ object TextLayer {
             val near = textWords.filter { overlap(it, o) > 0 }
             if (near.isEmpty()) null else near.any { t -> key(t.text).let { k -> k.contains(key(o.text)) || key(o.text).contains(k) && k.length >= 3 } }
         }
-        if (compared.size < 5) return compared.isEmpty() || compared.count { it } * 2 >= compared.size
+        // Nothing to compare: fine only when the OCR read nothing (a page blank to the camera). OCR words that no text
+        // overlaps mean the text sits somewhere else than the picture (a hidden text layer shifted when the scan was
+        // straightened): used, every line would be read twice.
+        if (compared.isEmpty()) return ocrWords.isEmpty()
         return compared.count { it } * 2 >= compared.size
     }
 

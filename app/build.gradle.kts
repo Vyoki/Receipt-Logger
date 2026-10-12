@@ -18,9 +18,10 @@ android {
         versionName = "0.1.0+" + (System.getenv("GITHUB_SHA")?.take(7) ?: "local")
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
-        // On-device AI reader (llama.cpp). arm64 for phones, x86_64 for the emulator used in tests.
+        // On-device AI reader (llama.cpp). arm64 for phones; x86_64 only for the emulator the tests run on
+        // (-PkrEmulator), so the phone's APK does not carry a second set of native libraries no phone uses.
         ndk {
-            abiFilters += listOf("arm64-v8a", "x86_64")
+            abiFilters += if (project.hasProperty("krEmulator")) listOf("arm64-v8a", "x86_64") else listOf("arm64-v8a")
         }
         externalNativeBuild {
             cmake {
@@ -53,6 +54,9 @@ android {
     buildTypes {
         debug {
             if (keystore != null) signingConfig = signingConfigs.getByName("fixed")
+            // The APK for the phone (-PkrPhone, the CI build): not debuggable, so screens run at full speed and the
+            // strict JNI checks of debug builds are off. The emulator tests need a debuggable build and do not pass it.
+            if (project.hasProperty("krPhone")) isDebuggable = false
         }
         release {
             isMinifyEnabled = true

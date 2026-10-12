@@ -156,7 +156,7 @@ private fun subtitle(job: ImportJob): String {
             else -> stringResource(R.string.reading_page, p.page, p.of)
         }
         JobStatus.READY, JobStatus.SAVED -> listOfNotNull(job.sellerName, job.totalCents?.let { fmtMoney(it) }, pages).joinToString(" · ")
-        JobStatus.FAILED -> job.error ?: pages
+        JobStatus.FAILED -> if (job.error == com.kitchenreceipts.app.jobs.ImportQueue.STOPPED) stringResource(R.string.job_stopped_twice) else job.error ?: pages
         JobStatus.QUEUED -> pages
     }
 }

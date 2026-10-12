@@ -26,7 +26,7 @@ class PageRenderer(private val files: FileStore) {
             when (mimeType) {
                 FileStore.MIME_PDF -> renderPdfPage(f, pageIndex, targetWidth)
                 FileStore.MIME_XML -> renderInvoiceText(f, pageIndex, targetWidth)
-                else -> decodeImage(f, targetWidth)
+                else -> decodeImage(f, targetWidth, fit = true)
             }
         }
 
@@ -79,8 +79,11 @@ class PageRenderer(private val files: FileStore) {
         return flat
     }
 
-    /** Decodes a photo respecting its EXIF orientation, downsampled so its long side is about [maxSide]. */
-    fun decodeImage(file: File, maxSide: Int): Bitmap {
+    /**
+     * Decodes a photo respecting its EXIF orientation, downsampled in halving steps so its long side is about
+     * [maxSide] (up to twice it). With [fit] (a page to read) it is scaled the rest of the way.
+     */
+    fun decodeImage(file: File, maxSide: Int, fit: Boolean = false): Bitmap {
         val bounds = BitmapFactory.Options().apply { inJustDecodeBounds = true }
         BitmapFactory.decodeFile(file.absolutePath, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) throw IOException("The image cannot be decoded")
@@ -94,6 +97,10 @@ class PageRenderer(private val files: FileStore) {
             ExifInterface.ORIENTATION_NORMAL
         }
         val m = Matrix()
+        // Halving steps alone can leave a 12 MP photo at full size (4000 px for a 2400 px reading): scaled the rest of
+        // the way, so the reading and its memory are what [maxSide] says.
+        val long = maxOf(decoded.width, decoded.height)
+        if (fit && long > maxSide * 1.2) { val f = maxSide.toFloat() / long; m.postScale(f, f) }
         when (orientation) {
             ExifInterface.ORIENTATION_ROTATE_90 -> m.postRotate(90f)
             ExifInterface.ORIENTATION_ROTATE_180 -> m.postRotate(180f)
@@ -102,7 +109,7 @@ class PageRenderer(private val files: FileStore) {
             ExifInterface.ORIENTATION_FLIP_VERTICAL -> m.postScale(1f, -1f)
             ExifInterface.ORIENTATION_TRANSPOSE -> { m.postRotate(90f); m.postScale(-1f, 1f) }
             ExifInterface.ORIENTATION_TRANSVERSE -> { m.postRotate(270f); m.postScale(-1f, 1f) }
-            else -> return decoded
+            else -> if (m.isIdentity) return decoded
         }
         val rotated = Bitmap.createBitmap(decoded, 0, 0, decoded.width, decoded.height, m, true)
         if (rotated != decoded) decoded.recycle()

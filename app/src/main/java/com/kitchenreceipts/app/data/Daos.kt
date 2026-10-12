@@ -551,6 +551,10 @@ interface ChecksDao {
     )
     suspend fun compareLines(documentIds: List<Long>): List<CompareLineRow>
 
+    /** Emits again whenever line items change (their number is only a trigger). */
+    @Query("SELECT COUNT(*) FROM line_items")
+    fun lineItemsChanged(): Flow<Int>
+
     /** Lines of documents that count as purchases, linked to a product: checked against agreed prices. */
     @Query(
         """

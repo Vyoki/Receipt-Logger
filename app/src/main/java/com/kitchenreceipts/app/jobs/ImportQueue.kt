@@ -46,6 +46,8 @@ data class ImportJob(
     val sellerName: String? = null,
     val totalCents: Long? = null,
     val itemCount: Int = 0,
+    /** Readings started (kept on the phone): a document that stops the app is not read again and again. */
+    val attempts: Int = 0,
 )
 
 /**
@@ -126,7 +128,7 @@ class ImportQueue(
 
     fun retry(id: String) {
         val job = job(id) ?: return
-        update(job.copy(status = JobStatus.QUEUED, error = null, progress = null))
+        update(job.copy(status = JobStatus.QUEUED, error = null, progress = null, attempts = 0))
         startWorker()
         wake.trySend(Unit)
     }
@@ -171,14 +173,26 @@ class ImportQueue(
     }
 
     private suspend fun read(start: ImportJob) {
-        var j = start.copy(status = JobStatus.READING, progress = ImportProgress(0, start.file.pageCount, 1))
+        // A reading that did not finish twice (the app was closed by Android or crashed while reading it, for example
+        // short of memory with the AI) is not started again by itself: the operator sees it and decides.
+        if (start.attempts >= MAX_ATTEMPTS) {
+            log.event("JOB_GAVE_UP", "job" to start.id.take(8), "attempts" to start.attempts)
+            val failed = start.copy(status = JobStatus.FAILED, error = STOPPED, progress = null)
+            update(failed)
+            notifier.finished(failed)
+            return
+        }
+        var j = start.copy(status = JobStatus.READING, progress = ImportProgress(0, start.file.pageCount, 1), attempts = start.attempts + 1)
         update(j)
+        // The second try reads without the AI (the likeliest cause of the app being stopped).
+        val ai = if (j.attempts >= 2) null else aiUse()
+        if (j.attempts >= 2) log.event("JOB_RETRY_WITHOUT_AI", "job" to j.id.take(8))
         val t0 = System.currentTimeMillis()
         try {
             val pending = processor.process(
                 j.file, engine,
                 { p -> job(j.id)?.let { update(it.copy(progress = p), persist = false) } },
-                settings.parseOptions(), aiUse(),
+                settings.parseOptions(), ai,
             )
             saveReading(j, pending)
             log.event(
@@ -252,6 +266,7 @@ class ImportQueue(
         job.sellerName?.let { p["seller"] = it }
         job.totalCents?.let { p["total"] = it.toString() }
         p["items"] = job.itemCount.toString()
+        p["attempts"] = job.attempts.toString()
         runCatching { File(d, "meta.properties").outputStream().use { p.store(it, null) } }
     }
 
@@ -272,6 +287,7 @@ class ImportQueue(
             sellerName = p.getProperty("seller"),
             totalCents = p.getProperty("total")?.toLongOrNull(),
             itemCount = p.getProperty("items")?.toIntOrNull() ?: 0,
+            attempts = p.getProperty("attempts")?.toIntOrNull() ?: 0,
         )
     }
 
@@ -315,5 +331,13 @@ class ImportQueue(
             aiKeys = aiChecks.indices.map { i -> File(d, "ai-check-$i.key").takeIf { it.exists() }?.readText() }
                 .let { k -> if (k.all { it != null }) k.filterNotNull() else emptyList() },
         )
+    }
+
+    companion object {
+        /** Readings started before giving up (the second one without the AI). */
+        const val MAX_ATTEMPTS = 2
+
+        /** [ImportJob.error] of a reading that stopped the app twice (shown in the operator's language). */
+        const val STOPPED = "stopped"
     }
 }

@@ -55,6 +55,14 @@ class AiLoop(
             .map { it.value }
     }
 
+    /**
+     * The model is asked which question comes next only when it is worth it: several kinds are open, and the first is
+     * not the follow-up on the picture just processed (that one comes next anyway, and asking in between would make
+     * the phone process the picture again: see [candidates]).
+     */
+    fun worthDeciding(open: List<AiTarget>): Boolean =
+        AiTasks.worthDeciding(open) && !(samePicture(open.first()) && priority(open.first()) <= 3)
+
     /** The next question, or null when there is nothing more to ask. */
     fun next(): AiTarget? = candidates().firstOrNull()
 
