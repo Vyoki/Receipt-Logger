@@ -98,24 +98,36 @@ class ChecksRepository(private val db: AppDatabase) {
     fun documents(): Flow<List<MatchDocRow>> = dao.matchDocsFlow()
 
     /** The check of one invoice: its delivery notes, the ones it names but are not saved, and the differences. */
-    suspend fun invoiceCheck(invoiceId: Long): InvoiceCheck? = withContext(Dispatchers.Default) { invoiceCheck(invoiceId, dao.matchDocs()) }
+    suspend fun invoiceCheck(invoiceId: Long): InvoiceCheck? = withContext(Dispatchers.Default) {
+        val all = dao.matchDocs()
+        invoiceCheck(invoiceId, all, linesOf(all.filter { it.coveredBy == invoiceId }.map { it.id } + invoiceId))
+    }
 
-    private suspend fun invoiceCheck(invoiceId: Long, all: List<MatchDocRow>): InvoiceCheck? {
+    /** The lines of these documents by document, in one read (a few hundred ids per query, SQLite's limit). */
+    private suspend fun linesOf(ids: List<Long>): Map<Long, List<CompareLine>> = ids.distinct().chunked(500).flatMap { chunk ->
+        dao.compareLines(chunk).map {
+            CompareLine(it.documentId, it.lineItemId, it.productId, it.originalDescription, it.quantity, it.unit, it.lineTotalCents, it.unitPrice)
+        }
+    }.groupBy { it.documentId }
+
+    private fun invoiceCheck(invoiceId: Long, all: List<MatchDocRow>, lines: Map<Long, List<CompareLine>>): InvoiceCheck? {
         val inv = all.firstOrNull { it.id == invoiceId } ?: return null
         val notes = all.filter { it.coveredBy == invoiceId }
         val missing = DeliveryMatching.missing(inv.toMatch(), all.map { it.toMatch() })
         if (notes.isEmpty()) return InvoiceCheck(invoiceId, notes, missing, emptyList())
-        val lines = dao.compareLines(notes.map { it.id } + invoiceId).map {
-            CompareLine(it.documentId, it.lineItemId, it.productId, it.originalDescription, it.quantity, it.unit, it.lineTotalCents, it.unitPrice)
-        }
-        val diffs = DeliveryMatching.compare(lines.filter { it.documentId == invoiceId }, lines.filter { it.documentId != invoiceId })
+        val diffs = DeliveryMatching.compare(lines[invoiceId].orEmpty(), notes.sortedBy { it.id }.flatMap { lines[it.id].orEmpty() })
         return InvoiceCheck(invoiceId, notes, missing, diffs)
     }
 
-    /** Every invoice with delivery notes, checked; for the Checks screen. */
-    fun invoiceChecks(): Flow<List<InvoiceCheck>> = dao.matchDocsFlow().map { all ->
+    /**
+     * Every invoice with delivery notes, checked; for the Checks screen. Read again when documents or lines change
+     * (linking lines to products changes the comparison too), all the lines in one go.
+     */
+    fun invoiceChecks(): Flow<List<InvoiceCheck>> = combine(dao.matchDocsFlow(), dao.lineItemsChanged()) { all, _ -> all }.map { all ->
         val invoices = all.filter { inv -> all.any { it.coveredBy == inv.id } || inv.ddtRefs != null }
-        invoices.mapNotNull { invoiceCheck(it.id, all) }.filter { it.differences.isNotEmpty() || it.missing.isNotEmpty() }
+        val ids = invoices.flatMap { inv -> all.filter { it.coveredBy == inv.id }.map { it.id } + inv.id }
+        val lines = linesOf(ids)
+        invoices.mapNotNull { invoiceCheck(it.id, all, lines) }.filter { it.differences.isNotEmpty() || it.missing.isNotEmpty() }
     }.flowOn(Dispatchers.Default)
 
     // ------------------------------------------------------------ agreed prices

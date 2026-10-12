@@ -85,6 +85,8 @@ data class ReviewState(
     val priceChanges: List<PriceChange> = emptyList(),
     /** The operator's corrections from last time were brought back (they had left before saving). */
     val restored: Boolean = false,
+    /** One-tap replacements under the doubtful values (see core Replacements), worked out off the screen's thread. */
+    val replacements: Map<String, List<String>> = emptyMap(),
     /** A new document's kind, read from its title (null: not printed); shown and changed with one tap before saving. */
     val kind: com.kitchenreceipts.core.DocKind? = null,
 )
@@ -175,6 +177,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
 
     init {
         viewModelScope.launch { if (documentId == null) loadPending() else loadExisting(documentId) }
+        // The suppliers saved on the phone come in a moment after opening: the supplier's replacements follow them.
+        viewModelScope.launch { sellerNames.collect { if (!_state.value.loading) refreshChecks(0) } }
     }
 
     private suspend fun loadPending() {
@@ -210,6 +214,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             reviewReasons = if (kept != null) AutoAccept.reasons(draft) else prepared.reasons,
             priceChanges = if (kept != null) priceChanges(draft) else prepared.priceChanges,
         )
+        refreshChecks(0)
     }
 
     private suspend fun priceChanges(d: DocumentDraft): List<PriceChange> = c.preparer.priceChanges(d, documentId)
@@ -281,6 +286,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             reviewReasons = AutoAccept.reasons(shown),
             priceChanges = priceChanges(shown),
         )
+        refreshChecks(0)
     }
 
     /** The edits differ from what was loaded (asked before leaving a saved document's edit). */
@@ -294,11 +300,28 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
 
     // ------------------------------------------------------------ editing
 
-    private fun editDraft(f: (DocumentDraft) -> DocumentDraft) {
-        _state.update {
-            val d = f(it.draft)
-            it.copy(draft = d, saveError = null, reviewReasons = AutoAccept.reasons(d))
+    private var checkJob: Job? = null
+
+    /**
+     * The checks that go over the whole document (what is left to look at, the replacements under doubtful values):
+     * on a background thread, a moment after the last keystroke, so typing on a long invoice stays smooth. Saving
+     * works them out again itself.
+     */
+    private fun refreshChecks(delayMs: Long = 120) {
+        checkJob?.cancel()
+        checkJob = viewModelScope.launch(Dispatchers.Default) {
+            delay(delayMs)
+            val d = _state.value.draft
+            val reasons = AutoAccept.reasons(d)
+            val known = sellerNames.value + runCatching { c.knowledge.pack.value.suppliers.map { it.name } }.getOrDefault(emptyList())
+            val repl = com.kitchenreceipts.core.Replacements.compute(d, known, LocalDate.now())
+            _state.update { if (it.draft === d) it.copy(reviewReasons = reasons, replacements = repl) else it }
         }
+    }
+
+    private fun editDraft(f: (DocumentDraft) -> DocumentDraft) {
+        _state.update { it.copy(draft = f(it.draft), saveError = null) }
+        refreshChecks()
         refreshPrices()
         keepJob?.cancel()
         keepJob = viewModelScope.launch(Dispatchers.IO) {

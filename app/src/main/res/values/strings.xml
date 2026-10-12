@@ -667,4 +667,5 @@
         <item quantity="other">%1$d things to look at</item>
     </plurals>
     <string name="err_ambiguous_number">1.500 can mean 1500 or 1,5: write it as 1500 or 1,5</string>
+    <string name="job_stopped_twice">The app was stopped twice while reading this one. Try again, or discard it.</string>
 </resources>

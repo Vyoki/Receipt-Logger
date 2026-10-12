@@ -362,7 +362,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             // The trained model chooses what to look at next from a short summary (no picture: under a second);
             // its choice is only an order, the arithmetic still decides every value.
             var pick = 0
-            if (ai.agent && com.kitchenreceipts.core.AiTasks.worthDeciding(open)) {
+            if (ai.agent && loop.worthDeciding(open)) {
                 val (instruction, grammar) = com.kitchenreceipts.core.AiTasks.decide(loop.doc, open)
                 val d = reader.readRegions(blank, emptyList(), blank.width, listOf(com.kitchenreceipts.core.PageBox(0, 0, blank.width, blank.height)), instruction, grammar) { _, _ -> }
                 if (d.error == "cancelled") throw CancellationException("AI reading cancelled")
@@ -420,7 +420,11 @@ class ImportProcessor(private val renderer: PageRenderer) {
         onProgress(ImportProgress(selected.first() + 1, pages, 3))
         val reader = shared.get().getOrElse { return "not started: ${it.message}" }
         val notes = mutableListOf("pages ${selected.joinToString(",") { "${it + 1}" }} of $pages")
+        val started = System.currentTimeMillis()
         for (i in selected) {
+            // A whole page takes minutes: past the limit the remaining pages keep the regular reading (the phone
+            // does not stay hot for the best part of an hour on a long document).
+            if (System.currentTimeMillis() - started > AI_PAGES_LIMIT_MS) { notes += "time limit before p${i + 1}"; break }
             val bmp = images.get(i)
             val r = reader.read(bmp, best.lines[i], best.widths.getOrElse(i) { bmp.width }, LayoutRows.toText(best.lines[i]), options) { stage, count ->
                 onProgress(ImportProgress(i + 1, pages, 3, stage, count))
@@ -574,6 +578,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
         const val MAX_OCR_PAGES = 20
         /** The AI's questions stop after this long on one document, on any phone (a slow one asks fewer). */
         const val AI_TIME_LIMIT_MS = 150_000L
+        /** Whole pages read by the AI, all pages together (a page takes 2 to 5 minutes on a phone). */
+        const val AI_PAGES_LIMIT_MS = 10 * 60_000L
         const val OCR_LONG_SIDE = 2400
     }
 }

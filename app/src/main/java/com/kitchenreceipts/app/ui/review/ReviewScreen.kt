@@ -171,11 +171,8 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
     val onPeek: (PeekRequest?) -> Unit = remember { { r -> if (r != null) peekRequest = r else if (enlarged == null) peekRequest = null } }
-    // A replacement under every value the app could not settle (computed again as the operator edits).
-    val packSellers = com.kitchenreceipts.app.ui.appContainer().knowledge.pack.collectAsStateWithLifecycle().value.suppliers
-    val replacements = remember(state.draft, sellerNames, packSellers) {
-        com.kitchenreceipts.core.Replacements.compute(state.draft, sellerNames + packSellers.map { it.name }, java.time.LocalDate.now())
-    }
+    // A replacement under every value the app could not settle (worked out by the view model as the operator edits).
+    val replacements = state.replacements
     CompositionLocalProvider(LocalFieldPeek provides onPeek, LocalReplacements provides replacements) {
     Box(Modifier.fillMaxSize()) {
     AppScaffold(
@@ -758,7 +755,8 @@ private fun SaveBar(uncertain: Int, open: Int, errors: Int, saving: Boolean, onS
 }
 
 /** Replacements of the doubtful values on screen, by field key (see core Replacements). */
-private val LocalReplacements = androidx.compose.runtime.staticCompositionLocalOf<Map<String, List<String>>> { emptyMap() }
+// Not static: a change of the replacements recomposes only the fields that read them, not the whole screen.
+private val LocalReplacements = androidx.compose.runtime.compositionLocalOf<Map<String, List<String>>> { emptyMap() }
 
 @Composable
 private fun HeaderInput(

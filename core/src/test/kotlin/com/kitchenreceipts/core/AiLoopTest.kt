@@ -92,6 +92,21 @@ class AiLoopTest {
         assertEquals(Confidence.HIGH, again.lineItems[2].lineTotalCents?.confidence)
     }
 
+    @Test fun theFollowUpOnTheSamePictureIsNotPrecededByAChoice() {
+        // The whole-line answer does not add up: the line's amount alone comes next, on the picture just processed.
+        val shifted = """{"code":"10003","colli":"10","description":"SALE MARINO FINO","unit":"NR","quantity":"0,422","price":"4,62","discount":null,"amount":"4,62","vat_rate":null,"lot":null}"""
+        val loop = AiLoop(listOf(lines), text, ParseOptions(), start())
+        while (true) {
+            val t = loop.next() ?: break
+            loop.answer(t, ai(shifted)(t))
+            if (t is AiTarget.Row) break
+        }
+        val open = loop.candidates()
+        assertTrue(open.first() is AiTarget.Number)
+        // Asking the model which comes next would make the phone process the picture again for nothing.
+        assertTrue(!loop.worthDeciding(open))
+    }
+
     @Test fun limitStopsTheLoop() {
         val loop = AiLoop(listOf(lines), text, ParseOptions(), start(), maxQuestions = 1)
         val t = loop.next()!!

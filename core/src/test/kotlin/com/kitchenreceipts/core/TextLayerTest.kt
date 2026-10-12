@@ -54,4 +54,13 @@ class TextLayerTest {
         assertEquals(seen, TextLayer.merge(nonsense, seen))
         assertTrue(TextLayer.agrees(TextLayer.lines(page), seen))
     }
+
+    @Test fun aTextLayerThatOverlapsNoneOfTheOcrIsNotUsed() {
+        // The same page read by the camera, but the hidden text sits far lower on the page (the scan was straightened after).
+        val shifted = TextLayer.lines(page.map { g -> g.copy(top = g.top + 1500, bottom = g.bottom + 1500) })
+        val seen = listOf(ocr("FATTURA N. B26 305511 DEL 03/09/2026", 100, 300), ocr("Mandorle pelate Kg. 1", 100, 400), ocr("TOTALE IMPONIBILE", 100, 600))
+        assertFalse(TextLayer.agrees(shifted, seen))
+        // A page the camera read nothing on still takes the text.
+        assertTrue(TextLayer.agrees(TextLayer.lines(page), emptyList()))
+    }
 }

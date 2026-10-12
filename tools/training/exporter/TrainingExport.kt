@@ -87,7 +87,7 @@ private class Exporter(private val dir: File, private val r: Random) {
             val open = loop.candidates()
             if (open.isEmpty()) break
             var pick = 0
-            if (AiTasks.worthDeciding(open)) {
+            if (loop.worthDeciding(open)) {
                 pick = best(loop, open)
                 val (prompt, grammar) = AiTasks.decide(loop.doc, open)
                 // The planner's first is usually right: fewer of those, so the model learns when to choose another.

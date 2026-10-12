@@ -295,7 +295,7 @@ object PageMap {
             sameSize(it.originalDescription, t) -> "description"
             n.length >= 2 && n in descWords(it.originalDescription) -> "description"
             // The camera's look-alikes (FI0R for FIOR, 26,l37 for 26,137): the same word once they are folded.
-            n.length >= 3 && fold(n) in descWords(it.originalDescription).map(::fold) -> "description"
+            n.length >= 3 && fold(n) in foldedDescWords(it.originalDescription) -> "description"
             num == null && fold(n).let { f -> listOfNotNull(it.lineTotalCents?.value?.let { c -> fold(ItalianNumbers.formatCents(c)) },
                 it.unitPrice?.value?.let { v -> fold(ItalianNumbers.formatDecimal(v, maxScale = 4)) }, it.quantity?.value?.let { v -> fold(ItalianNumbers.formatDecimal(v, maxScale = 4)) })
                 .any { v -> norm(v) == f } } -> "number (misread)"
@@ -323,7 +323,11 @@ object PageMap {
         when (c) { 'o' -> '0'; 'i', 'l' -> '1'; 's' -> '5'; 'b' -> '8'; 'g' -> '6'; 'z' -> '2'; else -> c }
     }.joinToString("")
 
-    private fun descWords(s: String): Set<String> = s.split(rx("\\s+")).map(::norm).filter { it.isNotEmpty() }.toSet()
+    /** A description's words, and the same folded (see [fold]): asked for every word of every row tried, worked out once. */
+    private fun descWords(s: String): Set<String> = descWordsMemo(s)
+    private val descWordsMemo = Memo(2048) { s: String -> s.split(rx("\\s+")).map(::norm).filter { it.isNotEmpty() }.toSet() }
+    private fun foldedDescWords(s: String): Set<String> = foldedMemo(s)
+    private val foldedMemo = Memo(2048) { s: String -> descWords(s).map(::fold).toSet() }
 
     /** The heading the word stands beneath: the heading word overlapping it most, else the nearest by centre. */
     private fun columnOf(w: Word, headings: List<Word>): String? {
