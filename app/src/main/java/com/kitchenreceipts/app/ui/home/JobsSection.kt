@@ -25,6 +25,9 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -43,6 +46,18 @@ fun JobsSection(onReview: (String) -> Unit, onOpenDocument: (Long) -> Unit) {
     val queue = appContainer().importQueue
     val jobs by queue.jobs.collectAsStateWithLifecycle()
     if (jobs.isEmpty()) return
+    // Discarding deletes the photo: asked first, as on the review screen (a wet finger hits the button next to it).
+    var discarding by remember { mutableStateOf<String?>(null) }
+    discarding?.let { id ->
+        com.kitchenreceipts.app.ui.components.ConfirmDialog(
+            title = stringResource(R.string.discard_title),
+            text = stringResource(R.string.discard_text),
+            confirmLabel = stringResource(R.string.discard),
+            onConfirm = { discarding = null; queue.discard(id) },
+            onDismiss = { discarding = null },
+            dismissLabel = stringResource(R.string.keep),
+        )
+    }
     Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
         jobs.forEach { job ->
             JobCard(
@@ -51,7 +66,7 @@ fun JobsSection(onReview: (String) -> Unit, onOpenDocument: (Long) -> Unit) {
                 onOpen = { job.savedDocumentId?.let(onOpenDocument); queue.dismiss(job.id) },
                 onDismiss = { queue.dismiss(job.id) },
                 onRetry = { queue.retry(job.id) },
-                onDiscard = { queue.discard(job.id) },
+                onDiscard = { discarding = job.id },
             )
         }
     }

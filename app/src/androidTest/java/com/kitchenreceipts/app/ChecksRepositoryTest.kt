@@ -102,4 +102,33 @@ class ChecksRepositoryTest {
         checks.closeCredit(credit)
         assertEquals(0, checks.openCredits().first().size)
     }
+
+    @Test fun aCreditAndAnAgreedPriceOutliveTheSuppliersLastDocument() = runBlocking<Unit> {
+        val tom = repo.createProduct("Pomodori").id
+        val id = repo.saveDocument(doc("9", LocalDate.of(2026, 10, 1), 1000, emptyList()), StoredFile("documents/c2.jpg", "image/jpeg", 1, "sha-c2"), null, null)
+        val sellerId = checks.documents().first().single { it.id == id }.sellerId
+        checks.addCredit(sellerId, id, "Cassa mancante", 1200)
+        checks.setAgreedPrice(tom, sellerId, "kg", BigDecimal("1.90"), VatBasis.EXCLUSIVE)
+        // Deleted to scan it again: the supplier has no document left, but what it owes and its price list stay.
+        repo.deleteDocument(id)
+        assertEquals(1, checks.openCredits().first().size)
+        assertEquals(1, checks.agreedPrices().first().size)
+    }
+
+    @Test fun mergingKeepsAgreedPricesAndDishes() = runBlocking<Unit> {
+        val a = repo.createProduct("Mozzarella").id
+        val b = repo.createProduct("Mozarella").id
+        checks.setAgreedPrice(b, null, "kg", BigDecimal("8.50"), VatBasis.EXCLUSIVE)
+        val food = com.kitchenreceipts.app.data.FoodRepository(db)
+        val now = System.currentTimeMillis()
+        val dish = food.save(
+            com.kitchenreceipts.app.data.RecipeDraft(
+                com.kitchenreceipts.app.data.RecipeEntity(name = "Pizza", category = null, salePriceCents = 900, priceIncludesVat = true, vatRate = BigDecimal.TEN, portions = BigDecimal.ONE, createdAt = now, updatedAt = now),
+                listOf(com.kitchenreceipts.app.data.RecipeItemEntity(recipeId = 0, position = 0, productId = b, name = "Mozarella", quantity = BigDecimal("0.125"), unit = "kg", wastePercent = BigDecimal.ZERO, manualPrice = null, manualUnit = null)),
+            ),
+        )
+        repo.mergeProducts(b, a)
+        assertEquals(a, checks.agreedPrices().first().single().price.productId)
+        assertEquals(a, food.draft(dish)!!.items.single().productId)
+    }
 }

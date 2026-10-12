@@ -65,6 +65,8 @@ class ImportQueue(
     private val fileStore: FileStore,
     private val log: AppLog,
     private val notifier: ReadingNotifier,
+    /** True when a saved document uses the file: it is then never deleted with the job. */
+    private val fileInUse: suspend (String) -> Boolean = { false },
 ) {
     private val dir = File(context.filesDir, "jobs").apply { mkdirs() }
     private val _jobs = MutableStateFlow<List<ImportJob>>(emptyList())
@@ -84,6 +86,9 @@ class ImportQueue(
 
     fun job(id: String): ImportJob? = _jobs.value.firstOrNull { it.id == id }
 
+    /** Where the operator's unsaved corrections to this job's document are kept (removed with the job). */
+    fun draftFile(id: String): File = File(File(dir, id), "draft.json")
+
     /** Files still needed by the queue (not to be cleaned up as orphans). */
     fun filePaths(): Set<String> = _jobs.value.filter { it.status != JobStatus.SAVED }.map { it.file.relativePath }.toSet()
 
@@ -102,14 +107,13 @@ class ImportQueue(
         val job = job(id) ?: return
         val running = current.takeIf { currentId == id }
         remove(id)
-        if (running != null) {
-            // The file is deleted once the reading has really stopped (it may still be using it).
-            scope.launch {
-                running.cancelAndJoin()
-                if (job.status != JobStatus.SAVED) fileStore.delete(job.file.relativePath)
+        // The file is deleted once the reading has really stopped (it may still be using it), and only when no saved
+        // document uses it: the app may have saved it by itself just before being closed, without marking the job.
+        scope.launch(Dispatchers.IO) {
+            running?.cancelAndJoin()
+            if (job.status != JobStatus.SAVED && !runCatching { fileInUse(job.file.relativePath) }.getOrDefault(true)) {
+                fileStore.delete(job.file.relativePath)
             }
-        } else if (job.status != JobStatus.SAVED) {
-            fileStore.delete(job.file.relativePath)
         }
         log.event("JOB_DISCARDED", "job" to id.take(8), "status" to job.status)
     }

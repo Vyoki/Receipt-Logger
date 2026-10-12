@@ -198,6 +198,9 @@ interface DocumentDao {
     @Query("SELECT file_path FROM documents")
     suspend fun allFilePaths(): List<String>
 
+    @Query("SELECT COUNT(*) FROM documents WHERE file_path = :path")
+    suspend fun countWithFile(path: String): Int
+
     /** Everything, for the office copy. */
     @Query("SELECT * FROM documents ORDER BY (document_date IS NULL), document_date, id")
     suspend fun allDocumentsOnce(): List<DocumentEntity>
@@ -247,7 +250,11 @@ interface SellerDao {
     )
     fun stats(): Flow<List<SellerStatsRow>>
 
-    @Query("DELETE FROM sellers WHERE id NOT IN (SELECT seller_id FROM documents)")
+    /** Sellers with no document left; one that still has a credit or an agreed price is kept (they would go with it). */
+    @Query(
+        "DELETE FROM sellers WHERE id NOT IN (SELECT seller_id FROM documents) AND id NOT IN (SELECT seller_id FROM credits) " +
+            "AND id NOT IN (SELECT seller_id FROM agreed_prices WHERE seller_id IS NOT NULL)",
+    )
     fun deleteUnused()
 
     @Query("SELECT * FROM sellers")
@@ -373,6 +380,22 @@ interface ProductDao {
 
     @Query("UPDATE OR IGNORE unit_conversions SET product_id = :into WHERE product_id = :from")
     suspend fun moveConversions(from: Long, into: Long)
+
+    /** Agreed prices move with a merge; where [into] already has one for the same supplier and VAT basis, that one stays. */
+    @Query(
+        "UPDATE agreed_prices SET product_id = :into WHERE product_id = :from AND NOT EXISTS (SELECT 1 FROM agreed_prices b " +
+            "WHERE b.product_id = :into AND b.seller_id IS agreed_prices.seller_id AND b.vat_basis = agreed_prices.vat_basis)",
+    )
+    suspend fun moveAgreedPrices(from: Long, into: Long)
+
+    @Query("UPDATE recipe_items SET product_id = :into WHERE product_id = :from")
+    suspend fun moveRecipeItems(from: Long, into: Long)
+
+    @Query("SELECT COUNT(DISTINCT recipe_id) FROM recipe_items WHERE product_id = :id")
+    suspend fun dishesUsing(id: Long): Int
+
+    @Query("SELECT COUNT(*) FROM agreed_prices WHERE product_id = :id")
+    suspend fun countAgreedPrices(id: Long): Int
 
     // ---- product groups (v6)
     @Query("SELECT * FROM product_families ORDER BY name COLLATE NOCASE")

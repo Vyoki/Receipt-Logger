@@ -148,8 +148,24 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
         }
     }
 
-    // Going back keeps a new document waiting on the home screen; throwing it away is its own button.
-    val leave: () -> Unit = onBack
+    // Going back keeps a new document waiting on the home screen, with the corrections made so far; throwing it away
+    // is its own button. Leaving the edit of a saved document with changes asks first.
+    var askLeave by remember { mutableStateOf(false) }
+    val leave: () -> Unit = { if (!state.isNew && vm.hasEdits) askLeave = true else onBack() }
+    BackHandler(enabled = !state.isNew && !state.loading && state.savedId == null) { leave() }
+    if (askLeave) {
+        ConfirmDialog(
+            title = stringResource(R.string.leave_edit_title),
+            text = stringResource(R.string.leave_edit_text),
+            confirmLabel = stringResource(R.string.discard),
+            onConfirm = { askLeave = false; vm.dropEdits(); onBack() },
+            onDismiss = { askLeave = false },
+            dismissLabel = stringResource(R.string.keep_editing),
+        )
+    }
+    val reviewSnackbar = remember { androidx.compose.material3.SnackbarHostState() }
+    val restoredText = stringResource(R.string.draft_restored)
+    LaunchedEffect(state.restored) { if (state.restored) reviewSnackbar.showSnackbar(restoredText) }
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
     val onPeek: (PeekRequest?) -> Unit = remember { { r -> if (r != null) peekRequest = r else if (enlarged == null) peekRequest = null } }
@@ -163,6 +179,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
     AppScaffold(
         title = title,
         onBack = leave,
+        snackbarHostState = reviewSnackbar,
         actions = {
             if (state.isNew && state.fatal == null && !state.loading) {
                 IconButton(onClick = { askDiscard = true }, modifier = Modifier.size(48.dp)) {

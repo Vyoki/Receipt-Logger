@@ -173,6 +173,24 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
             },
             onDismiss = { plan = null },
             body = {
+                // Values of dishes already in the app that the sheet changes, each one said before anything is written.
+                if (p.changes.isNotEmpty()) {
+                    Text(stringResource(R.string.food_import_changes), style = MaterialTheme.typography.labelLarge)
+                    p.changes.take(12).forEach { ch ->
+                        val what = stringResource(
+                            when (ch.field) {
+                                com.kitchenreceipts.core.DishField.PRICE -> R.string.recipe_price
+                                com.kitchenreceipts.core.DishField.VAT_INCLUDED -> R.string.recipe_price_vat
+                                com.kitchenreceipts.core.DishField.VAT_RATE -> R.string.recipe_vat_rate
+                                com.kitchenreceipts.core.DishField.PORTIONS -> R.string.recipe_portions
+                            },
+                        )
+                        val yes = stringResource(R.string.yes); val no = stringResource(R.string.no)
+                        fun shown(v: String) = when (v) { "true" -> yes; "false" -> no; else -> v }
+                        Text("${ch.dish} · $what: ${shown(ch.before)} → ${shown(ch.after)}", style = MaterialTheme.typography.bodySmall)
+                    }
+                    if (p.changes.size > 12) Text("…", style = MaterialTheme.typography.bodySmall)
+                }
                 if (p.skipped > 0) Text(stringResource(R.string.food_import_skipped, p.skipped), color = Palette.Orange)
                 if (p.withoutIngredients > 0) Text(stringResource(R.string.food_import_empty, p.withoutIngredients))
                 if (p.notInFile.isNotEmpty()) {

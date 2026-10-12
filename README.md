@@ -86,7 +86,7 @@ To install it:
 - over USB: `adb install -r app/build/outputs/apk/debug/app-debug.apk`
 - or copy the file to the phone, open it, and allow **Install unknown apps** for the file manager when asked.
 
-The debug APK is signed with the debug key. To distribute it, create a signed release build (**Build ▸ Generate Signed App Bundle / APK**).
+The CI builds are all signed with one fixed key, kept in the repository's secrets (`KR_SIGNING_KEY`: the keystore in base64, `KR_SIGNING_PASSWORD`; key alias `kitchen`). A new APK then installs over the one on the phone and the data stays. The "Which key signed the APK" step prints the certificate fingerprint, the same on every build. A build without those secrets (a local build, a fork) uses the throwaway debug key: Android refuses to install it over the app, and uninstalling deletes all data (make a backup first). Keep a copy of the keystore file somewhere safe: without it no later build can update the app.
 
 ---
 
@@ -176,7 +176,7 @@ OCR is behind the `OcrEngine` interface (`app/.../ocr/OcrEngine.kt`). To change 
   - different pack sizes (500 g vs 1 kg) are different products;
   - when two products are almost equally close, the app does not choose.
 
-  If duplicates were created earlier, the Inventory screen lists pairs that look alike. You merge them only if you agree (Merge / Different); the product screen also has *Merge into another product*.
+  If duplicates were created earlier, the Inventory screen lists pairs that look alike. You merge them only if you agree (Merge / Different); the product screen also has *Merge into another product*. A merge moves the purchases, remembered descriptions, conversions, agreed prices and the dishes that use the product. Deleting a product says first how many dishes use it and which agreed prices go with it.
 - **Duplicate warning** before saving. It triggers on:
   - the same file bytes (SHA-256);
   - the same seller and document number (`FT 0145/2025` = `ft-145-2025`);
@@ -544,7 +544,7 @@ CI opens a sample copy (invented data) in Chrome with the network cut off. It ch
 
 Settings ▸ *Backup* (a reminder appears on the home screen when there is data and no backup for a week):
 - **Make backup**: choose a password (at least 8 characters), then where to save the file (Drive, a folder, a USB stick). One `.krbackup` file holds the database, every original photo and PDF, the saved OCR readings, what the app learned, the documents corrected by hand and the settings. Not included: the AI model and the knowledge pack (downloaded again) and the log.
-- **Restore**: pick the file and type its password. The whole file is decrypted and checked into a staging folder first (password, every chunk, SQLite `integrity_check`, database not newer than the app); only then does the app ask to replace everything. What was on the phone is moved aside and put back if anything fails half-way; it is deleted only after the restored data has opened once. The app restarts by itself.
+- **Restore**: pick the file and type its password. The whole file is decrypted and checked into a staging folder first (password, every chunk, SQLite `integrity_check`, database not newer than the app); only then does the app ask to replace everything. What was on the phone is moved aside and put back if anything fails half-way; it is deleted only after the restored data has opened once. Before the backup's database is put in place, any database log left at its place is removed (SQLite would replay it onto the restored data). Documents read and still waiting to be checked are not in the backup, but they survive a restore: their photos are carried over. The app restarts by itself.
 
 How the file is protected (`core/Backup.kt`): a zip stream encrypted with AES-256-GCM in 1 MB chunks (key from the password with PBKDF2-SHA256, 600,000 rounds). Each chunk's nonce carries its number and a "last chunk" flag, so a chunk that is changed, moved or dropped, or a file cut short, is refused. Memory use stays small whatever the size. The database is copied inside a write transaction (main file plus its write-ahead log), so the copy is consistent. Nothing is sent anywhere by the app: the file goes only where the operator saves it.
 
@@ -563,7 +563,7 @@ Tests: `BackupTest` (core: round trip, wrong password, not a backup, cut at many
 
 **Agreed prices.** On a product's page: the price from the supplier's price list, per kg, l, piece…, with or without VAT, for one supplier or any. Purchases above it by more than half a percent are listed in Checks with the extra paid (what was paid = line total ÷ quantity, so discounts count; units convert only between kg/g, l/ml or the product's own conversions; VAT-inclusive and exclusive prices are never compared).
 
-**Checks** (home tile, with the number of things waiting): overcharges, DDT/invoice differences, and the **credits you are waiting for** (added from a difference or by hand; marked received when they arrive). Each row can be marked "It's fine" (remembered) or turned into a credit request.
+**Checks** (home tile, with the number of things waiting): overcharges, DDT/invoice differences, and the **credits you are waiting for** (added from a difference or by hand; marked received when they arrive). Each row can be marked "It's fine" (remembered) or turned into a credit request. A supplier with an open credit or an agreed price is kept even when its last document is deleted (to scan it again) or renamed.
 
 ## 7j. Lots and expiry
 
@@ -583,7 +583,7 @@ Tests: `DeliveryNotesTest`, `ChecksTest` (core), `ChecksRepositoryTest` and `Mig
 - The list puts the dishes with the highest food cost % first; above the target they are orange.
 - **When a new invoice pushes a dish over the target**, a notification names the dish, its food cost % before → now and the ingredients whose price changed (tap opens the dish). It comes after the document is saved, by hand or by the app, and follows the price notification setting. A dish already over the target is named again only if it rose by a point or more. Prices are compared without and with that document, so editing an old document works the same.
 
-**Dishes from a spreadsheet** (Food cost ▸ *Import dishes from a spreadsheet*): an Excel `.xlsx` or a CSV with one row per ingredient. Columns are found by their heading, Italian or English, in any order: Piatto/Dish, Portata/Course, Prezzo menu/Price, IVA inclusa, IVA %, Porzioni, Ingrediente, Quantità, Unità, Scarto %, Prezzo ingrediente, Prezzo per; others (notes, formulas) are ignored. The dish name may be only on its first row. Before anything changes the app shows what the import will do: new and updated dishes, ingredients linked to products, rows left out because they have no quantity, and (only if the operator switches it on) the dishes not in the file to delete. Dishes are matched by name, so the kitchen updates its sheet when the menu changes and imports it again. An ingredient keeps the product the operator linked in the app; otherwise it is linked only when exactly one product carries all its words; otherwise it uses the sheet's price. The .xlsx is read as a zip of XML (values as Excel saved them), with no extra library. Core: `MenuSheet.kt` (`MenuSheetTest`, invented fixture `menu_esempio.xlsx`).
+**Dishes from a spreadsheet** (Food cost ▸ *Import dishes from a spreadsheet*): an Excel `.xlsx` or a CSV with one row per ingredient. Columns are found by their heading, Italian or English, in any order: Piatto/Dish, Portata/Course, Prezzo menu/Price, IVA inclusa, IVA %, Porzioni, Ingrediente, Quantità, Unità, Scarto %, Prezzo ingrediente, Prezzo per; others (notes, formulas) are ignored. The dish name may be only on its first row. Before anything changes the app shows what the import will do: new and updated dishes, ingredients linked to products, rows left out because they have no quantity, every price, VAT or portions value of a dish already in the app that the sheet changes, and (only if the operator switches it on) the dishes not in the file to delete. A dish already in the app keeps its price, VAT and portions where the sheet has no column or an empty cell, and keeps its own ingredient for a row the sheet could not read. Dishes are matched by name, so the kitchen updates its sheet when the menu changes and imports it again. An ingredient keeps the product the operator linked in the app; otherwise it is linked only when exactly one product carries all its words; otherwise it uses the sheet's price. The .xlsx is read as a zip of XML (values as Excel saved them), with no extra library. Core: `MenuSheet.kt` (`MenuSheetTest`, invented fixture `menu_esempio.xlsx`).
 
 **Month by month**: food and drink bought (everything except cleaning and disposables), VAT excluded, per category, against the month's revenue typed by the operator (with or without VAT). Purchases follow deliveries, not consumption, and the screen says so.
 
@@ -599,7 +599,7 @@ Core: `FoodCost.kt`, `Reorder.kt` (`FoodCostTest`). Schema v9 adds `recipes`, `r
 
 - Main target: Italian supplier documents in EUR. Other currencies can be typed as a 3-letter code, but no conversion is done.
 - A seller name is required to save a document, because everything is organised by seller. All other fields are optional and simply stay missing.
-- The review draft lives in memory. If Android kills the app while you are on the review screen, the draft is lost and you need to scan again; the orphaned file is cleaned up after an hour.
+- The review screen keeps the operator's corrections on the phone (`jobs/<job>/draft.json`, or `edits/<document>.json` for a saved document) a moment after each change, and when the screen closes. Going back, the app lock or Android closing the app no longer loses them: the next time the document opens they are back, with a short note. They are deleted when the document is saved or thrown away. A saved document's edits come back only if the document has not been saved again since (core `DraftCodec`, `DraftCodecTest`). Leaving the edit of a saved document with changes asks first. Not tested on a real phone yet.
 - Up to 20 pages per document are OCR'd. All pages are always stored and viewable.
 - Files over 50 MB are rejected. Supported formats are JPEG, PNG, PDF and e-invoices (.xml, .p7m, .zip). Password-protected PDFs cannot be opened.
 - The signature of a .p7m is not verified (the SdI verified it before delivering the file); only the invoice inside is read.

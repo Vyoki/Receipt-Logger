@@ -31,6 +31,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -86,6 +87,16 @@ private class IngredientUi(
     var manualUnit by mutableStateOf(manualUnit)
 }
 
+/** The ingredients as typed, kept across a screen rotation (Android rebuilds the screen). */
+private val IngredientsSaver = androidx.compose.runtime.saveable.listSaver<androidx.compose.runtime.snapshots.SnapshotStateList<IngredientUi>, ArrayList<String?>>(
+    save = { list -> list.map { arrayListOf(it.productId?.toString(), it.productName, it.name, it.quantity, it.unit, it.waste, it.manualPrice, it.manualUnit) } },
+    restore = { rows ->
+        mutableStateListOf<IngredientUi>().apply {
+            rows.forEach { r -> add(IngredientUi(r[0]?.toLongOrNull(), r[1], r[2].orEmpty(), r[3].orEmpty(), r[4].orEmpty(), r[5].orEmpty(), r[6].orEmpty(), r[7].orEmpty())) }
+        }
+    },
+)
+
 private val UNITS = listOf("g", "kg", "ml", "l", "pz")
 private val COURSES = listOf(
     "antipasti" to R.string.recipe_cat_starters, "primi" to R.string.recipe_cat_first, "secondi" to R.string.recipe_cat_second,
@@ -101,22 +112,35 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
     val products by remember { c.repository.products() }.collectAsState(initial = emptyList())
     val prices by remember { c.food.prices() }.collectAsState(initial = emptyMap())
     val conversionRows by remember { c.database.productDao().allConversions() }.collectAsState(initial = emptyList())
-    var loaded by remember { mutableStateOf(recipeId == 0L) }
-    var name by remember { mutableStateOf("") }
-    var course by remember { mutableStateOf<String?>(null) }
-    var price by remember { mutableStateOf("") }
-    var withVat by remember { mutableStateOf(true) }
-    var vat by remember { mutableStateOf("10") }
-    var portions by remember { mutableStateOf("1") }
-    val ingredients = remember { mutableStateListOf<IngredientUi>() }
+    // Kept across a rotation: a dish half typed is not lost when the phone is turned.
+    var loaded by rememberSaveable { mutableStateOf(recipeId == 0L) }
+    var name by rememberSaveable { mutableStateOf("") }
+    var course by rememberSaveable { mutableStateOf<String?>(null) }
+    var price by rememberSaveable { mutableStateOf("") }
+    var withVat by rememberSaveable { mutableStateOf(true) }
+    var vat by rememberSaveable { mutableStateOf("10") }
+    var portions by rememberSaveable { mutableStateOf("1") }
+    val ingredients = rememberSaveable(saver = IngredientsSaver) { mutableStateListOf<IngredientUi>() }
     var picking by remember { mutableStateOf<IngredientUi?>(null) }
     var askDelete by remember { mutableStateOf(false) }
-    var error by remember { mutableStateOf<String?>(null) }
-    var createdAt by remember { mutableStateOf(0L) }
+    var askLeave by remember { mutableStateOf(false) }
+    var error by rememberSaveable { mutableStateOf<String?>(null) }
+    var createdAt by rememberSaveable { mutableStateOf(0L) }
+    var saving by remember { mutableStateOf(false) }
+    /** Set by a save that was refused: the rows to fix are then shown in red. */
+    var showErrors by rememberSaveable { mutableStateOf(false) }
+    var initial by rememberSaveable { mutableStateOf<String?>(null) }
     val nameNeeded = stringResource(R.string.recipe_name_needed)
+    val quantityNeeded = stringResource(R.string.recipe_quantity_needed)
+    val saveFailed = stringResource(R.string.recipe_save_failed)
+
+    /** Everything typed, to tell whether leaving would lose something. */
+    fun typed(): String = listOf(name, course, price, withVat, vat, portions).joinToString("|") + ingredients.joinToString("|") {
+        listOf(it.productId, it.name, it.quantity, it.unit, it.waste, it.manualPrice, it.manualUnit).joinToString(",")
+    }
 
     LaunchedEffect(recipeId) {
-        if (recipeId == 0L) return@LaunchedEffect
+        if (loaded) { if (initial == null) initial = typed(); return@LaunchedEffect }
         val d = c.food.draft(recipeId)
         if (d != null) {
             name = d.recipe.name
@@ -136,6 +160,7 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
             }
         }
         loaded = true
+        initial = typed()
     }
 
     fun dec(s: String): BigDecimal? = ItalianNumbers.parse(s)
@@ -154,26 +179,52 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
     val cost = FoodCost.cost(current(), { prices[it] }, { conv[it].orEmpty() }, c.settings.overheadPercent)
 
     fun save() {
+        if (saving) return
         if (name.isBlank()) { error = nameNeeded; return }
+        // An ingredient without a quantity is never dropped quietly: the dish would cost less than it does.
+        if (ingredients.any { dec(it.quantity)?.signum() != 1 }) { showErrors = true; error = quantityNeeded; return }
         val now = System.currentTimeMillis()
         val r = current()
         val draft = RecipeDraft(
             RecipeEntity(recipeId, name.trim(), course, r.salePriceCents, withVat, r.vatRatePercent, r.portions, if (createdAt > 0) createdAt else now, now),
-            ingredients.mapNotNull { i ->
-                val q = dec(i.quantity)?.takeIf { it.signum() > 0 } ?: return@mapNotNull null
-                RecipeItemEntity(0, recipeId, 0, i.productId, (i.productName ?: i.name).trim(), q, i.unit, dec(i.waste) ?: BigDecimal.ZERO, dec(i.manualPrice), i.manualUnit.takeIf { dec(i.manualPrice) != null })
+            ingredients.map { i ->
+                RecipeItemEntity(0, recipeId, 0, i.productId, (i.productName ?: i.name).trim(), dec(i.quantity)!!, i.unit, dec(i.waste) ?: BigDecimal.ZERO, dec(i.manualPrice), i.manualUnit.takeIf { dec(i.manualPrice) != null })
             },
         )
+        saving = true
         scope.launch {
-            c.food.save(draft)
-            c.log.event("RECIPE_SAVED", "ingredients" to draft.items.size)
-            onBack()
+            try {
+                c.food.save(draft)
+                c.log.event("RECIPE_SAVED", "ingredients" to draft.items.size)
+                initial = typed()
+                onBack()
+            } catch (e: Exception) {
+                if (e is kotlinx.coroutines.CancellationException) throw e
+                c.log.error("recipeSave", e)
+                error = saveFailed
+            } finally {
+                saving = false
+            }
         }
+    }
+
+    // Leaving with something typed and not saved asks first.
+    val leave: () -> Unit = { if (loaded && initial != null && typed() != initial) askLeave = true else onBack() }
+    androidx.activity.compose.BackHandler(enabled = loaded && initial != null && typed() != initial) { askLeave = true }
+    if (askLeave) {
+        ConfirmDialog(
+            title = stringResource(R.string.recipe_leave_title),
+            text = stringResource(R.string.recipe_leave_text),
+            confirmLabel = stringResource(R.string.discard),
+            onConfirm = { askLeave = false; onBack() },
+            onDismiss = { askLeave = false },
+            dismissLabel = stringResource(R.string.keep_editing),
+        )
     }
 
     AppScaffold(
         title = stringResource(R.string.recipe_title),
-        onBack = onBack,
+        onBack = leave,
         actions = {
             if (recipeId != 0L) IconButton(onClick = { askDelete = true }) { Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.recipe_delete)) }
         },
@@ -229,6 +280,7 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
                 IngredientEditor(
                     ing = ing,
                     line = line,
+                    quantityMissing = showErrors && dec(ing.quantity)?.signum() != 1,
                     onPick = { picking = ing },
                     onRemove = { ingredients.removeAt(index) },
                 )
@@ -241,7 +293,7 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
                 Text(stringResource(R.string.recipe_add_ingredient), modifier = Modifier.padding(start = 8.dp))
             }
             error?.let { Text(it, color = MaterialTheme.colorScheme.error) }
-            BigButton(stringResource(R.string.recipe_save), Icons.Filled.Save, onClick = ::save)
+            BigButton(stringResource(R.string.recipe_save), Icons.Filled.Save, enabled = !saving, onClick = ::save)
         }
     }
 
@@ -270,7 +322,7 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
 }
 
 @Composable
-private fun IngredientEditor(ing: IngredientUi, line: IngredientCost?, onPick: () -> Unit, onRemove: () -> Unit) {
+private fun IngredientEditor(ing: IngredientUi, line: IngredientCost?, quantityMissing: Boolean, onPick: () -> Unit, onRemove: () -> Unit) {
     Panel {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -283,6 +335,8 @@ private fun IngredientEditor(ing: IngredientUi, line: IngredientCost?, onPick: (
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedTextField(
                     value = ing.quantity, onValueChange = { ing.quantity = it }, label = { Text(stringResource(R.string.recipe_quantity)) }, singleLine = true,
+                    isError = quantityMissing,
+                    supportingText = if (quantityMissing) { { Text(stringResource(R.string.recipe_quantity_missing)) } } else null,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
                 )
                 OutlinedTextField(
@@ -303,9 +357,9 @@ private fun IngredientEditor(ing: IngredientUi, line: IngredientCost?, onPick: (
                 line?.problem == CostProblem.UNITS_DONT_CONVERT && p != null ->
                     Text(stringResource(R.string.recipe_units_dont_convert, p.unit), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
-            // Without a purchase price: the operator may type one.
+            // Without a purchase price: the operator may type one. (No line at all while the quantity is missing.)
             if (p == null || p.manual) {
-                if (p == null) Text(stringResource(R.string.recipe_manual_hint), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
+                if (p == null && line != null) Text(stringResource(R.string.recipe_manual_hint), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = ing.manualPrice, onValueChange = { ing.manualPrice = it }, label = { Text(stringResource(R.string.recipe_manual_price)) }, singleLine = true,

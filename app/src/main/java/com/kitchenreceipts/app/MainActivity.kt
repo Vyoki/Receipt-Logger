@@ -1,5 +1,6 @@
 package com.kitchenreceipts.app
 
+import androidx.compose.foundation.layout.fillMaxSize
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
@@ -48,7 +49,14 @@ class MainActivity : FragmentActivity() {
         if (savedInstanceState == null) importShared(intent)
         setContent {
             KitchenReceiptsTheme {
-                if (locked.value) LockScreen(onUnlock = ::authenticate) else AppNavHost()
+                // The lock covers the app instead of replacing it: the screen under it (a review half done) stays as it was.
+                androidx.compose.foundation.layout.Box(androidx.compose.ui.Modifier.fillMaxSize()) {
+                    AppNavHost()
+                    if (locked.value) {
+                        androidx.activity.compose.BackHandler { moveTaskToBack(true) }
+                        LockScreen(onUnlock = ::authenticate)
+                    }
+                }
             }
         }
     }
