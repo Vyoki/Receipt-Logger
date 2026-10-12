@@ -75,11 +75,35 @@ jobs:
             echo "::notice title=Office screenshots::push failed"
           fi
 
+      - name: Signing key
+        shell: bash
+        env:
+          KEY: ${{ secrets.KR_SIGNING_KEY }}
+          PASS: ${{ secrets.KR_SIGNING_PASSWORD }}
+        run: |
+          # The same key on every build: a new APK then installs over the old one and the data stays.
+          if [ -n "$KEY" ]; then
+            echo "$KEY" | base64 -d > "$RUNNER_TEMP/kitchen.jks"
+            echo "KR_KEYSTORE=$RUNNER_TEMP/kitchen.jks" >> "$GITHUB_ENV"
+            echo "KR_SIGNING_PASSWORD=$PASS" >> "$GITHUB_ENV"
+            echo "::notice title=Signing::signed with the fixed key (installs over the existing app)"
+          else
+            echo "::warning title=Signing::no KR_SIGNING_KEY secret: this APK has a throwaway key and will NOT install over the existing app"
+          fi
+
       - name: Build debug APK
         shell: bash
         run: |
           set -o pipefail
           ./gradlew :app:assembleDebug --stacktrace 2>&1 | tee build.log
+
+      - name: Which key signed the APK
+        shell: bash
+        run: |
+          # The certificate fingerprint: the same on every build once the fixed key is in place.
+          bt=$(ls -d "$ANDROID_HOME"/build-tools/*/ | sort -V | tail -1)
+          fp=$("$bt"apksigner verify --print-certs app/build/outputs/apk/debug/app-debug.apk | grep -m1 'SHA-256' | sed 's/.*: //')
+          echo "::notice title=Signing certificate::SHA-256 $fp"
 
       - name: Check what the app may connect to
         shell: bash

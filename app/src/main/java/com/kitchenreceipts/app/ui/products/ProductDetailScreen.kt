@@ -19,6 +19,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -116,6 +117,8 @@ class ProductDetailViewModel(
         try { repo.renameProduct(id, name) } catch (_: ProductNameTakenException) { onTaken() } catch (_: IllegalArgumentException) {}
     }
     fun delete(done: () -> Unit) = viewModelScope.launch { repo.deleteProduct(id); done() }
+    /** Dishes that use this product and its agreed prices: told before deleting. */
+    suspend fun links(): Pair<Int, Int> = repo.productLinks(id)
     fun addConversion(from: String, to: String, factor: BigDecimal) = viewModelScope.launch { repo.addConversion(id, from, to, factor) }
     fun deleteConversion(cid: Long) = viewModelScope.launch { repo.deleteConversion(cid) }
     fun deleteAlias(aid: Long) = viewModelScope.launch { repo.deleteAlias(aid) }
@@ -381,9 +384,16 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
         )
     }
     if (deleting) {
+        var links by remember { mutableStateOf<Pair<Int, Int>?>(null) }
+        LaunchedEffect(Unit) { links = vm.links() }
+        val (dishes, agreed) = links ?: (0 to 0)
+        val extra = buildString {
+            if (dishes > 0) append("\n\n").append(pluralStringResource(R.plurals.delete_product_dishes, dishes, dishes))
+            if (agreed > 0) append("\n\n").append(pluralStringResource(R.plurals.delete_product_agreed, agreed, agreed))
+        }
         ConfirmDialog(
             title = stringResource(R.string.delete_product_title),
-            text = stringResource(R.string.delete_product_text),
+            text = stringResource(R.string.delete_product_text) + extra,
             confirmLabel = stringResource(R.string.delete),
             onConfirm = { deleting = false; vm.delete(onBack) },
             onDismiss = { deleting = false },

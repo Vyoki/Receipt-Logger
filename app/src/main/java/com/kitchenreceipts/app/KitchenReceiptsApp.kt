@@ -89,6 +89,7 @@ class AppContainer(context: Context) {
     /** Documents read in the background, one after another; survives restarts. */
     val importQueue = ImportQueue(
         context, appScope, importProcessor, ocrEngine, settings, ::aiUse, preparer, fileStore, log, notifier,
+        fileInUse = { repository.fileInUse(it) },
     )
 
     /** The OCR reading of every saved document, and the re-check of all of them after each update. */

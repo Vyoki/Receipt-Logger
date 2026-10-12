@@ -474,7 +474,7 @@
     <string name="notif_ready">Document ready to check</string>
     <string name="notif_ready_text">Tap to check and save it.</string>
     <string name="notif_failed">A document could not be read</string>
-    <string name="job_stop">Stop</string>
+    <string name="job_stop">Stop and delete</string>
     <string name="job_check">Check</string>
     <string name="job_hide">Hide</string>
     <string name="job_open">Open</string>
@@ -649,4 +649,16 @@
     <string name="lookup_failed">Could not search. Check the connection.</string>
     <string name="lookup_use">Use brand and category</string>
     <string name="use_replacement">Use %1$s</string>
+    <plurals name="delete_product_dishes">
+        <item quantity="one">It is used in %1$d dish: the dish keeps the ingredient by name, without a price, until you pick a product again.</item>
+        <item quantity="other">It is used in %1$d dishes: they keep the ingredient by name, without a price, until you pick a product again.</item>
+    </plurals>
+    <plurals name="delete_product_agreed">
+        <item quantity="one">Its agreed price is deleted too.</item>
+        <item quantity="other">Its %1$d agreed prices are deleted too.</item>
+    </plurals>
+    <string name="keep">Keep</string>
+    <string name="leave_edit_title">Discard your changes?</string>
+    <string name="leave_edit_text">The document stays as it was saved.</string>
+    <string name="draft_restored">Your corrections from last time are back.</string>
 </resources>

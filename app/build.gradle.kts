@@ -35,7 +35,25 @@ android {
         }
     }
 
+    // One fixed key for every build, so a new APK installs over the old one and keeps the data. CI writes the key
+    // from the repository secrets (KR_SIGNING_KEY, KR_SIGNING_PASSWORD); without them (a local build, a fork) the
+    // usual throwaway debug key is used, and that APK cannot update an installed app.
+    val keystore = System.getenv("KR_KEYSTORE")?.let(::file)?.takeIf { it.isFile }
+    signingConfigs {
+        if (keystore != null) {
+            create("fixed") {
+                storeFile = keystore
+                storePassword = System.getenv("KR_SIGNING_PASSWORD")
+                keyAlias = "kitchen"
+                keyPassword = System.getenv("KR_SIGNING_PASSWORD")
+            }
+        }
+    }
+
     buildTypes {
+        debug {
+            if (keystore != null) signingConfig = signingConfigs.getByName("fixed")
+        }
         release {
             isMinifyEnabled = true
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")

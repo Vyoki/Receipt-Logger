@@ -114,4 +114,26 @@ class MenuImporterTest {
         assertEquals(1, p.skipped)
         assertEquals(1, p.withoutIngredients)
     }
+
+    @Test fun aReimportKeepsWhatTheSheetDoesNotSay() {
+        // No portions column, and Lasagna's price cell is empty.
+        val csv = "Piatto;Prezzo menu;Ingrediente;Quantità;Unità\r\n" +
+            "Lasagna;;Ragù;300;g\r\n" +
+            "Tartare;12;Manzo;100;g\r\n"
+        val menu = MenuSheet.read(csv.toByteArray())
+        assertEquals(setOf(DishField.PRICE), menu.dishes[1].given)
+        val existing = listOf(
+            ExistingDish(1, "Lasagna", emptyList(), DishValues(1400, true, BigDecimal.TEN, BigDecimal("6"))),
+            ExistingDish(2, "Tartare", emptyList(), DishValues(1000, true, BigDecimal("22"), BigDecimal("2"))),
+        )
+        val p = MenuImporter.plan(menu, existing, products)
+        assertEquals(DishValues(1400, true, BigDecimal.TEN, BigDecimal("6")), p.dishes[0].values)
+        assertTrue(p.dishes[0].changes.isEmpty())
+        // The price the sheet gives replaces the app's, and the preview says so; portions and VAT stay.
+        assertEquals(DishValues(1200, true, BigDecimal("22"), BigDecimal("2")), p.dishes[1].values)
+        assertEquals(listOf(DishChange("Tartare", DishField.PRICE, "10,00", "12,00")), p.changes)
+        // A new dish gets the defaults.
+        val fresh = MenuImporter.plan(menu, emptyList(), products)
+        assertEquals(0, BigDecimal.ONE.compareTo(fresh.dishes[0].values.portions))
+    }
 }

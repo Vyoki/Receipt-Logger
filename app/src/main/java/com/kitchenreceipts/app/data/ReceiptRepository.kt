@@ -197,8 +197,12 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             refreshCovers(db.checksDao())
             sellers.deleteUnused()
         }
-        files.delete(doc.filePath)
+        // The same original may belong to another document (one saved twice): it stays while any document uses it.
+        if (documents.countWithFile(doc.filePath) == 0) files.delete(doc.filePath)
     }
+
+    /** True when a saved document uses this original file. */
+    suspend fun fileInUse(relativePath: String): Boolean = documents.countWithFile(relativePath) > 0
 
     /** Stores the supplier's VAT number, letterhead words and the OCR's spelling of their name. */
     private fun learnSeller(seller: SellerEntity, l: SellerLearning, countLayout: Boolean) {
@@ -327,6 +331,9 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
 
     suspend fun deleteProduct(id: Long) = products.delete(id) // line items keep their data, product_id -> NULL
 
+    /** What deleting a product takes with it, said before the operator confirms: dishes using it, its agreed prices. */
+    suspend fun productLinks(id: Long): Pair<Int, Int> = products.dishesUsing(id) to products.countAgreedPrices(id)
+
     // ------------------------------------------------------------ product groups
 
     fun families() = products.families()
@@ -446,8 +453,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     }
 
     /**
-     * Merges [from] into [into] (the operator's choice): its purchases, remembered descriptions and unit
-     * conversions move over, then [from] is deleted. Nothing is merged automatically.
+     * Merges [from] into [into] (the operator's choice): its purchases, remembered descriptions, unit conversions,
+     * agreed prices and the dishes that use it move over, then [from] is deleted. Nothing is merged automatically.
      */
     suspend fun mergeProducts(from: Long, into: Long) {
         require(from != into)
@@ -455,6 +462,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             products.moveLineItems(from, into)
             products.moveAliases(from, into)
             products.moveConversions(from, into)
+            products.moveAgreedPrices(from, into)
+            products.moveRecipeItems(from, into)
             products.delete(from)
         }
     }

@@ -462,7 +462,7 @@
     <string name="notif_ready">Documento pronto da controllare</string>
     <string name="notif_ready_text">Tocca per controllarlo e salvarlo.</string>
     <string name="notif_failed">Non è stato possibile leggere un documento</string>
-    <string name="job_stop">Ferma</string>
+    <string name="job_stop">Ferma ed elimina</string>
     <string name="job_check">Controlla</string>
     <string name="job_hide">Nascondi</string>
     <string name="job_open">Apri</string>
@@ -637,4 +637,16 @@
     <string name="lookup_failed">Ricerca non riuscita. Controlla la connessione.</string>
     <string name="lookup_use">Usa marca e categoria</string>
     <string name="use_replacement">Usa %1$s</string>
+    <plurals name="delete_product_dishes">
+        <item quantity="one">È usato in %1$d piatto: il piatto mantiene l\'ingrediente per nome, senza prezzo, finché non scegli di nuovo un prodotto.</item>
+        <item quantity="other">È usato in %1$d piatti: mantengono l\'ingrediente per nome, senza prezzo, finché non scegli di nuovo un prodotto.</item>
+    </plurals>
+    <plurals name="delete_product_agreed">
+        <item quantity="one">Viene eliminato anche il suo prezzo concordato.</item>
+        <item quantity="other">Vengono eliminati anche i suoi %1$d prezzi concordati.</item>
+    </plurals>
+    <string name="keep">Tieni</string>
+    <string name="leave_edit_title">Annullare le modifiche?</string>
+    <string name="leave_edit_text">Il documento resta com\'era salvato.</string>
+    <string name="draft_restored">Le correzioni dell\'ultima volta sono state recuperate.</string>
 </resources>

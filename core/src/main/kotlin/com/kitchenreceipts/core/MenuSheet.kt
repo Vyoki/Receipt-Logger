@@ -32,7 +32,17 @@ data class ImportedDish(
     val ingredients: List<ImportedIngredient>,
     /** Ingredient rows left out because they had no quantity or an unknown unit. */
     val skipped: List<String>,
+    /** The values the sheet really gives (a column present and the cell filled); the rest are defaults for a new dish. */
+    val given: Set<DishField> = DishField.entries.toSet(),
 )
+
+enum class DishField { PRICE, VAT_INCLUDED, VAT_RATE, PORTIONS }
+
+/** A dish's price, VAT and portions. */
+data class DishValues(val salePriceCents: Long?, val priceIncludesVat: Boolean, val vatRatePercent: BigDecimal, val portions: BigDecimal)
+
+/** One value a re-import changes on a dish already in the app, shown before anything is written. */
+data class DishChange(val dish: String, val field: DishField, val before: String, val after: String)
 
 data class MenuImport(val dishes: List<ImportedDish>, val problems: List<String>)
 
@@ -148,7 +158,15 @@ object MenuSheet {
         if (dishes.isEmpty()) throw NotAMenu("No dishes below the heading")
         return MenuImport(
             dishes.values.map { b ->
-                ImportedDish(b.name, b.course, b.price, b.vatIncl ?: true, b.vat ?: BigDecimal.TEN, b.portions ?: BigDecimal.ONE, b.ings, b.skipped)
+                ImportedDish(
+                    b.name, b.course, b.price, b.vatIncl ?: true, b.vat ?: BigDecimal.TEN, b.portions ?: BigDecimal.ONE, b.ings, b.skipped,
+                    given = buildSet {
+                        if (b.price != null) add(DishField.PRICE)
+                        if (b.vatIncl != null) add(DishField.VAT_INCLUDED)
+                        if (b.vat != null) add(DishField.VAT_RATE)
+                        if (b.portions != null) add(DishField.PORTIONS)
+                    },
+                )
             },
             problems,
         )
@@ -298,10 +316,24 @@ object MenuSheet {
 }
 
 /** A dish already in the app, as needed to update it from a sheet. */
-data class ExistingDish(val id: Long, val name: String, val ingredients: List<Pair<String, Long?>>)
+data class ExistingDish(
+    val id: Long,
+    val name: String,
+    val ingredients: List<Pair<String, Long?>>,
+    /** Its price, VAT and portions as set in the app (kept where the sheet gives nothing). */
+    val values: DishValues? = null,
+)
 
 data class PlannedIngredient(val ingredient: ImportedIngredient, val productId: Long?, val keptLink: Boolean)
-data class PlannedDish(val dish: ImportedDish, val existingId: Long?, val ingredients: List<PlannedIngredient>)
+data class PlannedDish(
+    val dish: ImportedDish,
+    val existingId: Long?,
+    val ingredients: List<PlannedIngredient>,
+    /** What the dish will have: the sheet's value where it gives one, otherwise what the app had (a new dish: defaults). */
+    val values: DishValues = DishValues(dish.salePriceCents, dish.priceIncludesVat, dish.vatRatePercent, dish.portions),
+    /** Values of an existing dish the import changes. */
+    val changes: List<DishChange> = emptyList(),
+)
 
 /** What an import will do, shown before anything changes. */
 data class MenuPlan(val dishes: List<PlannedDish>, val notInFile: List<ExistingDish>) {
@@ -312,6 +344,7 @@ data class MenuPlan(val dishes: List<PlannedDish>, val notInFile: List<ExistingD
     val noPrice: Int get() = dishes.sumOf { d -> d.ingredients.count { it.productId == null && it.ingredient.price == null } }
     val skipped: Int get() = dishes.sumOf { it.dish.skipped.size }
     val withoutIngredients: Int get() = dishes.count { it.ingredients.isEmpty() }
+    val changes: List<DishChange> get() = dishes.flatMap { it.changes }
 }
 
 /**
@@ -347,14 +380,32 @@ object MenuImporter {
             val old = byKey[ProductMatching.aliasKey(d.name)]
             old?.let { seen += it.id }
             val oldLinks = old?.ingredients.orEmpty().filter { it.second != null }.associate { ProductMatching.aliasKey(it.first) to it.second!! }
+            val had = old?.values
+            val values = if (had == null) DishValues(d.salePriceCents, d.priceIncludesVat, d.vatRatePercent, d.portions) else DishValues(
+                salePriceCents = if (DishField.PRICE in d.given) d.salePriceCents else had.salePriceCents,
+                priceIncludesVat = if (DishField.VAT_INCLUDED in d.given) d.priceIncludesVat else had.priceIncludesVat,
+                vatRatePercent = if (DishField.VAT_RATE in d.given) d.vatRatePercent else had.vatRatePercent,
+                portions = if (DishField.PORTIONS in d.given) d.portions else had.portions,
+            )
             PlannedDish(
                 d, old?.id,
                 d.ingredients.map { i ->
                     val kept = oldLinks[ProductMatching.aliasKey(i.name)]
                     PlannedIngredient(i, kept ?: link(i.name, products), kept != null)
                 },
+                values,
+                if (had == null) emptyList() else changes(d.name, had, values),
             )
         }
         return MenuPlan(planned, existing.filter { it.id !in seen })
+    }
+
+    private fun changes(dish: String, a: DishValues, b: DishValues): List<DishChange> = buildList {
+        fun money(c: Long?) = c?.let(ItalianNumbers::centsToEditText) ?: "-"
+        fun num(v: BigDecimal) = ItalianNumbers.toEditText(v)
+        if (a.salePriceCents != b.salePriceCents) add(DishChange(dish, DishField.PRICE, money(a.salePriceCents), money(b.salePriceCents)))
+        if (a.priceIncludesVat != b.priceIncludesVat) add(DishChange(dish, DishField.VAT_INCLUDED, a.priceIncludesVat.toString(), b.priceIncludesVat.toString()))
+        if (a.vatRatePercent.compareTo(b.vatRatePercent) != 0) add(DishChange(dish, DishField.VAT_RATE, num(a.vatRatePercent), num(b.vatRatePercent)))
+        if (a.portions.compareTo(b.portions) != 0) add(DishChange(dish, DishField.PORTIONS, num(a.portions), num(b.portions)))
     }
 }

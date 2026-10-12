@@ -122,10 +122,19 @@ class BackupManager(private val c: AppContainer) {
             // 1. Move what is on the phone aside.
             DB_SUFFIXES.forEach { s -> moveAside(File(dbPath.path + s), File(previous, "$DB_DIR/${dbPath.name}$s"), moved) }
             KEPT.forEach { name -> moveAside(File(files, name), File(previous, name), moved) }
-            // 2. Put the backup in place.
+            // 2. Put the backup in place. Anything the closed database left or made again meanwhile (a write-ahead log
+            //    of the old or of an empty database) goes first: SQLite would otherwise replay it onto the backup.
+            DB_SUFFIXES.forEach { s -> File(dbPath.path + s).delete() }
             dbPath.parentFile?.mkdirs()
             File(stage, DB_DIR).listFiles()?.forEach { f -> move(f, File(dbPath.parentFile, f.name)) }
             KEPT.forEach { name -> File(stage, name).takeIf { it.exists() }?.let { move(it, File(files, name)) } }
+            // 3. Documents read and still waiting to be checked are not in the backup: their photos come along, so
+            //    they are still there to check after the restore.
+            c.importQueue.filePaths().forEach { path ->
+                val kept = File(previous, path)
+                val target = File(files, path)
+                if (kept.isFile && !target.exists()) { target.parentFile?.mkdirs(); kept.copyTo(target) }
+            }
             File(stage, SETTINGS).takeIf { it.isFile }?.let { applySettings(Backup.readProperties(it.readText())) }
             stage.deleteRecursively()
             File(files, RESTORED_FLAG).writeText(System.currentTimeMillis().toString())

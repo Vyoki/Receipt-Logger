@@ -83,6 +83,8 @@ data class ReviewState(
     val reviewReasons: List<ReviewReason> = emptyList(),
     /** Prices that differ from the last purchase of the same product. */
     val priceChanges: List<PriceChange> = emptyList(),
+    /** The operator's corrections from last time were brought back (they had left before saving). */
+    val restored: Boolean = false,
 )
 
 data class SaveConfirmation(val duplicates: List<DuplicateInfo>, val uncertainCount: Int, val valid: ValidDocument)
@@ -109,6 +111,53 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     private var peekPage: Pair<Int, android.graphics.Bitmap>? = null
     private var openedAt = System.currentTimeMillis()
 
+    /**
+     * The operator's corrections, kept on the phone until the document is saved or thrown away: leaving the screen,
+     * the app lock or Android closing the app no longer loses them. A saved document's edits are kept with the time
+     * it was last saved, so they never come back over a newer version.
+     */
+    private val keptFile: java.io.File? = when {
+        documentId != null -> java.io.File(c.appContext.filesDir, "edits/$documentId.json")
+        jobId != null -> c.importQueue.draftFile(jobId)
+        else -> null
+    }
+    private var keptStamp = 0L
+    /** The draft as read (before any correction): nothing is kept while the draft is still this. */
+    private var baseDraft: DocumentDraft? = null
+    private var keepJob: Job? = null
+    @Volatile private var finished = false
+
+    private fun readKept(hints: DocumentDraft): DocumentDraft? {
+        val f = keptFile?.takeIf { it.exists() } ?: return null
+        val text = runCatching { f.readText() }.getOrNull() ?: return null
+        val stamp = text.substringBefore('\n').toLongOrNull()
+        val draft = if (stamp == keptStamp) com.kitchenreceipts.core.DraftCodec.decode(text.substringAfter('\n'), hints) else null
+        if (draft == null) f.delete()
+        return draft
+    }
+
+    private fun writeKept(d: DocumentDraft) {
+        val f = keptFile ?: return
+        if (finished) return
+        runCatching {
+            if (d == baseDraft) { f.delete(); return }
+            f.parentFile?.mkdirs()
+            val tmp = java.io.File(f.path + ".tmp")
+            tmp.writeText(keptStamp.toString() + "\n" + com.kitchenreceipts.core.DraftCodec.encode(d))
+            if (!tmp.renameTo(f)) { f.delete(); tmp.renameTo(f) }
+        }.onFailure { c.log.error("keepDraft", it) }
+    }
+
+    private fun dropKept() {
+        finished = true
+        keepJob?.cancel()
+        keptFile?.delete()
+    }
+
+    private fun startKeys(d: DocumentDraft) {
+        nextKey = maxOf(nextKey, (d.items.maxOfOrNull { it.key } ?: 0L) + 1)
+    }
+
     val products: StateFlow<List<ProductEntity>> = repo.products().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
     val sellerNames: StateFlow<List<String>> =
         repo.sellers().map { list -> list.map { it.name } }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
@@ -133,16 +182,21 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         readParsed = pending.parsed
         ocrWidths = pending.ocrWidths
         initialDraft = prepared.initialDraft
+        baseDraft = prepared.draft
+        val kept = withContext(Dispatchers.IO) { readKept(prepared.draft) }
+        val draft = kept ?: prepared.draft
+        startKeys(draft)
+        if (kept != null) c.log.event("DRAFT_RESTORED", "new" to true, "items" to draft.items.size)
         _state.value = ReviewState(
             loading = false,
-            isNew = true, draft = prepared.draft,
+            isNew = true, draft = draft, restored = kept != null,
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
             engineName = if (pending.parsed.itemsReadBy == "ai") "${pending.engineName} + AI" else pending.engineName,
             ocrError = pending.ocrError, pagesRead = pending.pagesRead,
             recognisedText = pending.debugReport(),
             recognition = prepared.recognition,
-            reviewReasons = prepared.reasons,
-            priceChanges = prepared.priceChanges,
+            reviewReasons = if (kept != null) AutoAccept.reasons(draft) else prepared.reasons,
+            priceChanges = if (kept != null) priceChanges(draft) else prepared.priceChanges,
         )
     }
 
@@ -201,14 +255,29 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 )
             },
         )
+        initialDraft = draft
+        keptStamp = doc.updatedAt
+        baseDraft = draft
+        val kept = withContext(Dispatchers.IO) { readKept(draft) }
+        val shown = kept ?: draft
+        startKeys(shown)
+        if (kept != null) c.log.event("DRAFT_RESTORED", "new" to false, "doc" to id)
         _state.value = ReviewState(
-            loading = false, isNew = false, draft = draft,
+            loading = false, isNew = false, draft = shown, restored = kept != null,
             filePath = doc.filePath, mimeType = doc.mimeType, pageCount = doc.pageCount,
             recognisedText = doc.ocrText?.takeIf { it.isNotBlank() },
-            reviewReasons = AutoAccept.reasons(draft),
-            priceChanges = priceChanges(draft),
+            reviewReasons = AutoAccept.reasons(shown),
+            priceChanges = priceChanges(shown),
         )
-        initialDraft = draft
+    }
+
+    /** The edits differ from what was loaded (asked before leaving a saved document's edit). */
+    val hasEdits: Boolean get() = baseDraft != null && _state.value.draft != baseDraft
+
+    /** Leaving a saved document's edit without saving: the edits are thrown away. */
+    fun dropEdits() {
+        c.log.event("EDIT_DISCARDED", "doc" to documentId)
+        dropKept()
     }
 
     // ------------------------------------------------------------ editing
@@ -219,6 +288,11 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             it.copy(draft = d, saveError = null, reviewReasons = AutoAccept.reasons(d))
         }
         refreshPrices()
+        keepJob?.cancel()
+        keepJob = viewModelScope.launch(Dispatchers.IO) {
+            delay(700)
+            writeKept(_state.value.draft)
+        }
     }
 
     fun setHeader(field: HeaderField, text: String) = editDraft { d -> d.withHeader(field) { it.confirmed(text) } }
@@ -312,28 +386,38 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     override fun onCleared() {
         peekPage?.second?.recycle()
         peekPage = null
+        // The last corrections, if the short wait before keeping them had not passed yet (a small file).
+        if (!finished && !_state.value.loading && _state.value.savedId == null) writeKept(_state.value.draft)
     }
 
     // ------------------------------------------------------------ saving
 
     fun requestSave() {
         val s = _state.value
-        if (s.saving) return
+        if (s.saving || s.savedId != null) return
         when (val r = DraftValidator.validate(s.draft)) {
             is ValidationResult.Invalid -> {
                 val keyed = r.errors.associate { e -> mapErrorKey(e.field, s.draft) to e.code }
                 _state.update { it.copy(errors = keyed) }
             }
             is ValidationResult.Valid -> {
-                _state.update { it.copy(errors = emptyMap()) }
+                // Busy from the first tap: a second tap while the duplicate check runs must not save the document twice.
+                _state.update { it.copy(errors = emptyMap(), saving = true) }
                 viewModelScope.launch {
-                    val dups = withContext(Dispatchers.Default) { repo.findDuplicates(r.document, storedFile?.sha256, documentId) }
+                    val dups = try {
+                        withContext(Dispatchers.Default) { repo.findDuplicates(r.document, storedFile?.sha256, documentId) }
+                    } catch (e: Exception) {
+                        if (e is kotlinx.coroutines.CancellationException) throw e
+                        c.log.error("save", e)
+                        _state.update { it.copy(saving = false, saveError = e.message ?: e.javaClass.simpleName) }
+                        return@launch
+                    }
                     val uncertain = s.draft.uncertainCount
                     if (dups.isNotEmpty()) {
                         c.log.event("DUPLICATE_WARNING", "matches" to dups.size, "reasons" to dups.flatMap { it.match.reasons }.distinct().joinToString(","))
                     }
                     if (dups.isEmpty() && uncertain == 0) save(r.document)
-                    else _state.update { it.copy(confirm = SaveConfirmation(dups, uncertain, r.document)) }
+                    else _state.update { it.copy(saving = false, confirm = SaveConfirmation(dups, uncertain, r.document)) }
                 }
             }
         }
@@ -357,6 +441,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 docOcrText?.let { SellerLearning(it, null, own) }
             }
             val id = repo.saveDocument(doc, storedFile, ocrText, documentId, learning)
+            withContext(Dispatchers.IO) { dropKept() }
             // Files on the phone (queue, readings, corrections, what was learned): not on the screen's thread.
             withContext(Dispatchers.IO) { afterSave(id, doc, own, auto) }
             c.checkDishes(id)
@@ -399,6 +484,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     /** Throws away a document that was read but not saved, including its stored original. */
     fun discard() {
         c.log.event("DISCARDED", "new" to (documentId == null), "seconds" to (System.currentTimeMillis() - openedAt) / 1000)
+        dropKept()
         if (documentId == null) jobId?.let { c.importQueue.discard(it) } // deletes the stored original too
     }
 
