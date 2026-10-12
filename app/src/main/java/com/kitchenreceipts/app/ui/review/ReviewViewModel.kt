@@ -207,7 +207,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             isNew = true, draft = draft, restored = kept != null,
             kind = com.kitchenreceipts.core.DocumentKinds.detect(pending.ocrText),
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
-            engineName = if (pending.parsed.itemsReadBy == "ai") "${pending.engineName} + AI" else pending.engineName,
+            engineName = pending.engineName,
             ocrError = pending.ocrError, pagesRead = pending.pagesRead,
             recognisedText = pending.debugReport(),
             recognition = prepared.recognition,
@@ -271,6 +271,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                     marks = ItemMark.decode(it.marks),
                 )
             },
+            // Not saved with the document: a document prints lots when one of its lines has one.
+            lotsPrinted = items.any { it.item.lotNumber != null },
         )
         initialDraft = draft
         keptStamp = doc.updatedAt
@@ -330,8 +332,13 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         }
     }
 
-    fun setHeader(field: HeaderField, text: String) = editDraft { d -> d.withHeader(field) { it.confirmed(text) } }
-    fun confirmHeader(field: HeaderField) = editDraft { d -> d.withHeader(field) { it.confirmed() } }
+    /** A field the operator just fixed is no longer marked red (the rest stay until they are fixed or Save checks again). */
+    private fun clearError(key: String) {
+        if (key in _state.value.errors) _state.update { it.copy(errors = it.errors - key) }
+    }
+
+    fun setHeader(field: HeaderField, text: String) { clearError(field.key); editDraft { d -> d.withHeader(field) { it.confirmed(text) } } }
+    fun confirmHeader(field: HeaderField) { clearError(field.key); editDraft { d -> d.withHeader(field) { it.confirmed() } } }
 
     fun setDate(date: LocalDate) = setHeader(HeaderField.DATE, ItalianDates.format(date))
 
@@ -343,7 +350,12 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun setVatBasis(v: VatBasis) = editDraft { it.copy(vatBasis = v, vatBasisUncertain = false) }
     fun confirmVatBasis() = editDraft { it.copy(vatBasisUncertain = false) }
 
-    fun setItem(key: Long, field: ItemField, text: String) = editItem(key) { item ->
+    fun setItem(key: Long, field: ItemField, text: String) {
+        clearError(itemErrorKey(key, field.key))
+        setItemText(key, field, text)
+    }
+
+    private fun setItemText(key: Long, field: ItemField, text: String) = editItem(key) { item ->
         val edited = item.withField(field) { f -> f.confirmed(text) }
         // Typing the numbers by hand replaces the offered readings.
         if (field in NUMBER_FIELDS) edited.copy(choices = emptyList()) else edited
@@ -361,7 +373,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             c.log.event("CHOICE_PICKED", "rule" to choice.rule.encode())
         }
     }
-    fun confirmItem(key: Long, field: ItemField) = editItem(key) { it.withField(field) { f -> f.confirmed() } }
+    fun confirmItem(key: Long, field: ItemField) { clearError(itemErrorKey(key, field.key)); editItem(key) { it.withField(field) { f -> f.confirmed() } } }
 
     fun useComputedTotal(key: Long) = editItem(key) { item ->
         val cents = item.computedTotalCents() ?: return@editItem item
@@ -449,7 +461,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                     } catch (e: Exception) {
                         if (e is kotlinx.coroutines.CancellationException) throw e
                         c.log.error("save", e)
-                        _state.update { it.copy(saving = false, saveError = e.message ?: e.javaClass.simpleName) }
+                        _state.update { it.copy(saving = false, saveError = com.kitchenreceipts.app.ui.friendlyError(com.kitchenreceipts.app.settings.AppSettings.wrapWithLanguage(c.appContext).resources, e)) }
                         return@launch
                     }
                     val uncertain = s.draft.uncertainCount
@@ -494,7 +506,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             _state.update { it.copy(saving = false, savedId = id, autoSaved = auto) }
         } catch (e: Exception) {
             c.log.error("save", e)
-            _state.update { it.copy(saving = false, saveError = e.message ?: e.javaClass.simpleName) }
+            _state.update { it.copy(saving = false, saveError = com.kitchenreceipts.app.ui.friendlyError(com.kitchenreceipts.app.settings.AppSettings.wrapWithLanguage(c.appContext).resources, e)) }
         }
     }
 

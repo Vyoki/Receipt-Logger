@@ -135,3 +135,29 @@ fun periodLabel(p: Period): String = when (p.kind) {
     PeriodKind.QUARTER -> stringResource(R.string.quarter_label, p.start.get(IsoFields.QUARTER_OF_YEAR), p.start.year)
     PeriodKind.YEAR -> p.start.year.toString()
 }
+
+/** "Riga 4, importo: 12,50 · IA 125,00". */
+@Composable
+fun aiDisagreementText(d: com.kitchenreceipts.core.AiDisagreement): String {
+    val what = stringResource(
+        when (d.field) {
+            "name" -> R.string.ai_field_name
+            "quantity" -> R.string.ai_field_quantity
+            "amount" -> R.string.ai_field_amount
+            "supplier" -> R.string.ai_field_supplier
+            "number" -> R.string.ai_field_number
+            "date" -> R.string.ai_field_date
+            "subtotal" -> R.string.ai_field_subtotal
+            "vat" -> R.string.ai_field_vat
+            "total" -> R.string.ai_field_total
+            else -> R.string.ai_field_value
+        },
+    )
+    val where = d.line?.let { stringResource(R.string.ai_field_line, it, what) } ?: what
+    return stringResource(R.string.ai_disagreement, where, d.ours, d.ai)
+}
+
+/** The source under a field to check, with the AI's mark ("⚠ AI read …") in the operator's language. */
+@Composable
+fun sourceText(source: String?): String =
+    source?.replace(com.kitchenreceipts.core.AiReader.DISAGREE, stringResource(R.string.ai_read_mark)).orEmpty()

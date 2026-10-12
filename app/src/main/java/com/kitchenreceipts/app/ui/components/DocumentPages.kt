@@ -64,11 +64,12 @@ fun DocumentPages(
     BoxWithConstraints(modifier.clipToBounds().background(Color(0xFF303030))) {
         val widthPx = with(LocalDensity.current) { maxWidth.toPx().toInt() }.coerceIn(400, 2000)
         HorizontalPager(state = pager, modifier = Modifier.fillMaxSize(), userScrollEnabled = true) { page ->
+            val res = androidx.compose.ui.platform.LocalContext.current.resources
             val state by produceState<PageState>(PageState.Loading, relativePath, page, widthPx) {
                 value = try {
                     PageState.Ready(renderer.renderPage(relativePath, mimeType, page, if (zoomable) widthPx * 2 else widthPx))
                 } catch (e: Exception) {
-                    PageState.Failed(e.message ?: e.javaClass.simpleName)
+                    PageState.Failed(com.kitchenreceipts.app.ui.friendlyError(res, e))
                 }
             }
             Box(

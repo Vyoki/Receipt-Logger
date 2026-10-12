@@ -90,6 +90,7 @@ import com.kitchenreceipts.app.ui.components.WarningCard
 import com.kitchenreceipts.app.ui.components.PriceChangesCard
 import com.kitchenreceipts.app.ui.categoryLabel
 import com.kitchenreceipts.app.ui.reviewReasonText
+import com.kitchenreceipts.app.ui.aiDisagreementText
 import com.kitchenreceipts.core.Categories
 import com.kitchenreceipts.core.ProductSource
 import com.kitchenreceipts.app.ui.duplicateReasonText
@@ -195,7 +196,14 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                     saving = state.saving,
                     onSave = {
                         vm.requestSave()
-                        scope.launch { listState.animateScrollToItem(0) }
+                        // To the first line with a field to fix (lines sit just before the last two rows of the list);
+                        // to the top when the problem is in the header or there is none.
+                        val errs = vm.state.value.errors
+                        val items = vm.state.value.draft.items
+                        val i = items.indexOfFirst { item -> errs.keys.any { it.startsWith("item:${item.key}.") } }
+                        val headerError = errs.keys.any { !it.startsWith("item:") }
+                        val target = if (i < 0 || headerError) 0 else (listState.layoutInfo.totalItemsCount - 2 - items.size + i).coerceAtLeast(0)
+                        scope.launch { listState.animateScrollToItem(target) }
                     },
                 )
             }
@@ -403,7 +411,9 @@ private fun ReasonsCard(state: ReviewState) {
             state.reviewReasons.forEach { Text("• " + reviewReasonText(it), style = MaterialTheme.typography.bodyMedium) }
             state.draft.aiCheck?.takeIf { it.disagreements.isNotEmpty() }?.let { c ->
                 Text(stringResource(R.string.ai_check_disagree, c.disagreements.size, c.checked), style = MaterialTheme.typography.bodyMedium)
-                c.disagreements.forEach { Text("   $it", style = MaterialTheme.typography.bodyMedium) }
+                // Worded in the operator's language (older readings without details keep the log's wording).
+                if (c.details.isNotEmpty()) c.details.forEach { Text("   " + aiDisagreementText(it), style = MaterialTheme.typography.bodyMedium) }
+                else c.disagreements.forEach { Text("   $it", style = MaterialTheme.typography.bodyMedium) }
             }
             // Which VAT group does not add up, and by how much: that is where the misread line is.
             state.draft.vatGroupProblems.forEach { g ->
@@ -527,7 +537,7 @@ private fun HeaderSection(
             }
         }
 
-        HeaderInput(draft, HeaderField.DATE, R.string.date, errors, vm, FieldKind.DATE, placeholder = "gg/mm/aaaa", trailing = {
+        HeaderInput(draft, HeaderField.DATE, R.string.date, errors, vm, FieldKind.DATE, placeholder = stringResource(R.string.date_placeholder), trailing = {
             IconButton(onClick = onPickDate, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Filled.CalendarMonth, contentDescription = stringResource(R.string.pick_date))
             }
@@ -710,6 +720,14 @@ private fun ItemCard(
                     color = status.uncertainBorder,
                     style = MaterialTheme.typography.bodyMedium,
                 )
+                // One tap when the amount is the misread number (the operator decides; nothing is applied by itself).
+                if (computed != null) {
+                    androidx.compose.material3.AssistChip(
+                        onClick = onUseComputed,
+                        label = { Text(stringResource(R.string.use_computed_total, ItalianNumbers.formatCents(computed))) },
+                        modifier = Modifier.heightIn(min = 48.dp),
+                    )
+                }
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 // A document that prints no lots at all: an empty lot is normal, not something to fill in.

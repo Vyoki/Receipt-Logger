@@ -77,7 +77,6 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             HomeScreen(
                 onScan = { nav.navigate(Routes.CAPTURE) },
                 onDocuments = { nav.navigate(Routes.documents()) },
-                onSellers = { nav.navigate(Routes.SELLERS) },
                 onProducts = { nav.navigate(Routes.PRODUCTS) },
                 onReports = { nav.navigate(Routes.REPORTS) },
                 onOpenDocument = { nav.navigate(Routes.document(it)) },
@@ -148,7 +147,10 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             arguments = listOf(navArgument("sellerId") { type = NavType.LongType; defaultValue = -1L }),
         ) { entry ->
             val sellerId = entry.arguments!!.getLong("sellerId").takeIf { it > 0 }
-            DocumentsScreen(initialSellerId = sellerId, onBack = back, onOpen = { nav.navigate(Routes.document(it)) })
+            DocumentsScreen(
+                initialSellerId = sellerId, onBack = back, onOpen = { nav.navigate(Routes.document(it)) },
+                onSuppliers = if (sellerId == null) ({ nav.navigate(Routes.SELLERS) }) else null,
+            )
         }
         composable(
             Routes.DOCUMENT,

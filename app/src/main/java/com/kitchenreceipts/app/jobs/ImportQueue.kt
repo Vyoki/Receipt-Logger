@@ -135,7 +135,11 @@ class ImportQueue(
 
     /** Loads the queue after a restart: finished readings are rebuilt (no reading again), unfinished ones re-queued. */
     fun restore() {
+        // Documents the app saved by itself on an earlier day leave the home screen by themselves (no "Hide" tap for
+        // each); they are in Documents like any other.
+        val today = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
         val loaded = dir.listFiles()?.mapNotNull { d -> runCatching { readMeta(d) }.getOrNull() }.orEmpty()
+            .filter { j -> !(j.status == JobStatus.SAVED && j.createdAt < today).also { old -> if (old) File(dir, j.id).deleteRecursively() } }
             .sortedBy { it.createdAt }
             .map { if (it.status == JobStatus.READING) it.copy(status = JobStatus.QUEUED) else it }
         _jobs.value = loaded

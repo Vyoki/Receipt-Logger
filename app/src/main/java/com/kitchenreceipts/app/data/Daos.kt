@@ -201,6 +201,10 @@ interface DocumentDao {
     @Query("SELECT COUNT(*) FROM documents WHERE file_path = :path")
     suspend fun countWithFile(path: String): Int
 
+    /** A document's lines in order, enough to find each again after the document is saved again. */
+    @Query("SELECT id, original_description AS description, line_total_cents AS amountCents FROM line_items WHERE document_id = :documentId ORDER BY position")
+    suspend fun lineKeys(documentId: Long): List<LineKeyRow>
+
     /** Everything, for the office copy. */
     @Query("SELECT * FROM documents ORDER BY (document_date IS NULL), document_date, id")
     suspend fun allDocumentsOnce(): List<DocumentEntity>
@@ -632,6 +636,9 @@ interface ChecksDao {
     @Query("SELECT notice FROM dismissed")
     fun dismissed(): Flow<List<String>>
 
+    @Query("SELECT * FROM dismissed")
+    suspend fun dismissedOnce(): List<DismissedEntity>
+
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun dismiss(d: DismissedEntity)
 
@@ -752,3 +759,5 @@ interface FoodDao {
     @Query("DELETE FROM revenue WHERE month = :month")
     suspend fun deleteRevenue(month: String)
 }
+
+data class LineKeyRow(val id: Long, val description: String, val amountCents: Long?)

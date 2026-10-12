@@ -99,7 +99,7 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
     /** All the pages collected in the tray become one document, read once they are all there. */
     fun usePages(paths: List<String>) = queue("pages:${paths.size}") {
         val files = paths.map(::File).filter { it.exists() && it.length() > 0 }
-        if (files.isEmpty()) throw UnsupportedFileException("No photo to import")
+        if (files.isEmpty()) throw UnsupportedFileException("No photo to import", com.kitchenreceipts.app.R.string.file_no_photo)
         c.fileStore.storePhotos(files) { c.pageRenderer.decodeImage(it, 3000) }
     }
 
@@ -130,7 +130,7 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
                 throw e
             } catch (e: Exception) {
                 c.log.error("import", e)
-                _state.value = CaptureState(error = e.message ?: e.javaClass.simpleName)
+                _state.value = CaptureState(error = com.kitchenreceipts.app.ui.friendlyError(com.kitchenreceipts.app.settings.AppSettings.wrapWithLanguage(c.appContext).resources, e))
             }
         }
     }
@@ -183,6 +183,16 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
         } catch (_: ActivityNotFoundException) {
             pendingPhoto = null
             launchError = noCameraMsg
+        }
+    }
+
+    // Scan opens the camera straight away (one tap less on every scan); back from the camera shows the other ways in
+    // (photos already on the phone, a PDF). Only once: not again after a rotation or coming back from the camera.
+    var cameraOpened by rememberSaveable { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        if (!cameraOpened && photos.isEmpty() && pendingPhoto == null) {
+            cameraOpened = true
+            launchCamera()
         }
     }
 

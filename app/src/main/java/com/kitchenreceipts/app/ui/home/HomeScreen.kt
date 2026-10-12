@@ -17,7 +17,6 @@ import androidx.compose.material.icons.filled.Description
 import androidx.compose.material.icons.filled.Inventory2
 import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Storefront
 import androidx.compose.material.icons.filled.Warehouse
 import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material.icons.filled.Verified
@@ -71,7 +70,6 @@ class HomeViewModel(repo: ReceiptRepository, checks: com.kitchenreceipts.app.dat
 fun HomeScreen(
     onScan: () -> Unit,
     onDocuments: () -> Unit,
-    onSellers: () -> Unit,
     onProducts: () -> Unit,
     onReports: () -> Unit,
     onOpenDocument: (Long) -> Unit,
@@ -109,23 +107,23 @@ fun HomeScreen(
             if (expiring.isNotEmpty()) item("expiring") { ExpiringCard(expiring, onLots) }
             item("menu") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Tile(stringResource(R.string.inventory), Icons.Filled.Warehouse, onInventory, Modifier.weight(1f))
-                        Tile(stringResource(R.string.products), Icons.Filled.Inventory2, onProducts, Modifier.weight(1f))
-                    }
+                    // Suppliers are one tap away inside Documents (its supplier list), not a tile of their own.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Tile(stringResource(R.string.documents), Icons.Filled.Description, onDocuments, Modifier.weight(1f))
-                        Tile(stringResource(R.string.sellers), Icons.Filled.Storefront, onSellers, Modifier.weight(1f))
+                        Tile(stringResource(R.string.checks_title), Icons.Filled.Verified, onChecks, Modifier.weight(1f), badge = attention)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Tile(stringResource(R.string.checks_title), Icons.Filled.Verified, onChecks, Modifier.weight(1f), badge = attention)
+                        Tile(stringResource(R.string.products), Icons.Filled.Inventory2, onProducts, Modifier.weight(1f))
+                        Tile(stringResource(R.string.inventory), Icons.Filled.Warehouse, onInventory, Modifier.weight(1f))
+                    }
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Tile(stringResource(R.string.lots_tile), Icons.Filled.QrCode2, onLots, Modifier.weight(1f))
+                        Tile(stringResource(R.string.order_title), Icons.Filled.ShoppingCart, onOrders, Modifier.weight(1f))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                         Tile(stringResource(R.string.food_title), Icons.Filled.Restaurant, onFoodCost, Modifier.weight(1f))
-                        Tile(stringResource(R.string.order_title), Icons.Filled.ShoppingCart, onOrders, Modifier.weight(1f))
+                        Tile(stringResource(R.string.monthly_reports), Icons.Filled.BarChart, onReports, Modifier.weight(1f))
                     }
-                    WideTile(stringResource(R.string.monthly_reports), stringResource(R.string.rep_home_tile), Icons.Filled.BarChart, onReports)
                 }
             }
             item { SectionTitle(stringResource(R.string.recent_documents)) }
@@ -161,20 +159,6 @@ private fun Tile(label: String, icon: ImageVector, onClick: () -> Unit, modifier
                 if (badge > 0) Text(badge.toString(), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold, color = Palette.Orange)
             }
             Text(label, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
-        }
-    }
-}
-
-@Composable
-private fun WideTile(label: String, note: String, icon: ImageVector, onClick: () -> Unit) {
-    ClickCard(onClick = onClick) {
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(icon, contentDescription = null, modifier = Modifier.size(28.dp), tint = Palette.PhthaloBright)
-            Column(Modifier.weight(1f).padding(start = 16.dp)) {
-                Text(label, style = MaterialTheme.typography.titleMedium)
-                Text(note, style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
-            }
-            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
         }
     }
 }

@@ -142,3 +142,42 @@ object Lots {
         return s == t || (t.length >= 4 && s.contains(t))
     }
 }
+
+/**
+ * "It's fine" and "Done" marks name the lines they are about by id; saving an edited document writes its lines
+ * again with new ids. These keep the marks on the same lines.
+ */
+object DismissedKeys {
+
+    /** One saved line, to find it again after the document is saved again. */
+    data class Line(val id: Long, val description: String, val amountCents: Long?)
+
+    /** Old line id -> new line id, for the lines that are still there (same description and amount, in order). */
+    fun match(before: List<Line>, after: List<Line>): Map<Long, Long> {
+        val free = after.toMutableList()
+        val out = HashMap<Long, Long>()
+        for (o in before) {
+            val n = free.firstOrNull { it.description == o.description && it.amountCents == o.amountCents } ?: continue
+            free.remove(n)
+            out[o.id] = n.id
+        }
+        return out
+    }
+
+    /** The key with its line ids moved to the new ones; null when it names none of [ids]. */
+    fun remap(key: String, ids: Map<Long, Long>): String? {
+        val p = key.split(':').toMutableList()
+        val lineSlots = when (p.firstOrNull()) {
+            "exp", "agreed" -> listOf(1)
+            "ddt" -> listOf(3, 4) // ddt:<invoice>:<kind>:<invoice line>:<delivery line>
+            else -> return null
+        }
+        var changed = false
+        for (i in lineSlots) {
+            val id = p.getOrNull(i)?.toLongOrNull() ?: continue
+            val n = ids[id] ?: continue
+            if (n != id) { p[i] = n.toString(); changed = true }
+        }
+        return if (changed) p.joinToString(":") else null
+    }
+}

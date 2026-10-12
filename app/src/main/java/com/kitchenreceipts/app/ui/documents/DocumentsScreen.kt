@@ -88,7 +88,7 @@ class DocumentsViewModel(private val repo: ReceiptRepository, initialSellerId: L
 }
 
 @Composable
-fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -> Unit) {
+fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -> Unit, onSuppliers: (() -> Unit)? = null) {
     val vm = appViewModel(key = "docs-$initialSellerId") { DocumentsViewModel(it.repository, initialSellerId) }
     val filters by vm.filters.collectAsStateWithLifecycle()
     val results by vm.results.collectAsStateWithLifecycle()
@@ -96,7 +96,16 @@ fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -
     val months by vm.months.collectAsStateWithLifecycle()
     var showDate by remember { mutableStateOf(false) }
 
-    AppScaffold(title = stringResource(R.string.documents), onBack = onBack) { padding ->
+    AppScaffold(
+        title = stringResource(R.string.documents),
+        onBack = onBack,
+        actions = {
+            // The suppliers with what was bought from each (it used to be a tile on the home screen).
+            onSuppliers?.let { open ->
+                androidx.compose.material3.TextButton(onClick = open) { Text(stringResource(R.string.sellers)) }
+            }
+        },
+    ) { padding ->
         LazyColumn(
             modifier = Modifier.padding(padding),
             contentPadding = PaddingValues(16.dp),
