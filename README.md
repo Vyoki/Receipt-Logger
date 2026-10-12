@@ -92,21 +92,21 @@ The CI builds are all signed with one fixed key, kept in the repository's secret
 
 ## 6. Using the app (kitchen workflow)
 
-1. **Home**: the big **Scan receipt or invoice** button, tiles for Documents, Sellers, Products and Monthly reports, and the latest documents.
-2. **Capture**: tap **Take a photo**. For a long receipt or a multi-page invoice, tap **Add another page** for each part; the photos are saved together as one PDF. Or tap **Import image or PDF**; multi-page PDFs are supported, and the first 20 pages are read automatically.
+1. **Home**: the big **Scan receipt or invoice** button, the documents being read or waiting to be checked (documents the app saved by itself on an earlier day leave the list by themselves), tiles for Documents, Checks, Products, Purchases, Lots and expiry, Orders, Food cost and Monthly reports, and the latest documents. *Stop and delete* and *Discard* on a card ask first.
+2. **Capture**: **Scan** opens the camera straight away. For a long receipt or a multi-page invoice, tap **Add another page** for each part; the photos are saved together as one PDF. Back from the camera, photos already on the phone or a PDF can be picked instead; multi-page PDFs are supported, and the first 20 pages are read automatically. Files shared to the app (a PDF from mail, an e-invoice) are read the same way.
 3. **Check and save**: the original is at the top (tap it for full screen with pinch-zoom). Below it are the editable fields.
-   - **Orange** fields were read with low confidence. Each one shows the text it was read from. Correct it, or tap **✓** if it is right.
+   - **Orange** fields were read with low confidence. Each one shows the text it was read from. Correct it, or tap **✓** if it is right. One-tap replacements are offered under doubtful values.
    - **Amber** fields are **missing**. Nothing is ever guessed, so type the value only if it is printed.
-   - For each line item: original description, **Assign product**, quantity, unit (one-tap `kg / pz / conf / l`), unit price, line total, lot, VAT %, and expiry (kept separate from the lot).
-   - If the line total is missing, a **Use qty × price = …** chip offers the computed value. It is only applied if you tap it.
-   - Live check: the sum of the line totals is compared with the subtotal and total.
-   - **Save** validates the fields, then warns about **possible duplicates** and about values that are still unchecked, before anything is written.
-4. **Documents**: search by seller, number, product description or lot. Filter by seller, month or a specific day. Open a document to see its original and its line items, edit it, delete it, or open the original in another app.
+   - The kind of document (invoice, delivery note, receipt, credit note) is shown with one tap to change it.
+   - For each line item: original description, **Assign product**, quantity, unit, unit price, line total, discount, lot, VAT %, and expiry (kept separate from the lot).
+   - A line whose quantity × price does not give its amount says so, with a **Use qty × price = …** chip. It is only applied if you tap it.
+   - **Save** checks the fields; a field marked red clears as soon as it is fixed, and Save scrolls to the first line to fix. It then lists in one question whatever still does not check out (possible duplicates, values still unchecked, lines not adding up, a missing date or total...) before anything is written. Corrections are kept if you leave the screen before saving.
+4. **Documents**: search by seller, number, product description or lot. Filter by seller, month or a specific day. The **Sellers** button at the top lists the suppliers with document count, total spent and last document. Open a document to see its original and its line items, edit it, delete it, or open the original in another app. "Lot not recorded" shows only on documents that print lots, never on a charge line.
 5. **Products**: descriptions that have no product yet are listed at the top; assign them in bulk. Each product shows its weighted average cost, with its unit, VAT basis and number of purchases. The detail screen shows price history (each row links to its source document), unit conversions and remembered descriptions.
-6. **Sellers**: document count, total spent and last document date. Tap a seller to see their documents.
+6. **Purchases** (it used to be called Inventory: it is what was bought, not a stock count): purchases per period, and price changes.
 7. **Monthly reports**: spending grouped by calendar month and seller. Export as **CSV**: *Excel Italia* (`;` separators and decimal comma) or standard (`,` and `.`). Two exports are available: monthly totals, or all purchases line by line.
 
-The UI is in English, and fully in Italian when the phone's language is Italian.
+The UI is in English or Italian (Settings ▸ language, or the phone's language). The AI's disagreements and error messages are worded in that language too; the technical details stay in the log.
 
 ---
 

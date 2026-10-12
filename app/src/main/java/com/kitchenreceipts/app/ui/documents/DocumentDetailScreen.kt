@@ -203,7 +203,9 @@ fun DocumentDetailScreen(
                     item("kind") { com.kitchenreceipts.app.ui.checks.DocumentKindAndChecks(d, onOpenDocument) }
                     item("itemsTitle") { SectionTitle(stringResource(R.string.line_items_count, items.size)) }
                     if (items.isEmpty()) item("noItems") { EmptyState(stringResource(R.string.no_line_items)) }
-                    items(items, key = { it.item.id }) { row -> SavedItemCard(row, d.currency, onOpenProduct) }
+                    // "Lot not recorded" only where the document prints lots (some line has one), never on a charge line.
+                    val lotsPrinted = items.any { it.item.lotNumber != null }
+                    items(items, key = { it.item.id }) { row -> SavedItemCard(row, d.currency, onOpenProduct, lotsPrinted) }
                     d.ocrText?.takeIf { it.isNotBlank() }?.let { t -> item("recognised") { RecognisedTextCard(t) } }
                 }
             }
@@ -228,7 +230,7 @@ fun DocumentDetailScreen(
 }
 
 @Composable
-private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (Long) -> Unit) {
+private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (Long) -> Unit, lotsPrinted: Boolean = true) {
     val it = row.item
     Panel {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
@@ -261,9 +263,11 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
                 )
             }
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                if (it.lotNumber != null) Text(stringResource(R.string.lot_value, it.lotNumber)) else MissingValue(stringResource(R.string.lot_not_recorded))
+                val charge = it.productId == null && com.kitchenreceipts.core.Adjustments.isAdjustment(it.originalDescription, it.lineTotalCents, it.quantity)
+                if (it.lotNumber != null) Text(stringResource(R.string.lot_value, it.lotNumber))
+                else if (lotsPrinted && !charge) MissingValue(stringResource(R.string.lot_not_recorded))
                 it.expiryDate?.let { e -> Text(stringResource(R.string.expiry_value, fmtDate(e))) }
-                it.vatRate?.let { v -> Text("IVA ${fmtDecimal(v)}%") }
+                it.vatRate?.let { v -> Text(androidx.compose.ui.res.stringResource(com.kitchenreceipts.app.R.string.vat_rate_short, fmtDecimal(v))) }
                 it.packages?.let { p -> Text(stringResource(R.string.packages_value, p)) }
             }
         }

@@ -123,6 +123,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         kind: com.kitchenreceipts.core.DocKind? = null,
     ): Long =
         db.withTransaction {
+            var linesBefore: List<LineKeyRow> = emptyList()
             val seller = findOrCreateSeller(doc.sellerName)
             if (learning != null) learnSeller(seller, learning, countLayout = existingId == null)
             val now = System.currentTimeMillis()
@@ -148,6 +149,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                         totalCents = doc.totalCents, vatBasis = doc.vatBasis, updatedAt = now,
                     ),
                 )
+                linesBefore = documents.lineKeys(existingId)
                 documents.deleteItemsForDocument(existingId)
                 existingId
             }
@@ -188,10 +190,24 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                 }
             }
             sellers.deleteUnused()
+            // The lines were written again with new ids: "It's fine" and "Done" marks follow their lines.
+            if (linesBefore.isNotEmpty()) keepMarks(linesBefore, documents.lineKeys(id))
             // A new invoice may name delivery notes already saved (or a delivery note an invoice already names).
             refreshCovers(db.checksDao())
             id
         }
+
+    private suspend fun keepMarks(before: List<LineKeyRow>, after: List<LineKeyRow>) {
+        fun lines(rows: List<LineKeyRow>) = rows.map { com.kitchenreceipts.core.DismissedKeys.Line(it.id, it.description, it.amountCents) }
+        val ids = com.kitchenreceipts.core.DismissedKeys.match(lines(before), lines(after))
+        if (ids.isEmpty()) return
+        val dao = db.checksDao()
+        for (d in dao.dismissedOnce()) {
+            val moved = com.kitchenreceipts.core.DismissedKeys.remap(d.notice, ids) ?: continue
+            dao.undismiss(d.notice)
+            dao.dismiss(d.copy(notice = moved))
+        }
+    }
 
     suspend fun deleteDocument(id: Long) {
         val doc = documents.documentById(id) ?: return

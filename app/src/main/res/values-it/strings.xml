@@ -305,9 +305,9 @@
     <string name="new_product_is">Nuovo prodotto: %s</string>
     <string name="product_remembered">Collegato come le volte precedenti per questo fornitore</string>
     <string name="product_recognised">Riconosciuto nonostante una grafia diversa – tocca per cambiare</string>
-    <string name="product_new">Primo acquisto – verrà aggiunto all\'inventario</string>
+    <string name="product_new">Primo acquisto – verrà aggiunto un nuovo prodotto</string>
     <string name="reasons_title">Controlla prima di salvare:</string>
-    <string name="inventory">Inventario</string>
+    <string name="inventory">Acquisti</string>
     <string name="price_changes">Variazioni prezzi</string>
     <string name="auto_saved_banner">Salvato automaticamente: tutto è stato letto chiaramente e gli importi tornano. Tocca Modifica per cambiare qualcosa.</string>
     <string name="category">Categoria</string>
@@ -334,7 +334,7 @@
     <string name="auto_save">Salva automaticamente quando tutto torna</string>
     <string name="auto_save_hint">Se fornitore, data, totale e tutte le righe sono stati letti chiaramente e le righe sommano al totale, il documento viene salvato senza revisione. Se qualcosa è dubbio, te lo chiede.</string>
     <string name="auto_link">Collega gli articoli ai prodotti automaticamente</string>
-    <string name="auto_link_hint">Usa i collegamenti fatti in passato, riconosce errori di battitura e abbreviazioni e aggiunge i nuovi prodotti all\'inventario. Articoli simili ma diversi non vengono mai uniti.</string>
+    <string name="auto_link_hint">Usa i collegamenti fatti in passato, riconosce errori di battitura e abbreviazioni e aggiunge i nuovi prodotti. Articoli simili ma diversi non vengono mai uniti.</string>
     <plurals name="products_count">
         <item quantity="one">%d prodotto</item>
         <item quantity="other">%d prodotti</item>
@@ -656,4 +656,32 @@
     </plurals>
     <string name="err_ambiguous_number">1.500 può voler dire 1500 o 1,5: scrivi 1500 oppure 1,5</string>
     <string name="job_stopped_twice">L\'app si è fermata due volte leggendo questo documento. Riprova, oppure scartalo.</string>
+    <string name="ai_field_name">nome</string>
+    <string name="ai_field_quantity">quantità</string>
+    <string name="ai_field_amount">importo</string>
+    <string name="ai_field_supplier">Fornitore</string>
+    <string name="ai_field_number">Numero documento</string>
+    <string name="ai_field_date">Data</string>
+    <string name="ai_field_subtotal">Imponibile</string>
+    <string name="ai_field_vat">IVA</string>
+    <string name="ai_field_total">Totale</string>
+    <string name="ai_field_value">Valore</string>
+    <string name="ai_field_line">Riga %1$d, %2$s</string>
+    <string name="ai_disagreement">%1$s: %2$s · IA %3$s</string>
+    <string name="ai_read_mark">⚠ l\'IA ha letto</string>
+    <string name="file_unsupported">Questo file non si può leggere. Usa una foto (JPEG o PNG), un PDF o una fattura elettronica (.xml, .p7m, .zip).</string>
+    <string name="file_no_einvoice">Nessuna fattura elettronica in questo file.</string>
+    <string name="file_einvoice_damaged">Non è stato possibile leggere la fattura elettronica (potrebbe essere danneggiata).</string>
+    <string name="file_credit_note">È una nota di credito (soldi restituiti): non viene importata come acquisto.</string>
+    <string name="file_pdf_damaged">Non è stato possibile aprire il PDF (potrebbe essere danneggiato o protetto da password).</string>
+    <string name="file_pdf_empty">Il PDF non ha pagine.</string>
+    <string name="file_too_large">Il file supera %1$d MB.</string>
+    <string name="file_empty">Il file è vuoto.</string>
+    <string name="file_no_photo">Nessuna foto da importare.</string>
+    <string name="err_storage_full">La memoria del telefono è piena. Libera spazio e riprova.</string>
+    <string name="err_database">Non è stato possibile scrivere i dati. Riprova; se succede ancora, invia il registro dalle Impostazioni.</string>
+    <string name="err_file">Non è stato possibile leggere o scrivere il file. Riprova.</string>
+    <string name="err_generic">Qualcosa non ha funzionato. Riprova; se succede ancora, invia il registro dalle Impostazioni.</string>
+    <string name="vat_rate_short">IVA %1$s%%</string>
+    <string name="date_placeholder">gg/mm/aaaa</string>
 </resources>

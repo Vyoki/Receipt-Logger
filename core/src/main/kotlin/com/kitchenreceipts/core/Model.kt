@@ -101,7 +101,15 @@ data class AiCheck(
     val disagreements: List<String>,
     /** What the AI read in the header and totals where it differs from the reading ("seller", "number", "date", "subtotal", "vat", "total"). */
     val header: Map<String, String> = emptyMap(),
+    /** The same disagreements, for the screen to word in the operator's language. */
+    val details: List<AiDisagreement> = emptyList(),
 )
+
+/**
+ * One value the AI read differently: [field] is "name", "quantity", "amount" (of line [line], from 1), or "supplier",
+ * "number", "date", "subtotal", "vat", "total"; [ours] and [ai] are written the Italian way ("12,50", "03/09/2026").
+ */
+data class AiDisagreement(val field: String, val line: Int?, val ours: String, val ai: String)
 
 data class ParsedDocument(
     val sellerName: Extracted<String>?,

@@ -96,7 +96,7 @@ class MainActivity : FragmentActivity() {
                     throw e
                 } catch (e: Exception) {
                     c.log.error("importShared", e)
-                    errors += e.message ?: e.javaClass.simpleName
+                    errors += com.kitchenreceipts.app.ui.friendlyError(res, e)
                 }
             }
             c.log.event("IMPORT_SHARED", "files" to uris.size, "queued" to queued, "errors" to errors.size)

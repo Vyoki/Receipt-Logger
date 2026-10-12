@@ -317,9 +317,9 @@
     <string name="new_product_is">New product: %s</string>
     <string name="product_remembered">Linked as before for this supplier</string>
     <string name="product_recognised">Recognised despite a different spelling – tap to change</string>
-    <string name="product_new">First purchase – will be added to the inventory</string>
+    <string name="product_new">First purchase – a new product will be added</string>
     <string name="reasons_title">Please check before saving:</string>
-    <string name="inventory">Inventory</string>
+    <string name="inventory">Purchases</string>
     <string name="price_changes">Price changes</string>
     <string name="auto_saved_banner">Saved automatically: everything was read clearly and the amounts add up. Tap Edit to change anything.</string>
     <string name="category">Category</string>
@@ -346,7 +346,7 @@
     <string name="auto_save">Save automatically when everything checks out</string>
     <string name="auto_save_hint">When supplier, date, total and every line were read clearly and the lines add up to the total, the document is saved without the review step. Anything doubtful still asks you.</string>
     <string name="auto_link">Link items to products automatically</string>
-    <string name="auto_link_hint">Uses what you linked before, recognises misspellings and abbreviations, and adds new products to the inventory. Similar but different items are never merged.</string>
+    <string name="auto_link_hint">Uses what you linked before, recognises misspellings and abbreviations, and adds new products. Similar but different items are never merged.</string>
     <plurals name="products_count">
         <item quantity="one">%d product</item>
         <item quantity="other">%d products</item>
@@ -668,4 +668,32 @@
     </plurals>
     <string name="err_ambiguous_number">1.500 can mean 1500 or 1,5: write it as 1500 or 1,5</string>
     <string name="job_stopped_twice">The app was stopped twice while reading this one. Try again, or discard it.</string>
+    <string name="ai_field_name">name</string>
+    <string name="ai_field_quantity">quantity</string>
+    <string name="ai_field_amount">amount</string>
+    <string name="ai_field_supplier">Supplier</string>
+    <string name="ai_field_number">Document number</string>
+    <string name="ai_field_date">Date</string>
+    <string name="ai_field_subtotal">Taxable amount</string>
+    <string name="ai_field_vat">VAT</string>
+    <string name="ai_field_total">Total</string>
+    <string name="ai_field_value">Value</string>
+    <string name="ai_field_line">Line %1$d, %2$s</string>
+    <string name="ai_disagreement">%1$s: %2$s · AI %3$s</string>
+    <string name="ai_read_mark">⚠ the AI read</string>
+    <string name="file_unsupported">This file cannot be read. Use a photo (JPEG or PNG), a PDF, or an e-invoice (.xml, .p7m, .zip).</string>
+    <string name="file_no_einvoice">No e-invoice found in this file.</string>
+    <string name="file_einvoice_damaged">The e-invoice could not be read (it may be damaged).</string>
+    <string name="file_credit_note">This is a credit note (money back): it is not imported as a purchase.</string>
+    <string name="file_pdf_damaged">The PDF could not be opened (it may be damaged or locked with a password).</string>
+    <string name="file_pdf_empty">The PDF has no pages.</string>
+    <string name="file_too_large">The file is larger than %1$d MB.</string>
+    <string name="file_empty">The file is empty.</string>
+    <string name="file_no_photo">No photo to import.</string>
+    <string name="err_storage_full">The phone\'s memory is full. Free some space and try again.</string>
+    <string name="err_database">The data could not be written. Try again; if it happens again, send the log from Settings.</string>
+    <string name="err_file">The file could not be read or written. Try again.</string>
+    <string name="err_generic">Something went wrong. Try again; if it happens again, send the log from Settings.</string>
+    <string name="vat_rate_short">VAT %1$s%%</string>
+    <string name="date_placeholder">dd/mm/yyyy</string>
 </resources>

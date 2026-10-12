@@ -177,7 +177,7 @@ class AiLoop(
         private fun merge(a: AiCheck?, b: AiCheck?): AiCheck? = when {
             a == null -> b
             b == null || b === a -> a
-            else -> AiCheck(a.checked + b.checked, a.disagreements + b.disagreements, a.header + b.header)
+            else -> AiCheck(a.checked + b.checked, a.disagreements + b.disagreements, a.header + b.header, a.details + b.details)
         }
     }
 }

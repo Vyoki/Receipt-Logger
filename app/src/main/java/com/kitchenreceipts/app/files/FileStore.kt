@@ -28,7 +28,8 @@ data class StoredFile(
     val sha256: String,
 )
 
-class UnsupportedFileException(message: String) : IOException(message)
+/** A file the app cannot import; [text] says why in the operator's language (the message stays English, for the log). */
+class UnsupportedFileException(message: String, val text: Int = 0, val arg: Any? = null) : IOException(message)
 
 /**
  * Keeps every imported image/PDF in the app's private files directory so saved records can
@@ -77,13 +78,13 @@ class FileStore(private val context: Context) {
         val xmls = try {
             EInvoice.invoices(bytes)
         } catch (_: Exception) {
-            throw UnsupportedFileException("Unsupported file type. Use a JPEG or PNG photo, a PDF, or an e-invoice (.xml, .p7m, .zip).")
+            throw UnsupportedFileException("Unsupported file type. Use a JPEG or PNG photo, a PDF, or an e-invoice (.xml, .p7m, .zip).", com.kitchenreceipts.app.R.string.file_unsupported)
         }
-        if (xmls.isEmpty()) throw UnsupportedFileException("No e-invoice found in this file.")
+        if (xmls.isEmpty()) throw UnsupportedFileException("No e-invoice found in this file.", com.kitchenreceipts.app.R.string.file_no_einvoice)
         val reads = xmls.mapNotNull { x -> runCatching { x to EInvoice.read(x) }.getOrNull() }
-        if (reads.isEmpty()) throw UnsupportedFileException("The e-invoice could not be read (it may be damaged).")
+        if (reads.isEmpty()) throw UnsupportedFileException("The e-invoice could not be read (it may be damaged).", com.kitchenreceipts.app.R.string.file_einvoice_damaged)
         val purchases = reads.filter { !it.second.creditNote }
-        if (purchases.isEmpty()) throw UnsupportedFileException("This is a credit note (money back). Credit notes are not imported as purchases.")
+        if (purchases.isEmpty()) throw UnsupportedFileException("This is a credit note (money back). Credit notes are not imported as purchases.", com.kitchenreceipts.app.R.string.file_credit_note)
         return purchases.map { (xml, read) ->
             val target = File(documentsDir, "${UUID.randomUUID()}.xml")
             target.writeBytes(xml)
@@ -166,11 +167,11 @@ class FileStore(private val context: Context) {
             if (mime == MIME_PDF) pdfPageCount(target) else 1
         } catch (e: Exception) {
             target.delete()
-            throw UnsupportedFileException("The PDF could not be opened (it may be damaged or password-protected).")
+            throw UnsupportedFileException("The PDF could not be opened (it may be damaged or password-protected).", com.kitchenreceipts.app.R.string.file_pdf_damaged)
         }
         if (pages < 1) {
             target.delete()
-            throw UnsupportedFileException("The PDF has no pages.")
+            throw UnsupportedFileException("The PDF has no pages.", com.kitchenreceipts.app.R.string.file_pdf_empty)
         }
         return StoredFile("$DOCUMENTS_DIR/${target.name}", mime, pages, sha)
     }
@@ -184,12 +185,12 @@ class FileStore(private val context: Context) {
                 val n = input.read(buf)
                 if (n < 0) break
                 total += n
-                if (total > MAX_BYTES) throw UnsupportedFileException("The file is larger than ${MAX_BYTES / 1024 / 1024} MB.")
+                if (total > MAX_BYTES) throw UnsupportedFileException("The file is larger than ${MAX_BYTES / 1024 / 1024} MB.", com.kitchenreceipts.app.R.string.file_too_large, MAX_BYTES / 1024 / 1024)
                 digest.update(buf, 0, n)
                 out.write(buf, 0, n)
             }
         }
-        if (total == 0L) throw UnsupportedFileException("The file is empty.")
+        if (total == 0L) throw UnsupportedFileException("The file is empty.", com.kitchenreceipts.app.R.string.file_empty)
         return digest.digest().joinToString("") { String.format(java.util.Locale.ROOT, "%02x", it) }
     }
 

@@ -266,7 +266,7 @@ fun ReviewField(
     }
     val supporting: String? = when {
         error != null -> error
-        field.uncertain -> stringResource(R.string.field_uncertain, field.source?.take(60) ?: "")
+        field.uncertain -> stringResource(R.string.field_uncertain, com.kitchenreceipts.app.ui.sourceText(field.source).take(60))
         field.isMissing && highlightMissing -> missingHint ?: stringResource(R.string.field_missing)
         else -> null
     }

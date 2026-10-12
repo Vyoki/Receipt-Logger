@@ -343,6 +343,7 @@ object AiReader {
         // The double-check: how many values the AI looked at again, and where it read something else.
         var checked = 0
         val disagreements = mutableListOf<String>()
+        val details = mutableListOf<AiDisagreement>()
         // The AI's readings that differ and were not taken: offered to the operator as replacements.
         val headerRead = linkedMapOf<String, String>()
         fun aiRead(idx: Int, field: String, value: String?) {
@@ -350,8 +351,18 @@ object AiReader {
             val old = items[idx] ?: return
             items[idx] = old.copy(aiRead = old.aiRead + (field to v))
         }
-        fun <T> flag(e: Extracted<T>, what: String, aiRead: String): Extracted<T> {
-            disagreements += "$what: ${e.value.let { if (it is java.time.LocalDate) ItalianDates.format(it) else it.toString() }} / AI $aiRead"
+        /** [money]: the value is in cents. */
+        fun <T> flag(e: Extracted<T>, field: String, line: Int?, aiRead: String, money: Boolean = false): Extracted<T> {
+            val ours = e.value.let { v ->
+                when {
+                    v is java.time.LocalDate -> ItalianDates.format(v)
+                    money && v is Long -> ItalianNumbers.formatCents(v)
+                    v is BigDecimal -> ItalianNumbers.formatDecimal(v)
+                    else -> v.toString()
+                }
+            }
+            disagreements += (line?.let { "line $it " } ?: "") + "$field: $ours / AI $aiRead"
+            details += AiDisagreement(field, line, ours, aiRead)
             return e.copy(confidence = Confidence.LOW, source = "${e.source} ($DISAGREE $aiRead)")
         }
         for ((target, raw) in answers) {
@@ -370,6 +381,7 @@ object AiReader {
                             for (k in target.sameBlock) items[k]?.let { if (it.nameDoubt) items[k] = it.copy(nameDoubt = false) }
                         } else {
                             disagreements += "line ${target.itemIndex!! + 1} name: ${doubted.originalDescription} / AI ${a.description.orEmpty()}"
+                            details += AiDisagreement("name", target.itemIndex!! + 1, doubted.originalDescription, a.description.orEmpty())
                             if (differs(doubted.originalDescription, a.description)) aiRead(target.itemIndex!!, "description", a.description)
                         }
                         continue
@@ -429,7 +441,6 @@ object AiReader {
                         AiTarget.Field.AMOUNT -> price != null && old.quantity != null && LineDiscount.matches(old.quantity.value, price, old.discount?.value, ItalianNumbers.toCents(read))
                     }
                     if (!agrees && !fits) continue
-                    val line = "line ${idx + 1}"
                     // A line that did not add up, asked one number at a time: the AI's number that makes it add up is
                     // two sources agreeing (its reading and the arithmetic), and is taken.
                     val wasProven = old.quantity != null && price != null && old.lineTotalCents != null &&
@@ -447,10 +458,10 @@ object AiReader {
                     items[idx] = when (target.field) {
                         // The AI read the same number the arithmetic gives: two independent sources agree, the line is proven.
                         AiTarget.Field.QUANTITY -> old.quantity?.let { q ->
-                            old.copy(quantity = if (agrees) q.copy(confidence = Confidence.HIGH, source = q.source + " (AI read $answer)") else flag(q, "$line quantity", answer))
+                            old.copy(quantity = if (agrees) q.copy(confidence = Confidence.HIGH, source = q.source + " (AI read $answer)") else flag(q, "quantity", idx + 1, answer))
                         } ?: old
                         AiTarget.Field.AMOUNT -> old.lineTotalCents?.let { t ->
-                            if (agrees) old else old.copy(lineTotalCents = flag(t, "$line amount", answer))
+                            if (agrees) old else old.copy(lineTotalCents = flag(t, "amount", idx + 1, answer, money = true))
                         } ?: old
                     }
                     // A different number that adds up: offered as the replacement of the highlighted one.
@@ -464,7 +475,7 @@ object AiReader {
                     fun <T> check(old: Extracted<T>?, new: Extracted<T>?, what: String, same: (T, T) -> Boolean): Extracted<T>? {
                         if (old == null || new == null || old.confidence != Confidence.HIGH) return better(old, new)
                         checked++
-                        return if (same(old.value, new.value)) old else flag(old, what, new.value.let { if (it is java.time.LocalDate) ItalianDates.format(it) else it.toString() })
+                        return if (same(old.value, new.value)) old else flag(old, what, null, new.value.let { if (it is java.time.LocalDate) ItalianDates.format(it) else it.toString() })
                     }
                     // What the AI read, where it differs from the reading (taken or not): offered as replacements.
                     str(m, "seller")?.trim()?.takeIf { it.isNotEmpty() && d.sellerName?.value?.let { s -> DuplicateDetector.normalizeSeller(s) == DuplicateDetector.normalizeSeller(it) } != true }
@@ -486,7 +497,7 @@ object AiReader {
                     val aiSellerRead = headerRead["seller"]
                     val ours = d.sellerName
                     if (aiSellerRead != null && ours != null && ours.confidence == Confidence.HIGH && !sameName(ours.value, aiSellerRead)) {
-                        d = d.copy(sellerName = flag(ours, "supplier", aiSellerRead))
+                        d = d.copy(sellerName = flag(ours, "supplier", null, aiSellerRead))
                     }
                 }
                 is AiTarget.Supplier -> {
@@ -523,14 +534,14 @@ object AiReader {
                         if (new != null && (old == null || old.confidence == Confidence.LOW)) return new
                         if (old == null || new == null) return old
                         checked++
-                        return if (old.value == new.value) old else flag(old, what, ItalianNumbers.formatCents(new.value))
+                        return if (old.value == new.value) old else flag(old, what, null, ItalianNumbers.formatCents(new.value), money = true)
                     }
                     for ((k, old) in listOf("subtotal" to d.subtotalCents, "vat" to d.vatCents, "total" to d.totalCents)) {
                         money(k)?.value?.takeIf { it != old?.value }?.let { headerRead[k] = ItalianNumbers.centsToEditText(it) }
                     }
                     val next = d.copy(
-                        subtotalCents = check(d.subtotalCents, money("subtotal"), "taxable amount"),
-                        vatCents = check(d.vatCents, money("vat"), "VAT"),
+                        subtotalCents = check(d.subtotalCents, money("subtotal"), "subtotal"),
+                        vatCents = check(d.vatCents, money("vat"), "vat"),
                         totalCents = check(d.totalCents, money("total"), "total"),
                     )
                     // The AI's totals fill or replace the reading's only when the document then adds up: taxable + VAT
@@ -560,7 +571,7 @@ object AiReader {
             if (it != null) out += it
             inserts.filter { ins -> ins.first == i }.forEach { ins -> out += ins.second }
         }
-        val aiCheck = if (checked > 0 || headerRead.isNotEmpty()) AiCheck(checked, disagreements, headerRead) else d.aiCheck
+        val aiCheck = if (checked > 0 || headerRead.isNotEmpty()) AiCheck(checked, disagreements, headerRead, details) else d.aiCheck
         return ReceiptParser.finish(
             d.copy(lineItems = out, itemsReadBy = if (answers.isEmpty() || d.itemsReadBy.endsWith("+ai")) d.itemsReadBy else d.itemsReadBy + "+ai", aiCheck = aiCheck), text,
         )
