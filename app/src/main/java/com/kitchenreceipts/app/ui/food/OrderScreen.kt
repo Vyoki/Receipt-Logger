@@ -127,7 +127,7 @@ private fun OrderForSupplier(sellerId: Long, sellerName: String, onBack: () -> U
                 item {
                     BigButton(stringResource(R.string.order_send), Icons.AutoMirrored.Filled.Send, onClick = {
                         val chosenLines = list.mapIndexedNotNull { i, o ->
-                            val q = ItalianNumbers.parse(qty[i])?.takeIf { it.signum() > 0 } ?: return@mapIndexedNotNull null
+                            val q = ItalianNumbers.parseTyped(qty[i])?.takeIf { it.signum() > 0 } ?: return@mapIndexedNotNull null
                             o.name to (ItalianNumbers.formatDecimal(q, maxScale = 3) + " " + o.unit)
                         }
                         val text = Reorder.message(heading, chosenLines, note)

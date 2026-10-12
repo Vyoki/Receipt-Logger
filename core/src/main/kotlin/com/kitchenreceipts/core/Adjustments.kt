@@ -25,18 +25,33 @@ object Adjustments {
 
     /**
      * True for a discount or charge line. A line with a quantity of goods is a product (a "reso" of 2 kg is goods
-     * coming back), unless its words say discount and its amount is negative.
+     * coming back), unless its words say discount and its amount is negative. Goods given free ("OMAGGIO MOZZARELLA
+     * 2 pz 0,00", "SCONTO MERCE PASSATA 6 pz") are goods at price 0: they come in, with their lot and expiry.
      */
     fun isAdjustment(description: String, amountCents: Long?, quantity: BigDecimal?): Boolean {
         val d = description.trim()
         if (d.isEmpty()) return false
-        if (DISCOUNT.containsMatchIn(d)) return quantity == null || amountCents == null || amountCents <= 0 || isPercentOnly(d)
+        if (DISCOUNT.containsMatchIn(d)) {
+            if (isPercentOnly(d)) return true
+            if (isFreeGoods(d, amountCents, quantity)) return false
+            return quantity == null || amountCents == null || amountCents <= 0
+        }
         if (CHARGE.containsMatchIn(d)) return true
         return false
     }
 
     /** "Sconto del 4%", "SC. 10%": the number on the line is a percentage, not a quantity. */
     private fun isPercentOnly(d: String) = d.contains('%')
+
+    /** A quantity of something named after the discount word, at no charge. */
+    private fun isFreeGoods(d: String, amountCents: Long?, quantity: BigDecimal?): Boolean {
+        if (quantity == null || quantity.signum() <= 0) return false
+        if (amountCents != null && amountCents != 0L) return false
+        val rest = DISCOUNT.replace(d, " ")
+        return rest.split(rx("[^\\p{L}]+")).count { w -> w.length >= 3 && w.lowercase() !in NOT_GOODS } >= 1
+    }
+
+    private val NOT_GOODS = setOf("merce", "merci", "del", "per", "sul", "sulla", "fattura", "incondizionato", "inc", "cassa", "pagamento", "the", "for", "goods")
 
     fun isDiscount(description: String): Boolean = DISCOUNT.containsMatchIn(description.trim())
 
@@ -51,7 +66,8 @@ object Adjustments {
         }
         it.copy(
             quantity = null, unit = null, unitPrice = null, lineTotalCents = total, packSize = null, packages = null, discount = null,
-            choices = emptyList(), lotNumber = null, expiryDate = null, adjustment = true,
+            // A lot or expiry printed on it is kept as read (nothing is thrown away; the operator sees it).
+            choices = emptyList(), adjustment = true,
             warnings = it.warnings - ParseWarning.LINE_TOTAL_MISMATCH,
         )
     }

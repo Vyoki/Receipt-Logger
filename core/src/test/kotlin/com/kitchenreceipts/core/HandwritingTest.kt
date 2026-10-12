@@ -51,4 +51,25 @@ class HandwritingTest {
         assertEquals(0.35f, back[0][2].words[0].confidence)
         assertEquals(1f, OcrLineCodec.decode("1,2,3,4,0.0\tX\t")[0][0].confidence)
     }
+
+    @Test fun aLotReadFromAnUnsureWordIsLookedAt() {
+        fun ln(t: String, y: Int, c: Float) = OcrLine(
+            t, 100, y, 100 + t.length * 12, y + 20, 0f,
+            t.split(' ').runningFold(100 to "") { (x, _), w -> (x + w.length * 12 + 12) to w }.drop(1)
+                .map { (x, w) -> OcrLine(w, x - w.length * 12 - 12, y, x - 12, y + 20, 0f, emptyList(), c) },
+        )
+        val page = listOf(
+            ln("ABC S.R.L.", 10, 0.95f), ln("P.IVA 01234567897", 40, 0.95f), ln("FATTURA N. 123 DEL 01/10/2026", 70, 0.95f),
+            ln("MOZZARELLA KG 2 5,00 10,00", 130, 0.95f), ln("Lotto L24A9 Scad. 20/10/2026", 160, 0.30f),
+            ln("RICOTTA KG 1 4,00 4,00", 190, 0.95f), ln("Lotto L24B7 Scad. 21/10/2026", 220, 0.95f),
+            ln("TOTALE IMPONIBILE 14,00", 260, 0.95f), ln("TOTALE IVA 0,56", 290, 0.95f), ln("TOTALE DOCUMENTO 14,56", 320, 0.95f),
+        )
+        val d = ReceiptParser.parsePages(listOf(page), ParseOptions(ownVatNumber = "09876543217", today = java.time.LocalDate.of(2026, 10, 7)))
+        val moz = d.lineItems.first { it.originalDescription.startsWith("MOZZARELLA") }
+        val ric = d.lineItems.first { it.originalDescription.startsWith("RICOTTA") }
+        assertEquals("L24A9", moz.lotNumber?.value)
+        assertEquals(Confidence.LOW, moz.lotNumber?.confidence)
+        assertEquals(Confidence.LOW, moz.expiryDate?.confidence)
+        assertEquals(Confidence.HIGH, ric.lotNumber?.confidence)
+    }
 }

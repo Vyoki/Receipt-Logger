@@ -45,8 +45,13 @@ object Handwriting {
      */
     fun mark(doc: ParsedDocument, pages: List<List<OcrLine>>): ParsedDocument {
         if (!known(pages)) return doc
-        val unsure = words(pages).filter { it.confidence < UNSURE }.map { norm(it.text) }.filter { it.isNotEmpty() }.toSet()
+        val unsureWords = words(pages).filter { it.confidence < UNSURE }
+        val unsure = unsureWords.map { norm(it.text) }.filter { it.isNotEmpty() }.toSet()
         if (unsure.isEmpty()) return doc.copy(handwritten = false)
+        // Lots and expiry dates are not proven by any arithmetic: one read from a word the OCR was unsure of is
+        // always looked at (a lot glued to its label, "LottoL24A9", counts too).
+        val unsureDates = unsureWords.flatMap { w -> ItalianDates.findDates(w.text).map { it.date } }.toSet()
+        fun lotUnsure(lot: String): Boolean { val n = norm(lot); return n.length >= 2 && unsure.any { u -> u == n || (n.length >= 4 && u.contains(n)) } }
         val items = doc.lineItems.map { it ->
             if (it.adjustment) return@map it
             val nameUnsure = it.originalDescription.split(' ').any { w -> w.count(Char::isLetter) >= 3 && norm(w) in unsure }
@@ -58,6 +63,8 @@ object Handwriting {
             it.copy(
                 nameDoubt = it.nameDoubt || nameUnsure,
                 quantity = doubt(q) { v -> ItalianNumbers.toEditText(v) },
+                lotNumber = it.lotNumber?.let { l -> if (lotUnsure(l.value)) l.copy(confidence = Confidence.LOW) else l },
+                expiryDate = it.expiryDate?.let { e -> if (e.value in unsureDates) e.copy(confidence = Confidence.LOW) else e },
                 unitPrice = doubt(p) { v -> ItalianNumbers.toEditText(v) },
                 lineTotalCents = doubt(t) { v -> ItalianNumbers.centsToEditText(v) },
             )

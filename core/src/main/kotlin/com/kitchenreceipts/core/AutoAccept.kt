@@ -105,7 +105,7 @@ object AutoAccept {
         }
         if (!lineOk) return d
         val sub = cents(d.subtotal.text); val vat = cents(d.vat.text); val tot = cents(d.total.text)
-        val headerOk = sub == null || vat == null || tot == null || kotlin.math.abs(sub + vat - tot) <= 1
+        val headerOk = sub == null || vat == null || tot == null || totalsAddUp(sub, vat, tot)
         if (!headerOk) return d
         val sum = d.items.sumOf { cents(it.lineTotal.text)!! }
         val tolerance = maxOf(2L, d.items.size.toLong())
@@ -116,8 +116,8 @@ object AutoAccept {
         return d.copy(
             items = d.items.map { it.copy(quantity = clear(it.quantity), unitPrice = clear(it.unitPrice), lineTotal = clear(it.lineTotal), discount = clear(it.discount)) },
             subtotal = settle(d.subtotal, sub != null && kotlin.math.abs(sub - sum) <= tolerance),
-            total = settle(d.total, tot != null && (kotlin.math.abs(tot - sum) <= tolerance || (sub != null && vat != null && kotlin.math.abs(sub + vat - tot) <= 1 && kotlin.math.abs(sub - sum) <= tolerance))),
-            vat = settle(d.vat, vat != null && sub != null && tot != null && kotlin.math.abs(sub + vat - tot) <= 1 && kotlin.math.abs(sub - sum) <= tolerance),
+            total = settle(d.total, tot != null && (kotlin.math.abs(tot - sum) <= tolerance || (sub != null && vat != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance))),
+            vat = settle(d.vat, vat != null && sub != null && tot != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance),
         )
     }
 

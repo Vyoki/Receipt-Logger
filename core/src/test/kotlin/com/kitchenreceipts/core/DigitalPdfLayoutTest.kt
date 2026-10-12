@@ -75,4 +75,51 @@ class DigitalPdfLayoutTest {
         assertEquals(-500L, marked.lineTotalCents?.value)
         assertNull(marked.quantity)
     }
+
+    @Test fun freeGoodsAreGoodsAtPriceZero() {
+        val two = BigDecimal("2")
+        assertTrue(!Adjustments.isAdjustment("OMAGGIO MOZZARELLA 125G", 0, two))
+        assertTrue(!Adjustments.isAdjustment("SCONTO MERCE PASSATA 700G", null, two))
+        // Money off is still money off.
+        assertTrue(Adjustments.isAdjustment("OMAGGIO", 0, two))
+        assertTrue(Adjustments.isAdjustment("Sconto merce", -720, two))
+        assertTrue(Adjustments.isAdjustment("PROMOZIONE -20%", -144, two))
+        // Read as a line: quantity, unit, lot and expiry stay.
+        val free = ParsedLineItem(
+            "OMAGGIO MOZZARELLA 125G", Extracted(two, Confidence.HIGH, "x"), Extracted("pz", Confidence.HIGH, "x"), null,
+            Extracted(0L, Confidence.HIGH, "x"), null, Extracted("L24A9", Confidence.HIGH, "x"), Extracted(LocalDate.of(2026, 10, 20), Confidence.HIGH, "x"),
+        )
+        val kept = Adjustments.mark(listOf(free)).single()
+        assertTrue(!kept.adjustment)
+        assertEquals(0, two.compareTo(kept.quantity!!.value))
+        assertEquals("L24A9", kept.lotNumber?.value)
+        assertEquals(LocalDate.of(2026, 10, 20), kept.expiryDate?.value)
+    }
+
+    @Test fun aDeliveryNoteReferenceBoxIsNotTheInvoicesNumberAndDate() {
+        // The invoice's own number and date printed in one line, and lower down the delivery notes it charges,
+        // in a box of their own ("N. DDT | DATA").
+        val raw = javaClass.getResource("/fixtures/pdf_text_sconti.txt")!!.readText().lines().filter { it.contains(" | ") }
+        val inline = raw.filterNot { it.contains("NR. DOCUMENTO") || it.contains("DATA DOCUMENTO") || it.contains("| B26 305511") || it.contains("| 03/09/2026") } +
+            "1079,620,1500,646,0.0 | FATTURA N. B26 305511 DEL 03/09/2026  [1079-1180:FATTURA 1190-1210:N. 1220-1320:B26 1325-1400:305511 1410-1440:DEL 1450-1500:03/09/2026]"
+        val withRef = inline + listOf(
+            "128,2250,200,2264,0.0 | N. DDT  [128-140:N. 145-200:DDT]", "402,2250,450,2264,0.0 | DATA  [402-450:DATA]",
+            "128,2276,160,2300,0.0 | 88  [128-160:88]", "402,2276,520,2300,0.0 | 28/08/2026  [402-520:28/08/2026]",
+        )
+        fun read(ls: List<String>) = parse(ls.map { l ->
+            val (g, rest) = l.split(" | ", limit = 2)
+            val n = g.split(",")
+            val top = n[1].toInt(); val bottom = n[3].toInt()
+            val words = rest.substringAfter("  [", "").removeSuffix("]").split(Regex(" (?=\\d+-\\d+:)")).mapNotNull { w ->
+                val m = Regex("^(\\d+)-(\\d+):(.*)$").find(w) ?: return@mapNotNull null
+                OcrLine(m.groupValues[3], m.groupValues[1].toInt(), top, m.groupValues[2].toInt(), bottom)
+            }
+            OcrLine(rest.substringBefore("  ["), n[0].toInt(), top, n[2].toInt(), bottom, 0f, words)
+        })
+        val d = read(withRef)
+        assertTrue(d.documentNumber?.value != "88")
+        assertTrue(d.documentDate?.value != LocalDate.of(2026, 8, 28))
+        assertEquals(read(inline).documentNumber, d.documentNumber)
+        assertEquals(read(inline).documentDate, d.documentDate)
+    }
 }

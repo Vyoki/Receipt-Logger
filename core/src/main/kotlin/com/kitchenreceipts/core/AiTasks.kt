@@ -89,7 +89,7 @@ object AiTasks {
         val ok = goods.count { lineAddsUp(it) }
         val sub = d.subtotalCents?.value; val vat = d.vatCents?.value; val tot = d.totalCents?.value
         val sums = d.lineItems.mapNotNull { it.lineTotalCents?.value }
-        val closes = if (sub != null && vat != null && tot != null) (if (kotlin.math.abs(sub + vat - tot) <= 2) "yes" else "no") else "?"
+        val closes = if (sub != null && vat != null && tot != null) (if (totalsAddUp(sub, vat, tot)) "yes" else "no") else "?"
         val linesTotal = if (sums.size == d.lineItems.size && sums.isNotEmpty() && (sub ?: tot) != null)
             (if (kotlin.math.abs(sums.sum() - (sub ?: tot)!!) <= maxOf(2L, sums.size.toLong())) "yes" else "no") else "?"
         return "${goods.size} lines, $ok add up; supplier ${sure(d.sellerName)}; number ${sure(d.documentNumber)}; date ${sure(d.documentDate)}; " +

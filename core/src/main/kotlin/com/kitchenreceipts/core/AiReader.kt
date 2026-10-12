@@ -374,8 +374,10 @@ object AiReader {
                         }
                         continue
                     }
+                    // The line's numbers count as printed only where they are on that line: a "1" or an amount found
+                    // elsewhere on the page proves nothing about it. Codes and lots may be on the line next to it.
                     val rowEv = Evidence(target.rowText + "\n" + text)
-                    val new = item(a, rowEv)?.let { fixHeading(it, text) } ?: continue
+                    val new = item(a, rowEv, Evidence(target.rowText))?.let { fixHeading(it, text) } ?: continue
                     val proven = ParseWarning.LINE_TOTAL_MISMATCH !in new.warnings && new.quantity?.confidence == Confidence.HIGH &&
                         new.lineTotalCents?.confidence == Confidence.HIGH && !ReceiptParser.isSectionHeading(new.originalDescription)
                     if (!proven) {
@@ -536,7 +538,7 @@ object AiReader {
                     // Otherwise they are only offered.
                     fun addsUp(x: ParsedDocument): Boolean {
                         val sub = x.subtotalCents?.value; val vat = x.vatCents?.value; val tot = x.totalCents?.value
-                        if (sub != null && vat != null && tot != null) return kotlin.math.abs(sub + vat - tot) <= 2
+                        if (sub != null && vat != null && tot != null) return totalsAddUp(sub, vat, tot)
                         val sums = x.lineItems.mapNotNull { it.lineTotalCents?.value }
                         if (sums.size != x.lineItems.size || sums.isEmpty()) return sub == null || tot == null || sub <= tot
                         val s = sums.sum(); val tol = maxOf(2L, sums.size.toLong())
@@ -707,7 +709,11 @@ object AiReader {
         return (units.lastOrNull()?.second) to null
     }
 
-    private fun item(a: AiItem, ev: Evidence): ParsedLineItem? {
+    /**
+     * One line as the AI read it. [numbers] is where its quantity, price and amount must be printed to count as
+     * read (the line itself for a single-line question, the page for a whole-page reading); [ev] is for codes and lots.
+     */
+    private fun item(a: AiItem, ev: Evidence, numbers: Evidence = ev): ParsedLineItem? {
         var description = a.description?.let { cleanText(it) }?.takeIf { it.count(Char::isLetter) >= 2 } ?: return null
         val source = "AI: " + listOfNotNull(a.code, a.colli, a.description, a.unit, a.quantity, a.price, a.discount, a.amount, a.vatRate).joinToString(" ")
         var qty = a.quantity?.let(::number)
@@ -718,9 +724,17 @@ object AiReader {
         if (qty != null && price != null && amount != null) {
             consistent = ReceiptParser.matches(qty, price, amount) || discountMatches(qty, price, discount, amount)
         }
-        val printed = { v: BigDecimal? -> v != null && ev.hasNumber(v) }
-        val amountConf = if (amount != null && (consistent || ev.hasNumber(ItalianNumbers.centsToDecimal(amount)))) Confidence.HIGH else Confidence.LOW
-        val qpConf = if (consistent && (printed(qty) || printed(price))) Confidence.HIGH else Confidence.LOW
+        val printed = { v: BigDecimal? -> v != null && numbers.hasNumber(v) }
+        // The small model's usual slip on a weighed line: "1 × 4,62 = 4,62", the amount copied into the price. It adds
+        // up by itself, so it proves something only when both the 1 and the price are printed on the line.
+        val copied = qty != null && price != null && amount != null && qty.compareTo(BigDecimal.ONE) == 0 &&
+            ItalianNumbers.toCents(price) == amount
+        val qpConf = if (consistent && (if (copied) printed(qty) && printed(price) else printed(qty) || printed(price))) Confidence.HIGH else Confidence.LOW
+        val amountConf = if (amount != null && (numbers.hasNumber(ItalianNumbers.centsToDecimal(amount)) || (consistent && qpConf == Confidence.HIGH))) {
+            Confidence.HIGH
+        } else {
+            Confidence.LOW
+        }
         val (readUnit, packSize) = splitUnit(a.unit)
         var unit = readUnit
         if (packSize != null && !description.uppercase().endsWith(packSize)) description = "$description $packSize"

@@ -163,7 +163,7 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
         initial = typed()
     }
 
-    fun dec(s: String): BigDecimal? = ItalianNumbers.parse(s)
+    fun dec(s: String): BigDecimal? = ItalianNumbers.parseTyped(s)
 
     /** The dish as typed now, for the live cost. Rows without a name or quantity are left out. */
     fun current(): Recipe = Recipe(

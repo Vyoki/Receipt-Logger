@@ -144,4 +144,11 @@ class DeliveryNotesTest {
         val invoice = listOf(line(9, 91, 1, "SALSICCIA", "5", "kg", 3500))
         assertTrue(DeliveryMatching.compare(invoice, notes).isEmpty())
     }
+
+    @Test fun aCreditNoteMentionedInTheSmallPrintIsNotOne() {
+        val receipt = (listOf("ABC S.R.L.", "VIA ROMA 1", "P.IVA 01234567897") + List(20) { "ARTICOLO $it 1,00" } +
+            listOf("TOTALE 20,00", "Resi accettati solo con nota di credito")).joinToString("\n")
+        assertEquals(null, DocumentKinds.detect(receipt))
+        assertEquals(DocKind.CREDIT_NOTE, DocumentKinds.detect("ABC S.R.L.\nNOTA DI CREDITO N. 5 DEL 01/10/2026\nStorno fattura 12"))
+    }
 }

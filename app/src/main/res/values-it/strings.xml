@@ -649,4 +649,10 @@
     <string name="leave_edit_title">Annullare le modifiche?</string>
     <string name="leave_edit_text">Il documento resta com\'era salvato.</string>
     <string name="draft_restored">Le correzioni dell\'ultima volta sono state recuperate.</string>
+    <string name="not_adding_up_title">Qualcosa non torna</string>
+    <plurals name="things_to_look_at">
+        <item quantity="one">%1$d cosa da guardare</item>
+        <item quantity="other">%1$d cose da guardare</item>
+    </plurals>
+    <string name="err_ambiguous_number">1.500 può voler dire 1500 o 1,5: scrivi 1500 oppure 1,5</string>
 </resources>

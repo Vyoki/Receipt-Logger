@@ -47,6 +47,8 @@ data class PendingImport(
     val aiLayout: String? = null,
     /** Which open question was asked each time (0 = the app's first; the trained model may choose another): see AiLoop. */
     val aiPicks: List<Int> = emptyList(),
+    /** What each of [aiTargeted] answered (see AiLoop.keys), for the replay after a restart or an update. */
+    val aiKeys: List<String> = emptyList(),
 ) {
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
@@ -252,6 +254,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val aiRaw = mutableListOf<String>()
         val aiTargeted = mutableListOf<String>()
         val aiPicks = mutableListOf<Int>()
+        val aiKeys = mutableListOf<String>()
         var aiSpot = false
         if (ai != null && shared != null && best.error == null && best.lines.isNotEmpty()) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
@@ -279,7 +282,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 planned == null -> runAi(images, best, ai, shared, options, onProgress, aiRaw, parsed)
                 // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
                 planned.isEmpty() -> "nothing to ask"
-                else -> runLoop(images, best, shared, parsed, options, onProgress, aiTargeted, aiPicks, ai, ai.examples(parsed, best.text)).second
+                else -> runLoop(images, best, shared, parsed, options, onProgress, aiTargeted, aiPicks, aiKeys, ai, ai.examples(parsed, best.text)).second
             }
             layoutNote?.let { aiNote = "$it; $aiNote" }
         }
@@ -290,7 +293,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 (if (best.textPages > 0) ", text of the PDF on ${best.textPages} of ${best.lines.size} page(s)" else ""),
             options, System.currentTimeMillis() - started, aiSpot, aiLayout,
             // Worked out above from the same reading: not again (the AI's answers are replayed on it).
-            preParsed = parsed, aiPicks = aiPicks,
+            preParsed = parsed, aiPicks = aiPicks, aiKeys = aiKeys,
         )
     }
 
@@ -338,6 +341,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         onProgress: (ImportProgress) -> Unit,
         answers: MutableList<String>,
         picks: MutableList<Int>,
+        keys: MutableList<String>,
         ai: AiUse,
         examples: List<AiReader.RowExample> = emptyList(),
     ): Pair<ParsedDocument, String> {
@@ -388,6 +392,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         }
         answers += loop.answers
         picks += loop.picks
+        keys += loop.keys
         blank.recycle()
         notes += "${loop.answers.size} questions, $stopped, total ${(System.currentTimeMillis() - started) / 1000}s"
         return loop.doc to notes.joinToString("; ")
@@ -516,6 +521,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             preParsed: ParsedDocument? = null,
             /** Which open question was asked each time (see AiLoop.replay). */
             aiPicks: List<Int> = emptyList(),
+            aiKeys: List<String> = emptyList(),
         ): PendingImport = withContext(Dispatchers.Default) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
@@ -526,7 +532,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             }
             if (aiTargeted.isNotEmpty()) {
                 // The questions are chosen again the same way from the same reading, so they pair up with the stored answers.
-                parsed = AiLoop.replay(lines, text, options, parsed, aiTargeted, aiPicks)
+                parsed = AiLoop.replay(lines, text, options, parsed, aiTargeted, aiPicks, aiKeys)
             }
             if (aiRaw.size == lines.size && aiRaw.any { it.isNotBlank() }) {
                 val aiPages = aiRaw.mapIndexed { i, raw ->
@@ -551,6 +557,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 aiSpot = aiSpot,
                 aiLayout = aiLayout,
                 aiPicks = aiPicks,
+                aiKeys = aiKeys,
             )
         }
 

@@ -451,7 +451,7 @@ private fun ConversionDialog(units: List<String>, onDismiss: () -> Unit, onConfi
     var from by remember { mutableStateOf(units.firstOrNull { Units.dimension(it) == null } ?: "conf") }
     var factor by remember { mutableStateOf("") }
     var to by remember { mutableStateOf(units.firstOrNull { it != from } ?: "pz") }
-    val f = ItalianNumbers.parse(factor)
+    val f = ItalianNumbers.parseTyped(factor)
     val fromN = Units.normalize(from)
     val toN = Units.normalize(to)
     val valid = f != null && f.signum() > 0 && fromN != null && toN != null && fromN != toN

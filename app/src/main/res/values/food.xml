@@ -90,7 +90,7 @@
     <string name="food_import_failed">The file could not be read.</string>
     <string name="food_no_ingredients">No ingredients yet</string>
     <string name="recipe_quantity_needed">Type the quantity of every ingredient (or remove it).</string>
-    <string name="recipe_quantity_missing">Quantity missing</string>
+    <string name="recipe_quantity_missing">Quantity missing or unclear (write 1,5 or 1500)</string>
     <string name="recipe_save_failed">The dish could not be saved. Try again.</string>
     <string name="recipe_leave_title">Discard this dish?</string>
     <string name="recipe_leave_text">What you typed has not been saved.</string>

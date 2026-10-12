@@ -137,3 +137,10 @@ data class ParsedDocument(
         )
     }
 }
+
+/**
+ * Taxable amount + VAT = total, to the cent. Printed documents are exact; a reading off by a cent (a "1" read as
+ * "l", a 7 as a 1) must not count as proven. Searches for which printed number is which may allow a cent; this is
+ * the proof.
+ */
+fun totalsAddUp(subtotalCents: Long, vatCents: Long, totalCents: Long): Boolean = subtotalCents + vatCents == totalCents

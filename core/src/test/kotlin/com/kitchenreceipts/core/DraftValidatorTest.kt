@@ -66,4 +66,10 @@ class DraftValidatorTest {
         assertEquals("", item.lineTotal.text)
         assertEquals(BigDecimal("2"), ItalianNumbers.parse(item.quantity.text))
     }
+
+    @Test fun aTypedQuantityThatReadsTwoWaysIsRefused() {
+        val d = DocumentDraft(seller = DraftField("ABC S.r.l."), items = listOf(LineItemDraft(1, description = DraftField("Farina"), quantity = DraftField("1.500"))))
+        val r = DraftValidator.validate(d) as ValidationResult.Invalid
+        assertEquals(listOf(FieldError("items[0].quantity", ErrorCode.AMBIGUOUS_NUMBER)), r.errors)
+    }
 }

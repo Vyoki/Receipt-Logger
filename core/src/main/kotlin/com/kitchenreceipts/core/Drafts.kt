@@ -178,7 +178,11 @@ data class DocumentDraft(
     }
 }
 
-enum class ErrorCode { REQUIRED, INVALID_NUMBER, INVALID_DATE, MUST_NOT_BE_ZERO, MUST_BE_POSITIVE, OUT_OF_RANGE, TOO_LONG, INVALID_CURRENCY }
+enum class ErrorCode {
+    REQUIRED, INVALID_NUMBER, INVALID_DATE, MUST_NOT_BE_ZERO, MUST_BE_POSITIVE, OUT_OF_RANGE, TOO_LONG, INVALID_CURRENCY,
+    /** "1.500": 1500 or 1,5? Typed values are never guessed (see ItalianNumbers.isAmbiguousTyped). */
+    AMBIGUOUS_NUMBER,
+}
 
 /** [field] is "seller", "date", ..., or "items[3].quantity" (index into the draft list). */
 data class FieldError(val field: String, val code: ErrorCode)
@@ -289,6 +293,8 @@ object DraftValidator {
 
     private fun optionalDecimal(text: String, field: String, errors: MutableList<FieldError>): BigDecimal? {
         if (text.isBlank()) return null
+        // The draft's own values never have a thousands dot (see ItalianNumbers.toEditText): this one was typed.
+        if (ItalianNumbers.isAmbiguousTyped(text)) { errors += FieldError(field, ErrorCode.AMBIGUOUS_NUMBER); return null }
         val v = ItalianNumbers.parse(text)
         if (v == null) errors += FieldError(field, ErrorCode.INVALID_NUMBER)
         return v

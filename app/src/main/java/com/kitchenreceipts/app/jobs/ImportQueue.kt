@@ -294,6 +294,7 @@ class ImportQueue(
         File(d, "reading.properties").outputStream().use { p.store(it, null) }
         pending.aiRaw.forEachIndexed { i, raw -> File(d, "ai-$i.json").writeText(raw) }
         pending.aiTargeted.forEachIndexed { i, raw -> File(d, "ai-check-$i.json").writeText(raw) }
+        pending.aiKeys.forEachIndexed { i, key -> File(d, "ai-check-$i.key").writeText(key) }
     }
 
     private suspend fun loadReading(job: ImportJob): PendingImport? = withContext(Dispatchers.IO) {
@@ -310,6 +311,9 @@ class ImportQueue(
             p.getProperty("aiSpot") == "true",
             File(d, "ai-layout.txt").takeIf { it.exists() }?.readText(),
             aiPicks = p.getProperty("aiPicks").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() },
+            // Keys of every answer, or none (an older reading): a partial list would pair answers wrongly.
+            aiKeys = aiChecks.indices.map { i -> File(d, "ai-check-$i.key").takeIf { it.exists() }?.readText() }
+                .let { k -> if (k.all { it != null }) k.filterNotNull() else emptyList() },
         )
     }
 }

@@ -81,6 +81,17 @@ class AiLoopTest {
         assertEquals(loop.doc.aiCheck?.checked, again.aiCheck?.checked)
     }
 
+    @Test fun afterAnUpdateEachAnswerGoesBackToItsOwnQuestion() {
+        val (loop, asked) = run(ai("""{"code":"10003","colli":null,"description":"SALE MARINO FINO","unit":"NR","quantity":"10","price":"0,422","discount":null,"amount":"4,22","vat_rate":null,"lot":null}"""))
+        assertTrue(asked.first() is AiTarget.Supplier)
+        // Since then the supplier became known (saved under its VAT number): its question is no longer asked, and the
+        // line's question moved up to the first place. The supplier's answer must not be read as the line's.
+        val known = start().let { d -> d.copy(sellerName = d.sellerName!!.copy(confidence = Confidence.HIGH)) }
+        val again = AiLoop.replay(listOf(lines), text, ParseOptions(), known, loop.answers, loop.picks, loop.keys)
+        assertEquals(422L, again.lineItems[2].lineTotalCents?.value)
+        assertEquals(Confidence.HIGH, again.lineItems[2].lineTotalCents?.confidence)
+    }
+
     @Test fun limitStopsTheLoop() {
         val loop = AiLoop(listOf(lines), text, ParseOptions(), start(), maxQuestions = 1)
         val t = loop.next()!!

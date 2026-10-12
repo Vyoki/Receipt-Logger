@@ -26,8 +26,8 @@ object HeaderGrid {
         /** The document number under "Numero documento" / "N. fattura". */
         val number: String? = null,
     ) {
-        /** Taxable + VAT = total (to the cent or two). */
-        val consistent: Boolean get() = subtotal != null && vat != null && total != null && kotlin.math.abs(subtotal + vat - total) <= 2
+        /** Taxable + VAT = total, to the cent. */
+        val consistent: Boolean get() = subtotal != null && vat != null && total != null && totalsAddUp(subtotal, vat, total)
     }
 
     private enum class K { SUB, VAT, TOTAL, GOODS, FEE, DATE, NUMBER, OTHER }
@@ -42,6 +42,11 @@ object HeaderGrid {
     private val DATE = rx("^(DATA( (DOCUMENTO|DOC|FATTURA|EMISSIONE|DEL DOCUMENTO))?)$")
     private val NUMBER = rx("^(NUMERO|NUM|N|NR|NO)( (DOCUMENTO|DOC|FATTURA|FATT|DDT))$|^NUMERO$")
     private val VAT_SUMMARY = rx("\\b(ALIQ|ALIQUOTA|COD IVA|CODICE IVA)\\b")
+    /**
+     * Headings of another document's number and date: the delivery notes, orders or references an invoice lists
+     * ("N. DDT | DATA", "RIF. ORDINE | DEL"). The number and date under them are not this document's.
+     */
+    private val REFERENCE = rx("\\b(DDT|D D T|BOLLA|BOLLE|ORDINE|ORDINI|ORD|RIF|RIFERIMENTO|RIFERIMENTI|CONSEGNA)\\b")
     private val MONEY = rx("^(?:€|E|EUR|EURO)?\\s*(-?\\d{1,3}(?:\\.\\d{3})*,\\s?\\d{2})\\s*(?:€|EUR)?$")
 
     private fun kind(text: String): K? {
@@ -120,6 +125,7 @@ object HeaderGrid {
         val kinds = labels.map { kind(it.text) }
         if (kinds.size < 2 || kinds.none { it != K.OTHER && it != null }) return g
         val summary = labels.any { VAT_SUMMARY.containsMatchIn(norm(it.text)) }
+        val reference = labels.any { REFERENCE.containsMatchIn(norm(it.text).replace(",", " ")) }
         // A VAT summary row (COD.IVA IMPONIBILE ALIQ. IMPOSTA) may end with the document's totals
         // (TOT. IMPONIBILE, TOT. DOCUMENTO): only those, the rest is per VAT rate.
         fun kindAt(j: Int) = kinds[j]?.let { k -> if (summary && k != K.OTHER && !norm(labels[j].text).startsWith("TOT")) K.OTHER else k }
@@ -140,8 +146,8 @@ object HeaderGrid {
                 K.TOTAL -> if (g.total == null && cents != null) g = g.copy(total = cents)
                 K.GOODS -> if (g.goods == null && cents != null) g = g.copy(goods = cents)
                 K.FEE -> if (cents != null && cents != 0L && g.fees.none { it.first == labels[col].text.trim() }) g = g.copy(fees = g.fees + (labels[col].text.trim() to cents))
-                K.DATE -> if (g.date == null) ItalianDates.parse(v.text.trim())?.let { g = g.copy(date = it) }
-                K.NUMBER -> {
+                K.DATE -> if (g.date == null && !reference) ItalianDates.parse(v.text.trim())?.let { g = g.copy(date = it) }
+                K.NUMBER -> if (!reference) {
                     val t = v.text.trim().trim('|', ':', '.')
                     if (g.number == null && t.any(Char::isDigit) && t.length <= 20 && cents == null && ItalianDates.parse(t) == null) g = g.copy(number = t)
                 }
@@ -196,7 +202,8 @@ object HeaderGrid {
                 (g.goods != null && kotlin.math.abs(newSums.filterIndexed { i, _ -> !(d.lineItems[i].adjustment && d.lineItems[i].lineTotalCents?.source?.contains("foot") == true) }.sum() - g.goods) <= tolerance)
             if (ok) d = d.copy(warnings = d.warnings - ParseWarning.ITEMS_SUM_MISMATCH)
         }
-        // The number under its heading wins over a number found next to other words ("... lett. 177").
+        // The number and date under their headings win over a number or date found next to other words ("... lett. 177",
+        // "RIF.DDT 77 DEL 30/07/26"). Headings of another document's number and date are never read (see REFERENCE).
         g.number?.let { n ->
             val cur = d.documentNumber
             d = d.copy(documentNumber = if (cur != null && cur.value == n && cur.confidence == Confidence.HIGH) cur.copy(source = cur.source + " (number under its heading)")

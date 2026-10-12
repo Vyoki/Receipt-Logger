@@ -772,14 +772,14 @@ object ReceiptParser {
         // Taxable amount and VAT: sure when they add up to the total, or the lines / the VAT summary give the same.
         run {
             val sv = subtotal; val vv = vat; val tv = total
-            val partsAddUp = !derivedTotal && sv != null && vv != null && tv != null && kotlin.math.abs(sv.value + vv.value - tv.value) <= 1
+            val partsAddUp = !derivedTotal && sv != null && vv != null && tv != null && totalsAddUp(sv.value, vv.value, tv.value)
             if (!partsAddUp) {
                 if (sv != null && sv.confidence == Confidence.HIGH &&
                     !(itemsSum != null && kotlin.math.abs(itemsSum - sv.value) <= tolerance) &&
                     !(groups.isNotEmpty() && kotlin.math.abs(groups.sumOf { it.taxableCents } - sv.value) <= groups.size)
                 ) subtotal = sv.copy(confidence = Confidence.LOW)
                 if (vv != null && vv.confidence == Confidence.HIGH &&
-                    !(groups.isNotEmpty() && kotlin.math.abs(groups.sumOf { it.vatCents } - vv.value) <= groups.size)
+                    !(groups.isNotEmpty() && groups.sumOf { it.vatCents } == vv.value)
                 ) vat = vv.copy(confidence = Confidence.LOW)
             }
         }

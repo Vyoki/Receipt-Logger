@@ -90,7 +90,7 @@
     <string name="food_import_failed">Non è stato possibile leggere il file.</string>
     <string name="food_no_ingredients">Nessun ingrediente ancora</string>
     <string name="recipe_quantity_needed">Scrivi la quantità di ogni ingrediente (o toglilo).</string>
-    <string name="recipe_quantity_missing">Quantità mancante</string>
+    <string name="recipe_quantity_missing">Quantità mancante o non chiara (scrivi 1,5 o 1500)</string>
     <string name="recipe_save_failed">Non è stato possibile salvare il piatto. Riprova.</string>
     <string name="recipe_leave_title">Annullare questo piatto?</string>
     <string name="recipe_leave_text">Quello che hai scritto non è stato salvato.</string>
