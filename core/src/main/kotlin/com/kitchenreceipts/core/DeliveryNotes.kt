@@ -62,8 +62,11 @@ object DocumentKinds {
             }
             if (RECEIPT.containsMatchIn(line)) offer(i, DocKind.RECEIPT)
         }
-        // A credit note also prints "fattura" (the invoice it corrects): its own title decides.
-        credit?.let { c -> if (best == null || c <= best!!.first + 3) return DocKind.CREDIT_NOTE }
+        // A credit note also prints "fattura" (the invoice it corrects): its own title decides. With no other title,
+        // the words count only near the top, where a title is: "resi solo con nota di credito" in the conditions at
+        // the bottom of a receipt does not make it money back.
+        val top = maxOf(12, lines.size / 3)
+        credit?.let { c -> if ((best == null && c < top) || (best != null && c <= best!!.first + 3)) return DocKind.CREDIT_NOTE }
         return best?.second
     }
 

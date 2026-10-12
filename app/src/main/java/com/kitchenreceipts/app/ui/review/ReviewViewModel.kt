@@ -85,9 +85,20 @@ data class ReviewState(
     val priceChanges: List<PriceChange> = emptyList(),
     /** The operator's corrections from last time were brought back (they had left before saving). */
     val restored: Boolean = false,
+    /** A new document's kind, read from its title (null: not printed); shown and changed with one tap before saving. */
+    val kind: com.kitchenreceipts.core.DocKind? = null,
 )
 
-data class SaveConfirmation(val duplicates: List<DuplicateInfo>, val uncertainCount: Int, val valid: ValidDocument)
+data class SaveConfirmation(
+    val duplicates: List<DuplicateInfo>,
+    val uncertainCount: Int,
+    val valid: ValidDocument,
+    /** What still does not check out besides unchecked values (lines not adding up, a missing date, another buyer...). */
+    val reasons: List<ReviewReason> = emptyList(),
+)
+
+/** The reasons to look again that are not "values not checked" (those are counted on their own). */
+fun openReasons(reasons: List<ReviewReason>): List<ReviewReason> = reasons.filter { it != ReviewReason.UNCERTAIN_VALUES }
 
 class ReviewViewModel(private val c: AppContainer, private val documentId: Long?, private val jobId: String? = null) : ViewModel() {
 
@@ -190,6 +201,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         _state.value = ReviewState(
             loading = false,
             isNew = true, draft = draft, restored = kept != null,
+            kind = com.kitchenreceipts.core.DocumentKinds.detect(pending.ocrText),
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
             engineName = if (pending.parsed.itemsReadBy == "ai") "${pending.engineName} + AI" else pending.engineName,
             ocrError = pending.ocrError, pagesRead = pending.pagesRead,
@@ -299,6 +311,11 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun confirmHeader(field: HeaderField) = editDraft { d -> d.withHeader(field) { it.confirmed() } }
 
     fun setDate(date: LocalDate) = setHeader(HeaderField.DATE, ItalianDates.format(date))
+
+    fun setKind(k: com.kitchenreceipts.core.DocKind?) {
+        _state.update { it.copy(kind = k) }
+        c.log.event("KIND_SET", "new" to true, "kind" to k)
+    }
 
     fun setVatBasis(v: VatBasis) = editDraft { it.copy(vatBasis = v, vatBasisUncertain = false) }
     fun confirmVatBasis() = editDraft { it.copy(vatBasisUncertain = false) }
@@ -413,11 +430,17 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                         return@launch
                     }
                     val uncertain = s.draft.uncertainCount
+                    // Nothing wrong is saved without the operator seeing it: whatever still does not check out is
+                    // listed and asked once (a clean document saves with one tap, as before).
+                    val open = openReasons(AutoAccept.reasons(s.draft))
                     if (dups.isNotEmpty()) {
                         c.log.event("DUPLICATE_WARNING", "matches" to dups.size, "reasons" to dups.flatMap { it.match.reasons }.distinct().joinToString(","))
                     }
-                    if (dups.isEmpty() && uncertain == 0) save(r.document)
-                    else _state.update { it.copy(saving = false, confirm = SaveConfirmation(dups, uncertain, r.document)) }
+                    if (dups.isEmpty() && uncertain == 0 && open.isEmpty()) save(r.document)
+                    else {
+                        if (open.isNotEmpty()) c.log.event("SAVE_ASKED", "reasons" to open.joinToString(","))
+                        _state.update { it.copy(saving = false, confirm = SaveConfirmation(dups, uncertain, r.document, open)) }
+                    }
                 }
             }
         }
@@ -440,7 +463,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             } else {
                 docOcrText?.let { SellerLearning(it, null, own) }
             }
-            val id = repo.saveDocument(doc, storedFile, ocrText, documentId, learning)
+            val id = repo.saveDocument(doc, storedFile, ocrText, documentId, learning, kind = _state.value.kind.takeIf { documentId == null })
             withContext(Dispatchers.IO) { dropKept() }
             // Files on the phone (queue, readings, corrections, what was learned): not on the screen's thread.
             withContext(Dispatchers.IO) { afterSave(id, doc, own, auto) }

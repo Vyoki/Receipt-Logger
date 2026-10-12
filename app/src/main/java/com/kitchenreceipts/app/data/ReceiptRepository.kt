@@ -119,6 +119,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         ocrText: String?,
         existingId: Long?,
         learning: SellerLearning? = null,
+        /** The kind the operator saw (and may have changed) on the review screen; null: read from the text. */
+        kind: com.kitchenreceipts.core.DocKind? = null,
     ): Long =
         db.withTransaction {
             val seller = findOrCreateSeller(doc.sellerName)
@@ -126,14 +128,15 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             val now = System.currentTimeMillis()
             val id = if (existingId == null) {
                 requireNotNull(file) { "A new document needs its original file" }
-                val (kind, refs) = readKind(ocrText, doc.number)
+                val (read, refs) = readKind(ocrText, doc.number)
+                val kindName = kind?.name ?: read
                 documents.insertDocument(
                     DocumentEntity(
                         sellerId = seller.id, documentDate = doc.date, documentNumber = doc.number,
                         currency = doc.currency, subtotalCents = doc.subtotalCents, vatCents = doc.vatCents,
                         totalCents = doc.totalCents, vatBasis = doc.vatBasis, filePath = file.relativePath,
                         mimeType = file.mimeType, pageCount = file.pageCount, fileSha256 = file.sha256,
-                        ocrText = ocrText, createdAt = now, updatedAt = now, kind = kind, ddtRefs = refs,
+                        ocrText = ocrText, createdAt = now, updatedAt = now, kind = kindName, ddtRefs = refs,
                     ),
                 )
             } else {

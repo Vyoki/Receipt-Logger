@@ -95,7 +95,7 @@ fun AgreedPriceCard(productId: Long, purchases: List<PurchaseRow>) {
             }
             com.kitchenreceipts.app.ui.components.OutlinedButton(
                 onClick = click@{
-                    val p = ItalianNumbers.parse(priceText)
+                    val p = ItalianNumbers.parseTyped(priceText)
                     if (p == null || p.signum() <= 0) { error = bad; return@click }
                     scope.launch {
                         c.checks.setAgreedPrice(productId, sellerId, unit, p, basis)

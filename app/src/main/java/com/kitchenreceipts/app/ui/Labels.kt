@@ -44,6 +44,7 @@ fun errorText(c: ErrorCode): String = stringResource(
         ErrorCode.OUT_OF_RANGE -> R.string.err_out_of_range
         ErrorCode.TOO_LONG -> R.string.err_too_long
         ErrorCode.INVALID_CURRENCY -> R.string.err_currency
+        ErrorCode.AMBIGUOUS_NUMBER -> R.string.err_ambiguous_number
     },
 )
 

@@ -73,4 +73,18 @@ class LineDiscountTest {
         assertEquals(31570L, d.totalCents?.value)
         assertTrue(d.warnings.toString(), d.warnings.isEmpty())
     }
+
+    @Test fun aDiscountThatDoesNotFitIsNotProven() {
+        val two = BigDecimal("2"); val five = BigDecimal("5")
+        assertTrue(LineDiscount.matches(two, five, null, 1000))
+        assertTrue(LineDiscount.matches(two, five, "30", 700))
+        assertTrue(!LineDiscount.matches(two, five, "30", 1000))
+        // On the review: the line stays to check, nothing is settled by itself.
+        val item = LineItemDraft(
+            1, description = DraftField("PASSATA"), quantity = DraftField("2", true), unit = DraftField("pz"), unitPrice = DraftField("5", true),
+            lineTotal = DraftField("10,00", true), vatRate = DraftField("4"), discount = DraftField("30", true),
+        )
+        val settled = AutoAccept.settleProven(DocumentDraft(seller = DraftField("ABC S.r.l."), items = listOf(item))).items.single()
+        assertTrue(settled.discount.uncertain)
+    }
 }

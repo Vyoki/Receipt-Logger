@@ -109,7 +109,7 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
             }
         }
     }
-    val targetValue = ItalianNumbers.parse(target)?.takeIf { it.signum() > 0 } ?: FoodCost.DEFAULT_TARGET
+    val targetValue = ItalianNumbers.parseTyped(target)?.takeIf { it.signum() > 0 } ?: FoodCost.DEFAULT_TARGET
 
     AppScaffold(title = stringResource(R.string.food_title), onBack = onBack, snackbarHostState = snackbar) { padding ->
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
@@ -118,7 +118,7 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = target,
-                        onValueChange = { v -> target = v; ItalianNumbers.parse(v)?.takeIf { it.signum() > 0 }?.let { c.settings.foodCostTarget = it } },
+                        onValueChange = { v -> target = v; ItalianNumbers.parseTyped(v)?.takeIf { it.signum() > 0 }?.let { c.settings.foodCostTarget = it } },
                         label = { Text(stringResource(R.string.food_target)) }, singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal), modifier = Modifier.weight(1f),
                     )
@@ -126,7 +126,7 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
                         value = overhead,
                         onValueChange = { v ->
                             overhead = v
-                            val p = ItalianNumbers.parse(v)?.takeIf { it.signum() >= 0 } ?: BigDecimal.ZERO
+                            val p = ItalianNumbers.parseTyped(v)?.takeIf { it.signum() >= 0 } ?: BigDecimal.ZERO
                             c.settings.overheadPercent = p
                             vm.overhead.value = p
                         },

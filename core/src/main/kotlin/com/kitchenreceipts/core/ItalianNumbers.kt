@@ -71,6 +71,20 @@ object ItalianNumbers {
         return if (negative) value.negate() else value
     }
 
+    /**
+     * A number typed by hand that reads two ways: "1.500" is 1500 to an Italian and 1,5 on a keyboard whose decimal
+     * key is a dot. Printed documents settle it by their own format; a typed value is never guessed.
+     */
+    fun isAmbiguousTyped(raw: String?): Boolean {
+        val s = raw?.trim()?.removePrefix("-")?.removePrefix("−") ?: return false
+        if (s.count { it == '.' } != 1 || s.contains(',')) return false
+        val (int, dec) = s.split('.')
+        return dec.length == 3 && dec.all(Char::isDigit) && int.isNotEmpty() && int.all(Char::isDigit) && int.trimStart('0').isNotEmpty()
+    }
+
+    /** A number typed by hand: like [parse], but null when it reads two ways (see [isAmbiguousTyped]). */
+    fun parseTyped(raw: String?): BigDecimal? = if (isAmbiguousTyped(raw)) null else parse(raw)
+
     /** Converts an amount to integer cents, rounding half-up only beyond the second decimal. */
     fun toCents(amount: BigDecimal): Long {
         val c = amount.setScale(2, RoundingMode.HALF_UP).movePointRight(2)

@@ -55,6 +55,17 @@ class AiTargetsTest {
         assertEquals(462L, AiReader.applyTargets(doc, listOf(target to wrong), text).lineItems[2].lineTotalCents?.value)
     }
 
+    @Test fun theAmountCopiedIntoThePriceProvesNothing() {
+        val doc = ReceiptParser.parsePages(listOf(lines))
+        val target = AiTargets.plan(listOf(lines), doc)!!.filterIsInstance<AiTarget.Row>().single()
+        // A "1" somewhere else on the page (a date, a code) must not count as this line's quantity.
+        val text = LayoutRows.toText(lines) + "\nPAGINA 1 DI 1"
+        val slip = """{"code":"10003","colli":null,"description":"SALE MARINO FINO","unit":"NR","quantity":"1","price":"4,62","discount":null,"amount":"4,62","vat_rate":null,"lot":null}"""
+        val after = AiReader.applyTargets(doc, listOf(target to slip), text).lineItems[2]
+        assertEquals(0, java.math.BigDecimal("10").compareTo(after.quantity!!.value))
+        assertEquals(0, java.math.BigDecimal("0.422").compareTo(after.unitPrice!!.value))
+    }
+
     @Test fun missingTotalAsksTheBottomOfThePage() {
         val noTotal = lines.filterNot { it.text.startsWith("TOTALE") || it.text == "70,03" || it.text == "76,43" }
         val doc = ReceiptParser.parsePages(listOf(noTotal))

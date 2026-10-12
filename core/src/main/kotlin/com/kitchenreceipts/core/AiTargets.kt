@@ -311,7 +311,7 @@ object AiTargets {
         val totalsProven = run {
             val sub = doc.subtotalCents?.value; val vat = doc.vatCents?.value; val tot = doc.totalCents?.value
             val sums = doc.lineItems.mapNotNull { it.lineTotalCents?.value }
-            sub != null && vat != null && tot != null && kotlin.math.abs(sub + vat - tot) <= 2 && sums.size == doc.lineItems.size &&
+            sub != null && vat != null && tot != null && totalsAddUp(sub, vat, tot) && sums.size == doc.lineItems.size &&
                 sums.isNotEmpty() && kotlin.math.abs(sums.sum() - sub) <= maxOf(2L, sums.size.toLong())
         }
         if (totalsDoubt || (spotCheck && !totalsProven)) totalsArea()?.let { (p, box) -> targets += AiTarget.Totals(p, listOf(box), verify = !totalsDoubt) }

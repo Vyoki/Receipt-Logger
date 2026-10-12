@@ -661,4 +661,10 @@
     <string name="leave_edit_title">Discard your changes?</string>
     <string name="leave_edit_text">The document stays as it was saved.</string>
     <string name="draft_restored">Your corrections from last time are back.</string>
+    <string name="not_adding_up_title">Something does not check out</string>
+    <plurals name="things_to_look_at">
+        <item quantity="one">%1$d thing to look at</item>
+        <item quantity="other">%1$d things to look at</item>
+    </plurals>
+    <string name="err_ambiguous_number">1.500 can mean 1500 or 1,5: write it as 1500 or 1,5</string>
 </resources>

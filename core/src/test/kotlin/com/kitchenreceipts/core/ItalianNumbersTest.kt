@@ -2,6 +2,7 @@ package com.kitchenreceipts.core
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
 
@@ -60,5 +61,17 @@ class ItalianNumbersTest {
         assertEquals("2,5", ItalianNumbers.toEditText(BigDecimal("2.500")))
         assertEquals("100", ItalianNumbers.toEditText(BigDecimal("1E+2")))
         assertEquals("71,06", ItalianNumbers.centsToEditText(7106))
+    }
+
+    @Test fun aTypedNumberThatReadsTwoWaysIsNotGuessed() {
+        assertTrue(ItalianNumbers.isAmbiguousTyped("1.500"))
+        assertTrue(ItalianNumbers.isAmbiguousTyped("2.500"))
+        assertNull(ItalianNumbers.parseTyped("1.500"))
+        // Clear ones are read as usual.
+        assertEquals(0, java.math.BigDecimal("1.5").compareTo(ItalianNumbers.parseTyped("1,5")!!))
+        assertEquals(0, java.math.BigDecimal("0.25").compareTo(ItalianNumbers.parseTyped("0.250")!!))
+        assertEquals(0, java.math.BigDecimal("1.5").compareTo(ItalianNumbers.parseTyped("1.5")!!))
+        assertEquals(0, java.math.BigDecimal("1500").compareTo(ItalianNumbers.parseTyped("1500")!!))
+        assertEquals(0, java.math.BigDecimal("1234.5").compareTo(ItalianNumbers.parseTyped("1.234,50")!!))
     }
 }

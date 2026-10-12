@@ -2,6 +2,8 @@
 
 package com.kitchenreceipts.app.ui.review
 
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.horizontalScroll
 import com.kitchenreceipts.app.ui.components.Panel
 
 import androidx.activity.compose.BackHandler
@@ -191,6 +193,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
             if (!state.loading && state.fatal == null) {
                 SaveBar(
                     uncertain = state.draft.uncertainCount,
+                    open = openReasons(state.reviewReasons).size,
                     errors = state.errors.size,
                     saving = state.saving,
                     onSave = {
@@ -237,7 +240,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                         )
                     }
                 }
-                if (state.isNew && state.reviewReasons.isNotEmpty()) {
+                if (state.reviewReasons.isNotEmpty()) {
                     item("reasons") { ReasonsCard(state) }
                 }
                 if (state.priceChanges.isNotEmpty()) {
@@ -261,6 +264,10 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                         onPickDate = { showDatePicker = true },
                     )
                 }
+
+                // What kind of document this is decides where it counts (a credit note is subtracted from spending):
+                // shown before saving, one tap to change.
+                if (state.isNew) item("kind") { KindRow(state.kind, vm::setKind) }
 
                 item("itemsTitle") {
                     SectionTitle(pluralStringResource(R.plurals.items_title, state.draft.items.size, state.draft.items.size))
@@ -322,7 +329,13 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
 
     state.confirm?.let { c ->
         ConfirmDialog(
-            title = stringResource(if (c.duplicates.isNotEmpty()) R.string.possible_duplicate_title else R.string.unchecked_title),
+            title = stringResource(
+                when {
+                    c.duplicates.isNotEmpty() -> R.string.possible_duplicate_title
+                    c.reasons.isNotEmpty() -> R.string.not_adding_up_title
+                    else -> R.string.unchecked_title
+                },
+            ),
             text = "",
             confirmLabel = stringResource(R.string.save_anyway),
             onConfirm = vm::confirmSave,
@@ -338,6 +351,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                         )
                         Text(d.match.reasons.map { duplicateReasonText(it) }.joinToString("; "), style = MaterialTheme.typography.bodyMedium)
                     }
+                    c.reasons.forEach { Text("• " + reviewReasonText(it)) }
                     if (c.uncertainCount > 0) {
                         Text(pluralStringResource(R.plurals.unchecked_values, c.uncertainCount, c.uncertainCount))
                     }
@@ -461,6 +475,31 @@ private fun StatusBanner(state: ReviewState) {
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 4.dp),
         )
+    }
+}
+
+@Composable
+private fun KindRow(kind: com.kitchenreceipts.core.DocKind?, onPick: (com.kitchenreceipts.core.DocKind?) -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(R.string.kind_title), style = MaterialTheme.typography.labelLarge)
+        Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            listOf(
+                com.kitchenreceipts.core.DocKind.INVOICE to R.string.kind_invoice,
+                com.kitchenreceipts.core.DocKind.DELIVERY_NOTE to R.string.kind_delivery_note,
+                com.kitchenreceipts.core.DocKind.RECEIPT to R.string.kind_receipt,
+                com.kitchenreceipts.core.DocKind.CREDIT_NOTE to R.string.kind_credit_note,
+            ).forEach { (k, label) ->
+                androidx.compose.material3.FilterChip(
+                    selected = kind == k,
+                    onClick = { onPick(if (kind == k) null else k) },
+                    label = { Text(stringResource(label)) },
+                )
+            }
+        }
+        if (kind == null) Text(stringResource(R.string.kind_unknown), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.TextDim)
+        if (kind == com.kitchenreceipts.core.DocKind.CREDIT_NOTE) {
+            Text(stringResource(R.string.kind_credit_note_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
+        }
     }
 }
 
@@ -692,7 +731,7 @@ private fun ItemCard(
 }
 
 @Composable
-private fun SaveBar(uncertain: Int, errors: Int, saving: Boolean, onSave: () -> Unit) {
+private fun SaveBar(uncertain: Int, open: Int, errors: Int, saving: Boolean, onSave: () -> Unit) {
     // Black bar with a hairline on top: the save button stands out on its own.
     Surface(color = MaterialTheme.colorScheme.background) { Column {
         androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -704,6 +743,8 @@ private fun SaveBar(uncertain: Int, errors: Int, saving: Boolean, onSave: () -> 
                 when {
                     errors > 0 -> Text(pluralStringResource(R.plurals.errors_count, errors, errors), color = MaterialTheme.colorScheme.error)
                     uncertain > 0 -> Text(pluralStringResource(R.plurals.values_to_check_short, uncertain, uncertain), color = LocalStatusColors.current.uncertainBorder)
+                    // "All checked" only when nothing else is wrong either (the lines add up, date and total are there...).
+                    open > 0 -> Text(pluralStringResource(R.plurals.things_to_look_at, open, open), color = LocalStatusColors.current.uncertainBorder)
                     else -> Text(stringResource(R.string.all_checked), color = LocalStatusColors.current.ok)
                 }
             }

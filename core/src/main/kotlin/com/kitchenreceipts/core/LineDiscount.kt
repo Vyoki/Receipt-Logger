@@ -35,8 +35,14 @@ object LineDiscount {
         return ItalianNumbers.toCents(v)
     }
 
-    /** quantity x price, less the discount when there is one, gives the amount (to 2 cents). */
-    fun matches(quantity: BigDecimal, price: BigDecimal, text: String?, cents: Long): Boolean =
-        ReceiptParser.matches(quantity, price, cents) ||
-            (percent(text) != null && kotlin.math.abs(net(quantity, price, text) - cents) <= 2)
+    /**
+     * quantity x price, less the discount when there is one, gives the amount (the discount's rounding: 2 cents).
+     * With a discount on the line, only the discounted amount proves it: "2 × 5,00 = 10,00 sconto 30" does not add
+     * up (the discount or a number is wrong), whatever 2 × 5,00 alone gives.
+     */
+    fun matches(quantity: BigDecimal, price: BigDecimal, text: String?, cents: Long): Boolean {
+        val d = percent(text)
+        if (d == null || d.signum() == 0) return ReceiptParser.matches(quantity, price, cents)
+        return kotlin.math.abs(net(quantity, price, text) - cents) <= 2
+    }
 }

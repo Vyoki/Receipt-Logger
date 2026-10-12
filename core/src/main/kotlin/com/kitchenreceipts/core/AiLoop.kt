@@ -31,6 +31,9 @@ class AiLoop(
     /** Which of [candidates] was asked each time (0 = the planner's first), for [replay]. */
     val picks = mutableListOf<Int>()
 
+    /** What each question was about ([key]), so [replay] gives each stored answer back to its own question. */
+    val keys = mutableListOf<String>()
+
     private val asked = mutableSetOf<String>()
     /** The picture of the last question (its page and areas). */
     private var lastPicture: Pair<Int, List<PageBox>>? = null
@@ -64,6 +67,7 @@ class AiLoop(
         lastPicture = target.page to target.boxes
         answers += raw
         picks += pick
+        keys += key(target)
         if (target is AiTarget.Row) { rowsRead[target.rowText] = target; rowAnswers[target.rowText] = raw }
         if (raw.isBlank()) return
         val before = doc.aiCheck
@@ -73,7 +77,7 @@ class AiLoop(
 
     /** The same loop at the same point, to try a question without changing this one (to learn which pays most). */
     fun copy(): AiLoop = AiLoop(lines, text, options, doc, maxQuestions).also { c ->
-        c.answers += answers; c.picks += picks; c.asked += asked; c.rowsRead += rowsRead; c.rowAnswers += rowAnswers
+        c.answers += answers; c.picks += picks; c.keys += keys; c.asked += asked; c.rowsRead += rowsRead; c.rowAnswers += rowAnswers
         c.lastPicture = lastPicture
     }
 
@@ -114,21 +118,24 @@ class AiLoop(
         const val RESERVED = 3
 
         /**
-         * The document after the same questions with the same answers: the questions are listed the same way, and
-         * [picks] says which one was asked each time (the AI may choose another than the planner's first).
+         * The document after the same questions with the same answers. Each answer goes back to the question it
+         * answered, found by [keys] (what it was about), whatever the list looks like now: after an update the app
+         * may plan the questions differently (a supplier now known needs no question, so every later answer would
+         * shift by one). An answer whose question is not open any more is left out: nothing is applied to a
+         * question it did not answer. Older readings without keys use [picks] (which one was asked each time).
          */
         fun replay(
             lines: List<List<OcrLine>>, text: String, options: ParseOptions, start: ParsedDocument, answers: List<String>,
-            picks: List<Int> = emptyList(),
+            picks: List<Int> = emptyList(), keys: List<String> = emptyList(),
         ): ParsedDocument {
             // The same limit as when the questions were asked (it decides which questions were open), then stop at
             // the last answer.
             val loop = AiLoop(lines, text, options, start, maxQuestions = maxOf(MAX_QUESTIONS, answers.size))
             for ((i, raw) in answers.withIndex()) {
                 val c = loop.candidates()
-                val pick = picks.getOrElse(i) { 0 }.coerceIn(0, maxOf(0, c.size - 1))
-                val t = c.getOrNull(pick) ?: break
-                loop.answer(t, raw, pick)
+                val k = keys.getOrNull(i)
+                val t = if (k != null) c.firstOrNull { key(it) == k } ?: continue else c.getOrNull(picks.getOrElse(i) { 0 }) ?: break
+                loop.answer(t, raw, c.indexOf(t))
             }
             return loop.doc
         }
