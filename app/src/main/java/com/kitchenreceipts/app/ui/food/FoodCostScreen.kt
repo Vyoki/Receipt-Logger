@@ -1,5 +1,6 @@
 package com.kitchenreceipts.app.ui.food
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -155,7 +156,7 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
 
             item("monT") { SectionTitle(stringResource(R.string.food_months)) }
             item("monH") { Text(stringResource(R.string.food_months_hint), style = MaterialTheme.typography.bodySmall, color = Palette.Orange) }
-            items(months, key = { "m" + it.month }) { m -> MonthRow(m, targetValue) { editMonth = m.month } }
+            items(months, key = { "m" + it.month }) { m -> Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { MonthRow(m, targetValue) { editMonth = m.month } } }
         }
     }
 

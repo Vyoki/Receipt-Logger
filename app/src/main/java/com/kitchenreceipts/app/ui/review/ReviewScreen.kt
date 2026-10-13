@@ -119,6 +119,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import com.kitchenreceipts.app.ui.theme.Palette
+import com.kitchenreceipts.app.ui.theme.pressScale
 import com.kitchenreceipts.core.CardRow
 import com.kitchenreceipts.core.CompactRow
 import com.kitchenreceipts.core.GroupRow
@@ -313,7 +314,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(rows, key = { it.key }, contentType = { it::class.simpleName }) { row ->
-                    val m = Modifier.animateItem()
+                    val m = Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)
                     val flashing = flash?.takeIf { it.first == row.key }
                     when (row) {
                         is CardRow -> {
@@ -751,7 +752,7 @@ private fun FlashPanel(flash: Long?, needsLook: Boolean, modifier: Modifier = Mo
     )
     val border = androidx.compose.ui.graphics.lerp(edge, Palette.PhthaloBright, glow.value)
     Card(
-        modifier = modifier.fillMaxWidth().animateContentSize(),
+        modifier = modifier.fillMaxWidth().animateContentSize(com.kitchenreceipts.app.ui.theme.Motion.size),
         shape = MaterialTheme.shapes.medium,
         colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Palette.Panel, contentColor = MaterialTheme.colorScheme.onSurface),
         border = androidx.compose.foundation.BorderStroke(if (glow.value > 0f) 2.dp else 1.dp, border),
@@ -765,9 +766,11 @@ private fun FlashPanel(flash: Long?, needsLook: Boolean, modifier: Modifier = Mo
 private fun CheckedGroup(row: GroupRow, onToggle: () -> Unit, modifier: Modifier = Modifier) {
     val status = LocalStatusColors.current
     val turn by androidx.compose.animation.core.animateFloatAsState(if (row.open) 180f else 0f, label = "chevron")
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Surface(
         onClick = onToggle,
-        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp),
+        interactionSource = source,
+        modifier = modifier.pressScale(source).fillMaxWidth().heightIn(min = 56.dp),
         shape = MaterialTheme.shapes.medium,
         color = Palette.Phthalo.copy(alpha = 0.35f),
         border = androidx.compose.foundation.BorderStroke(1.dp, Palette.PhthaloBorder.copy(alpha = 0.6f)),
@@ -794,9 +797,11 @@ private fun CheckedGroup(row: GroupRow, onToggle: () -> Unit, modifier: Modifier
 /** One line that checks out, in one row: name, "2 pz × 5,00", lot, amount. A tap opens it in full. */
 @Composable
 private fun CompactLine(item: LineItemDraft, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Surface(
         onClick = onOpen,
-        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 12.dp),
+        interactionSource = source,
+        modifier = modifier.pressScale(source).fillMaxWidth().heightIn(min = 56.dp).padding(start = 12.dp),
         shape = MaterialTheme.shapes.small,
         color = Palette.Panel,
         border = androidx.compose.foundation.BorderStroke(1.dp, Palette.Hairline),

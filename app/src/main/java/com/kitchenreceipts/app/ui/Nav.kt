@@ -1,5 +1,6 @@
 package com.kitchenreceipts.app.ui
 
+import com.kitchenreceipts.app.ui.theme.Motion
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -82,14 +83,20 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
         navController = nav,
         startDestination = Routes.HOME,
         enterTransition = {
-            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
-                androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(260)) { it / 8 }
+            androidx.compose.animation.fadeIn(Motion.enter()) +
+                androidx.compose.animation.slideInHorizontally(Motion.enter()) { it / 5 }
         },
-        exitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)) },
-        popEnterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) },
+        exitTransition = {
+            androidx.compose.animation.fadeOut(Motion.exit()) +
+                androidx.compose.animation.slideOutHorizontally(Motion.enter()) { -it / 12 }
+        },
+        popEnterTransition = {
+            androidx.compose.animation.fadeIn(Motion.enter()) +
+                androidx.compose.animation.slideInHorizontally(Motion.enter()) { -it / 12 }
+        },
         popExitTransition = {
-            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)) +
-                androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(260)) { it / 8 }
+            androidx.compose.animation.fadeOut(Motion.exit()) +
+                androidx.compose.animation.slideOutHorizontally(Motion.enter()) { it / 5 }
         },
     ) {
         composable(Routes.HOME) {

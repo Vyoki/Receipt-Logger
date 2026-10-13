@@ -158,7 +158,7 @@ fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -
             }
             val rows = results
             if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_matching_documents)) }
-            items(rows.orEmpty(), key = { it.id }) { row -> DocumentRow(row) { onOpen(row.id) } }
+            items(rows.orEmpty(), key = { it.id }) { row -> Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { DocumentRow(row) { onOpen(row.id) } } }
         }
     }
 

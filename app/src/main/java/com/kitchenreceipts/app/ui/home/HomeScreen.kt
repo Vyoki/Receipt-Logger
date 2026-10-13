@@ -1,5 +1,8 @@
 package com.kitchenreceipts.app.ui.home
 
+import com.kitchenreceipts.app.ui.theme.Motion
+import com.kitchenreceipts.app.ui.theme.glideIn
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -102,27 +105,27 @@ fun HomeScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             item("jobs") { JobsSection(onReview = onReviewJob, onOpenDocument = onOpenDocument) }
-            item("scan") { ScanButton(onScan) }
+            item("scan") { Box(Modifier.glideIn(0)) { ScanButton(onScan) } }
             if (!recent.isNullOrEmpty()) item("backup") { BackupReminder(onBackup) }
             if (expiring.isNotEmpty()) item("expiring") { ExpiringCard(expiring, onLots) }
             item("menu") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     // Suppliers are one tap away inside Documents (its supplier list), not a tile of their own.
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Tile(stringResource(R.string.documents), Icons.Filled.Description, onDocuments, Modifier.weight(1f))
-                        Tile(stringResource(R.string.checks_title), Icons.Filled.Verified, onChecks, Modifier.weight(1f), badge = attention)
+                        Tile(stringResource(R.string.documents), Icons.Filled.Description, onDocuments, Modifier.weight(1f).glideIn(1))
+                        Tile(stringResource(R.string.checks_title), Icons.Filled.Verified, onChecks, Modifier.weight(1f).glideIn(2), badge = attention)
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Tile(stringResource(R.string.products), Icons.Filled.Inventory2, onProducts, Modifier.weight(1f))
-                        Tile(stringResource(R.string.inventory), Icons.Filled.Warehouse, onInventory, Modifier.weight(1f))
+                        Tile(stringResource(R.string.products), Icons.Filled.Inventory2, onProducts, Modifier.weight(1f).glideIn(3))
+                        Tile(stringResource(R.string.inventory), Icons.Filled.Warehouse, onInventory, Modifier.weight(1f).glideIn(4))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Tile(stringResource(R.string.lots_tile), Icons.Filled.QrCode2, onLots, Modifier.weight(1f))
-                        Tile(stringResource(R.string.order_title), Icons.Filled.ShoppingCart, onOrders, Modifier.weight(1f))
+                        Tile(stringResource(R.string.lots_tile), Icons.Filled.QrCode2, onLots, Modifier.weight(1f).glideIn(5))
+                        Tile(stringResource(R.string.order_title), Icons.Filled.ShoppingCart, onOrders, Modifier.weight(1f).glideIn(6))
                     }
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        Tile(stringResource(R.string.food_title), Icons.Filled.Restaurant, onFoodCost, Modifier.weight(1f))
-                        Tile(stringResource(R.string.monthly_reports), Icons.Filled.BarChart, onReports, Modifier.weight(1f))
+                        Tile(stringResource(R.string.food_title), Icons.Filled.Restaurant, onFoodCost, Modifier.weight(1f).glideIn(7))
+                        Tile(stringResource(R.string.monthly_reports), Icons.Filled.BarChart, onReports, Modifier.weight(1f).glideIn(8))
                     }
                 }
             }
@@ -131,7 +134,9 @@ fun HomeScreen(
             if (rows != null && rows.isEmpty()) {
                 item { EmptyState(stringResource(R.string.no_documents_yet)) }
             }
-            items(rows.orEmpty(), key = { it.id }) { row -> DocumentRow(row) { onOpenDocument(row.id) } }
+            items(rows.orEmpty(), key = { it.id }) { row ->
+                Box(Modifier.animateItem(placementSpec = Motion.place)) { DocumentRow(row) { onOpenDocument(row.id) } }
+            }
         }
     }
 }
