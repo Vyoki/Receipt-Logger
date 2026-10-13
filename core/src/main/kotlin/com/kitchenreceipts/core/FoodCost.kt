@@ -82,6 +82,11 @@ data class RecipeCost(
     val margin: BigDecimal?,
     /** [foodCost] plus the operator's share for staff and utilities. */
     val fullCost: BigDecimal,
+    /**
+     * Some ingredient's price comes from a document that did not say whether prices include VAT: taken as printed
+     * (maybe with VAT), so the food cost may be too high. Shown on the dish, to be settled on that document.
+     */
+    val vatUncertain: Boolean = false,
 )
 
 /**
@@ -180,6 +185,7 @@ object FoodCost {
             foodCostPercent = net?.let { food.divide(it, MC).multiply(HUNDRED).setScale(1, RoundingMode.HALF_UP) },
             margin = net?.subtract(food)?.setScale(4, RoundingMode.HALF_UP),
             fullCost = food.multiply(BigDecimal.ONE.add(overheadPercent.divide(HUNDRED, MC)), MC).setScale(4, RoundingMode.HALF_UP),
+            vatUncertain = lines.any { it.price?.vatUnknown == true },
         )
     }
 

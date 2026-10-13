@@ -25,6 +25,14 @@ class AutoAcceptTest {
         assertEquals(listOf(ReviewReason.DATE_MISSING, ReviewReason.UNCERTAIN_VALUES), AutoAccept.reasons(noDate))
     }
 
+    @Test fun taxableEqualToTotalWithNoVatPrintedIsAsked() {
+        // "SUBTOTALE 3,00 / TOTALE 3,00", no VAT line: a receipt with VAT inside as much as a net document.
+        val item = LineItemDraft(1, DraftField("Pane"), quantity = DraftField("2"), unit = DraftField("pz"), lineTotal = DraftField("3,00"))
+        val d = DocumentDraft(seller = DraftField("Forno"), date = DraftField("01/09/2026"), subtotal = DraftField("3,00"), total = DraftField("3,00"), items = listOf(item))
+        assertEquals(null, AutoAccept.inferVatBasis(d))
+        assertTrue(ReviewReason.VAT_BASIS_UNKNOWN in AutoAccept.reasons(d))
+    }
+
     @Test fun receiptWithVatIncluded() {
         val item = LineItemDraft(1, DraftField("Pane"), quantity = DraftField("2"), unit = DraftField("pz"), lineTotal = DraftField("3,00"))
         val d = DocumentDraft(seller = DraftField("Forno"), date = DraftField("01/09/2026"), total = DraftField("3,00"), vat = DraftField("0,27"), items = listOf(item))

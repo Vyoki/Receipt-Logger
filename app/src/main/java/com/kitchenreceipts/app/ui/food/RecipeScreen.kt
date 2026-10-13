@@ -270,6 +270,7 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
                     FoodCost.priceForTarget(cost, target)?.let { KeyValue(stringResource(R.string.recipe_for_target, ItalianNumbers.formatDecimal(target)), euros(it)) }
                     val missing = cost.ingredients.count { it.problem != null }
                     if (missing > 0) Text(androidx.compose.ui.res.pluralStringResource(R.plurals.food_incomplete, missing, missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+                    if (cost.vatUncertain) Text(stringResource(R.string.food_vat_uncertain), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
                 }
             }
 
