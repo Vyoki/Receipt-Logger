@@ -78,6 +78,11 @@ class ChecksViewModel(checks: ChecksRepository, sellers: Flow<List<SellerEntity>
 /** A credit about to be added: prefilled from a difference or an overcharge, or empty. */
 private data class CreditDraft(val sellerId: Long?, val documentId: Long?, val text: String, val cents: Long?)
 
+private val CreditDraftSaver = androidx.compose.runtime.saveable.Saver<CreditDraft?, List<Any?>>(
+    save = { d -> d?.let { listOf(it.sellerId, it.documentId, it.text, it.cents) } ?: emptyList() },
+    restore = { l -> if (l.size == 4) CreditDraft(l[0] as Long?, l[1] as Long?, l[2] as String, l[3] as Long?) else null },
+)
+
 @Composable
 fun ChecksScreen(onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenProduct: (Long) -> Unit) {
     val c = appContainer()
@@ -93,7 +98,8 @@ fun ChecksScreen(onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenProdu
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
     var showHidden by remember { mutableStateOf(false) }
-    var draft by remember { mutableStateOf<CreditDraft?>(null) }
+    // Kept when the phone is turned or Android closes the screen: the dialog comes back with what was typed.
+    var draft by androidx.compose.runtime.saveable.rememberSaveable(stateSaver = CreditDraftSaver) { mutableStateOf<CreditDraft?>(null) }
     val added = stringResource(R.string.credits_added)
 
     val overAll = over
@@ -121,7 +127,7 @@ fun ChecksScreen(onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenProdu
                     val creditText = overCreditText(row, o)
                     CheckCard(
                         title = (row.productName ?: row.originalDescription),
-                        subtitle = row.sellerName + " · " + fmtDate(row.documentDate) + (row.documentNumber?.let { " · n. $it" } ?: ""),
+                        subtitle = row.sellerName + " · " + fmtDate(row.documentDate) + (row.documentNumber?.let { " · " + stringResource(R.string.doc_number_short, it) } ?: ""),
                         text = stringResource(R.string.over_row, price(o.paid), o.agreed.unit, price(o.agreed.price), ItalianNumbers.formatDecimal(o.percent, maxScale = 1)),
                         amount = o.extraCents,
                         hidden = hidden,
@@ -194,7 +200,7 @@ fun ChecksScreen(onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenProdu
                         Row {
                             Column(Modifier.weight(1f)) {
                                 Text(d.sellerName, style = MaterialTheme.typography.titleMedium)
-                                Text(fmtDate(d.documentDate) + (d.documentNumber?.let { " · n. $it" } ?: ""), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                                Text(fmtDate(d.documentDate) + (d.documentNumber?.let { " · " + stringResource(R.string.doc_number_short, it) } ?: ""), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                             }
                             Text(fmtMoney(d.totalCents, d.currency), style = MaterialTheme.typography.titleMedium)
                         }
@@ -326,10 +332,10 @@ fun InvoiceCheckCard(
 
 @Composable
 private fun CreditDialog(draft: CreditDraft, sellers: List<SellerEntity>, onDismiss: () -> Unit, onSave: (Long, String, Long?) -> Unit) {
-    var sellerId by remember { mutableStateOf(draft.sellerId) }
-    var text by remember { mutableStateOf(draft.text) }
-    var amount by remember { mutableStateOf(draft.cents?.let { ItalianNumbers.formatDecimal(ItalianNumbers.centsToDecimal(it), maxScale = 2) } ?: "") }
-    var query by remember { mutableStateOf("") }
+    var sellerId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(draft.sellerId) }
+    var text by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(draft.text) }
+    var amount by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(draft.cents?.let { ItalianNumbers.formatDecimal(ItalianNumbers.centsToDecimal(it), maxScale = 2) } ?: "") }
+    var query by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("") }
     ConfirmDialog(
         title = stringResource(R.string.credits_add),
         text = "",
@@ -340,6 +346,8 @@ private fun CreditDialog(draft: CreditDraft, sellers: List<SellerEntity>, onDism
             onSave(sid, text, ItalianNumbers.parseCents(amount))
         },
         onDismiss = onDismiss,
+        // A supplier and what is asked are needed: until then the button is off (it used to do nothing).
+        confirmEnabled = sellerId != null && text.isNotBlank(),
         body = {
             if (draft.sellerId == null) {
                 OutlinedTextField(value = query, onValueChange = { query = it }, label = { Text(stringResource(R.string.credits_supplier)) }, singleLine = true, modifier = Modifier.fillMaxWidth())

@@ -18,6 +18,11 @@ class ProblemReports(private val context: Context) {
     private val dir: File get() = File(context.filesDir, "problems").apply { mkdirs() }
     private val stamp = SimpleDateFormat("yyyy-MM-dd_HH-mm-ss", Locale.ROOT)
 
+    /** The reports of a deleted document (its text must not outlive it, nor go into backups or shared reports). */
+    fun forget(documentId: Long) {
+        dir.listFiles()?.filter { it.name.endsWith("_doc$documentId.txt") }?.forEach { it.delete() }
+    }
+
     /** Stores one corrected document. "confirmed" entries alone are not a problem: only real changes count. */
     fun record(documentId: Long, seller: String, corrections: List<String>, report: String?) {
         val changes = corrections.filterNot { it.contains(": confirmed ") }

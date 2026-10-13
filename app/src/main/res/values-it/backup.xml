@@ -11,7 +11,11 @@
     <string name="backup_pw_note">Senza questa password il backup non si apre, nemmeno per te. Scrivila e tienila separata dal file. Poi scegli dove salvarlo: Drive, una cartella, una chiavetta USB.</string>
     <string name="backup_make">Fai il backup</string>
     <string name="backup_working">In corso…</string>
-    <string name="backup_made">Backup salvato: %1$d documenti, %2$s.</string>
+    <string name="backup_retype_password">La password è stata cancellata mentre sceglievi il file. Scrivila di nuovo, poi salva il backup.</string>
+    <plurals name="backup_made">
+        <item quantity="one">Backup salvato: %1$d documento, %2$s.</item>
+        <item quantity="other">Backup salvato: %1$d documenti, %2$s.</item>
+    </plurals>
     <string name="backup_failed">Non è stato possibile completare il backup. Sul telefono non è cambiato nulla.</string>
     <string name="backup_busy">Ci sono documenti in lettura. Aspetta che finiscano, poi riprova.</string>
     <string name="backup_restore_title">Ripristina un backup</string>

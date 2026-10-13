@@ -58,7 +58,9 @@ object DuplicateDetector {
                 val reasons = mutableSetOf<DuplicateReason>()
                 if (candidate.fileSha256 != null && candidate.fileSha256 == e.fileSha256) reasons += DuplicateReason.SAME_FILE
                 val sameSeller = cSeller != null && cSeller == normalizeSeller(e.sellerName)
-                if (sameSeller && cNumber != null && cNumber == normalizeNumber(e.documentNumber)) {
+                // Invoice numbers start again every year: number 12 of last year is another document.
+                val sameYear = candidate.date == null || e.date == null || candidate.date.year == e.date.year
+                if (sameSeller && sameYear && cNumber != null && cNumber == normalizeNumber(e.documentNumber)) {
                     reasons += DuplicateReason.SAME_SELLER_AND_NUMBER
                 }
                 val sameDateTotal = candidate.date != null && candidate.date == e.date &&

@@ -32,7 +32,7 @@
     <string name="add_page">Add another page</string>
     <string name="multi_photo_hint">Add every page first: the pages become one document, in this order, and reading starts only when you tap Read. It continues in the background, so you can keep using the app or scan the next document.</string>
     <string name="remove_photo">Remove photo</string>
-    <string name="no_camera_app">No camera app is available on this phone. Use “Import image or PDF” instead.</string>
+    <string name="no_camera_app">No camera app is available on this phone. Use “Choose photos from the gallery” or “Import a PDF or e-invoice” instead.</string>
     <string name="saving_original">Saving the original…</string>
     <string name="reading_text">Reading the text on the device…</string>
     <string name="reading_page">Reading page %1$d of %2$d…</string>
@@ -45,7 +45,7 @@
     <string name="original_document">Original document</string>
     <string name="original_page">Page %1$d of the original</string>
     <string name="page_render_failed">This page cannot be shown: %1$s</string>
-    <string name="ocr_failed">The text could not be read automatically (%1$s). Fill in the fields by hand while looking at the original.</string>
+    <string name="ocr_failed">The text could not be read automatically. Fill in the fields by hand while looking at the original.</string>
     <string name="ocr_nothing_found">No text was recognised. Check the photo, or fill in the fields by hand.</string>
     <string name="ocr_pages_limited">Only the first %1$d of %2$d pages were read automatically.</string>
     <string name="read_by">Read by: %1$s. Always compare with the original.</string>
@@ -226,7 +226,10 @@
     <string name="unlock_title">Unlock Kitchen Receipts</string>
     <string name="unlock">Unlock</string>
     <string name="app_locked">Kitchen Receipts is locked</string>
-    <string name="recognised_supplier">Recognised supplier: %1$s (%2$s, %3$d previous documents).</string>
+    <plurals name="recognised_supplier">
+        <item quantity="one">Recognised supplier: %1$s (%2$s, %3$d previous document).</item>
+        <item quantity="other">Recognised supplier: %1$s (%2$s, %3$d previous documents).</item>
+    </plurals>
     <string name="recognised_by_vat">by VAT number</string>
     <string name="recognised_by_alias">by a name you corrected before</string>
     <string name="recognised_by_layout">by the look of the letterhead – please confirm</string>
@@ -577,6 +580,26 @@
     <string name="reason_unusual_price">A price is 30% or more away from what you paid before: worth a look.</string>
     <string name="warn_duplicate_page">The same page was photographed twice: it was read once. If a page of the document is missing, add its photo.</string>
     <string name="reason_duplicate_page">The same page was photographed twice (a page may be missing).</string>
+    <string name="doc_number_short">no. %1$s</string>
+    <string name="next_to_check">Next to check · %1$d</string>
+    <string name="lines_all_fine">Every line checks out.</string>
+    <plurals name="lines_to_check">
+        <item quantity="one">%1$d line to check: the others are folded.</item>
+        <item quantity="other">%1$d lines to check: the others are folded.</item>
+    </plurals>
+    <plurals name="lines_check_out">
+        <item quantity="one">%1$d line checks out</item>
+        <item quantity="other">%1$d lines check out</item>
+    </plurals>
+    <string name="lines_tap_to_see">Tap to see them</string>
+    <string name="lines_tap_to_fold">Tap to fold them</string>
+    <string name="line_checks_out">This line checks out</string>
+    <string name="line_fold">Fold</string>
+    <string name="discount_short" formatted="false">Disc. %</string>
+    <string name="more_details">More details (pack, discount, expiry)</string>
+    <string name="fewer_details">Fewer details</string>
+    <string name="peek_not_found">This value\'s place was not found on the photo.</string>
+    <string name="peek_open_original">Open the photo</string>
     <string name="reason_lots_missing">Some lines have no lot number, but this document prints lots.</string>
     <string name="vat_group_line">%1$s%%: lines %2$s, summary %3$s (difference %4$s)</string>
     <string name="pack_size">Pack size</string>
@@ -609,7 +632,10 @@
     <string name="office_message">Office copy of the kitchen documents. Open the attached file on the computer (double-click it, it opens in the browser) and type the password you were given. Nothing is sent anywhere.</string>
     <string name="problems_title">Documents corrected by hand</string>
     <string name="problems_hint">Every time you change a value the app read wrong, the document\'s reading is kept here, on this phone only. After a week of normal use, send them in one go so all mistakes can be fixed together.</string>
-    <string name="problems_count">%1$d documents kept</string>
+    <plurals name="problems_count">
+        <item quantity="one">%1$d document kept</item>
+        <item quantity="other">%1$d documents kept</item>
+    </plurals>
     <string name="problems_send">Send the corrected documents</string>
     <string name="problems_clear">Delete the kept documents</string>
     <string name="problems_clear_text">The kept readings of corrected documents are deleted from this phone. Your saved documents are not touched.</string>

@@ -216,7 +216,7 @@ fun SettingsScreen(onBack: () -> Unit, onBackup: () -> Unit = {}) {
             // ---------------------------------------------------------------- documents corrected by hand
             SectionTitle(stringResource(R.string.problems_title))
             Text(stringResource(R.string.problems_hint), style = MaterialTheme.typography.bodySmall)
-            Text(stringResource(R.string.problems_count, problemCount), style = MaterialTheme.typography.bodyMedium)
+            Text(pluralStringResource(R.plurals.problems_count, problemCount, problemCount), style = MaterialTheme.typography.bodyMedium)
             BigButton(stringResource(R.string.problems_send), Icons.Filled.Share, enabled = problemCount > 0, onClick = { scope.launch {
                 c.log.event("PROBLEMS_SHARED", "documents" to problemCount)
                 // Reads up to 300 files and the log: not on the screen's thread.

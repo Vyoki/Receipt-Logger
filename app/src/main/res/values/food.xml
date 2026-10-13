@@ -79,7 +79,11 @@
     <string name="order_note">Note for the supplier (optional)</string>
     <string name="food_import">Import dishes from a spreadsheet</string>
     <string name="food_import_hint">Excel (.xlsx) or CSV with one row per ingredient: Piatto, Ingrediente, Quantità, Unità… Update the file when the menu changes and import it again.</string>
-    <string name="food_import_title">Import %1$d dishes?</string>
+    <string name="food_revenue_remove">Remove this month\'s revenue</string>
+    <plurals name="food_import_title">
+        <item quantity="one">Import %1$d dish?</item>
+        <item quantity="other">Import %1$d dishes?</item>
+    </plurals>
     <string name="food_import_summary">New: %1$d · updated: %2$d\nIngredients linked to your products: %3$d\nWith the price from the sheet: %4$d\nWithout a price: %5$d</string>
     <string name="food_import_skipped">Rows without a quantity: %1$d. A dish already in the app keeps what it had for them; fill them in the sheet.</string>
     <string name="food_import_empty">Dishes with no ingredients yet: %1$d</string>

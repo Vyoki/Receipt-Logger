@@ -141,8 +141,11 @@ class KitchenReceiptsApp : Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // Before anything opens the database: a restore stopped half-way puts the previous data back.
+        val restoreUndone = runCatching { com.kitchenreceipts.app.backup.BackupManager.recoverInterrupted(this) }.getOrDefault(false)
         container = AppContainer(this)
         val c = container
+        if (restoreUndone) c.log.event("RESTORE_UNDONE")
         // Record crashes in the local log before Android shows "app has stopped".
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, e ->

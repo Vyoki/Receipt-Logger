@@ -111,26 +111,33 @@ object AutoAccept {
         val headerOk = sub == null || vat == null || tot == null || totalsAddUp(sub, vat, tot)
         if (!headerOk) return d
         val sum = d.items.sumOf { cents(it.lineTotal.text)!! }
-        val tolerance = maxOf(2L, d.items.size.toLong())
+        // Settled only to the cent (see sumMatches).
+        val tolerance = 0L
         // A value the AI's double-check read differently stays highlighted, whatever the arithmetic says.
         fun disputed(f: DraftField) = f.source?.contains(AiReader.DISAGREE) == true
         fun settle(f: DraftField, provenBy: Boolean) = if (provenBy && !disputed(f)) f.copy(uncertain = false) else f
         fun clear(f: DraftField) = if (disputed(f)) f else f.copy(uncertain = false)
+        // A quantity worked out as amount / price was never printed: the sums prove the amounts, not that quantity.
+        fun clearQuantity(f: DraftField) = if (f.source?.endsWith(ReceiptParser.WORKED_OUT) == true) f else clear(f)
+        // Likewise a price taken as the amount of one piece (no price printed).
+        fun clearPrice(f: DraftField) = if (f.source?.endsWith(ReceiptParser.FROM_AMOUNT) == true) f else clear(f)
         return d.copy(
-            items = d.items.map { it.copy(quantity = clear(it.quantity), unitPrice = clear(it.unitPrice), lineTotal = clear(it.lineTotal), discount = clear(it.discount)) },
+            items = d.items.map { it.copy(quantity = clearQuantity(it.quantity), unitPrice = clearPrice(it.unitPrice), lineTotal = clear(it.lineTotal), discount = clear(it.discount)) },
             subtotal = settle(d.subtotal, sub != null && kotlin.math.abs(sub - sum) <= tolerance),
             total = settle(d.total, tot != null && (kotlin.math.abs(tot - sum) <= tolerance || (sub != null && vat != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance))),
             vat = settle(d.vat, vat != null && sub != null && tot != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance),
         )
     }
 
-    /** The line amounts add up to the printed taxable amount or total. */
+    /**
+     * The line amounts add up to the printed taxable amount or total, to the cent: printed documents are exact, and a
+     * sum a few cents off is a misread digit somewhere (a line or the total), never a proof.
+     */
     fun sumMatches(d: DocumentDraft): Boolean {
         val lines = d.items.map { cents(it.lineTotal.text) ?: return false }
         if (lines.isEmpty()) return false
         val sum = lines.sum()
-        val tolerance = maxOf(2L, lines.size.toLong())
-        return listOfNotNull(cents(d.subtotal.text), cents(d.total.text)).any { kotlin.math.abs(sum - it) <= tolerance }
+        return listOfNotNull(cents(d.subtotal.text), cents(d.total.text)).any { sum == it }
     }
 
     private fun cents(text: String): Long? {

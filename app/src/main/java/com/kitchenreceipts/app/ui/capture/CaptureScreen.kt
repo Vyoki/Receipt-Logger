@@ -256,14 +256,15 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
                     null,
                     onClick = { ensureNotificationPermission(); vm.usePages(photos) },
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    BigButton(stringResource(R.string.add_page), Icons.Filled.AddAPhoto, onClick = { launchCamera() }, primary = false, modifier = Modifier.weight(1f))
+                // One above the other: side by side, the Italian labels broke over three lines.
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    BigButton(stringResource(R.string.add_page), Icons.Filled.AddAPhoto, onClick = { launchCamera() }, primary = false, modifier = Modifier.fillMaxWidth())
                     BigButton(
                         stringResource(R.string.add_from_gallery),
                         Icons.Filled.PhotoLibrary,
                         onClick = { pickImages.launch(PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)) },
                         primary = false,
-                        modifier = Modifier.weight(1f),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
                 Text(stringResource(R.string.multi_photo_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)

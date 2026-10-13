@@ -43,15 +43,22 @@ object ItalianNumbers {
         val dots = s.count { it == '.' }
         val commas = s.count { it == ',' }
 
+        // Thousands groups are three digits each ("1.234.567"): "1.234.56" is a misread "1.234,56", not 123456.
+        fun grouped(part: String, sep: Char): Boolean {
+            val g = part.split(sep)
+            return g.first().length in 1..3 && g.drop(1).all { it.length == 3 }
+        }
         val normalized: String = when {
             dots > 0 && commas > 0 -> if (lastComma > lastDot) {
+                if (!grouped(s.substring(0, lastComma), '.')) return null
                 s.replace(".", "").replace(',', '.')
             } else {
+                if (!grouped(s.substring(0, lastDot), ',')) return null
                 s.replace(",", "")
             }
             commas == 1 -> s.replace(',', '.')
-            commas > 1 -> s.replace(",", "")
-            dots > 1 -> s.replace(".", "")
+            commas > 1 -> if (grouped(s, ',')) s.replace(",", "") else return null
+            dots > 1 -> if (grouped(s, '.')) s.replace(".", "") else return null
             dots == 1 -> {
                 val after = s.length - lastDot - 1
                 val intPart = s.substring(0, lastDot)

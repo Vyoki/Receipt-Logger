@@ -11,7 +11,11 @@
     <string name="backup_pw_note">Without this password the backup cannot be opened, not even by you. Write it down and keep it apart from the file. Then choose where to save it: Drive, a folder, a USB stick.</string>
     <string name="backup_make">Make backup</string>
     <string name="backup_working">Working…</string>
-    <string name="backup_made">Backup saved: %1$d documents, %2$s.</string>
+    <string name="backup_retype_password">The password was cleared while the file was being chosen. Type it again, then save the backup.</string>
+    <plurals name="backup_made">
+        <item quantity="one">Backup saved: %1$d document, %2$s.</item>
+        <item quantity="other">Backup saved: %1$d documents, %2$s.</item>
+    </plurals>
     <string name="backup_failed">The backup could not be completed. Nothing on the phone was changed.</string>
     <string name="backup_busy">Documents are being read. Wait until they are done, then try again.</string>
     <string name="backup_restore_title">Restore a backup</string>

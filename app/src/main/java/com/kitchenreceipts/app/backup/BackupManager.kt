@@ -59,8 +59,14 @@ class BackupManager(private val c: AppContainer) {
             )
             var bytes = 0L
             val out = context.contentResolver.openOutputStream(uri, "wt") ?: throw IOException("Cannot write the backup file")
-            CountingStream(BufferedOutputStream(out, 256 * 1024)) { bytes = it }.use { s ->
-                Backup.write(s, password, manifest, entries.asSequence())
+            try {
+                CountingStream(BufferedOutputStream(out, 256 * 1024)) { bytes = it }.use { s ->
+                    Backup.write(s, password, manifest, entries.asSequence())
+                }
+            } catch (e: Exception) {
+                // A cut backup is worse than none (it looks like one): the half-written file goes.
+                runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+                throw e
             }
             c.settings.lastBackupAt = System.currentTimeMillis()
             c.log.event("BACKUP_MADE", "documents" to docs, "files" to entries.size, "bytes" to bytes)
@@ -113,7 +119,11 @@ class BackupManager(private val c: AppContainer) {
         val stage = File(files, STAGE)
         check(File(stage, "$DB_DIR/${AppDatabase.NAME}").isFile) { "Nothing prepared" }
         if (c.importQueue.busy || c.readingChecker.running.value) throw Busy()
+        // A restore not yet confirmed by a start-up keeps the data set aside before it: never thrown away here.
+        check(!File(files, RESTORED_FLAG).exists()) { "The last restore has not opened yet: restart the app first" }
         val previous = File(files, PREVIOUS).apply { deleteRecursively(); mkdirs() }
+        // Until the restore is complete, the next start-up puts the data set aside back (see recoverInterrupted).
+        File(files, JOURNAL).writeText(System.currentTimeMillis().toString())
         val dbPath = context.getDatabasePath(AppDatabase.NAME)
         val moved = ArrayList<Pair<File, File>>() // original place -> side folder
         c.log.event("RESTORE_START")
@@ -138,6 +148,7 @@ class BackupManager(private val c: AppContainer) {
             File(stage, SETTINGS).takeIf { it.isFile }?.let { applySettings(Backup.readProperties(it.readText())) }
             stage.deleteRecursively()
             File(files, RESTORED_FLAG).writeText(System.currentTimeMillis().toString())
+            File(files, JOURNAL).delete()
         } catch (e: Exception) {
             c.log.error("restore", e)
             // Put everything back as it was.
@@ -145,6 +156,7 @@ class BackupManager(private val c: AppContainer) {
             KEPT.forEach { name -> File(files, name).deleteRecursively() }
             moved.forEach { (orig, side) -> runCatching { move(side, orig) } }
             previous.deleteRecursively()
+            File(files, JOURNAL).delete()
             restart()
             throw e
         }
@@ -237,15 +249,7 @@ class BackupManager(private val c: AppContainer) {
         moved += from to to
     }
 
-    private fun move(from: File, to: File) {
-        to.parentFile?.mkdirs()
-        if (to.exists()) to.deleteRecursively()
-        if (!from.renameTo(to)) {
-            // Different file systems (rare): copy, then delete.
-            from.copyRecursively(to, overwrite = true)
-            from.deleteRecursively()
-        }
-    }
+    private fun move(from: File, to: File) = moveFile(from, to)
 
     // ------------------------------------------------------------------ settings
 
@@ -295,10 +299,47 @@ class BackupManager(private val c: AppContainer) {
         private const val STAGE = "restore-staging"
         private const val PREVIOUS = "restore-previous"
         private const val RESTORED_FLAG = "restore-done.flag"
+        /** Written before anything is moved, removed once the restore is complete (or undone). */
+        private const val JOURNAL = "restore-running.flag"
         private val DB_SUFFIXES = listOf("", "-wal", "-shm", "-journal")
 
         /** Folders and files under the app's storage that travel with the backup. */
         private val KEPT = listOf("documents", "readings", "problems", "learning.json")
+
+        private fun moveFile(from: File, to: File) {
+            to.parentFile?.mkdirs()
+            if (to.exists()) to.deleteRecursively()
+            if (!from.renameTo(to)) {
+                // Different file systems (rare): copy, then delete.
+                from.copyRecursively(to, overwrite = true)
+                from.deleteRecursively()
+            }
+        }
+
+        /**
+         * At start-up, before the database opens: a restore the app was stopped in the middle of (phone switched off,
+         * app killed) is undone, so the data set aside comes back instead of an empty app. True when it did.
+         */
+        fun recoverInterrupted(context: Context): Boolean {
+            val files = context.filesDir
+            val journal = File(files, JOURNAL)
+            if (!journal.exists()) return false
+            if (File(files, RESTORED_FLAG).exists()) { journal.delete(); return false } // complete: checked as usual
+            val previous = File(files, PREVIOUS)
+            val dbPath = context.getDatabasePath(AppDatabase.NAME)
+            if (previous.isDirectory) {
+                // The database set aside (all its files), then each folder set aside; what was never moved stays.
+                if (File(previous, "$DB_DIR/${dbPath.name}").exists()) {
+                    DB_SUFFIXES.forEach { s -> File(dbPath.path + s).delete() }
+                    DB_SUFFIXES.forEach { s -> File(previous, "$DB_DIR/${dbPath.name}$s").takeIf { it.exists() }?.let { moveFile(it, File(dbPath.path + s)) } }
+                }
+                KEPT.forEach { name -> File(previous, name).takeIf { it.exists() }?.let { moveFile(it, File(files, name)) } }
+                previous.deleteRecursively()
+            }
+            File(files, STAGE).deleteRecursively()
+            journal.delete()
+            return true
+        }
 
         /** Settings that belong to this phone or this app version, not to the data. */
         private val NOT_RESTORED = setOf("reading_check_version", "knowledge_checked_at", "last_backup_at")

@@ -97,8 +97,9 @@ fun ReportsScreen(onBack: () -> Unit) {
     val rows by vm.rows.collectAsStateWithLifecycle()
     val exportResult by vm.exportResult.collectAsStateWithLifecycle()
     val resolver = LocalContext.current.contentResolver
-    var format by remember { mutableStateOf(CsvFormat.ITALIAN_EXCEL) }
-    var pendingKind by remember { mutableStateOf(ExportKind.MONTHLY) }
+    var format by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(CsvFormat.ITALIAN_EXCEL) }
+    // Kept while the file picker is open (the screen may be made again meanwhile).
+    var pendingKind by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(ExportKind.MONTHLY) }
     val snackbar = remember { SnackbarHostState() }
     val okMsg = stringResource(R.string.export_done)
     val failMsg = stringResource(R.string.export_failed)

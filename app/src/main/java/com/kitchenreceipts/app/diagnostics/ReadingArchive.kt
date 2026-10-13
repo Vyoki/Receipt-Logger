@@ -23,6 +23,9 @@ class ReadingArchive(context: Context) {
     fun load(documentId: Long): List<List<OcrLine>>? =
         file(documentId).takeIf { it.exists() }?.let { f -> runCatching { OcrLineCodec.decode(f.readText()) }.getOrNull() }
 
+    /** The reading of a deleted document (its text must not outlive it, nor go into backups). */
+    fun forget(documentId: Long) { file(documentId).delete() }
+
     /** Readings of documents that no longer exist. */
     fun deleteExcept(documentIds: Set<Long>) {
         dir.listFiles()?.forEach { f ->

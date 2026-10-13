@@ -158,7 +158,7 @@ private fun LotRow(r: LotLineRow, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
             )
             Text(
-                r.sellerName + " · " + fmtDate(r.documentDate) + (r.documentNumber?.let { " · n. $it" } ?: ""),
+                r.sellerName + " · " + fmtDate(r.documentDate) + (r.documentNumber?.let { " · " + stringResource(R.string.doc_number_short, it) } ?: ""),
                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
             )
         }

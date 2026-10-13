@@ -125,7 +125,11 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         db.withTransaction {
             var linesBefore: List<LineKeyRow> = emptyList()
             val seller = findOrCreateSeller(doc.sellerName)
-            if (learning != null) learnSeller(seller, learning, countLayout = existingId == null)
+            if (learning != null) {
+                // On an edit, the supplier the document was saved under before (a name corrected by the operator).
+                val previousSellerId = existingId?.let { documents.documentById(it)?.sellerId }
+                learnSeller(seller, learning, countLayout = existingId == null, previousSellerId = previousSellerId)
+            }
             val now = System.currentTimeMillis()
             val id = if (existingId == null) {
                 requireNotNull(file) { "A new document needs its original file" }
@@ -214,7 +218,7 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         db.withTransaction {
             documents.deleteDocument(id) // line items cascade
             refreshCovers(db.checksDao())
-            sellers.deleteUnused()
+            sellers.deleteUnusedUntaught()
         }
         // The same original may belong to another document (one saved twice): it stays while any document uses it.
         if (documents.countWithFile(doc.filePath) == 0) files.delete(doc.filePath)
@@ -224,14 +228,19 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     suspend fun fileInUse(relativePath: String): Boolean = documents.countWithFile(relativePath) > 0
 
     /** Stores the supplier's VAT number, letterhead words and the OCR's spelling of their name. */
-    private fun learnSeller(seller: SellerEntity, l: SellerLearning, countLayout: Boolean) {
+    private fun learnSeller(seller: SellerEntity, l: SellerLearning, countLayout: Boolean, previousSellerId: Long? = null) {
         var vat = SellerProfiles.supplierVatNumber(l.documentText, l.ownVatNumber)
         if (vat != null) {
             val other = sellers.byVatNumber(vat)
             if (other != null && other.id != seller.id) {
                 sellers.clearVat(vat)
-                onSharedVatNumber(vat)
-                vat = null
+                if (other.id == previousSellerId) {
+                    // The operator corrected the supplier's name on this document: the number moves to the right
+                    // supplier. It is not shared by two suppliers (which would make it the restaurant's own).
+                } else {
+                    onSharedVatNumber(vat)
+                    vat = null
+                }
             }
         }
         val profile = if (countLayout) {
