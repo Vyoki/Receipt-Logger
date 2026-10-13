@@ -81,7 +81,11 @@ object AutoAccept {
         val subtotal = cents(d.subtotal.text)
         val total = cents(d.total.text)
         val vat = cents(d.vat.text)
-        if (subtotal != null && kotlin.math.abs(sum - subtotal) <= tolerance && (total == null || total >= subtotal)) {
+        // Prices without VAT only when the document shows VAT on top: a total above the taxable amount, or a VAT
+        // amount. "Subtotal = total" with no VAT printed is a receipt with VAT inside as much as a net one: asked.
+        if (subtotal != null && kotlin.math.abs(sum - subtotal) <= tolerance &&
+            (total == null || total > subtotal || (vat != null && vat > 0))
+        ) {
             return VatBasis.EXCLUSIVE
         }
         if (total != null && kotlin.math.abs(sum - total) <= tolerance) {

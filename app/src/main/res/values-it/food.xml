@@ -53,6 +53,7 @@
     <string name="recipe_price_from">%1$s al %2$s · %3$s</string>
     <string name="recipe_price_typed">scritto da te</string>
     <string name="recipe_vat_unknown">IVA non nota</string>
+    <string name="food_vat_uncertain">Alcuni prezzi vengono da documenti che non dicono se l\'IVA è compresa: il food cost potrebbe essere troppo alto. Indicalo su quei documenti.</string>
     <string name="recipe_no_price">Senza prezzo</string>
     <string name="recipe_units_dont_convert">Comprato al %1$s: aggiungi una conversione nel prodotto (es. 1 pz = 60 g)</string>
     <string name="recipe_cost_portion">Food cost a porzione</string>

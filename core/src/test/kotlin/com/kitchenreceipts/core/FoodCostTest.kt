@@ -59,6 +59,10 @@ class FoodCostTest {
         eq("8.50", FoodCost.priceForTarget(c))
         // 30% for staff and utilities, as the owner's sheet adds.
         eq("2.9068", FoodCost.cost(r, { prices[it] }, overheadPercent = BigDecimal(30)).fullCost)
+        assertTrue(!c.vatUncertain)
+        // The beef's only price comes from a document that did not say whether prices include VAT: the dish says so.
+        val unsure = prices + (1L to IngredientPrice(BigDecimal("13"), "kg", null, null, false, vatUnknown = true))
+        assertTrue(FoodCost.cost(r, { unsure[it] }).vatUncertain)
     }
 
     @Test fun missingPriceIsSaidNotZero() {

@@ -53,6 +53,7 @@
     <string name="recipe_price_from">%1$s per %2$s · %3$s</string>
     <string name="recipe_price_typed">typed by you</string>
     <string name="recipe_vat_unknown">VAT unknown</string>
+    <string name="food_vat_uncertain">Some prices come from documents that do not say if VAT is included: the food cost may be too high. Set it on those documents.</string>
     <string name="recipe_no_price">No price</string>
     <string name="recipe_units_dont_convert">Bought per %1$s: add a conversion on the product (e.g. 1 pz = 60 g)</string>
     <string name="recipe_cost_portion">Food cost per portion</string>
