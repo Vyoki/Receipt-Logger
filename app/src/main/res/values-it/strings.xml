@@ -29,7 +29,7 @@
     <string name="add_page">Aggiungi un\'altra pagina</string>
     <string name="multi_photo_hint">Aggiungi prima tutte le pagine: diventano un solo documento, in questo ordine, e la lettura parte solo quando tocchi Leggi. Continua in background: puoi usare l\'app o scansionare il documento successivo.</string>
     <string name="remove_photo">Rimuovi foto</string>
-    <string name="no_camera_app">Nessuna app fotocamera disponibile. Usa “Importa immagine o PDF”.</string>
+    <string name="no_camera_app">Nessuna app fotocamera disponibile. Usa “Scegli foto dalla galleria” o “Importa PDF o fattura elettronica”.</string>
     <string name="saving_original">Salvataggio dell\'originale…</string>
     <string name="reading_text">Lettura del testo sul telefono…</string>
     <string name="reading_page">Lettura pagina %1$d di %2$d…</string>
@@ -41,7 +41,7 @@
     <string name="original_document">Documento originale</string>
     <string name="original_page">Pagina %1$d dell\'originale</string>
     <string name="page_render_failed">Impossibile mostrare la pagina: %1$s</string>
-    <string name="ocr_failed">Il testo non è stato letto automaticamente (%1$s). Compila i campi a mano guardando l\'originale.</string>
+    <string name="ocr_failed">Il testo non è stato letto automaticamente. Compila i campi a mano guardando l\'originale.</string>
     <string name="ocr_nothing_found">Nessun testo riconosciuto. Controlla la foto o compila i campi a mano.</string>
     <string name="ocr_pages_limited">Lette automaticamente solo le prime %1$d pagine su %2$d.</string>
     <string name="read_by">Letto da: %1$s. Confronta sempre con l\'originale.</string>
@@ -214,7 +214,10 @@
     <string name="unlock_title">Sblocca Kitchen Receipts</string>
     <string name="unlock">Sblocca</string>
     <string name="app_locked">Kitchen Receipts è bloccata</string>
-    <string name="recognised_supplier">Fornitore riconosciuto: %1$s (%2$s, %3$d documenti precedenti).</string>
+    <plurals name="recognised_supplier">
+        <item quantity="one">Fornitore riconosciuto: %1$s (%2$s, %3$d documento precedente).</item>
+        <item quantity="other">Fornitore riconosciuto: %1$s (%2$s, %3$d documenti precedenti).</item>
+    </plurals>
     <string name="recognised_by_vat">dalla partita IVA</string>
     <string name="recognised_by_alias">da un nome che avevi corretto</string>
     <string name="recognised_by_layout">dall\'aspetto dell\'intestazione – conferma</string>
@@ -565,6 +568,26 @@
     <string name="reason_unusual_price">Un prezzo si discosta del 30% o più da quanto pagato prima: da controllare.</string>
     <string name="warn_duplicate_page">La stessa pagina è stata fotografata due volte: è stata letta una volta sola. Se manca una pagina del documento, aggiungi la sua foto.</string>
     <string name="reason_duplicate_page">La stessa pagina è stata fotografata due volte (potrebbe mancare una pagina).</string>
+    <string name="doc_number_short">n. %1$s</string>
+    <string name="next_to_check">Prossimo da controllare · %1$d</string>
+    <string name="lines_all_fine">Tutte le righe tornano.</string>
+    <plurals name="lines_to_check">
+        <item quantity="one">%1$d riga da controllare: le altre sono raccolte.</item>
+        <item quantity="other">%1$d righe da controllare: le altre sono raccolte.</item>
+    </plurals>
+    <plurals name="lines_check_out">
+        <item quantity="one">%1$d riga torna</item>
+        <item quantity="other">%1$d righe tornano</item>
+    </plurals>
+    <string name="lines_tap_to_see">Tocca per vederle</string>
+    <string name="lines_tap_to_fold">Tocca per raccoglierle</string>
+    <string name="line_checks_out">Questa riga torna</string>
+    <string name="line_fold">Raccogli</string>
+    <string name="discount_short" formatted="false">Sc. %</string>
+    <string name="more_details">Altri dettagli (formato, sconto, scadenza)</string>
+    <string name="fewer_details">Meno dettagli</string>
+    <string name="peek_not_found">Il punto di questo valore non è stato trovato nella foto.</string>
+    <string name="peek_open_original">Apri la foto</string>
     <string name="reason_lots_missing">Alcune righe non hanno il lotto, ma il documento riporta i lotti.</string>
     <string name="vat_group_line">%1$s%%: righe %2$s, riepilogo %3$s (differenza %4$s)</string>
     <string name="pack_size">Formato</string>
@@ -597,7 +620,10 @@
     <string name="office_message">Copia per l\'ufficio dei documenti della cucina. Apri il file allegato sul computer (doppio clic, si apre nel browser) e inserisci la password che ti è stata comunicata. Non viene inviato nulla.</string>
     <string name="problems_title">Documenti corretti a mano</string>
     <string name="problems_hint">Ogni volta che correggi un valore letto male, la lettura del documento viene conservata qui, solo su questo telefono. Dopo una settimana di uso normale inviale tutte insieme, così gli errori si correggono in una volta.</string>
-    <string name="problems_count">%1$d documenti conservati</string>
+    <plurals name="problems_count">
+        <item quantity="one">%1$d documento conservato</item>
+        <item quantity="other">%1$d documenti conservati</item>
+    </plurals>
     <string name="problems_send">Invia i documenti corretti</string>
     <string name="problems_clear">Elimina i documenti conservati</string>
     <string name="problems_clear_text">Le letture conservate dei documenti corretti vengono eliminate da questo telefono. I documenti salvati non vengono toccati.</string>

@@ -71,6 +71,7 @@ class ImportQueue(
     private val fileInUse: suspend (String) -> Boolean = { false },
 ) {
     private val dir = File(context.filesDir, "jobs").apply { mkdirs() }
+    private val appContext = context.applicationContext
     private val _jobs = MutableStateFlow<List<ImportJob>>(emptyList())
     val jobs: StateFlow<List<ImportJob>> = _jobs.asStateFlow()
 
@@ -150,7 +151,8 @@ class ImportQueue(
                 val pending = runCatching { loadReading(j) }.getOrNull()
                 if (job(j.id) == null) continue // discarded meanwhile
                 if (pending != null) update(j.copy(pending = pending)) else update(j.copy(status = JobStatus.QUEUED))
-                if (pending == null) wake.trySend(Unit)
+                // Read again: the worker may not be running (only finished readings were waiting at start).
+                if (pending == null) { startWorker(); wake.trySend(Unit) }
             }
         }
         if (loaded.any { it.status == JobStatus.QUEUED }) {
@@ -232,7 +234,11 @@ class ImportQueue(
             throw e
         } catch (e: Exception) {
             log.error("backgroundImport", e)
-            j = (job(j.id) ?: return).copy(status = JobStatus.FAILED, error = e.message ?: e.javaClass.simpleName, progress = null)
+            // In the operator's words and language (the technical cause is in the log).
+            val message = runCatching {
+                com.kitchenreceipts.app.ui.friendlyError(com.kitchenreceipts.app.settings.AppSettings.wrapWithLanguage(appContext).resources, e)
+            }.getOrDefault(e.javaClass.simpleName)
+            j = (job(j.id) ?: return).copy(status = JobStatus.FAILED, error = message, progress = null)
             update(j)
             notifier.finished(j)
         }
@@ -271,7 +277,13 @@ class ImportQueue(
         job.totalCents?.let { p["total"] = it.toString() }
         p["items"] = job.itemCount.toString()
         p["attempts"] = job.attempts.toString()
-        runCatching { File(d, "meta.properties").outputStream().use { p.store(it, null) } }
+        // Written aside, then put in place in one step: the app stopped mid-write never leaves a cut file (a job
+        // whose details cannot be read is lost from the queue, and its photo with it).
+        runCatching {
+            val tmp = File(d, "meta.properties.tmp")
+            tmp.outputStream().use { out -> p.store(out, null); out.flush(); out.fd.sync() }
+            if (!tmp.renameTo(File(d, "meta.properties"))) error("rename")
+        }
     }
 
     private fun readMeta(d: File): ImportJob? {
@@ -318,6 +330,10 @@ class ImportQueue(
     }
 
     private suspend fun loadReading(job: ImportJob): PendingImport? = withContext(Dispatchers.IO) {
+        // An e-invoice keeps no OCR lines: its values are read again from the XML (quick, exact, no OCR or AI).
+        if (job.file.mimeType == com.kitchenreceipts.app.files.FileStore.MIME_XML) {
+            return@withContext runCatching { processor.process(job.file, engine, options = settings.parseOptions()) }.getOrNull()
+        }
         val d = File(dir, job.id)
         val ocr = File(d, "ocr.txt").takeIf { it.exists() } ?: return@withContext null
         val p = Properties().apply { File(d, "reading.properties").inputStream().use { load(it) } }

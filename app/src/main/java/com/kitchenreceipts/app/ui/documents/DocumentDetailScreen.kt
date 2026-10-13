@@ -77,6 +77,8 @@ class DocumentDetailViewModel(
     private val repo: ReceiptRepository,
     private val id: Long,
     private val log: com.kitchenreceipts.app.diagnostics.AppLog,
+    /** Removes what else the phone keeps about a deleted document (its reading, reports, unsaved edits). */
+    private val forget: (Long) -> Unit = {},
 ) : ViewModel() {
     /** null = loading; Result with null value = deleted / not found. */
     val document: StateFlow<Result<DocumentWithSeller?>?> =
@@ -91,6 +93,7 @@ class DocumentDetailViewModel(
 
     suspend fun delete() {
         repo.deleteDocument(id)
+        runCatching { forget(id) }
         log.event("DELETED", "doc" to id)
     }
 }
@@ -105,7 +108,11 @@ fun DocumentDetailScreen(
     onOpenProduct: (Long) -> Unit,
     onOpenDocument: (Long) -> Unit = {},
 ) {
-    val vm = appViewModel(key = "doc-$documentId") { DocumentDetailViewModel(it.repository, documentId, it.log) }
+    val vm = appViewModel(key = "doc-$documentId") { DocumentDetailViewModel(it.repository, documentId, it.log) { doc ->
+        it.readings.forget(doc)
+        it.problems.forget(doc)
+        java.io.File(it.appContext.filesDir, "edits/$doc.json").delete()
+    } }
     val docResult by vm.document.collectAsStateWithLifecycle()
     val items by vm.items.collectAsStateWithLifecycle()
     val priceChanges by vm.priceChanges.collectAsStateWithLifecycle()

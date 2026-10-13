@@ -79,7 +79,11 @@
     <string name="order_note">Nota per il fornitore (facoltativa)</string>
     <string name="food_import">Importa i piatti da un foglio</string>
     <string name="food_import_hint">Excel (.xlsx) o CSV con una riga per ingrediente: Piatto, Ingrediente, Quantità, Unità… Quando cambia il menu aggiorna il file e importalo di nuovo.</string>
-    <string name="food_import_title">Importare %1$d piatti?</string>
+    <string name="food_revenue_remove">Elimina l\'incasso del mese</string>
+    <plurals name="food_import_title">
+        <item quantity="one">Importare %1$d piatto?</item>
+        <item quantity="other">Importare %1$d piatti?</item>
+    </plurals>
     <string name="food_import_summary">Nuovi: %1$d · aggiornati: %2$d\nIngredienti collegati ai tuoi prodotti: %3$d\nCon il prezzo del foglio: %4$d\nSenza prezzo: %5$d</string>
     <string name="food_import_skipped">Righe senza quantità: %1$d. Un piatto già presente mantiene quello che aveva; completale nel foglio.</string>
     <string name="food_import_empty">Piatti ancora senza ingredienti: %1$d</string>

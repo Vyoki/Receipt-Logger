@@ -57,18 +57,22 @@ class ReportPdf(private val ctx: Context) {
 
     fun write(r: BossReport, businessName: String, out: File) {
         doc = PdfDocument()
-        title = businessName.ifBlank { ctx.getString(R.string.rep_title) }
-        newPage()
-        header(r)
-        kpis(r)
-        suppliers(r)
-        categories(r)
-        priceChanges(r)
-        inventory(r)
-        notes(r)
-        finishPage()
-        out.outputStream().use { doc.writeTo(it) }
-        doc.close()
+        // Closed whatever happens: the document holds native memory.
+        try {
+            title = businessName.ifBlank { ctx.getString(R.string.rep_title) }
+            newPage()
+            header(r)
+            kpis(r)
+            suppliers(r)
+            categories(r)
+            priceChanges(r)
+            inventory(r)
+            notes(r)
+            finishPage()
+            out.outputStream().use { doc.writeTo(it) }
+        } finally {
+            doc.close()
+        }
     }
 
     // ------------------------------------------------------------------ layout

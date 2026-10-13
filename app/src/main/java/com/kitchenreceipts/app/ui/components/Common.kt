@@ -39,6 +39,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -239,24 +240,44 @@ fun ReviewField(
         }
     }
     // Black field, hairline border, green when focused; orange when the value needs a look.
-    @Composable
-    fun base(border: androidx.compose.ui.graphics.Color, container: androidx.compose.ui.graphics.Color, label: androidx.compose.ui.graphics.Color) =
+    // The colours change smoothly: a value confirmed fades from orange to the plain field.
+    val plain = error == null && !field.uncertain && !(field.isMissing && highlightMissing)
+    val border by androidx.compose.animation.animateColorAsState(
+        when {
+            field.uncertain -> status.uncertainBorder
+            field.isMissing && highlightMissing -> Palette.OrangeDim
+            else -> Palette.HairlineStrong
+        },
+        androidx.compose.animation.core.tween(350), label = "border",
+    )
+    val container by androidx.compose.animation.animateColorAsState(
+        when {
+            error != null -> Palette.Black
+            field.uncertain -> status.uncertainContainer
+            field.isMissing && highlightMissing -> status.missingContainer
+            else -> Palette.Black
+        },
+        androidx.compose.animation.core.tween(350), label = "container",
+    )
+    val labelColor = when {
+        field.uncertain -> Palette.Orange
+        field.isMissing && highlightMissing -> status.onMissing
+        else -> Palette.TextDim
+    }
+    val colors = if (error != null) {
+        OutlinedTextFieldDefaults.colors(focusedContainerColor = Palette.Black, unfocusedContainerColor = Palette.Black)
+    } else {
         OutlinedTextFieldDefaults.colors(
             unfocusedBorderColor = border,
-            focusedBorderColor = if (border == Palette.HairlineStrong) Palette.PhthaloBright else border,
+            focusedBorderColor = if (plain) Palette.PhthaloBright else border,
             unfocusedContainerColor = container,
             focusedContainerColor = container,
-            unfocusedLabelColor = label,
-            focusedLabelColor = if (label == Palette.TextDim) Palette.PhthaloBright else label,
+            unfocusedLabelColor = labelColor,
+            focusedLabelColor = if (plain) Palette.PhthaloBright else labelColor,
             cursorColor = Palette.PhthaloBright,
             unfocusedSupportingTextColor = Palette.Orange,
             focusedSupportingTextColor = Palette.Orange,
         )
-    val colors = when {
-        error != null -> OutlinedTextFieldDefaults.colors(focusedContainerColor = Palette.Black, unfocusedContainerColor = Palette.Black)
-        field.uncertain -> base(status.uncertainBorder, status.uncertainContainer, Palette.Orange)
-        field.isMissing && highlightMissing -> base(Palette.OrangeDim, status.missingContainer, status.onMissing)
-        else -> base(Palette.HairlineStrong, Palette.Black, Palette.TextDim)
     }
     val keyboard = when (kind) {
         FieldKind.DECIMAL -> KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next)
@@ -274,7 +295,8 @@ fun ReviewField(
     OutlinedTextField(
         value = field.text,
         onValueChange = onChange,
-        label = { Text(label) },
+        // A label longer than its field stays on one line (cut) instead of breaking a word in two.
+        label = { Text(label, maxLines = 1, overflow = TextOverflow.Ellipsis) },
         placeholder = placeholder?.let { { Text(it) } },
         singleLine = true,
         isError = error != null,
@@ -332,6 +354,8 @@ fun ConfirmDialog(
     onDismiss: () -> Unit,
     dismissLabel: String = stringResource(R.string.cancel),
     body: (@Composable () -> Unit)? = null,
+    /** False while what was typed cannot be saved yet (the button says so instead of doing nothing). */
+    confirmEnabled: Boolean = true,
 ) {
     AlertDialog(
         onDismissRequest = onDismiss,
@@ -342,7 +366,7 @@ fun ConfirmDialog(
                 body?.invoke()
             }
         },
-        confirmButton = { TextButton(onClick = onConfirm, modifier = Modifier.heightIn(min = 48.dp)) { Text(confirmLabel) } },
+        confirmButton = { TextButton(onClick = onConfirm, enabled = confirmEnabled, modifier = Modifier.heightIn(min = 48.dp)) { Text(confirmLabel) } },
         dismissButton = { TextButton(onClick = onDismiss, modifier = Modifier.heightIn(min = 48.dp)) { Text(dismissLabel) } },
     )
 }

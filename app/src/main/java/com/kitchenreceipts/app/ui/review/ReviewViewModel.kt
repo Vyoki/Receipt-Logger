@@ -338,6 +338,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     }
 
     fun setHeader(field: HeaderField, text: String) { clearError(field.key); editDraft { d -> d.withHeader(field) { it.confirmed(text) } } }
+    /** The "corrections kept" message was shown: not again for this screen. */
+    fun restoredShown() { _state.value = _state.value.copy(restored = false) }
+
     fun confirmHeader(field: HeaderField) { clearError(field.key); editDraft { d -> d.withHeader(field) { it.confirmed() } } }
 
     fun setDate(date: LocalDate) = setHeader(HeaderField.DATE, ItalianDates.format(date))

@@ -24,6 +24,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -160,7 +161,7 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
 
     plan?.let { p ->
         ConfirmDialog(
-            title = stringResource(R.string.food_import_title, p.dishes.size),
+            title = pluralStringResource(R.plurals.food_import_title, p.dishes.size, p.dishes.size),
             text = stringResource(R.string.food_import_summary, p.added, p.updated, p.linked, p.typedOnly, p.noPrice),
             confirmLabel = stringResource(R.string.food_import_go),
             onConfirm = {
@@ -207,10 +208,13 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
         val existing = revenue.firstOrNull { it.month == m.toString() }
         var amount by remember(m) { mutableStateOf(existing?.let { ItalianNumbers.centsToEditText(it.cents) } ?: "") }
         var withVat by remember(m) { mutableStateOf(existing?.includesVat ?: true) }
+        // An empty box removes the month's revenue, said on the button; text that is not an amount saves nothing.
+        val removing = amount.isBlank() && existing != null
         ConfirmDialog(
             title = stringResource(R.string.food_revenue_title, fmtMonth(m)),
             text = "",
-            confirmLabel = stringResource(R.string.food_save),
+            confirmLabel = stringResource(if (removing) R.string.food_revenue_remove else R.string.food_save),
+            confirmEnabled = removing || ItalianNumbers.parseCents(amount)?.let { it > 0 } == true,
             onConfirm = {
                 editMonth = null
                 scope.launch { c.food.setRevenue(m, ItalianNumbers.parseCents(amount), withVat, existing?.vatRate ?: BigDecimal.TEN) }

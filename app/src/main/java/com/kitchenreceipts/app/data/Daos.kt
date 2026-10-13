@@ -261,6 +261,17 @@ interface SellerDao {
     )
     fun deleteUnused()
 
+    /**
+     * After a document is deleted: suppliers left without documents go, except those the app learned something for
+     * (the operator's product links). Deleting a badly read invoice to scan it again keeps what was taught.
+     */
+    @Query(
+        "DELETE FROM sellers WHERE id NOT IN (SELECT seller_id FROM documents) AND id NOT IN (SELECT seller_id FROM credits) " +
+            "AND id NOT IN (SELECT seller_id FROM agreed_prices WHERE seller_id IS NOT NULL) " +
+            "AND id NOT IN (SELECT seller_id FROM product_aliases)",
+    )
+    fun deleteUnusedUntaught()
+
     @Query("SELECT * FROM sellers")
     suspend fun allOnce(): List<SellerEntity>
 

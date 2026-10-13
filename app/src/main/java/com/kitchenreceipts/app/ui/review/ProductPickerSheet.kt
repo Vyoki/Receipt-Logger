@@ -54,7 +54,7 @@ fun ProductPickerSheet(
     createLabel: Int = R.string.create_product,
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    var query by remember { mutableStateOf(ProductMatching.proposeName(description)) }
+    var query by androidx.compose.runtime.saveable.rememberSaveable(description) { mutableStateOf(ProductMatching.proposeName(description)) }
     val suggestions = remember(description, products) {
         val byId = products.associateBy { it.id }
         ProductMatching.suggest(description, products.map { ProductRef(it.id, it.name) })

@@ -22,6 +22,14 @@ class DuplicateDetectorTest {
         assertTrue(m.isStrong)
     }
 
+    @Test fun theSameNumberNextYearIsAnotherDocument() {
+        val old = DocumentFingerprint(1, "Caseificio Valverde S.r.l.", "12", java.time.LocalDate.of(2025, 2, 3), 7106, "aaa")
+        val next = DocumentFingerprint(0, "Caseificio Valverde S.r.l.", "12", java.time.LocalDate.of(2026, 1, 20), 5000, null)
+        assertTrue(DuplicateDetector.findDuplicates(next, listOf(old)).isEmpty())
+        val again = DocumentFingerprint(0, "Caseificio Valverde S.r.l.", "12", java.time.LocalDate.of(2025, 2, 3), 7106, null)
+        assertTrue(DuplicateDetector.findDuplicates(again, listOf(old)).isNotEmpty())
+    }
+
     @Test fun sameFile() {
         val c = DocumentFingerprint(0, null, null, null, null, "bbb")
         assertEquals(setOf(DuplicateReason.SAME_FILE), DuplicateDetector.findDuplicates(c, existing).single().reasons)

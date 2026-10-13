@@ -109,6 +109,25 @@ import com.kitchenreceipts.core.ReceiptParser
 import com.kitchenreceipts.core.SellerMatchReason
 import com.kitchenreceipts.core.Units
 import com.kitchenreceipts.core.VatBasis
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.animateContentSize
+import androidx.compose.animation.togetherWith
+import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material.icons.filled.KeyboardDoubleArrowDown
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.text.style.TextOverflow
+import com.kitchenreceipts.app.ui.theme.Palette
+import com.kitchenreceipts.core.CardRow
+import com.kitchenreceipts.core.CompactRow
+import com.kitchenreceipts.core.GroupRow
+import com.kitchenreceipts.core.ReviewRow
+import com.kitchenreceipts.core.TopRow
+import com.kitchenreceipts.core.headerNeedsLook
+import com.kitchenreceipts.core.lineRows
+import com.kitchenreceipts.core.needsLook
+import com.kitchenreceipts.core.nextToCheck
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneOffset
@@ -128,16 +147,62 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
 
     LaunchedEffect(state.savedId) { state.savedId?.let { onSaved(it, state.autoSaved) } }
 
+    // Which lines are shown in full (see core ReviewRows): those that needed a look when the screen opened stay open
+    // while they are corrected; lines that check out fold into one row per run, opened with a tap.
+    var keepOpen by rememberSaveable { mutableStateOf<List<Long>?>(null) }
+    var initialKeys by rememberSaveable { mutableStateOf<List<Long>?>(null) }
+    var opened by rememberSaveable { mutableStateOf(listOf<Long>()) }
+    var openGroups by rememberSaveable { mutableStateOf(listOf<Long>()) }
+    LaunchedEffect(state.loading) {
+        if (!state.loading && keepOpen == null) {
+            val d = state.draft
+            keepOpen = d.items.filter { it.needsLook(state.errors, d.lotsPrinted) }.map { it.key }
+            initialKeys = d.items.map { it.key }
+        }
+    }
+    fun rowsOf(s: ReviewState): List<ReviewRow> = buildList {
+        add(TopRow("preview")); add(TopRow("status"))
+        if (s.draft.aiCheck?.let { it.disagreements.isEmpty() && s.isNew } == true) add(TopRow("aiCheck"))
+        if (s.reviewReasons.isNotEmpty()) add(TopRow("reasons"))
+        if (s.errors.isNotEmpty()) add(TopRow("errors"))
+        if (s.saveError != null) add(TopRow("saveError"))
+        if (s.draft.warnings.isNotEmpty()) add(TopRow("warnings"))
+        add(TopRow(HEADER))
+        if (s.isNew) add(TopRow("kind"))
+        add(TopRow("itemsTitle"))
+        if (s.draft.items.isEmpty()) add(TopRow("noItems"))
+        addAll(lineRows(s.draft, s.errors, keepOpen?.toSet(), initialKeys?.toSet(), opened.toSet(), openGroups.toSet()))
+        add(TopRow("addItem"))
+        // Background information after the lines: what to check comes first.
+        if (s.priceChanges.isNotEmpty()) add(TopRow("prices"))
+        if (s.recognisedText != null) add(TopRow("recognised"))
+        add(TopRow("bottomSpace"))
+    }
+    val rows = rowsOf(state)
+
+    // "Next to check" and Save bring a card into view and make it blink once, so the eye finds it.
+    var flash by remember { mutableStateOf<Pair<String, Long>?>(null) }
+    fun goTo(index: Int, key: String) {
+        scope.launch {
+            listState.animateScrollToItem(index)
+            flash = key to System.nanoTime()
+        }
+    }
+
     // The part of the photo behind the field being checked (tap a field to see it).
     var peekRequest by remember { mutableStateOf<PeekRequest?>(null) }
     var peekImage by remember { mutableStateOf<PeekImage?>(null) }
     var peekClosed by remember { mutableStateOf(false) }
     var enlarged by remember { mutableStateOf<Pair<String, PeekImage>?>(null) }
+    // The value's place could not be found on the photo: said (with the original one tap away), not left blank.
+    var peekMissing by remember { mutableStateOf(false) }
     LaunchedEffect(peekRequest) {
         val r = peekRequest
+        peekMissing = false
         if (r == null) { peekImage = null; return@LaunchedEffect }
         peekClosed = false
         peekImage = runCatching { vm.peek(r.source, r.value) }.getOrNull()
+        peekMissing = peekImage == null && state.filePath != null && (r.value.isNotBlank() || !r.source.isNullOrBlank())
     }
     // Scrolling the form by hand means the operator moved on: close the photo strip (and the keyboard), so it never
     // stays on screen over other fields. Scrolls the screen makes by itself (to show the focused field) do not count.
@@ -168,12 +233,14 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
     }
     val reviewSnackbar = remember { androidx.compose.material3.SnackbarHostState() }
     val restoredText = stringResource(R.string.draft_restored)
-    LaunchedEffect(state.restored) { if (state.restored) reviewSnackbar.showSnackbar(restoredText) }
+    // Said once: not again after turning the phone or coming back from the original.
+    LaunchedEffect(state.restored) { if (state.restored) { vm.restoredShown(); reviewSnackbar.showSnackbar(restoredText) } }
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
     val onPeek: (PeekRequest?) -> Unit = remember { { r -> if (r != null) peekRequest = r else if (enlarged == null) peekRequest = null } }
     // A replacement under every value the app could not settle (worked out by the view model as the operator edits).
     val replacements = state.replacements
+    val toCheck = rows.count { r -> (r is CardRow && r.item.needsLook(state.errors, state.draft.lotsPrinted)) || (r is TopRow && r.key == HEADER && state.draft.headerNeedsLook(state.errors)) }
     CompositionLocalProvider(LocalFieldPeek provides onPeek, LocalReplacements provides replacements) {
     Box(Modifier.fillMaxSize()) {
     AppScaffold(
@@ -187,6 +254,28 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                 }
             }
         },
+        floatingActionButton = {
+            // One tap to the next thing to check, instead of scrolling through the lines that are fine.
+            AnimatedVisibility(
+                visible = !state.loading && state.fatal == null && toCheck > 0,
+                enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
+                exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut(),
+            ) {
+                androidx.compose.material3.ExtendedFloatingActionButton(
+                    onClick = {
+                        nextToCheck(rows, listState.firstVisibleItemIndex, state.draft, state.errors, HEADER)?.let { i -> goTo(i, rows[i].key) }
+                    },
+                    containerColor = LocalStatusColors.current.uncertainBorder,
+                    contentColor = com.kitchenreceipts.app.ui.theme.Palette.Black,
+                    icon = { Icon(Icons.Filled.KeyboardDoubleArrowDown, contentDescription = null) },
+                    text = {
+                        androidx.compose.animation.AnimatedContent(toCheck, label = "toCheck") { n ->
+                            Text(stringResource(R.string.next_to_check, n), fontWeight = FontWeight.SemiBold)
+                        }
+                    },
+                )
+            }
+        },
         bottomBar = {
             if (!state.loading && state.fatal == null) {
                 SaveBar(
@@ -196,14 +285,16 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                     saving = state.saving,
                     onSave = {
                         vm.requestSave()
-                        // To the first line with a field to fix (lines sit just before the last two rows of the list);
-                        // to the top when the problem is in the header or there is none.
-                        val errs = vm.state.value.errors
-                        val items = vm.state.value.draft.items
-                        val i = items.indexOfFirst { item -> errs.keys.any { it.startsWith("item:${item.key}.") } }
-                        val headerError = errs.keys.any { !it.startsWith("item:") }
-                        val target = if (i < 0 || headerError) 0 else (listState.layoutInfo.totalItemsCount - 2 - items.size + i).coerceAtLeast(0)
-                        scope.launch { listState.animateScrollToItem(target) }
+                        // To the first row with something to fix (the header or a line), once the list shows the errors.
+                        scope.launch {
+                            androidx.compose.runtime.withFrameNanos { }
+                            val s = vm.state.value
+                            if (s.errors.isEmpty()) return@launch
+                            val now = rowsOf(s)
+                            val i = if (s.errors.keys.any { !it.startsWith("item:") }) now.indexOfFirst { it.key == HEADER }
+                            else now.indexOfFirst { r -> r is CardRow && s.errors.keys.any { it.startsWith("item:${r.item.key}.") } }
+                            if (i >= 0) goTo(i, now[i].key)
+                        }
                     },
                 )
             }
@@ -218,102 +309,82 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
             else -> LazyColumn(
                 state = listState,
                 modifier = Modifier.padding(padding).imePadding(),
-                contentPadding = PaddingValues(16.dp),
+                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                item("preview") {
-                    val path = state.filePath
-                    val mime = state.mimeType
-                    if (path != null && mime != null) {
-                        Panel {
-                            DocumentPages(path, mime, state.pageCount, Modifier.fillMaxWidth().height(260.dp), onClick = onViewOriginal)
-                            TextButton(onClick = onViewOriginal, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
-                                Icon(Icons.Filled.OpenInFull, contentDescription = null)
-                                Spacer(Modifier.width(8.dp))
-                                Text(stringResource(R.string.view_original_full))
-                            }
+                items(rows, key = { it.key }, contentType = { it::class.simpleName }) { row ->
+                    val m = Modifier.animateItem()
+                    val flashing = flash?.takeIf { it.first == row.key }
+                    when (row) {
+                        is CardRow -> {
+                            val item = row.item
+                            val needs = item.needsLook(state.errors, state.draft.lotsPrinted)
+                            ItemCard(
+                                item = item,
+                                lotsPrinted = state.draft.lotsPrinted,
+                                errors = state.errors,
+                                needsLook = needs,
+                                flash = flashing?.second,
+                                onChange = { f, t -> vm.setItem(item.key, f, t) },
+                                onConfirm = { f -> vm.confirmItem(item.key, f) },
+                                onUseComputed = { vm.useComputedTotal(item.key) },
+                                onPickProduct = { pickerFor = item.key },
+                                onRemove = { vm.removeItem(item.key) },
+                                onPickChoice = { ch -> vm.pickChoice(item.key, ch) },
+                                // A line that checks out folds back into the lines that are fine.
+                                onFold = if (needs) null else ({ keepOpen = keepOpen.orEmpty() - item.key; opened = opened - item.key; initialKeys = initialKeys.orEmpty() + item.key }),
+                                modifier = m,
+                            )
                         }
+                        is GroupRow -> CheckedGroup(row, onToggle = {
+                            val first = row.keys.first()
+                            openGroups = if (row.open) openGroups - first else openGroups + first
+                        }, modifier = m)
+                        is CompactRow -> CompactLine(row.item, onOpen = { opened = opened + row.item.key }, modifier = m)
+                        is TopRow -> Box(m) { TopPart(row.key, state, vm, sellerNames, flashing?.second, onViewOriginal, onPickDate = { showDatePicker = true }) }
                     }
                 }
-                item("status") { StatusBanner(state) }
-                state.draft.aiCheck?.takeIf { it.disagreements.isEmpty() && state.isNew }?.let { c ->
-                    item("aiCheck") {
-                        Text(
-                            pluralStringResource(R.plurals.ai_check_ok, c.checked, c.checked),
-                            color = LocalStatusColors.current.ok,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                    }
-                }
-                if (state.reviewReasons.isNotEmpty()) {
-                    item("reasons") { ReasonsCard(state) }
-                }
-                if (state.priceChanges.isNotEmpty()) {
-                    item("prices") { PriceChangesCard(state.priceChanges) }
-                }
-                state.recognisedText?.let { t -> item("recognised") { RecognisedTextCard(t) } }
-                if (state.errors.isNotEmpty()) {
-                    item("errors") { WarningCard(listOf(stringResource(R.string.fix_errors, state.errors.size))) }
-                }
-                state.saveError?.let { err -> item("saveError") { WarningCard(listOf(stringResource(R.string.save_failed, err))) } }
-                if (state.draft.warnings.isNotEmpty()) {
-                    item("warnings") { WarningCard(state.draft.warnings.map { warningText(it) }) }
-                }
-
-                item("header") {
-                    HeaderSection(
-                        draft = state.draft,
-                        errors = state.errors,
-                        sellerNames = sellerNames,
-                        vm = vm,
-                        onPickDate = { showDatePicker = true },
-                    )
-                }
-
-                // What kind of document this is decides where it counts (a credit note is subtracted from spending):
-                // shown before saving, one tap to change.
-                if (state.isNew) item("kind") { KindRow(state.kind, vm::setKind) }
-
-                item("itemsTitle") {
-                    SectionTitle(pluralStringResource(R.plurals.items_title, state.draft.items.size, state.draft.items.size))
-                }
-                if (state.draft.items.isEmpty()) {
-                    item("noItems") { EmptyState(stringResource(R.string.no_items_hint)) }
-                }
-                items(state.draft.items, key = { it.key }) { item ->
-                    ItemCard(
-                        item = item,
-                        lotsPrinted = state.draft.lotsPrinted,
-                        errors = state.errors,
-                        onChange = { f, t -> vm.setItem(item.key, f, t) },
-                        onConfirm = { f -> vm.confirmItem(item.key, f) },
-                        onUseComputed = { vm.useComputedTotal(item.key) },
-                        onPickProduct = { pickerFor = item.key },
-                        onRemove = { vm.removeItem(item.key) },
-                        onPickChoice = { ch -> vm.pickChoice(item.key, ch) },
-                    )
-                }
-                item("addItem") {
-                    OutlinedButton(onClick = vm::addItem, modifier = Modifier.fillMaxWidth().height(56.dp)) {
-                        Icon(Icons.Filled.Add, contentDescription = null)
-                        Spacer(Modifier.width(8.dp))
-                        Text(stringResource(R.string.add_item))
-                    }
-                }
-                item("bottomSpace") { Spacer(Modifier.height(24.dp)) }
             }
         }
     }
     val shown = peekImage
     val req = peekRequest
-    if (shown != null && req != null && !peekClosed) {
-        FieldPeekCard(
-            label = req.label,
-            img = shown,
-            onEnlarge = { enlarged = req.label to shown },
-            onClose = { peekClosed = true },
-            modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
-        )
+    AnimatedVisibility(
+        visible = shown != null && req != null && !peekClosed,
+        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it / 3 },
+        exit = androidx.compose.animation.fadeOut(),
+        modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
+    ) {
+        // The last picture stays while it fades out.
+        val last = remember { mutableStateOf<Pair<String, PeekImage>?>(null) }
+        if (shown != null && req != null) last.value = req.label to shown
+        last.value?.let { (label, img) ->
+            FieldPeekCard(
+                label = label,
+                img = img,
+                onEnlarge = { enlarged = label to img },
+                onClose = { peekClosed = true },
+            )
+        }
+    }
+    AnimatedVisibility(
+        visible = peekMissing && peekRequest != null && !peekClosed,
+        enter = androidx.compose.animation.fadeIn(),
+        exit = androidx.compose.animation.fadeOut(),
+        modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
+    ) {
+        Surface(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
+            shape = MaterialTheme.shapes.small,
+            color = Palette.Panel,
+            border = androidx.compose.foundation.BorderStroke(1.dp, Palette.HairlineStrong),
+            shadowElevation = 6.dp,
+        ) {
+            Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(stringResource(R.string.peek_not_found), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { peekClosed = true; onViewOriginal() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.peek_open_original)) }
+            }
+        }
     }
     }
     }
@@ -351,7 +422,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                     c.duplicates.take(3).forEach { d ->
                         Text(
                             "• ${d.row.sellerName} · ${fmtDate(d.row.documentDate)}" +
-                                (d.row.documentNumber?.let { " · n. $it" } ?: "") + " · ${fmtMoney(d.row.totalCents)}",
+                                (d.row.documentNumber?.let { " · " + stringResource(R.string.doc_number_short, it) } ?: "") + " · ${fmtMoney(d.row.totalCents)}",
                             fontWeight = FontWeight.SemiBold,
                         )
                         Text(d.match.reasons.map { duplicateReasonText(it) }.joinToString("; "), style = MaterialTheme.typography.bodyMedium)
@@ -437,7 +508,8 @@ private fun StatusBanner(state: ReviewState) {
     val lines = buildList {
         if (state.isNew) {
             when {
-                state.ocrError != null -> add(stringResource(R.string.ocr_failed, state.ocrError))
+                // The technical cause stays in the reading report (Recognised text), not in the operator's way.
+                state.ocrError != null -> add(stringResource(R.string.ocr_failed))
                 state.pagesRead > 0 && state.draft.items.isEmpty() && state.draft.total.isMissing ->
                     add(stringResource(R.string.ocr_nothing_found))
             }
@@ -457,7 +529,7 @@ private fun StatusBanner(state: ReviewState) {
         )
         Surface(color = MaterialTheme.colorScheme.primaryContainer, contentColor = MaterialTheme.colorScheme.onPrimaryContainer, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, com.kitchenreceipts.app.ui.theme.Palette.PhthaloBorder)) {
             Text(
-                stringResource(R.string.recognised_supplier, r.match.name, how, r.documentCount) +
+                pluralStringResource(R.plurals.recognised_supplier, r.documentCount, r.match.name, how, r.documentCount) +
                     (if (r.usualVatBasis != null) " " + stringResource(R.string.usual_vat_basis, vatBasisLabel(r.usualVatBasis)) else ""),
                 modifier = Modifier.fillMaxWidth().padding(12.dp),
                 style = MaterialTheme.typography.bodyMedium,
@@ -532,7 +604,7 @@ private fun HeaderSection(
             }.take(3)
         }
         if (matches.isNotEmpty()) {
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 matches.forEach { name -> AssistChip(onClick = { vm.setHeader(HeaderField.SELLER, name) }, label = { Text(name) }) }
             }
         }
@@ -592,156 +664,327 @@ private fun HeaderSection(
     }
 }
 
+/** Key of the header's row (supplier, date, number, totals). */
+private const val HEADER = "header"
+
+/** The fixed parts of the review list, by row key (see [ReviewRow]). */
+@Composable
+private fun TopPart(
+    key: String,
+    state: ReviewState,
+    vm: ReviewViewModel,
+    sellerNames: List<String>,
+    flash: Long?,
+    onViewOriginal: () -> Unit,
+    onPickDate: () -> Unit,
+) {
+    when (key) {
+        "preview" -> {
+            val path = state.filePath
+            val mime = state.mimeType
+            if (path != null && mime != null) {
+                Panel {
+                    DocumentPages(path, mime, state.pageCount, Modifier.fillMaxWidth().height(220.dp), onClick = onViewOriginal)
+                    TextButton(onClick = onViewOriginal, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) {
+                        Icon(Icons.Filled.OpenInFull, contentDescription = null)
+                        Spacer(Modifier.width(8.dp))
+                        Text(stringResource(R.string.view_original_full))
+                    }
+                }
+            }
+        }
+        "status" -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) { StatusBanner(state) }
+        "aiCheck" -> state.draft.aiCheck?.let { c ->
+            Text(pluralStringResource(R.plurals.ai_check_ok, c.checked, c.checked), color = LocalStatusColors.current.ok, style = MaterialTheme.typography.bodyMedium)
+        }
+        "reasons" -> ReasonsCard(state)
+        "errors" -> WarningCard(listOf(stringResource(R.string.fix_errors, state.errors.size)))
+        "saveError" -> state.saveError?.let { err -> WarningCard(listOf(stringResource(R.string.save_failed, err))) }
+        "warnings" -> WarningCard(state.draft.warnings.map { warningText(it) })
+        HEADER -> FlashPanel(flash = flash, needsLook = state.draft.headerNeedsLook(state.errors)) {
+            Box(Modifier.padding(12.dp)) { HeaderSection(state.draft, state.errors, sellerNames, vm, onPickDate) }
+        }
+        // What kind of document this is decides where it counts (a credit note is subtracted from spending):
+        // shown before saving, one tap to change.
+        "kind" -> KindRow(state.kind, vm::setKind)
+        "itemsTitle" -> {
+            val n = state.draft.items.size
+            val open = state.draft.items.count { it.needsLook(state.errors, state.draft.lotsPrinted) }
+            Column {
+                SectionTitle(pluralStringResource(R.plurals.items_title, n, n))
+                if (n > 0) {
+                    Text(
+                        if (open == 0) stringResource(R.string.lines_all_fine) else pluralStringResource(R.plurals.lines_to_check, open, open),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = if (open == 0) LocalStatusColors.current.ok else LocalStatusColors.current.uncertainBorder,
+                    )
+                }
+            }
+        }
+        "noItems" -> EmptyState(stringResource(R.string.no_items_hint))
+        "addItem" -> OutlinedButton(onClick = vm::addItem, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+            Icon(Icons.Filled.Add, contentDescription = null)
+            Spacer(Modifier.width(8.dp))
+            Text(stringResource(R.string.add_item))
+        }
+        "prices" -> PriceChangesCard(state.priceChanges)
+        "recognised" -> state.recognisedText?.let { t -> RecognisedTextCard(t) }
+        else -> Spacer(Modifier.height(8.dp))
+    }
+}
+
+/**
+ * A card that shows whether it needs a look (orange edge) and blinks once when "Next to check" or Save brings it
+ * into view ([flash] changes each time).
+ */
+@Composable
+private fun FlashPanel(flash: Long?, needsLook: Boolean, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val glow = remember { androidx.compose.animation.core.Animatable(0f) }
+    LaunchedEffect(flash) {
+        if (flash == null) return@LaunchedEffect
+        glow.snapTo(1f)
+        glow.animateTo(0f, androidx.compose.animation.core.tween(durationMillis = 1400, easing = androidx.compose.animation.core.FastOutSlowInEasing))
+    }
+    val status = LocalStatusColors.current
+    val edge by androidx.compose.animation.animateColorAsState(
+        if (needsLook) Palette.OrangeDim else Palette.Hairline, androidx.compose.animation.core.tween(400), label = "edge",
+    )
+    val border = androidx.compose.ui.graphics.lerp(edge, Palette.PhthaloBright, glow.value)
+    Card(
+        modifier = modifier.fillMaxWidth().animateContentSize(),
+        shape = MaterialTheme.shapes.medium,
+        colors = androidx.compose.material3.CardDefaults.cardColors(containerColor = Palette.Panel, contentColor = MaterialTheme.colorScheme.onSurface),
+        border = androidx.compose.foundation.BorderStroke(if (glow.value > 0f) 2.dp else 1.dp, border),
+    ) {
+        Box(Modifier.fillMaxWidth().drawBehind { if (glow.value > 0f) drawRect(status.ok.copy(alpha = 0.10f * glow.value)) }) { content() }
+    }
+}
+
+/** Lines in a row that check out, folded: "12 lines check out · 234,50 €", a tap shows them. */
+@Composable
+private fun CheckedGroup(row: GroupRow, onToggle: () -> Unit, modifier: Modifier = Modifier) {
+    val status = LocalStatusColors.current
+    val turn by androidx.compose.animation.core.animateFloatAsState(if (row.open) 180f else 0f, label = "chevron")
+    Surface(
+        onClick = onToggle,
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = Palette.Phthalo.copy(alpha = 0.35f),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Palette.PhthaloBorder.copy(alpha = 0.6f)),
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = status.ok)
+            Spacer(Modifier.width(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(pluralStringResource(R.plurals.lines_check_out, row.keys.size, row.keys.size), style = MaterialTheme.typography.titleSmall)
+                Text(
+                    stringResource(if (row.open) R.string.lines_tap_to_fold else R.string.lines_tap_to_see),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            row.totalCents?.let { Text(ItalianNumbers.formatCents(it), style = MaterialTheme.typography.titleSmall) }
+            Icon(
+                Icons.Filled.ExpandMore, contentDescription = null,
+                modifier = Modifier.padding(start = 8.dp).graphicsLayer { rotationZ = turn },
+            )
+        }
+    }
+}
+
+/** One line that checks out, in one row: name, "2 pz × 5,00", lot, amount. A tap opens it in full. */
+@Composable
+private fun CompactLine(item: LineItemDraft, onOpen: () -> Unit, modifier: Modifier = Modifier) {
+    Surface(
+        onClick = onOpen,
+        modifier = modifier.fillMaxWidth().heightIn(min = 56.dp).padding(start = 12.dp),
+        shape = MaterialTheme.shapes.small,
+        color = Palette.Panel,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Palette.Hairline),
+    ) {
+        Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f)) {
+                Text(item.description.text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                val detail = listOfNotNull(
+                    listOf(item.quantity.text, item.unit.text).filter { it.isNotBlank() }.joinToString(" ").takeIf { it.isNotBlank() }
+                        ?.let { q -> item.unitPrice.text.takeIf { it.isNotBlank() }?.let { "$q × $it" } ?: q },
+                    item.lot.text.takeIf { it.isNotBlank() }?.let { stringResource(R.string.lots_lot, it) },
+                ).joinToString(" · ")
+                if (detail.isNotEmpty()) {
+                    Text(detail, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+            }
+            Spacer(Modifier.width(8.dp))
+            Text(item.lineTotal.text, style = MaterialTheme.typography.titleSmall)
+        }
+    }
+}
+
 @Composable
 private fun ItemCard(
     item: LineItemDraft,
     lotsPrinted: Boolean,
     errors: Map<String, com.kitchenreceipts.core.ErrorCode>,
+    needsLook: Boolean,
+    flash: Long?,
     onChange: (ItemField, String) -> Unit,
     onConfirm: (ItemField) -> Unit,
     onUseComputed: () -> Unit,
     onPickProduct: () -> Unit,
     onRemove: () -> Unit,
     onPickChoice: (LineChoice) -> Unit = {},
+    /** Folds a line that checks out back into the lines that are fine; null while it needs a look. */
+    onFold: (() -> Unit)? = null,
+    modifier: Modifier = Modifier,
 ) {
     val status = LocalStatusColors.current
-    if (item.isCharge) {
-        // A discount or charge: part of the document's total, never a product (no quantity, unit or price history).
-        Panel {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Row(verticalAlignment = Alignment.Top) {
-                    ItemInput(item, errors, onChange, onConfirm, ItemField.DESCRIPTION, R.string.description_on_document, Modifier.weight(1f))
-                    IconButton(onClick = onRemove, modifier = Modifier.size(56.dp)) {
-                        Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.remove_item))
-                    }
-                }
-                Text(stringResource(R.string.charge_line_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ItemInput(item, errors, onChange, onConfirm, ItemField.LINE_TOTAL, R.string.line_total, Modifier.weight(1f), FieldKind.DECIMAL)
-                    ItemInput(item, errors, onChange, onConfirm, ItemField.VAT_RATE, R.string.vat_rate, Modifier.weight(0.6f), FieldKind.DECIMAL, optional = true)
-                }
-                TextButton(onClick = onPickProduct, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.charge_line_is_product)) }
+    FlashPanel(flash = flash, needsLook = needsLook, modifier = modifier) {
+    Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // A line checked: said, with one tap to fold it away.
+        AnimatedVisibility(visible = onFold != null) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = status.ok, modifier = Modifier.size(20.dp))
+                Spacer(Modifier.width(6.dp))
+                Text(stringResource(R.string.line_checks_out), color = status.ok, style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
+                TextButton(onClick = { onFold?.invoke() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.line_fold)) }
             }
         }
-        return
-    }
-    Panel {
-        Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Row(verticalAlignment = Alignment.Top) {
-                ItemInput(item, errors, onChange, onConfirm, ItemField.DESCRIPTION, R.string.description_on_document, Modifier.weight(1f))
-                IconButton(onClick = onRemove, modifier = Modifier.size(56.dp)) {
-                    Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.remove_item))
-                }
+        Row(verticalAlignment = Alignment.Top) {
+            ItemInput(item, errors, onChange, onConfirm, ItemField.DESCRIPTION, R.string.description_on_document, Modifier.weight(1f))
+            IconButton(onClick = onRemove, modifier = Modifier.size(56.dp)) {
+                Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.remove_item))
             }
-            // Product link: chosen by the app only when safe (remembered / recognised / new), always shown and changeable.
-            val linkedName = item.productName
-            val newName = item.newProductName
-            val productLabel = when {
-                linkedName != null -> stringResource(R.string.product_is, linkedName)
-                newName != null -> stringResource(R.string.new_product_is, newName)
-                else -> stringResource(R.string.assign_product)
-            }
-            AssistChip(
-                onClick = onPickProduct,
-                label = { Text(productLabel, maxLines = 1) },
-                leadingIcon = { Icon(Icons.Filled.Inventory2, contentDescription = null) },
-                modifier = Modifier.heightIn(min = 48.dp),
-            )
-            item.productSource?.let { src ->
-                Text(
-                    stringResource(
-                        when (src) {
-                            ProductSource.REMEMBERED -> R.string.product_remembered
-                            ProductSource.RECOGNISED -> R.string.product_recognised
-                            ProductSource.NEW -> R.string.product_new
-                        },
-                    ) + ((linkedName ?: newName)?.let { " · " + categoryLabel(Categories.guess(it)) } ?: ""),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-            if (newName != null) {
-                item.newProductBrand?.let { b -> Text(stringResource(R.string.brand_is, b), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
-                // Abbreviations the app could not write out: the operator's name for them is learned on save.
-                if (item.nameUnknown.isNotEmpty()) {
-                    Text(stringResource(R.string.name_unknown, item.nameUnknown.joinToString(", ")), style = MaterialTheme.typography.bodySmall, color = status.uncertainBorder)
-                }
-            }
-            // What the page's own codes say about the line ("Storage: F (fresco)"), read from its legend.
-            if (item.marks.isNotEmpty()) {
-                Text(marksLine(item.marks), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
+        }
+        if (item.isCharge) {
+            // A discount or charge: part of the document's total, never a product (no quantity, unit or price history).
+            Text(stringResource(R.string.charge_line_note), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ItemInput(item, errors, onChange, onConfirm, ItemField.QUANTITY, R.string.quantity, Modifier.weight(1f), FieldKind.DECIMAL)
-                ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT, R.string.unit, Modifier.weight(1f))
-            }
-            if (item.unit.isMissing || Units.normalizeKnown(item.unit.text) == null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    listOf("kg", "pz", "conf", "l").forEach { u ->
-                        AssistChip(onClick = { onChange(ItemField.UNIT, u) }, label = { Text(u) })
-                    }
-                }
-            }
-            // "4 pz × 500 g = 2 kg": what the packs hold, for inventory and price comparisons.
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                ItemInput(item, errors, onChange, onConfirm, ItemField.PACK_SIZE, R.string.pack_size, Modifier.weight(1f), FieldKind.TEXT, optional = true)
-                item.packTotal()?.let { (amount, u) ->
-                    Text(
-                        stringResource(R.string.pack_total, ItalianNumbers.formatDecimal(amount, maxScale = 3), u),
-                        style = MaterialTheme.typography.bodyMedium,
-                        modifier = Modifier.weight(1f),
-                    )
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT_PRICE, R.string.unit_price, Modifier.weight(1f), FieldKind.DECIMAL)
-                // The discount printed on the line ("30", "10+5"): quantity x price less it is the amount.
-                ItemInput(item, errors, onChange, onConfirm, ItemField.DISCOUNT, R.string.discount_percent, Modifier.weight(0.7f), FieldKind.CODE, optional = true)
                 ItemInput(item, errors, onChange, onConfirm, ItemField.LINE_TOTAL, R.string.line_total, Modifier.weight(1f), FieldKind.DECIMAL)
-            }
-            // The numbers add up in more than one way: one tap picks the right reading (remembered for this supplier).
-            if (item.choices.size >= 2) {
-                Text(stringResource(R.string.choice_title), style = MaterialTheme.typography.bodyMedium, color = status.uncertainBorder)
-                item.choices.forEachIndexed { i, ch ->
-                    val qty = ItalianNumbers.formatDecimal(ch.quantity, maxScale = 4) + (ch.unit?.let { " $it" } ?: "")
-                    val text = stringResource(
-                        R.string.choice_option, qty, ItalianNumbers.formatDecimal(ch.unitPrice, minScale = 2, maxScale = 4),
-                        ItalianNumbers.formatCents(ch.lineTotalCents),
-                    ) + if (i == 0 && ItalianNumbers.parse(item.quantity.text)?.compareTo(ch.quantity) == 0) " · " + stringResource(R.string.choice_suggested) else ""
-                    OutlinedButton(onClick = { onPickChoice(ch) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(text) }
-                }
-            }
-            // qty x price hint: offered, never applied without a tap.
-            val computed = item.computedTotalCents()
-            // (A missing amount gets qty x price offered under the field itself, with the other replacements.)
-            if (item.addsUp() == false) {
-                Text(
-                    stringResource(R.string.line_mismatch, ItalianNumbers.formatCents(computed ?: 0)),
-                    color = status.uncertainBorder,
-                    style = MaterialTheme.typography.bodyMedium,
-                )
-                // One tap when the amount is the misread number (the operator decides; nothing is applied by itself).
-                if (computed != null) {
-                    androidx.compose.material3.AssistChip(
-                        onClick = onUseComputed,
-                        label = { Text(stringResource(R.string.use_computed_total, ItalianNumbers.formatCents(computed))) },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    )
-                }
-            }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                // A document that prints no lots at all: an empty lot is normal, not something to fill in.
-                ItemInput(
-                    item, errors, onChange, onConfirm, ItemField.LOT, R.string.lot, Modifier.weight(1f), FieldKind.CODE,
-                    missingHint = stringResource(R.string.lot_missing_hint), optional = !lotsPrinted,
-                )
                 ItemInput(item, errors, onChange, onConfirm, ItemField.VAT_RATE, R.string.vat_rate, Modifier.weight(0.6f), FieldKind.DECIMAL, optional = true)
             }
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                ItemInput(item, errors, onChange, onConfirm, ItemField.PACKAGES, R.string.packages, Modifier.weight(0.6f), FieldKind.CODE, optional = true)
-                ItemInput(item, errors, onChange, onConfirm, ItemField.EXPIRY, R.string.expiry, Modifier.weight(1f), kind = FieldKind.DATE, optional = true)
+            TextButton(onClick = onPickProduct, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.charge_line_is_product)) }
+        } else {
+        // Product link: chosen by the app only when safe (remembered / recognised / new), always shown and changeable.
+        val linkedName = item.productName
+        val newName = item.newProductName
+        val productLabel = when {
+            linkedName != null -> stringResource(R.string.product_is, linkedName)
+            newName != null -> stringResource(R.string.new_product_is, newName)
+            else -> stringResource(R.string.assign_product)
+        }
+        AssistChip(
+            onClick = onPickProduct,
+            label = { Text(productLabel, maxLines = 1, overflow = TextOverflow.Ellipsis) },
+            leadingIcon = { Icon(Icons.Filled.Inventory2, contentDescription = null) },
+            modifier = Modifier.heightIn(min = 48.dp),
+        )
+        item.productSource?.let { src ->
+            Text(
+                stringResource(
+                    when (src) {
+                        ProductSource.REMEMBERED -> R.string.product_remembered
+                        ProductSource.RECOGNISED -> R.string.product_recognised
+                        ProductSource.NEW -> R.string.product_new
+                    },
+                ) + ((linkedName ?: newName)?.let { " · " + categoryLabel(Categories.guess(it)) } ?: ""),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        if (newName != null) {
+            item.newProductBrand?.let { b -> Text(stringResource(R.string.brand_is, b), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant) }
+            // Abbreviations the app could not write out: the operator's name for them is learned on save.
+            if (item.nameUnknown.isNotEmpty()) {
+                Text(stringResource(R.string.name_unknown, item.nameUnknown.joinToString(", ")), style = MaterialTheme.typography.bodySmall, color = status.uncertainBorder)
             }
         }
+        // What the page's own codes say about the line ("Storage: F (fresco)"), read from its legend.
+        if (item.marks.isNotEmpty()) {
+            Text(marksLine(item.marks), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ItemInput(item, errors, onChange, onConfirm, ItemField.QUANTITY, R.string.quantity, Modifier.weight(1f), FieldKind.DECIMAL)
+            ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT, R.string.unit, Modifier.weight(0.8f))
+        }
+        if (item.unit.isMissing || Units.normalizeKnown(item.unit.text) == null) {
+            Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("kg", "pz", "conf", "l").forEach { u ->
+                    AssistChip(onClick = { onChange(ItemField.UNIT, u) }, label = { Text(u) })
+                }
+            }
+        }
+        // Two wide fields: a value with a ✓ to tap and its note under it stay readable on a phone.
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            ItemInput(item, errors, onChange, onConfirm, ItemField.UNIT_PRICE, R.string.unit_price, Modifier.weight(1f), FieldKind.DECIMAL)
+            ItemInput(item, errors, onChange, onConfirm, ItemField.LINE_TOTAL, R.string.line_total, Modifier.weight(1f), FieldKind.DECIMAL)
+        }
+        // The numbers add up in more than one way: one tap picks the right reading (remembered for this supplier).
+        if (item.choices.size >= 2) {
+            Text(stringResource(R.string.choice_title), style = MaterialTheme.typography.bodyMedium, color = status.uncertainBorder)
+            item.choices.forEachIndexed { i, ch ->
+                val qty = ItalianNumbers.formatDecimal(ch.quantity, maxScale = 4) + (ch.unit?.let { " $it" } ?: "")
+                val text = stringResource(
+                    R.string.choice_option, qty, ItalianNumbers.formatDecimal(ch.unitPrice, minScale = 2, maxScale = 4),
+                    ItalianNumbers.formatCents(ch.lineTotalCents),
+                ) + if (i == 0 && ItalianNumbers.parse(item.quantity.text)?.compareTo(ch.quantity) == 0) " · " + stringResource(R.string.choice_suggested) else ""
+                OutlinedButton(onClick = { onPickChoice(ch) }, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(text) }
+            }
+        }
+        // qty x price hint: offered, never applied without a tap.
+        val computed = item.computedTotalCents()
+        if (item.addsUp() == false) {
+            Text(
+                stringResource(R.string.line_mismatch, ItalianNumbers.formatCents(computed ?: 0)),
+                color = status.uncertainBorder,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            if (computed != null) {
+                AssistChip(
+                    onClick = onUseComputed,
+                    label = { Text(stringResource(R.string.use_computed_total, ItalianNumbers.formatCents(computed))) },
+                    modifier = Modifier.heightIn(min = 48.dp),
+                )
+            }
+        }
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            // A document that prints no lots at all: an empty lot is normal, not something to fill in.
+            ItemInput(
+                item, errors, onChange, onConfirm, ItemField.LOT, R.string.lot, Modifier.weight(1f), FieldKind.CODE,
+                missingHint = stringResource(R.string.lot_missing_hint), optional = !lotsPrinted,
+            )
+            ItemInput(item, errors, onChange, onConfirm, ItemField.VAT_RATE, R.string.vat_rate, Modifier.weight(0.6f), FieldKind.DECIMAL, optional = true)
+        }
+        // Pack size, discount, packages and expiry: shown when they hold something or need a look, else one tap away.
+        val extras = listOf(ItemField.PACK_SIZE, ItemField.DISCOUNT, ItemField.PACKAGES, ItemField.EXPIRY)
+        val used = extras.any { f -> item.field(f).let { !it.isMissing || it.uncertain } || errors.containsKey(ReviewViewModel.itemErrorKey(item.key, f.key)) }
+        var more by rememberSaveable(item.key) { mutableStateOf(false) }
+        AnimatedVisibility(visible = used || more) {
+            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                // "4 pz × 500 g = 2 kg": what the packs hold, for inventory and price comparisons.
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    ItemInput(item, errors, onChange, onConfirm, ItemField.PACK_SIZE, R.string.pack_size, Modifier.weight(1f), FieldKind.TEXT, optional = true)
+                    Box(Modifier.weight(1f)) {
+                        item.packTotal()?.let { (amount, u) ->
+                            Text(stringResource(R.string.pack_total, ItalianNumbers.formatDecimal(amount, maxScale = 3), u), style = MaterialTheme.typography.bodyMedium)
+                        }
+                    }
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    // The discount printed on the line ("30", "10+5"): quantity x price less it is the amount.
+                    ItemInput(item, errors, onChange, onConfirm, ItemField.DISCOUNT, R.string.discount_short, Modifier.weight(1f), FieldKind.CODE, optional = true)
+                    ItemInput(item, errors, onChange, onConfirm, ItemField.PACKAGES, R.string.packages, Modifier.weight(1f), FieldKind.CODE, optional = true)
+                }
+                ItemInput(item, errors, onChange, onConfirm, ItemField.EXPIRY, R.string.expiry, Modifier.fillMaxWidth(), kind = FieldKind.DATE, optional = true)
+            }
+        }
+        if (!used) {
+            val turn by androidx.compose.animation.core.animateFloatAsState(if (more) 180f else 0f, label = "more")
+            TextButton(onClick = { more = !more }, modifier = Modifier.heightIn(min = 48.dp)) {
+                Text(stringResource(if (more) R.string.fewer_details else R.string.more_details))
+                Icon(Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.graphicsLayer { rotationZ = turn })
+            }
+        }
+        }
+    }
     }
 }
 
@@ -754,24 +997,46 @@ private fun SaveBar(uncertain: Int, open: Int, errors: Int, saving: Boolean, onS
             Modifier.fillMaxWidth().navigationBarsPadding().padding(horizontal = 16.dp, vertical = 10.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f)) {
-                when {
-                    errors > 0 -> Text(pluralStringResource(R.plurals.errors_count, errors, errors), color = MaterialTheme.colorScheme.error)
-                    uncertain > 0 -> Text(pluralStringResource(R.plurals.values_to_check_short, uncertain, uncertain), color = LocalStatusColors.current.uncertainBorder)
-                    // "All checked" only when nothing else is wrong either (the lines add up, date and total are there...).
-                    open > 0 -> Text(pluralStringResource(R.plurals.things_to_look_at, open, open), color = LocalStatusColors.current.uncertainBorder)
-                    else -> Text(stringResource(R.string.all_checked), color = LocalStatusColors.current.ok)
+            // The count changes as the operator checks values: it slides to the new one.
+            val label = when {
+                errors > 0 -> 0 to errors
+                uncertain > 0 -> 1 to uncertain
+                // "All checked" only when nothing else is wrong either (the lines add up, date and total are there...).
+                open > 0 -> 2 to open
+                else -> 3 to 0
+            }
+            androidx.compose.animation.AnimatedContent(
+                label,
+                modifier = Modifier.weight(1f),
+                transitionSpec = {
+                    (androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn()) togetherWith
+                        (androidx.compose.animation.slideOutVertically { -it } + androidx.compose.animation.fadeOut())
+                },
+                label = "saveStatus",
+            ) { (kind, n) ->
+                when (kind) {
+                    0 -> Text(pluralStringResource(R.plurals.errors_count, n, n), color = MaterialTheme.colorScheme.error)
+                    1 -> Text(pluralStringResource(R.plurals.values_to_check_short, n, n), color = LocalStatusColors.current.uncertainBorder)
+                    2 -> Text(pluralStringResource(R.plurals.things_to_look_at, n, n), color = LocalStatusColors.current.uncertainBorder)
+                    else -> Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = LocalStatusColors.current.ok, modifier = Modifier.size(20.dp))
+                        Spacer(Modifier.width(6.dp))
+                        Text(stringResource(R.string.all_checked), color = LocalStatusColors.current.ok)
+                    }
                 }
             }
             Button(onClick = onSave, enabled = !saving, modifier = Modifier.heightIn(min = 56.dp)) {
-                Icon(Icons.Filled.Save, contentDescription = null)
+                if (saving) {
+                    androidx.compose.material3.CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onPrimary)
+                } else {
+                    Icon(Icons.Filled.Save, contentDescription = null)
+                }
                 Spacer(Modifier.width(8.dp))
                 Text(stringResource(R.string.save), style = MaterialTheme.typography.titleMedium)
             }
         }
     } }
 }
-
 /** Replacements of the doubtful values on screen, by field key (see core Replacements). */
 // Not static: a change of the replacements recomposes only the fields that read them, not the whole screen.
 private val LocalReplacements = androidx.compose.runtime.compositionLocalOf<Map<String, List<String>>> { emptyMap() }

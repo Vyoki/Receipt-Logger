@@ -283,6 +283,12 @@ object ReceiptParser {
         return ParseWarning.ITEMS_SUM_MISMATCH !in d.warnings && ParseWarning.VAT_GROUP_MISMATCH !in d.warnings
     }
 
+    /** Marks the source of a quantity that was not printed but worked out as amount / price. */
+    const val WORKED_OUT = "(amount / price)"
+
+    /** Marks the source of a price taken as the amount of one piece (no price printed). */
+    const val FROM_AMOUNT = "(price = amount of 1)"
+
     /** Quantity x price = amount with a whole quantity, price and amount read with confidence: the quantity was worked out. */
     fun workedOut(it: ParsedLineItem): Boolean {
         val q = it.quantity ?: return false
@@ -661,10 +667,11 @@ object ReceiptParser {
             return if (byLines && byPayment) total.copy(confidence = Confidence.HIGH) else total
         }
         fun close(a: Long, b: Long, tol: Long = 1) = kotlin.math.abs(a - b) <= tol
-        if (subtotal != null && vat != null && close(subtotal.value + vat.value, t)) return total
-        if (itemsSum != null && close(itemsSum, t, tolerance)) return total
-        if (itemsSum != null && vat != null && close(itemsSum + vat.value, t, tolerance)) return total
-        if (groups.isNotEmpty() && close(groups.sumOf { it.taxableCents + it.vatCents }, t, groups.size.toLong())) return total
+        // Proof is to the cent: a total a few cents off what the lines add up to is a misread digit, not a proof.
+        if (subtotal != null && vat != null && totalsAddUp(subtotal.value, vat.value, t)) return total
+        if (itemsSum != null && itemsSum == t) return total
+        if (itemsSum != null && vat != null && itemsSum + vat.value == t) return total
+        if (groups.isNotEmpty() && groups.sumOf { it.taxableCents + it.vatCents } == t) return total
         val lines = text.lines()
         val amounts = lines.map { lastAmountCents(it) }
         // Paid with exactly the total, or cash given minus change.
@@ -733,8 +740,8 @@ object ReceiptParser {
             fun close(a: Long, b: Long) = kotlin.math.abs(a - b) <= 1
             val groupsVat = groups.takeIf { it.isNotEmpty() }?.sumOf { it.vatCents }
             when {
-                // subtotal + VAT = total: all three confirm each other.
-                close(s0.value + v0.value, t0.value) -> {
+                // subtotal + VAT = total, to the cent: all three confirm each other.
+                totalsAddUp(s0.value, v0.value, t0.value) -> {
                     total = t0.copy(confidence = Confidence.HIGH); vat = v0.copy(confidence = Confidence.HIGH); subtotal = s0.copy(confidence = Confidence.HIGH)
                 }
                 // VAT included in the prices ("di cui IVA", subtotal = total): the VAT is not added on top.
@@ -1364,6 +1371,7 @@ object ReceiptParser {
         var totalCents: Long? = null
         val values = nums.map { it.value }
         var consistent = false
+        var priceFromAmount = false
 
         when {
             qty != null -> when (values.size) {
@@ -1375,8 +1383,9 @@ object ReceiptParser {
             values.size == 2 -> {
                 qty = values[0]
                 if (hasTimes) price = values[1] else totalCents = ItalianNumbers.toCents(values[1])
-                // One piece: its price is the amount ("ZUCCHERO KG 1  3,88" has no other reading of the price).
-                if (!hasTimes && qty.compareTo(BigDecimal.ONE) == 0) price = values[1]
+                // One piece: its price is the amount ("ZUCCHERO KG 1  3,88" has no other reading of the price). Nothing
+                // checks it (a 7 read as 1 gives the same amount), so the price stays to be checked.
+                if (!hasTimes && qty.compareTo(BigDecimal.ONE) == 0) { price = values[1]; priceFromAmount = true }
             }
             else -> {
                 val last3 = values.takeLast(3)
@@ -1392,7 +1401,8 @@ object ReceiptParser {
                 // Some layouts print price before quantity (no header to tell): a whole number after a price with decimals is the quantity.
                 // Not when the headings say the order, nor for a weight (3 decimals on a kg/l line: "KG 3,115 1,00").
                 val weight = last3[0].scale() == 3 && unit in setOf("kg", "l")
-                if (!priceFirst && !orderKnown && !weight && isWholeNumber(last3[1]) && !isWholeNumber(last3[0]) && last3[0].scale() >= 2 &&
+                // Only a number printed without decimals counts as whole here: "3,00" is a price as much as a quantity.
+                if (!priceFirst && !orderKnown && !weight && last3[1].scale() <= 0 && isWholeNumber(last3[1]) && !isWholeNumber(last3[0]) && last3[0].scale() >= 2 &&
                     matches(last3[0], last3[1], ItalianNumbers.toCents(last3[2])) && qty!!.compareTo(last3[0]) == 0
                 ) {
                     val tmp = qty; qty = price; price = tmp
@@ -1455,9 +1465,9 @@ object ReceiptParser {
         val totalConf = if (consistent || (qty == null && price == null)) Confidence.HIGH else conf
         return ParsedLineItem(
             originalDescription = description,
-            quantity = qty?.let { Extracted(it, qtyConf, line) },
+            quantity = qty?.let { Extracted(it, qtyConf, if (qtyWorkedOut) "$line $WORKED_OUT" else line) },
             unit = unit?.let { Extracted(it, if (consistent) Confidence.HIGH else Confidence.LOW, line) },
-            unitPrice = price?.let { Extracted(it, conf, line) },
+            unitPrice = price?.let { if (priceFromAmount) Extracted(it, Confidence.LOW, "$line $FROM_AMOUNT") else Extracted(it, conf, line) },
             lineTotalCents = totalCents?.let { Extracted(it, totalConf, line) },
             vatRatePercent = rate?.let { Extracted(it, Confidence.HIGH, line) },
             lotNumber = null,

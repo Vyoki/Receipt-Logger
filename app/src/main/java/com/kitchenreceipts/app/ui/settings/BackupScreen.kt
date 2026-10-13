@@ -82,10 +82,18 @@ fun BackupScreen(onBack: () -> Unit) {
     val notBackup = stringResource(R.string.backup_not_a_backup)
     val damaged = stringResource(R.string.backup_damaged)
     val tooNew = stringResource(R.string.backup_too_new)
-    val madeFmt = stringResource(R.string.backup_made)
+    val retype = stringResource(R.string.backup_retype_password)
+    val res = androidx.compose.ui.platform.LocalContext.current.resources
 
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
+        // The password is never kept outside the screen: if Android closed the screen while the file was being
+        // chosen, it is gone. The empty file just made goes, and the password is asked again.
+        if (password.length < Backup.MIN_PASSWORD) {
+            runCatching { android.provider.DocumentsContract.deleteDocument(context.contentResolver, uri) }
+            error = retype
+            return@rememberLauncherForActivityResult
+        }
         busy = true
         val chars = password.toCharArray()
         scope.launch {
@@ -93,7 +101,7 @@ fun BackupScreen(onBack: () -> Unit) {
                 val made = c.backup.create(uri, chars)
                 password = ""; again = ""
                 last = c.settings.lastBackupAt
-                snackbar.showSnackbar(String.format(madeFmt, made.documents, Formatter.formatShortFileSize(context, made.bytes)))
+                snackbar.showSnackbar(res.getQuantityString(R.plurals.backup_made, made.documents, made.documents, Formatter.formatShortFileSize(context, made.bytes)))
             } catch (e: Exception) {
                 c.log.error("backup", e)
                 error = failed

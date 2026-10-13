@@ -201,7 +201,7 @@ object LineSolver {
         val note = r.repaired?.let { "$source (read ${it.substringBefore(" →")}, repaired: ${it.substringAfter("→ ")})" } ?: source
         return item.copy(
             originalDescription = desc.ifBlank { item.originalDescription },
-            quantity = Extracted(r.quantity, conf(r.quantity, printed || fixed?.compareTo(r.quantity) == 0), if (printed || r.repaired != null) note else "$source (amount / price)"),
+            quantity = Extracted(r.quantity, conf(r.quantity, printed || fixed?.compareTo(r.quantity) == 0), if (printed || r.repaired != null) note else "$source ${ReceiptParser.WORKED_OUT}"),
             unitPrice = Extracted(r.unitPrice, conf(r.unitPrice, true), note),
             lineTotalCents = Extracted(r.lineTotalCents, conf(ItalianNumbers.centsToDecimal(r.lineTotalCents), true), note),
             unit = unit?.let { Extracted(it, Confidence.HIGH, source) },

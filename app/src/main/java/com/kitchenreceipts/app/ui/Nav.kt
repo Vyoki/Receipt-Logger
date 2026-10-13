@@ -64,6 +64,11 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
     val back: () -> Unit = {
         if (nav.currentBackStackEntry?.lifecycle?.currentState == androidx.lifecycle.Lifecycle.State.RESUMED) nav.popBackStack()
     }
+    // A fast double tap opens a screen once: only the screen on top (fully shown) may open another. Two review screens
+    // of one document would each keep a draft and could save it twice.
+    fun resumed() = nav.currentBackStackEntry?.lifecycle?.currentState == androidx.lifecycle.Lifecycle.State.RESUMED
+    val go: (String) -> Unit = { r -> if (resumed()) nav.navigate(r) }
+    fun goWith(r: String, options: androidx.navigation.NavOptionsBuilder.() -> Unit) { if (resumed()) nav.navigate(r, options) }
     // Screens opened from a notification ("ready to check", "saved").
     val c = appContainer()
     val route by c.pendingRoute.collectAsState()
@@ -72,39 +77,53 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
         c.pendingRoute.value = null
         runCatching { nav.navigate(r) { launchSingleTop = true } }
     }
-    NavHost(navController = nav, startDestination = Routes.HOME) {
+    // Screens slide in a little and fade, and slide back out when closed: where the operator came from stays clear.
+    NavHost(
+        navController = nav,
+        startDestination = Routes.HOME,
+        enterTransition = {
+            androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) +
+                androidx.compose.animation.slideInHorizontally(androidx.compose.animation.core.tween(260)) { it / 8 }
+        },
+        exitTransition = { androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)) },
+        popEnterTransition = { androidx.compose.animation.fadeIn(androidx.compose.animation.core.tween(220)) },
+        popExitTransition = {
+            androidx.compose.animation.fadeOut(androidx.compose.animation.core.tween(160)) +
+                androidx.compose.animation.slideOutHorizontally(androidx.compose.animation.core.tween(260)) { it / 8 }
+        },
+    ) {
         composable(Routes.HOME) {
             HomeScreen(
-                onScan = { nav.navigate(Routes.CAPTURE) },
-                onDocuments = { nav.navigate(Routes.documents()) },
-                onProducts = { nav.navigate(Routes.PRODUCTS) },
-                onReports = { nav.navigate(Routes.REPORTS) },
-                onOpenDocument = { nav.navigate(Routes.document(it)) },
-                onSettings = { nav.navigate(Routes.SETTINGS) },
-                onInventory = { nav.navigate(Routes.INVENTORY) },
-                onReviewJob = { nav.navigate(Routes.review(it)) },
-                onBackup = { nav.navigate(Routes.BACKUP) },
-                onChecks = { nav.navigate(Routes.CHECKS) },
-                onLots = { nav.navigate(Routes.LOTS) },
-                onFoodCost = { nav.navigate(Routes.FOOD) },
-                onOrders = { nav.navigate(Routes.ORDERS) },
+                onScan = { go(Routes.CAPTURE) },
+                onDocuments = { go(Routes.documents()) },
+                onProducts = { go(Routes.PRODUCTS) },
+                onReports = { go(Routes.REPORTS) },
+                onOpenDocument = { go(Routes.document(it)) },
+                onSettings = { go(Routes.SETTINGS) },
+                onInventory = { go(Routes.INVENTORY) },
+                onReviewJob = { go(Routes.review(it)) },
+                onBackup = { go(Routes.BACKUP) },
+                onChecks = { go(Routes.CHECKS) },
+                onLots = { go(Routes.LOTS) },
+                onFoodCost = { go(Routes.FOOD) },
+                onOrders = { go(Routes.ORDERS) },
             )
         }
         composable(Routes.SETTINGS) {
-            SettingsScreen(onBack = back, onBackup = { nav.navigate(Routes.BACKUP) })
+            SettingsScreen(onBack = back, onBackup = { go(Routes.BACKUP) })
         }
         composable(Routes.CHECKS) {
             com.kitchenreceipts.app.ui.checks.ChecksScreen(
                 onBack = back,
-                onOpenDocument = { nav.navigate(Routes.document(it)) },
-                onOpenProduct = { nav.navigate(Routes.product(it)) },
+                onOpenDocument = { go(Routes.document(it)) },
+                onOpenProduct = { go(Routes.product(it)) },
             )
         }
         composable(Routes.LOTS) {
-            com.kitchenreceipts.app.ui.checks.LotsScreen(onBack = back, onOpenDocument = { nav.navigate(Routes.document(it)) })
+            com.kitchenreceipts.app.ui.checks.LotsScreen(onBack = back, onOpenDocument = { go(Routes.document(it)) })
         }
         composable(Routes.FOOD) {
-            com.kitchenreceipts.app.ui.food.FoodCostScreen(onBack = back, onOpenDish = { nav.navigate(Routes.recipe(it)) })
+            com.kitchenreceipts.app.ui.food.FoodCostScreen(onBack = back, onOpenDish = { go(Routes.recipe(it)) })
         }
         composable(Routes.RECIPE, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
             com.kitchenreceipts.app.ui.food.RecipeScreen(recipeId = entry.arguments!!.getLong("id"), onBack = back)
@@ -128,8 +147,8 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 documentId = null,
                 jobId = jobId,
                 onBack = back,
-                onViewOriginal = { nav.navigate(Routes.viewerForJob(jobId)) },
-                onSaved = { id, auto -> nav.navigate(Routes.document(id, auto)) { popUpTo(Routes.HOME) } },
+                onViewOriginal = { go(Routes.viewerForJob(jobId)) },
+                onSaved = { id, auto -> goWith(Routes.document(id, auto)) { popUpTo(Routes.HOME) } },
             )
         }
         composable(Routes.EDIT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
@@ -138,7 +157,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 documentId = id,
                 jobId = null,
                 onBack = back,
-                onViewOriginal = { nav.navigate(Routes.viewer(id)) },
+                onViewOriginal = { go(Routes.viewer(id)) },
                 onSaved = { _, _ -> nav.popBackStack() },
             )
         }
@@ -148,8 +167,8 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
         ) { entry ->
             val sellerId = entry.arguments!!.getLong("sellerId").takeIf { it > 0 }
             DocumentsScreen(
-                initialSellerId = sellerId, onBack = back, onOpen = { nav.navigate(Routes.document(it)) },
-                onSuppliers = if (sellerId == null) ({ nav.navigate(Routes.SELLERS) }) else null,
+                initialSellerId = sellerId, onBack = back, onOpen = { go(Routes.document(it)) },
+                onSuppliers = if (sellerId == null) ({ go(Routes.SELLERS) }) else null,
             )
         }
         composable(
@@ -164,10 +183,10 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 documentId = id,
                 autoSaved = entry.arguments!!.getBoolean("auto"),
                 onBack = back,
-                onEdit = { nav.navigate(Routes.edit(id)) },
-                onViewOriginal = { nav.navigate(Routes.viewer(id)) },
-                onOpenProduct = { nav.navigate(Routes.product(it)) },
-                onOpenDocument = { nav.navigate(Routes.document(it)) },
+                onEdit = { go(Routes.edit(id)) },
+                onViewOriginal = { go(Routes.viewer(id)) },
+                onOpenProduct = { go(Routes.product(it)) },
+                onOpenDocument = { go(Routes.document(it)) },
             )
         }
         composable(
@@ -180,24 +199,24 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             ViewerScreen(documentId = entry.arguments!!.getLong("id").takeIf { it > 0 }, jobId = entry.arguments!!.getString("job"), onBack = back)
         }
         composable(Routes.PRODUCTS) {
-            ProductsScreen(onBack = back, onOpen = { nav.navigate(Routes.product(it)) }, onOpenFamily = { nav.navigate(Routes.family(it)) })
+            ProductsScreen(onBack = back, onOpen = { go(Routes.product(it)) }, onOpenFamily = { go(Routes.family(it)) })
         }
         composable(Routes.PRODUCT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
             ProductDetailScreen(
                 productId = entry.arguments!!.getLong("id"),
                 onBack = back,
-                onOpenDocument = { nav.navigate(Routes.document(it)) },
-                onOpenFamily = { nav.navigate(Routes.family(it)) },
+                onOpenDocument = { go(Routes.document(it)) },
+                onOpenFamily = { go(Routes.family(it)) },
             )
         }
         composable(Routes.FAMILY, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->
-            FamilyScreen(familyId = entry.arguments!!.getLong("id"), onBack = back, onOpenProduct = { nav.navigate(Routes.product(it)) })
+            FamilyScreen(familyId = entry.arguments!!.getLong("id"), onBack = back, onOpenProduct = { go(Routes.product(it)) })
         }
         composable(Routes.SELLERS) {
-            SellersScreen(onBack = back, onOpenSeller = { nav.navigate(Routes.documents(it)) })
+            SellersScreen(onBack = back, onOpenSeller = { go(Routes.documents(it)) })
         }
         composable(Routes.INVENTORY) {
-            InventoryScreen(onBack = back, onOpenProduct = { nav.navigate(Routes.product(it)) })
+            InventoryScreen(onBack = back, onOpenProduct = { go(Routes.product(it)) })
         }
         composable(Routes.REPORTS) {
             ReportsScreen(onBack = back)
