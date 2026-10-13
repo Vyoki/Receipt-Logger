@@ -74,8 +74,18 @@ object SupplierProof {
         fun own(name: String) = ownName != null && (DuplicateDetector.normalizeSeller(name) ?: "").contains(ownName)
 
         // The phone already knows this VAT number: the name saved for it.
-        if (supplierVat != null) options.supplierByVat?.invoke(supplierVat)?.let { known ->
+        val lookup = options.supplierByVat
+        if (supplierVat != null) lookup?.invoke(supplierVat)?.let { known ->
             out += Source(Kind.REGISTRY, known, null, -1, "registry: $supplierVat", anchor = true)
+        } else if (lookup != null) {
+            // No valid number read (one digit misread on every page): the numbers one digit away that the phone knows.
+            // Only when they all lead to one supplier; two known suppliers one digit apart prove nothing.
+            val known = SellerProfiles.misreadVatNumbers(all, ownVat).flatMap { SellerProfiles.oneDigitRepairs(it) }
+                .filter { it != ownVat }.distinct().take(40).mapNotNull { v -> lookup(v)?.let { v to it } }
+            if (known.map { it.second.lowercase() }.distinct().size == 1) {
+                val (v, name) = known.first()
+                out += Source(Kind.REGISTRY, name, null, -1, "registry: $v (one digit misread)", anchor = true)
+            }
         }
 
         pages.take(4).forEachIndexed { p, page ->

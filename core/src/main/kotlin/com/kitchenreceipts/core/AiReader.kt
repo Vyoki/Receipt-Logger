@@ -492,6 +492,18 @@ object AiReader {
                         documentNumber = check(d.documentNumber, parsed.documentNumber, "number") { a, b -> docNumberKey(a) == docNumberKey(b) },
                         documentDate = check(d.documentDate, parsed.documentDate, "date") { a, b -> a == b },
                     )
+                    // A supplier not proven yet: the AI's reading of the letterhead is one more place, as for the
+                    // supplier question (two places that agree prove the name; "ABC" against the logo's "ABE").
+                    val proofNow = d.supplierProof
+                    val aiHeaderSeller = str(m, "seller")?.let { cleanText(it) }?.takeIf { it.count(Char::isLetter) >= 3 }
+                        ?.takeIf { s -> options.ownBusinessName?.let { own -> SellerProfiles.sameCompany(own, s) } != true }
+                    if (aiHeaderSeller != null && proofNow != null && d.sellerName?.confidence != Confidence.HIGH) {
+                        SupplierProof.withAi(proofNow, aiHeaderSeller)?.let { judged ->
+                            d = SupplierProof.applyResult(d, judged)
+                            // The AI's spelling taken: nothing left to offer (the other spellings stay offered).
+                            if (d.sellerName?.value?.let { sameName(it, aiHeaderSeller) } == true) headerRead.remove("seller")
+                        }
+                    }
                     // The AI spells the supplier differently, even where the OCR never saw its spelling ("ABC" for the
                     // OCR's "ABG"): one of the two is misread, so the name is looked at, with the AI's offered.
                     val aiSellerRead = headerRead["seller"]

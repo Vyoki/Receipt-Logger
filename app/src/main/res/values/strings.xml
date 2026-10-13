@@ -575,6 +575,8 @@
     <string name="warn_other_buyer">This e-invoice is addressed to another company (the buyer\'s VAT number is not yours).</string>
     <string name="reason_other_buyer">Addressed to another company.</string>
     <string name="reason_unusual_price">A price is 30% or more away from what you paid before: worth a look.</string>
+    <string name="warn_duplicate_page">The same page was photographed twice: it was read once. If a page of the document is missing, add its photo.</string>
+    <string name="reason_duplicate_page">The same page was photographed twice (a page may be missing).</string>
     <string name="reason_lots_missing">Some lines have no lot number, but this document prints lots.</string>
     <string name="vat_group_line">%1$s%%: lines %2$s, summary %3$s (difference %4$s)</string>
     <string name="pack_size">Pack size</string>

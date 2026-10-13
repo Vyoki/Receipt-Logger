@@ -52,14 +52,14 @@ object SellerProfiles {
 
     /** Valid Italian VAT numbers printed in [text], in order of appearance, without duplicates. */
     /** "O1234567897": letters the OCR reads for digits inside an 11-character number (the checksum still decides). */
-    private val DIGITS_WITH_SLIPS = Regex("(?<![A-Za-z0-9])[0-9OoIlS]{11}(?![A-Za-z0-9])")
+    private val DIGITS_WITH_SLIPS = Regex("(?<![A-Za-z0-9])[0-9OoIlSs]{11}(?![A-Za-z0-9])")
 
     internal fun repairDigits(text: String): String = repaired(text)
     private val repaired = Memo(256) { text: String -> repairDigitsNow(text) }
     private fun repairDigitsNow(text: String): String = DIGITS_WITH_SLIPS.replace(text) { m ->
         val v = m.value
         if (v.count(Char::isDigit) < 9 || v.all(Char::isDigit)) v
-        else v.map { c -> when (c) { 'O', 'o' -> '0'; 'I', 'l' -> '1'; 'S' -> '5'; else -> c } }.joinToString("")
+        else v.map { c -> when (c) { 'O', 'o' -> '0'; 'I', 'l' -> '1'; 'S', 's' -> '5'; else -> c } }.joinToString("")
     }
 
     fun vatNumbers(rawText: String): List<String> =
@@ -236,6 +236,26 @@ object SellerProfiles {
         val best = scored.maxBy { it.second }
         return if (best.second >= -1) best.first else null
     }
+
+    /** A line that labels a VAT number or the company's registration (where the supplier's number is printed). */
+    private val VAT_PLACE = rx("(?i)(p\\.?\\s?i?\\.?\\s?va\\b|partita|\\bc\\.?\\s?f\\b|\\brea\\b|reg\\.?\\s?imp)")
+
+    /**
+     * 11-digit numbers printed where a VAT number goes whose check digit fails: one digit misread (a 9 read as 5).
+     * Not the operator's own number, nor one of its slips.
+     */
+    fun misreadVatNumbers(documentText: String, ownVatNumber: String?): List<String> {
+        val own = ownVatNumber?.filter(Char::isDigit)
+        return repairDigits(documentText).lines().filter { VAT_PLACE.containsMatchIn(it) }
+            .flatMap { l -> VAT_BARE.findAll(l).map { it.groupValues[1] } }
+            .filter { !isValidPartitaIva(it) && (own == null || it.indices.count { i -> it[i] != own.getOrNull(i) } > 1) }
+            .distinct()
+    }
+
+    /** Every valid VAT number one digit away from [misread] (the check digit allows about one per position). */
+    fun oneDigitRepairs(misread: String): List<String> = misread.indices.flatMap { i ->
+        ('0'..'9').filter { it != misread[i] }.map { d -> misread.substring(0, i) + d + misread.substring(i + 1) }
+    }.filter(::isValidPartitaIva)
 
     private fun normalize(s: String): String =
         Normalizer.normalize(s, Normalizer.Form.NFD).replace(rx("\\p{M}+"), "")
