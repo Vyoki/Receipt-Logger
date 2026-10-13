@@ -20,15 +20,27 @@ object FieldLocator {
             LayoutRows.rows(lines).map { r -> Row(p, r, r.joinToString(" ") { it.text.trim() }) }
         }
         if (rows.isEmpty()) return null
-        // The row the value came from: most words of the source (or the value itself) in common.
+        // The row the value came from: most words of the source in common. A source that is not a printed row (the
+        // AI's answer, "lot by position...") matches no row: then the rows that print the value itself.
         val wanted = words(source?.takeIf { it.isNotBlank() } ?: v)
         val scored = rows.map { r -> r to overlap(wanted, words(r.text)) }
-        val (row, score) = scored.maxByOrNull { it.second } ?: return null
-        if (score < 0.4) return null
+        val bySource = scored.maxByOrNull { it.second }?.takeIf { it.second >= 0.4 }
+        fun hasValue(r: Row) = v.isNotEmpty() && r.pieces.flatMap { piece -> piece.words.ifEmpty { listOf(piece) } }.any { same(it.text, v) || like(it.text, v) }
+        // A code-like value (a document number, a lot) must be printed on the row shown: the row of the source that
+        // holds it, else the best row that holds it (a slip like "34s67" for "34567" allowed), else nothing at all;
+        // the wrong place on the photo is worse than none.
+        val codeLike = v.length >= 4 && v.any(Char::isDigit) && v.any { !it.isDigit() && it != ',' && it != '.' } ||
+            (v.length >= 6 && v.all(Char::isDigit))
+        val row = when {
+            bySource != null && (!codeLike || hasValue(bySource.first)) -> bySource.first
+            v.isNotEmpty() -> scored.filter { hasValue(it.first) }.maxByOrNull { it.second }?.first
+                ?: if (codeLike) return null else bySource?.first
+            else -> bySource?.first
+        } ?: return null
         val words = row.pieces.flatMap { piece -> piece.words.ifEmpty { listOf(piece) } }
         // A printed decimal ("1,000") before a bare number ("1", often the Pkgs column) when both match.
         val hit = if (v.isEmpty()) null else words.filter { same(it.text, v) }.let { hits -> hits.firstOrNull { it.text.contains(',') } ?: hits.firstOrNull() }
-            ?: words.firstOrNull { contains(it.text, v) }
+            ?: words.firstOrNull { contains(it.text, v) } ?: words.firstOrNull { like(it.text, v) }
         val rowBox = PageBox(row.pieces.minOf { it.left }, row.pieces.minOf { it.top }, row.pieces.maxOf { it.right }, row.pieces.maxOf { it.bottom })
         // One line of print (a tilted photo makes the row's box much taller than a line).
         val h = words.map { it.bottom - it.top }.sorted().let { it[it.size / 2] }.coerceAtLeast(10)
@@ -61,6 +73,22 @@ object FieldLocator {
         val n = norm(value)
         return n.length >= 3 && norm(printed).contains(n)
     }
+
+    /**
+     * The same code through the camera's usual slips: letters read for digits (s/5, o/0, l/1, b/8...) and, in a long
+     * code, one character misread ("34s67" for "34567").
+     */
+    internal fun like(printed: String, value: String): Boolean {
+        val a = fold(printed)
+        val b = fold(value)
+        if (b.length < 4 || a.isEmpty()) return false
+        if (a == b) return true
+        return b.length >= 6 && a.length == b.length && a.indices.count { a[it] != b[it] } <= 1
+    }
+
+    private fun fold(s: String): String = norm(s).filter { it.isLetterOrDigit() || it == '/' || it == '-' }.map { c ->
+        when (c) { 'o', 'd', 'q' -> '0'; 'l', 'i' -> '1'; 's' -> '5'; 'b' -> '8'; 'z' -> '2'; 'g' -> '6'; else -> c }
+    }.joinToString("")
 
     private fun words(s: String): Set<String> = norm(s).split(' ').filter { it.length >= 2 }.toSet()
 

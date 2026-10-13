@@ -7,6 +7,7 @@ package com.kitchenreceipts.core
  *   from the AI's answer about the heading row, kept once a document read with them was confirmed;
  * - [numberShape]: how the document number looks ("99A/99999" for 12A/34567), so the number is found and certain;
  * - [lotsUnderItems]: lot numbers are printed on the row under each item;
+ * - [lotsInNames]: lot numbers are printed at the end of the product's name (the operator kept them: see [LotsInNames]);
  * - [readByColumns]: whether the table was read best by columns (word positions) or as text;
  * - [documents]: how many confirmed documents this comes from.
  * Stored on the phone only, like everything else the app learns.
@@ -17,12 +18,14 @@ data class SupplierLayout(
     val lotsUnderItems: Boolean = false,
     val readByColumns: Boolean? = null,
     val documents: Int = 0,
+    val lotsInNames: Boolean = false,
 ) {
     fun encode(): String = listOf(
         "v1",
         "docs=$documents",
         "number=${numberShape.orEmpty()}",
         "lots=${if (lotsUnderItems) 1 else 0}",
+        "lotsInNames=${if (lotsInNames) 1 else 0}",
         "columns=${when (readByColumns) { true -> 1; false -> 0; null -> "" }}",
         "headings=" + headings.entries.joinToString(";") { (w, k) -> "${w.replace(";", "").replace("=", "")}=${k.name}" },
     ).joinToString("\n")
@@ -41,6 +44,7 @@ data class SupplierLayout(
                 lotsUnderItems = f["lots"] == "1",
                 readByColumns = when (f["columns"]) { "1" -> true; "0" -> false; else -> null },
                 documents = f["docs"]?.toIntOrNull() ?: 0,
+                lotsInNames = f["lotsInNames"] == "1",
             )
         }
     }
@@ -84,12 +88,17 @@ object SupplierLayouts {
         val kept = savedAmounts.count { it in readAmounts }
         val mostlyRight = savedAmounts.isNotEmpty() && kept * 5 >= savedAmounts.size * 4
         val withLots = confirmed.items.count { it.lot.text.isNotBlank() }
+        // Lots offered from the end of the names, kept by the operator (most of them, as read).
+        val offered = read.lineItems.mapNotNull { it.lotNumber?.takeIf { l -> l.source?.startsWith(LotsInNames.SOURCE) == true }?.value?.uppercase() }
+        val savedLots = confirmed.items.map { it.lot.text.trim().uppercase() }.toSet()
+        val lotsInNames = offered.isNotEmpty() && offered.count { it in savedLots } * 5 >= offered.size * 4
         return SupplierLayout(
             headings = if (mostlyRight) read.layout?.headings.orEmpty() else emptyMap(),
             numberShape = number?.let(::shape),
             lotsUnderItems = confirmed.items.size >= 2 && withLots * 5 >= confirmed.items.size * 3 && read.lotsUnderItems,
             readByColumns = if (mostlyRight) read.itemsReadBy == "columns" else null,
             documents = 1,
+            lotsInNames = lotsInNames,
         )
     }
 
@@ -102,6 +111,8 @@ object SupplierLayouts {
             lotsUnderItems = new.lotsUnderItems || (old.lotsUnderItems && new.documents == 0),
             readByColumns = new.readByColumns ?: old.readByColumns,
             documents = old.documents + new.documents,
+            // Once learned it stays (a document of this supplier with no lot in its names says nothing against it).
+            lotsInNames = new.lotsInNames || old.lotsInNames,
         )
     }
 

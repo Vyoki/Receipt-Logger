@@ -37,6 +37,8 @@ enum class ParseWarning {
     VAT_GROUP_MISMATCH,
     /** An e-invoice addressed to another company (the buyer's VAT number is not this restaurant's). */
     OTHER_BUYER,
+    /** A page is a second photo of another page: read once; the page that was never photographed is missing. */
+    DUPLICATE_PAGE,
 }
 
 data class ParsedLineItem(
@@ -134,6 +136,8 @@ data class ParsedDocument(
     val layout: SupplierLayout? = null,
     /** Lot numbers were found on the row under each item. */
     val lotsUnderItems: Boolean = false,
+    /** Lots were found at the end of product names (see [LotsInNames]). */
+    val lotsInNames: Boolean = false,
     /** Most likely handwritten (or a very poor photo): the OCR was unsure of many words (see Handwriting). */
     val handwritten: Boolean = false,
     /** Where the supplier's name was read and whether those places agree (see [SupplierProof]); null = not checked. */

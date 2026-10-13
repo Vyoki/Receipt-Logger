@@ -468,6 +468,9 @@ object TableReader {
     private fun readRows(rows: List<List<Word>>, header: Header): List<ParsedLineItem> {
         val items = mutableListOf<ParsedLineItem>()
         var pendingDescription: String? = null
+        // A numbers row with no name above it: on a tilted photo the name is on the row below ("KG 4,58 2,890 13,24" /
+        // "8595413 2 CICORIA CAMPAGNOLA").
+        var pendingNumbers: ParsedLineItem? = null
         // Numbers that landed on a section title ("Merce non alimentare"): they belong to the product on the next row.
         var headingNumbers: ParsedLineItem? = null
         for (row in rows) {
@@ -505,7 +508,25 @@ object TableReader {
                 headingNumbers = item
                 continue
             }
+            val numbersWaiting = pendingNumbers
+            pendingNumbers = null
             when {
+                // "Prov ITALIA Cat II Cal": the origin note of the item above, never the name of the next one.
+                item == null && ReceiptParser.PRODUCE_NOTE.containsMatchIn(text) -> pendingNumbers = numbersWaiting
+                item == null && numbersWaiting != null && cells[Kind.DESCRIPTION].orEmpty().joinToString(" ") { it.text }.count(Char::isLetter) >= 3 &&
+                    scan.lot == null && scan.expiry == null -> {
+                    // The name below its numbers: arithmetic proves the numbers, never which name goes with them.
+                    val desc = cells[Kind.DESCRIPTION].orEmpty().joinToString(" ") { it.text }
+                    val code = cells[Kind.CODE].orEmpty().firstOrNull { it.text.count(Char::isDigit) >= 4 }?.text
+                    val colli = cells[Kind.PACKAGES].orEmpty().joinToString("") { it.text }.ifEmpty { null }
+                    items += numbersWaiting.copy(
+                        originalDescription = cleanDescription(desc.split(' ')),
+                        itemCode = code ?: numbersWaiting.itemCode,
+                        packages = colli?.let { Extracted(it, Confidence.HIGH, text) } ?: numbersWaiting.packages,
+                        nameDoubt = true,
+                    )
+                    pendingDescription = null
+                }
                 item == null -> {
                     val prev = items.lastOrNull()
                     val desc = cells[Kind.DESCRIPTION].orEmpty().joinToString(" ") { it.text }
@@ -523,7 +544,7 @@ object TableReader {
                 item.originalDescription.isBlank() -> {
                     // Amounts on the row below a description-only row: one item over two rows.
                     val d = pendingDescription
-                    if (d != null) items += item.copy(originalDescription = d)
+                    if (d != null) items += item.copy(originalDescription = d) else pendingNumbers = item
                     pendingDescription = null
                 }
                 else -> {

@@ -24,6 +24,8 @@ enum class ReviewReason {
     OTHER_BUYER,
     /** A price 30% or more away from what was paid before for the product (plausible, but worth a look). */
     UNUSUAL_PRICE,
+    /** The same page was photographed twice (and another page maybe not at all). */
+    DUPLICATE_PAGE,
 }
 
 /**
@@ -59,6 +61,7 @@ object AutoAccept {
         }
         if (d.vatGroupProblems.isNotEmpty()) out += ReviewReason.VAT_GROUP_MISMATCH
         if (ParseWarning.OTHER_BUYER in d.warnings) out += ReviewReason.OTHER_BUYER
+        if (ParseWarning.DUPLICATE_PAGE in d.warnings) out += ReviewReason.DUPLICATE_PAGE
         if (d.vatBasis == VatBasis.UNKNOWN && inferVatBasis(d) == null && sumOk) {
             out += ReviewReason.VAT_BASIS_UNKNOWN
         }

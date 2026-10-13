@@ -563,6 +563,8 @@
     <string name="warn_other_buyer">Questa fattura elettronica è intestata a un\'altra azienda (la P.IVA del cliente non è la vostra).</string>
     <string name="reason_other_buyer">Intestata a un\'altra azienda.</string>
     <string name="reason_unusual_price">Un prezzo si discosta del 30% o più da quanto pagato prima: da controllare.</string>
+    <string name="warn_duplicate_page">La stessa pagina è stata fotografata due volte: è stata letta una volta sola. Se manca una pagina del documento, aggiungi la sua foto.</string>
+    <string name="reason_duplicate_page">La stessa pagina è stata fotografata due volte (potrebbe mancare una pagina).</string>
     <string name="reason_lots_missing">Alcune righe non hanno il lotto, ma il documento riporta i lotti.</string>
     <string name="vat_group_line">%1$s%%: righe %2$s, riepilogo %3$s (differenza %4$s)</string>
     <string name="pack_size">Formato</string>

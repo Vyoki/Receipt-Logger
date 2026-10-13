@@ -146,7 +146,7 @@ object ReceiptParser {
      * Notes printed under fresh produce: origin, class and size ("Prov ITALIA Cat II Cal 40-45", "Origine: Spagna",
      * "Categoria I Calibro 70/80"). They are never items and never the name of the numbers next to them.
      */
-    private val PRODUCE_NOTE = Regex(
+    internal val PRODUCE_NOTE = Regex(
         "(?i)^\\s*(?:(?:prov\\.?|provenienza|origine|paese\\s+d'?origine)\\s*:?\\s+\\p{L}{3,}|.*\\bcat(?:\\.|egoria)?\\s+(?:i{1,2}|il|1|2|extra)\\b.*\\bcal(?:\\.|ibro)?\\b)",
     )
     private val INCLUSIVE_HINT = Regex("(?i)\\b(di\\s+cui\\s+iva|iva\\s+inclusa|iva\\s+compresa|prezzi\\s+ivati|ivato|compresa\\s+iva|incl\\.?\\s+iva)\\b")
@@ -197,7 +197,9 @@ object ReceiptParser {
      * the document better (more lines where quantity x price = amount, lines adding up to the total).
      */
     fun parsePages(read: List<List<OcrLine>>, options: ParseOptions = ParseOptions()): ParsedDocument {
-        val pages = read.map { OcrCleanup.repairLabels(OcrCleanup.stripRules(it)) }
+        // The same sheet photographed twice is read once (and said: the page never photographed is missing).
+        val repeats = runCatching { DuplicatePages.find(read) }.getOrDefault(emptyMap())
+        val pages = DuplicatePages.withoutRepeats(read, repeats).map { OcrCleanup.repairLabels(OcrCleanup.stripRules(it)) }
         val layouts = pages.map { LayoutRows.layout(it) }
         val text = layouts.joinToString("\n$PAGE_BREAK\n") { it.text }
         if (text.isBlank()) return ParsedDocument.EMPTY
@@ -216,11 +218,17 @@ object ReceiptParser {
             // The supplier's name is sure only when independent places on the page agree (or the phone knows its VAT).
             val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o) }.getOrDefault(withParties)
                 .let { d -> runCatching { ReadingSanity.apply(d, text, o.ownVatNumber) }.getOrDefault(d) }
+                .let { d -> runCatching { NumberSlips.apply(d, layouts.map { it.text }) }.getOrDefault(d) }
             // Codes the page explains (storage letters, row types) and group lines over the items (see PageCodes).
             val coded = runCatching { PageCodes.apply(proven, pages, o.ownVatNumber) }.getOrDefault(proven)
+                // An amount one cent off on a document whose other lines are rounded: a misread digit (see CentSlips).
+                .let { d -> runCatching { CentSlips.apply(d) }.getOrDefault(d) }
             // Lots printed under the items with no heading: the same place under several items (see LotsByPosition).
-            val lotted = runCatching { LotsByPosition.apply(coded, pages, o.ownVatNumber) }.getOrDefault(coded)
-            return Handwriting.mark(lotted, pages)
+            // Lots at the end of the product names ("... AB500168"): offered, or taken once learned for this supplier.
+            val named = runCatching { LotsInNames.apply(coded, o.layout) }.getOrDefault(coded)
+            val lotted = runCatching { LotsByPosition.apply(named, pages, o.ownVatNumber) }.getOrDefault(named)
+            val marked2 = Handwriting.mark(lotted, pages)
+            return if (repeats.isEmpty()) marked2 else marked2.copy(warnings = marked2.warnings + ParseWarning.DUPLICATE_PAGE)
         }
         val plain = read(options.copy(layoutLookup = null))
         if (options.layout != null || options.layoutLookup == null) return plain
