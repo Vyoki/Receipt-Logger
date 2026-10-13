@@ -1,5 +1,6 @@
 package com.kitchenreceipts.app.ui.checks
 
+import androidx.compose.foundation.layout.Box
 import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -106,7 +107,7 @@ fun LotsScreen(onBack: () -> Unit, onOpenDocument: (Long) -> Unit) {
                             c.log.event("LOTS_SHARED", "rows" to hits.size)
                         })
                     }
-                    items(hits, key = { "h" + it.lineItemId }) { r -> LotRow(r) { onOpenDocument(r.documentId) } }
+                    items(hits, key = { "h" + it.lineItemId }) { r -> Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { LotRow(r) { onOpenDocument(r.documentId) } } }
                 }
             }
 

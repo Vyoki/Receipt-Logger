@@ -1,5 +1,6 @@
 package com.kitchenreceipts.app.ui.products
 
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.Spacer
 import com.kitchenreceipts.app.ui.components.CategoryIcon
@@ -300,7 +301,7 @@ fun ProductDetailScreen(productId: Long, onBack: () -> Unit, onOpenDocument: (Lo
 
                 item { SectionTitle(stringResource(R.string.price_history)) }
                 if (d.purchases.isEmpty()) item { EmptyState(stringResource(R.string.no_purchases)) }
-                items(d.purchases, key = { "p${it.lineItemId}" }) { p -> PurchaseCard(p) { onOpenDocument(p.documentId) } }
+                items(d.purchases, key = { "p${it.lineItemId}" }) { p -> Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { PurchaseCard(p) { onOpenDocument(p.documentId) } } }
             }
         }
     }

@@ -5,7 +5,10 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import com.kitchenreceipts.app.ui.theme.pressScale
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.ui.theme.Palette
@@ -24,9 +27,12 @@ fun Button(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit,
-) = androidx.compose.material3.Button(
+) {
+    val source = remember { MutableInteractionSource() }
+    androidx.compose.material3.Button(
     onClick = onClick,
-    modifier = modifier,
+    modifier = modifier.pressScale(source),
+    interactionSource = source,
     enabled = enabled,
     shape = MaterialTheme.shapes.small,
     border = BorderStroke(1.5.dp, if (enabled) Palette.PhthaloBorder else Palette.Hairline),
@@ -38,7 +44,8 @@ fun Button(
     ),
     contentPadding = Padding,
     content = content,
-)
+    )
+}
 
 /** Second-rank action: same green, a little quieter. */
 @Composable
@@ -47,9 +54,12 @@ fun FilledTonalButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit,
-) = androidx.compose.material3.Button(
+) {
+    val source = remember { MutableInteractionSource() }
+    androidx.compose.material3.Button(
     onClick = onClick,
-    modifier = modifier,
+    modifier = modifier.pressScale(source),
+    interactionSource = source,
     enabled = enabled,
     shape = MaterialTheme.shapes.small,
     border = BorderStroke(1.dp, if (enabled) Palette.PhthaloBorder else Palette.Hairline),
@@ -61,7 +71,8 @@ fun FilledTonalButton(
     ),
     contentPadding = Padding,
     content = content,
-)
+    )
+}
 
 /** Other actions: black with the green border and green text. */
 @Composable
@@ -70,9 +81,12 @@ fun OutlinedButton(
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
     content: @Composable RowScope.() -> Unit,
-) = androidx.compose.material3.OutlinedButton(
+) {
+    val source = remember { MutableInteractionSource() }
+    androidx.compose.material3.OutlinedButton(
     onClick = onClick,
-    modifier = modifier,
+    modifier = modifier.pressScale(source),
+    interactionSource = source,
     enabled = enabled,
     shape = MaterialTheme.shapes.small,
     border = BorderStroke(1.dp, if (enabled) Palette.PhthaloBorder else Palette.Hairline),
@@ -83,4 +97,5 @@ fun OutlinedButton(
     ),
     contentPadding = Padding,
     content = content,
-)
+    )
+}

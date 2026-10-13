@@ -41,6 +41,7 @@ import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import com.kitchenreceipts.app.ui.theme.pressScale
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -127,9 +128,11 @@ fun BigButton(
 /** A tappable panel: slightly lighter than the black background, with a hairline border. */
 @Composable
 fun ClickCard(onClick: () -> Unit, modifier: Modifier = Modifier, content: @Composable () -> Unit) {
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
     Card(
         onClick = onClick,
-        modifier = modifier.fillMaxWidth().heightIn(min = 64.dp),
+        interactionSource = source,
+        modifier = modifier.pressScale(source).fillMaxWidth().heightIn(min = 64.dp),
         shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(containerColor = Palette.Panel, contentColor = MaterialTheme.colorScheme.onSurface),
         border = BorderStroke(1.dp, Palette.Hairline),
