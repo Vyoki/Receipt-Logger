@@ -104,6 +104,7 @@ import com.kitchenreceipts.core.DocumentDraft
 import com.kitchenreceipts.core.DuplicateDetector
 import com.kitchenreceipts.core.ItalianDates
 import com.kitchenreceipts.core.ItalianNumbers
+import com.kitchenreceipts.core.Reconcile
 import com.kitchenreceipts.core.LineItemDraft
 import com.kitchenreceipts.core.ReceiptParser
 import com.kitchenreceipts.core.SellerMatchReason
@@ -171,6 +172,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
         add(TopRow(HEADER))
         if (s.isNew) add(TopRow("kind"))
         add(TopRow("itemsTitle"))
+        if (s.draft.checks?.let { hasSomethingToSay(it) } == true) add(TopRow("checks"))
         if (s.draft.items.isEmpty()) add(TopRow("noItems"))
         addAll(lineRows(s.draft, s.errors, keepOpen?.toSet(), initialKeys?.toSet(), opened.toSet(), openGroups.toSet()))
         add(TopRow("addItem"))
@@ -504,6 +506,47 @@ private fun ReasonsCard(state: ReviewState) {
     }
 }
 
+private fun hasSomethingToSay(c: Reconcile.Report) =
+    c.vatProven || c.changed || c.packagesPrinted != null || c.pagesMissing.isNotEmpty()
+
+/**
+ * What the document's own sums prove about the reading: every VAT rate adds up, lines recovered or left out to make
+ * them add up, packages against the printed total (packages are not lines), pages not photographed.
+ */
+@Composable
+private fun ChecksPanel(c: Reconcile.Report) {
+    val status = LocalStatusColors.current
+    Panel {
+        Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text(stringResource(R.string.checks_title), fontWeight = FontWeight.SemiBold)
+            if (c.vatProven) Text("✓ " + stringResource(R.string.checks_vat_proven), color = status.ok, style = MaterialTheme.typography.bodyMedium)
+            if (c.recovered.isNotEmpty()) {
+                Text(pluralStringResource(R.plurals.checks_recovered, c.recovered.size, c.recovered.size), style = MaterialTheme.typography.bodyMedium)
+                c.recovered.forEach { Text("   $it", style = MaterialTheme.typography.bodyMedium) }
+            }
+            if (c.dropped.isNotEmpty()) {
+                Text(pluralStringResource(R.plurals.checks_dropped, c.dropped.size, c.dropped.size), style = MaterialTheme.typography.bodyMedium)
+                c.dropped.forEach { Text("   $it", style = MaterialTheme.typography.bodyMedium) }
+            }
+            if (c.ratesFound > 0) Text(pluralStringResource(R.plurals.checks_rates, c.ratesFound, c.ratesFound), style = MaterialTheme.typography.bodyMedium)
+            c.packagesPrinted?.let { printed ->
+                if (c.packagesAgree) {
+                    Text("✓ " + stringResource(R.string.checks_packages_ok, printed), color = status.ok, style = MaterialTheme.typography.bodyMedium)
+                } else c.packagesCounted?.let { counted ->
+                    Text(stringResource(R.string.checks_packages_differ, counted, printed), color = status.uncertainBorder, style = MaterialTheme.typography.bodyMedium)
+                }
+            }
+            c.pagesOf?.takeIf { c.pagesMissing.isNotEmpty() }?.let { of ->
+                Text(
+                    stringResource(R.string.checks_pages_missing, c.pagesMissing.joinToString(", "), of),
+                    color = if (c.vatProven) MaterialTheme.colorScheme.onSurfaceVariant else status.uncertainBorder,
+                    style = MaterialTheme.typography.bodyMedium,
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun StatusBanner(state: ReviewState) {
     val lines = buildList {
@@ -699,6 +742,7 @@ private fun TopPart(
             Text(pluralStringResource(R.plurals.ai_check_ok, c.checked, c.checked), color = LocalStatusColors.current.ok, style = MaterialTheme.typography.bodyMedium)
         }
         "reasons" -> ReasonsCard(state)
+        "checks" -> state.draft.checks?.let { ChecksPanel(it) }
         "errors" -> WarningCard(listOf(stringResource(R.string.fix_errors, state.errors.size)))
         "saveError" -> state.saveError?.let { err -> WarningCard(listOf(stringResource(R.string.save_failed, err))) }
         "warnings" -> WarningCard(state.draft.warnings.map { warningText(it) })

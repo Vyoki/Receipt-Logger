@@ -16,6 +16,8 @@ object PackagesCheck {
         val lines = text.lines()
         for ((i, line) in lines.withIndex()) {
             val m = LABEL.find(line) ?: continue
+            // The column heading ("COD.ART. N.COLLI DESCRIZIONE ...") is no total: the number below it is a line's.
+            if (ReceiptParser.isTableHeader(line)) continue
             val after = line.substring(m.range.last + 1)
             rx("\\b(\\d{1,4})\\b").find(after)?.let { return it.groupValues[1].toInt() }
             lines.getOrNull(i + 1)?.let { next -> FIRST_INT.find(next.trim())?.let { return it.groupValues[1].toInt() } }

@@ -39,6 +39,8 @@ enum class ParseWarning {
     OTHER_BUYER,
     /** A page is a second photo of another page: read once; the page that was never photographed is missing. */
     DUPLICATE_PAGE,
+    /** The document numbers its pages ("1/6") and some were not photographed, and the sums do not prove nothing is missing. */
+    PAGES_MISSING,
 }
 
 data class ParsedLineItem(
@@ -142,6 +144,8 @@ data class ParsedDocument(
     val handwritten: Boolean = false,
     /** Where the supplier's name was read and whether those places agree (see [SupplierProof]); null = not checked. */
     val supplierProof: SupplierProof.Result? = null,
+    /** What the document's own sums (VAT summary, packages, page count) say about this reading (see [Reconcile]). */
+    val reconciled: Reconcile.Report? = null,
 ) {
     companion object {
         val EMPTY = ParsedDocument(
