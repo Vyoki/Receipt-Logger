@@ -1,7 +1,7 @@
 # Training the document reader
 
 The app's AI (Qwen3-VL 2B, on the phone) is trained on exactly the questions the app asks it, in Italian and English.
-Nothing real is used: every document is invented.
+The documents in this folder are all invented. The operator may add their own (below): those never come here.
 
 | Step | What | Where |
 |---|---|---|
@@ -38,3 +38,10 @@ Local run (small):
     python3 tools/training/gen_docs.py /tmp/docs --count 20
     tools/training/export.sh /tmp/docs /tmp/samples.jsonl
     python3 tools/training/build_dataset.py /tmp/samples.jsonl /tmp/docs /tmp/ds
+
+**Your own documents** (optional): in the app, Settings → "Teach your AI with your documents" makes one zip with the saved
+documents whose lines and totals add up to the cent (each photo as the app read it, the OCR with positions, and the
+document as checked: core `TrainingPackage`). Put it in your Google Drive and set `OWN_ZIP` in the notebook: four in five
+documents train (counted `OWN_REPEAT` times), one in five join the before/after test. A model trained on them is
+uploaded to a **private** repository (`kitchen-reader-2b-private`), since it may remember names and numbers. The zip
+holds real data: never commit it or put it anywhere public.

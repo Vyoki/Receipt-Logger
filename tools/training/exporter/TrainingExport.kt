@@ -62,7 +62,8 @@ private class Exporter(private val dir: File, private val r: Random) {
     }
     private val lang = truth["lang"] as String
     private val items = (truth["items"] as List<*>).map { it as Map<*, *> }
-    private val options = ParseOptions(ownVatNumber = "09876543217", today = LocalDate.of(2026, 12, 31))
+    /** The restaurant's VAT number: the invented one, or the real one in a package exported from the app. */
+    private val options = ParseOptions(ownVatNumber = truth["own_vat"] as? String ?: "09876543217", today = maxOf(LocalDate.of(2026, 12, 31), LocalDate.now()))
     private val text = pages.joinToString("\n${ReceiptParser.PAGE_BREAK}\n") { LayoutRows.toText(it) }
     private val photos = (truth["photos"] as? List<*>)?.map { it as Map<*, *> } ?: listOf(truth["photo"] as Map<*, *>)
     private val scales = pages.mapIndexed { p, lines -> AiImagePlan.plan(lines, int(photos[p]["width"]), int(photos[p]["height"])).scale }
@@ -117,7 +118,8 @@ private class Exporter(private val dir: File, private val r: Random) {
     }
 
     private fun layout(page: Int, boxes: List<PageBox>, headings: List<String>) {
-        val cols = (truth["headings"] as Map<*, *>).entries.associate { (k, v) -> norm(v as String) to k as String }
+        // A document exported from the app has no headings map (the truth is what the operator saved, not the layout).
+        val cols = (truth["headings"] as? Map<*, *> ?: return).entries.associate { (k, v) -> norm(v as String) to k as String }
         val letters = headings.map { h ->
             val n = norm(h)
             val col = cols.entries.firstOrNull { (t, _) -> t == n } ?: cols.entries.firstOrNull { (t, _) -> t.contains(n) || n.contains(t) }

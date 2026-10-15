@@ -230,6 +230,9 @@ fun SettingsScreen(onBack: () -> Unit, onBackup: () -> Unit = {}) {
             } })
             BigButton(stringResource(R.string.problems_clear), Icons.Filled.Delete, primary = false, enabled = problemCount > 0, onClick = { askClearProblems = true })
 
+            // ---------------------------------------------------------------- training examples for the app's AI
+            TrainingSection(c)
+
             // ---------------------------------------------------------------- FUNCTION X (temporary, remove with functionx/)
             com.kitchenreceipts.app.functionx.FunctionXSection(c)
 
