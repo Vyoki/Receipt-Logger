@@ -9,3 +9,6 @@ build/
 .cxx
 /third_party/
 __pycache__/
+
+# Training examples made by the app from real documents: never committed.
+kitchen-receipts-training*.zip

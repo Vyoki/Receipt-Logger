@@ -731,4 +731,15 @@
     <string name="proof_packages_ok">Colli: %d, come stampato. I colli non sono righe: una riga può contare più colli.</string>
     <string name="proof_packages_differ">Colli: %1$d sulle righe, %2$d stampati. Può mancare una riga o i suoi colli sono letti male.</string>
     <string name="proof_pages_missing">Pagina %1$s di %2$d non fotografata.</string>
+    <string name="training_title">Insegna alla tua IA con i tuoi documenti</string>
+    <string name="training_hint">Crea un file con i documenti salvati come esempi per addestrare l\'IA dell\'app: ogni foto, cosa ha letto la fotocamera e il documento come l\'hai controllato. Entrano solo i documenti le cui righe e i totali tornano al centesimo. Scegli tu dove inviarlo (il tuo Google Drive, per il notebook di addestramento).</string>
+    <string name="training_make">Crea esempi di addestramento</string>
+    <string name="training_confirm_title">Documenti reali</string>
+    <string name="training_confirm_text">Il file conterrà i tuoi documenti reali: fornitori, prezzi, partite IVA. Invialo solo a te stesso (il tuo Google Drive) e usalo solo per il tuo addestramento. Non pubblicarlo mai.</string>
+    <string name="training_progress">Preparo il documento %1$d di %2$d…</string>
+    <string name="training_done">%1$d documenti inclusi, %2$d esclusi (totali che non tornano, o senza foto).</string>
+    <string name="training_none">Nessun documento salvato è ancora utilizzabile: righe e totali devono tornare al centesimo, e devono essere foto o PDF letti su questo telefono.</string>
+    <string name="training_failed">Non è stato possibile creare gli esempi. Riprova.</string>
+    <string name="training_share">Invia gli esempi di addestramento</string>
+    <string name="training_forget">Elimina il file da questo telefono</string>
 </resources>

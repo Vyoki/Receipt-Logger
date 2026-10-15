@@ -94,6 +94,8 @@ class AppContainer(context: Context) {
 
     /** The OCR reading of every saved document, and the re-check of all of them after each update. */
     val readings = com.kitchenreceipts.app.diagnostics.ReadingArchive(context)
+    /** Saved documents as training examples for the app's own AI, shared only by the operator (see TrainingExport). */
+    val trainingExport by lazy { com.kitchenreceipts.app.diagnostics.TrainingExport(appContext, database, readings, pageRenderer) }
     val readingChecker = com.kitchenreceipts.app.diagnostics.ReadingChecker(context, repository, readings, settings, problems, log) { importQueue.busy }
 
     init {

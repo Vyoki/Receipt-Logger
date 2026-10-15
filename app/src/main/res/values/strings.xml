@@ -743,4 +743,15 @@
     <string name="proof_packages_ok">Packages: %d, as printed. Packages are not lines: one line can be several packages.</string>
     <string name="proof_packages_differ">Packages: %1$d on the lines, %2$d printed. A line may be missing or its packages misread.</string>
     <string name="proof_pages_missing">Page %1$s of %2$d was not photographed.</string>
+    <string name="training_title">Teach your AI with your documents</string>
+    <string name="training_hint">Makes one file with your saved documents as examples for training the app\'s AI: each photo, what the camera read, and the document as you checked it. Only documents whose lines and totals add up to the cent are included. You choose where to send it (your own Google Drive, for the training notebook).</string>
+    <string name="training_make">Make training examples</string>
+    <string name="training_confirm_title">Real documents</string>
+    <string name="training_confirm_text">The file will contain your real documents: suppliers, prices, VAT numbers. Send it only to yourself (your Google Drive) and use it only for your own training. Never publish it.</string>
+    <string name="training_progress">Preparing document %1$d of %2$d…</string>
+    <string name="training_done">%1$d documents included, %2$d left out (totals that do not add up, or no photo).</string>
+    <string name="training_none">No saved document can be used yet: their lines and totals must add up to the cent, and they must be photos or PDFs read on this phone.</string>
+    <string name="training_failed">The examples could not be made. Try again.</string>
+    <string name="training_share">Send the training examples</string>
+    <string name="training_forget">Delete the file from this phone</string>
 </resources>
