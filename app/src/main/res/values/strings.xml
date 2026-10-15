@@ -726,21 +726,21 @@
     <string name="date_placeholder">dd/mm/yyyy</string>
     <string name="warn_pages_missing">The document numbers its pages and some were not photographed, and its totals do not prove that no line is missing: add the missing pages.</string>
     <string name="reason_pages_missing">Some pages were not photographed (see the page numbers).</string>
-    <string name="checks_title">What the document\'s own totals prove</string>
-    <string name="checks_vat_proven">Every VAT rate adds up to the cent: no line is missing and the amounts are right.</string>
-    <plurals name="checks_recovered">
+    <string name="proof_title">What the document\'s own totals prove</string>
+    <string name="proof_vat_proven">Every VAT rate adds up to the cent: no line is missing and the amounts are right.</string>
+    <plurals name="proof_recovered">
         <item quantity="one">%d line recovered (the camera could not read it clearly; quantity × price, proven by the totals):</item>
         <item quantity="other">%d lines recovered (the camera could not read them clearly; quantity × price, proven by the totals):</item>
     </plurals>
-    <plurals name="checks_dropped">
+    <plurals name="proof_dropped">
         <item quantity="one">%d reading left out: it was not a product (the totals add up without it):</item>
         <item quantity="other">%d readings left out: they were not products (the totals add up without them):</item>
     </plurals>
-    <plurals name="checks_rates">
+    <plurals name="proof_rates">
         <item quantity="one">The VAT rate of %d line was unreadable: it is the one that makes the totals add up.</item>
         <item quantity="other">The VAT rate of %d lines was unreadable: it is the one that makes the totals add up.</item>
     </plurals>
-    <string name="checks_packages_ok">Packages: %d, as printed. Packages are not lines: one line can be several packages.</string>
-    <string name="checks_packages_differ">Packages: %1$d on the lines, %2$d printed. A line may be missing or its packages misread.</string>
-    <string name="checks_pages_missing">Page %1$s of %2$d was not photographed.</string>
+    <string name="proof_packages_ok">Packages: %d, as printed. Packages are not lines: one line can be several packages.</string>
+    <string name="proof_packages_differ">Packages: %1$d on the lines, %2$d printed. A line may be missing or its packages misread.</string>
+    <string name="proof_pages_missing">Page %1$s of %2$d was not photographed.</string>
 </resources>
