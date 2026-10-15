@@ -30,6 +30,8 @@ data class IngredientPrice(
     val sellerName: String?,
     val manual: Boolean,
     val vatUnknown: Boolean = false,
+    /** The purchase before this one (an earlier delivery, same unit), to say what a price change does to a dish. */
+    val previous: IngredientPrice? = null,
 )
 
 data class RecipeIngredient(
@@ -65,6 +67,23 @@ data class IngredientCost(
     val cost: BigDecimal?,
     val price: IngredientPrice?,
     val problem: CostProblem?,
+    /** What one portion takes of the product as bought, in [price]'s unit, waste included (0,25 kg). */
+    val boughtPerPortion: BigDecimal? = null,
+    /** What the last price change did to one portion: + dearer, - cheaper; null when there is no earlier price. */
+    val changePerPortion: BigDecimal? = null,
+)
+
+/** Kilos (or litres) of a dish's main ingredient: how many plates they make and what those plates earn. */
+data class PerKilo(
+    val ingredient: String,
+    /** "kg" or "l". */
+    val unit: String,
+    /** Bought per plate, waste included, in [unit]. */
+    val perPlate: BigDecimal,
+    /** 1 / [perPlate], one decimal. */
+    val plates: BigDecimal,
+    /** [plates] x what one plate earns (after ingredients); null without a menu price. */
+    val earns: BigDecimal?,
 )
 
 data class RecipeCost(
@@ -87,6 +106,18 @@ data class RecipeCost(
      * (maybe with VAT), so the food cost may be too high. Shown on the dish, to be settled on that document.
      */
     val vatUncertain: Boolean = false,
+    /** What the customer pays for one plate (the menu price with VAT). */
+    val customerPays: BigDecimal? = null,
+    /** The VAT in it, which goes to the state. */
+    val vatOfPrice: BigDecimal? = null,
+    /** [fullCost] - [foodCost]: the share for staff and utilities. */
+    val overheads: BigDecimal = BigDecimal.ZERO,
+    /** What is left of one plate after VAT, ingredients and the staff and utilities share. */
+    val earns: BigDecimal? = null,
+    /** The main ingredient by cost, per kilo or litre bought; null when no ingredient is weighed or measured. */
+    val perKilo: PerKilo? = null,
+    /** What the last price changes of the ingredients did to one plate, together. */
+    val changePerPortion: BigDecimal? = null,
 )
 
 /**
@@ -125,7 +156,14 @@ object FoodCost {
         val known = ordered.filter { it.vatBasis != VatBasis.UNKNOWN }.firstNotNullOfOrNull { p -> netUnitPrice(p)?.let { p to it } }
         val any = known ?: ordered.firstNotNullOfOrNull { p -> netUnitPrice(p)?.let { p to it } }
         val (p, up) = any ?: return null
-        return IngredientPrice(up.second, up.first, p.date, p.sellerName, manual = false, vatUnknown = p.vatBasis == VatBasis.UNKNOWN)
+        // The price before: the latest purchase of an earlier day, in the same unit (the same delivery read twice, or
+        // two lines of one invoice, are no change).
+        val before = p.date?.let { d ->
+            ordered.filter { it.date != null && it.date < d && (it.vatBasis != VatBasis.UNKNOWN || p.vatBasis == VatBasis.UNKNOWN) }
+                .firstNotNullOfOrNull { b -> netUnitPrice(b)?.takeIf { it.first == up.first }?.let { b to it } }
+        }
+        val previous = before?.let { (b, bp) -> IngredientPrice(bp.second, bp.first, b.date, b.sellerName, manual = false, vatUnknown = b.vatBasis == VatBasis.UNKNOWN) }
+        return IngredientPrice(up.second, up.first, p.date, p.sellerName, manual = false, vatUnknown = p.vatBasis == VatBasis.UNKNOWN, previous = previous)
     }
 
     /** [q] of [from] in [to]: kg/g, l/ml, or the product's own conversions (in either direction). */
@@ -169,13 +207,20 @@ object FoodCost {
             val q = convert(ing.quantity, ing.unit, price.unit, ing.productId?.let(conversionsOf).orEmpty())
                 ?: return@map IngredientCost(ing, null, price, CostProblem.UNITS_DONT_CONVERT)
             val waste = BigDecimal.ONE.add(ing.wastePercent.divide(HUNDRED, MC))
-            IngredientCost(ing, q.multiply(price.price, MC).multiply(waste, MC).divide(portions, MC), price, null)
+            val bought = q.multiply(waste, MC).divide(portions, MC)
+            val change = price.previous?.takeIf { it.unit == price.unit && !price.manual }?.let { prev -> bought.multiply(price.price.subtract(prev.price), MC) }
+            IngredientCost(ing, bought.multiply(price.price, MC), price, null, bought, change)
         }
         val food = lines.mapNotNull { it.cost }.fold(BigDecimal.ZERO, BigDecimal::add)
         val net = recipe.salePriceCents?.let { c ->
             val gross = ItalianNumbers.centsToDecimal(c)
             if (recipe.priceIncludesVat) gross.divide(BigDecimal.ONE.add(recipe.vatRatePercent.divide(HUNDRED, MC)), MC) else gross
         }?.takeIf { it.signum() > 0 }
+        val full = food.multiply(BigDecimal.ONE.add(overheadPercent.divide(HUNDRED, MC)), MC)
+        val vatFactor = BigDecimal.ONE.add(recipe.vatRatePercent.divide(HUNDRED, MC))
+        val pays = net?.let { if (recipe.priceIncludesVat) ItalianNumbers.centsToDecimal(recipe.salePriceCents!!) else it.multiply(vatFactor, MC) }
+        val margin = net?.subtract(food)
+        val changes = lines.mapNotNull { it.changePerPortion }
         return RecipeCost(
             recipe = recipe,
             ingredients = lines,
@@ -183,9 +228,35 @@ object FoodCost {
             complete = lines.all { it.problem == null },
             netPrice = net?.setScale(4, RoundingMode.HALF_UP),
             foodCostPercent = net?.let { food.divide(it, MC).multiply(HUNDRED).setScale(1, RoundingMode.HALF_UP) },
-            margin = net?.subtract(food)?.setScale(4, RoundingMode.HALF_UP),
-            fullCost = food.multiply(BigDecimal.ONE.add(overheadPercent.divide(HUNDRED, MC)), MC).setScale(4, RoundingMode.HALF_UP),
+            margin = margin?.setScale(4, RoundingMode.HALF_UP),
+            fullCost = full.setScale(4, RoundingMode.HALF_UP),
             vatUncertain = lines.any { it.price?.vatUnknown == true },
+            customerPays = pays?.setScale(4, RoundingMode.HALF_UP),
+            vatOfPrice = if (pays != null && net != null) pays.subtract(net).setScale(4, RoundingMode.HALF_UP) else null,
+            overheads = full.subtract(food).setScale(4, RoundingMode.HALF_UP),
+            earns = net?.subtract(full)?.setScale(4, RoundingMode.HALF_UP),
+            perKilo = perKilo(lines, margin),
+            changePerPortion = changes.takeIf { it.isNotEmpty() }?.fold(BigDecimal.ZERO, BigDecimal::add)?.setScale(4, RoundingMode.HALF_UP),
+        )
+    }
+
+    /**
+     * The main ingredient (the dearest per plate among those bought by weight or volume): how many plates a kilo (or
+     * litre) of it makes and what they earn after ingredients ("per kilo of beef: 4 plates, 44,80 €").
+     */
+    private fun perKilo(lines: List<IngredientCost>, marginPerPlate: BigDecimal?): PerKilo? {
+        val main = lines.filter { it.cost != null && it.boughtPerPortion != null && it.price != null && Units.dimension(it.price.unit) != null && it.price.unit != "pz" }
+            .maxByOrNull { it.cost!! } ?: return null
+        val unit = if (Units.dimension(main.price!!.unit) == Units.dimension("kg")) "kg" else "l"
+        val per = convertPhysical(main.boughtPerPortion!!, main.price.unit, unit) ?: return null
+        if (per.signum() <= 0) return null
+        val plates = BigDecimal.ONE.divide(per, MC)
+        return PerKilo(
+            ingredient = main.ingredient.name,
+            unit = unit,
+            perPlate = per.setScale(4, RoundingMode.HALF_UP),
+            plates = plates.setScale(1, RoundingMode.HALF_UP),
+            earns = marginPerPlate?.multiply(plates, MC)?.setScale(2, RoundingMode.HALF_UP),
         )
     }
 

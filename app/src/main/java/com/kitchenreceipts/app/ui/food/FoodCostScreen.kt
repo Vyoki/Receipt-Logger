@@ -87,6 +87,7 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
     var editMonth by remember { mutableStateOf<YearMonth?>(null) }
     var plan by remember { mutableStateOf<com.kitchenreceipts.core.MenuPlan?>(null) }
     var removeMissing by remember { mutableStateOf(false) }
+    var byCost by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
     val snackbar = remember { androidx.compose.material3.SnackbarHostState() }
     val context = androidx.compose.ui.platform.LocalContext.current
     val badFile = stringResource(R.string.food_import_bad)
@@ -142,9 +143,17 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
             item("dishT") { SectionTitle(stringResource(R.string.food_dishes)) }
             val list = dishes
             if (list != null && list.isEmpty()) item("noDish") { EmptyState(stringResource(R.string.food_no_dishes)) }
-            // Highest food cost first: those are the dishes to look at.
-            items(list.orEmpty().sortedWith(compareBy<RecipeCost> { it.recipe.ingredients.isEmpty() }.thenByDescending { it.foodCostPercent ?: BigDecimal.ZERO }), key = { "d" + it.recipe.id }) { d ->
-                DishRow(d, targetValue) { onOpenDish(d.recipe.id) }
+            if (!list.isNullOrEmpty()) item("sort") {
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    androidx.compose.material3.FilterChip(!byCost, { byCost = false }, label = { Text(stringResource(R.string.food_sort_earns)) })
+                    androidx.compose.material3.FilterChip(byCost, { byCost = true }, label = { Text(stringResource(R.string.food_sort_cost)) })
+                }
+            }
+            // What a plate earns, most first (the owner's question); or the highest food cost first (the dishes to fix).
+            val order = if (byCost) compareBy<RecipeCost> { it.recipe.ingredients.isEmpty() }.thenByDescending { it.foodCostPercent ?: BigDecimal.ZERO }
+            else compareBy<RecipeCost> { it.recipe.ingredients.isEmpty() }.thenBy { it.earns == null }.thenByDescending { it.earns ?: BigDecimal.ZERO }
+            items(list.orEmpty().sortedWith(order), key = { "d" + it.recipe.id }) { d ->
+                Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { DishRow(d, targetValue) { onOpenDish(d.recipe.id) } }
             }
             item("add") { BigButton(stringResource(R.string.food_add_dish), Icons.Filled.Add, primary = false, onClick = { onOpenDish(0L) }) }
             item("import") {
@@ -242,21 +251,36 @@ private fun DishRow(d: RecipeCost, target: BigDecimal, onClick: () -> Unit) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
                 Text(d.recipe.name, style = MaterialTheme.typography.titleMedium)
-                Text(
-                    stringResource(R.string.food_cost_line, euros(d.foodCost), d.recipe.salePriceCents?.let { fmtMoney(it) } ?: "—"),
-                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
-                )
+                if (d.recipe.ingredients.isEmpty()) {
+                    Text(stringResource(R.string.food_no_ingredients), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
+                } else {
+                    Text(
+                        listOfNotNull(
+                            d.customerPays?.let { stringResource(R.string.food_dish_sells, euros(it)) },
+                            stringResource(R.string.food_dish_ingredients, euros(d.foodCost)),
+                            d.foodCostPercent?.let { stringResource(R.string.food_dish_percent, ItalianNumbers.formatDecimal(it, maxScale = 1)) },
+                        ).joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall, color = d.foodCostPercent?.takeIf { it > target }?.let { Palette.Orange } ?: Palette.TextDim,
+                    )
+                    d.perKilo?.earns?.let { e ->
+                        val per = stringResource(if (d.perKilo!!.unit == "kg") R.string.food_unit_kg else R.string.food_unit_l)
+                        Text(stringResource(R.string.food_dish_per_kilo, per, d.perKilo!!.ingredient, euros(e)), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    }
+                }
                 val missing = d.ingredients.count { it.problem != null }
-                if (d.recipe.ingredients.isEmpty()) Text(stringResource(R.string.food_no_ingredients), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
                 if (missing > 0) Text(androidx.compose.ui.res.pluralStringResource(R.plurals.food_incomplete, missing, missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
-                if (d.vatUncertain) Text(stringResource(R.string.food_vat_uncertain), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
+                if (d.vatUncertain) Text(stringResource(R.string.food_vat_uncertain), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
             }
-            d.foodCostPercent?.takeIf { d.recipe.ingredients.isNotEmpty() }?.let { p ->
-                Text(
-                    stringResource(R.string.food_percent, ItalianNumbers.formatDecimal(p, maxScale = 1)),
-                    style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
-                    color = if (p > target) Palette.Orange else Palette.Ok,
-                )
+            // What one plate earns: the number the owner looks for.
+            d.earns?.takeIf { d.recipe.ingredients.isNotEmpty() }?.let { e ->
+                Column(horizontalAlignment = Alignment.End) {
+                    Text(
+                        (if (e.signum() < 0) "−" else "") + euros(e.abs()),
+                        style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
+                        color = if (e.signum() < 0) Palette.Error else Palette.Ok,
+                    )
+                    Text(stringResource(R.string.food_dish_per_plate), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                }
             }
         }
     }

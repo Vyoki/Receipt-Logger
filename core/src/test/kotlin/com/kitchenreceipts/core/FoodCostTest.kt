@@ -136,4 +136,69 @@ class FoodCostTest {
         // A cheaper price never alerts.
         assertTrue(FoodCost.dishAlerts(listOf(dish), mapOf(7L to price("28")), mapOf(7L to price("20")), targetPercent = BigDecimal(30)).isEmpty())
     }
+
+    /** What the owner reads: what one plate earns, where the customer's money goes, and per kilo of the main ingredient. */
+    @Test fun whatAPlateEarns() {
+        val prices = mapOf(
+            1L to IngredientPrice(BigDecimal("17"), "kg", LocalDate.parse("2026-10-09"), "ABC S.r.l.", false,
+                previous = IngredientPrice(BigDecimal("16"), "kg", LocalDate.parse("2026-09-26"), "ABC S.r.l.", false)),
+            2L to IngredientPrice(BigDecimal("8"), "l", null, null, false),
+        )
+        val r = Recipe(
+            1, "Tagliata", "secondi", 1700, true, BigDecimal.TEN, BigDecimal.ONE,
+            listOf(
+                RecipeIngredient(1, "Manzo", BigDecimal("250"), "g"), // 0,25 kg x 17 = 4,25
+                RecipeIngredient(2, "Olio", BigDecimal("10"), "ml"), // 0,08
+            ),
+        )
+        val c = FoodCost.cost(r, { prices[it] })
+        eq("17.00", c.customerPays)
+        eq("1.5455", c.vatOfPrice) // 17,00 - 15,4545
+        eq("4.33", c.foodCost)
+        eq("11.1245", c.earns) // 15,4545 - 4,33
+        // A kilo of beef makes 4 plates, which earn 4 x 11,1245.
+        val k = c.perKilo!!
+        assertEquals("Manzo", k.ingredient)
+        assertEquals("kg", k.unit)
+        eq("0.25", k.perPlate)
+        eq("4.0", k.plates)
+        eq("44.50", k.earns)
+        // The beef went from 16 to 17 €/kg: 0,25 € more per plate.
+        eq("0.25", c.ingredients[0].changePerPortion)
+        assertNull(c.ingredients[1].changePerPortion)
+        eq("0.25", c.changePerPortion)
+        // VAT + ingredients + earnings = what the customer pays.
+        eq("17.00", c.vatOfPrice!!.add(c.foodCost).add(c.overheads).add(c.earns!!))
+    }
+
+    @Test fun staffAndUtilitiesComeOutOfTheEarnings() {
+        val r = Recipe(1, "Pasta", "primi", 1100, false, BigDecimal.TEN, BigDecimal("2"), listOf(RecipeIngredient(1, "Pasta", BigDecimal("200"), "g")))
+        val c = FoodCost.cost(r, { IngredientPrice(BigDecimal("2"), "kg", null, null, false) }, overheadPercent = BigDecimal(30))
+        eq("0.20", c.foodCost) // 0,2 kg x 2 / 2 portions
+        eq("0.06", c.overheads)
+        eq("12.10", c.customerPays) // 11,00 without VAT + 10%
+        eq("1.10", c.vatOfPrice)
+        eq("10.74", c.earns)
+        eq("0.1", c.perKilo!!.perPlate)
+        eq("10.0", c.perKilo!!.plates)
+    }
+
+    @Test fun thePriceBeforeIsAnEarlierDelivery() {
+        val p = FoodCost.lastPrice(
+            listOf(
+                buy(1, "2026-09-26", "1", "kg", 1890, id = 1),
+                buy(1, "2026-10-09", "1", "kg", 1869, id = 2),
+                buy(1, "2026-10-09", "2", "kg", 3738, id = 3), // same delivery, second line: no change
+            ),
+        )!!
+        eq("18.69", p.price)
+        eq("18.90", p.previous!!.price)
+        assertEquals(LocalDate.parse("2026-09-26"), p.previous!!.date)
+        assertNull(FoodCost.lastPrice(listOf(buy(1, "2026-10-09", "1", "kg", 1869)))!!.previous)
+    }
+
+    @Test fun noPerKiloForDishesOfPieces() {
+        val r = Recipe(1, "Uovo", null, 500, true, BigDecimal.TEN, BigDecimal.ONE, listOf(RecipeIngredient(1, "Uova", BigDecimal("2"), "pz")))
+        assertNull(FoodCost.cost(r, { IngredientPrice(BigDecimal("0.20"), "pz", null, null, false) }).perKilo)
+    }
 }

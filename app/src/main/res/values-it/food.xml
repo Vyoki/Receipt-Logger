@@ -6,7 +6,6 @@
     <string name="food_dishes">Piatti</string>
     <string name="food_no_dishes">Nessun piatto ancora. Aggiungi i piatti del menu con ingredienti e prezzo.</string>
     <string name="food_add_dish">Aggiungi un piatto</string>
-    <string name="food_cost_line">Costo %1$s · prezzo %2$s</string>
     <string name="food_percent">%1$s%%</string>
     <plurals name="food_incomplete">
         <item quantity="one">%1$d ingrediente senza prezzo: il costo è troppo basso</item>
@@ -50,17 +49,11 @@
     <string name="recipe_waste" formatted="false">Scarto %</string>
     <string name="recipe_manual_price">Prezzo (€) al</string>
     <string name="recipe_manual_hint">Nessun acquisto ancora: scrivi un prezzo, o collegalo a un prodotto.</string>
-    <string name="recipe_price_from">%1$s al %2$s · %3$s</string>
     <string name="recipe_price_typed">scritto da te</string>
     <string name="recipe_vat_unknown">IVA non nota</string>
     <string name="food_vat_uncertain">Alcuni prezzi vengono da documenti che non dicono se l\'IVA è compresa: il food cost potrebbe essere troppo alto. Indicalo su quei documenti.</string>
     <string name="recipe_no_price">Senza prezzo</string>
     <string name="recipe_units_dont_convert">Comprato al %1$s: aggiungi una conversione nel prodotto (es. 1 pz = 60 g)</string>
-    <string name="recipe_cost_portion">Food cost a porzione</string>
-    <string name="recipe_full_cost">Con personale e utenze</string>
-    <string name="recipe_net_price">Prezzo senza IVA</string>
-    <string name="recipe_margin">Margine</string>
-    <string name="recipe_for_target">Prezzo per un food cost del %1$s%%</string>
     <string name="recipe_save">Salva piatto</string>
     <string name="recipe_delete">Elimina piatto</string>
     <string name="recipe_delete_text">Il piatto e i suoi ingredienti vengono eliminati. Prodotti e acquisti restano.</string>
@@ -102,4 +95,33 @@
     <string name="food_import_changes">Modifiche ai piatti già presenti:</string>
     <string name="yes">Sì</string>
     <string name="no">No</string>
+    <string name="food_earns_plate">Guadagna %1$s a piatto</string>
+    <string name="food_loses_plate">Perde %1$s a piatto</string>
+    <string name="food_cost_plate">Ingredienti %1$s a piatto</string>
+    <string name="food_type_price">Scrivi il prezzo in menu per vedere quanto guadagna un piatto.</string>
+    <string name="food_split_title">Dei %1$s che paga il cliente:</string>
+    <string name="food_split_vat">IVA, allo Stato: %1$s</string>
+    <string name="food_split_ingredients">Ingredienti: %1$s</string>
+    <string name="food_split_overheads">Personale e utenze: %1$s</string>
+    <string name="food_split_earns">Resta al ristorante: %1$s</string>
+    <string name="food_unit_kg">chilo</string>
+    <string name="food_unit_l">litro</string>
+    <string name="food_per_kilo">Per un %1$s di %2$s: %3$s piatti, che guadagnano %4$s</string>
+    <string name="food_per_kilo_plates">Per un %1$s di %2$s: %3$s piatti</string>
+    <string name="food_percent_line">Food cost %1$s%% del prezzo senza IVA (obiettivo %2$s%%)</string>
+    <string name="food_change_up">Con le ultime consegne, ogni piatto costa %1$s in più.</string>
+    <string name="food_change_down">Con le ultime consegne, ogni piatto costa %1$s in meno.</string>
+    <string name="recipe_for_target_line">Per un food cost del %1$s%% il prezzo in menu sarebbe %2$s</string>
+    <string name="recipe_line_math">%1$s × %2$s/%3$s = %4$s</string>
+    <string name="recipe_waste_included">scarto del %1$s%% compreso</string>
+    <string name="recipe_change_up">Era %1$s/%2$s il %3$s: %4$s in più a piatto</string>
+    <string name="recipe_change_down">Era %1$s/%2$s il %3$s: %4$s in meno a piatto</string>
+    <string name="food_sort_earns">Guadagnano di più</string>
+    <string name="food_sort_cost">Food cost più alto</string>
+    <string name="food_dish_sells">venduto %1$s</string>
+    <string name="food_dish_ingredients">ingredienti %1$s</string>
+    <string name="food_dish_percent">food cost %1$s%%</string>
+    <string name="food_dish_per_kilo">per un %1$s di %2$s: %3$s</string>
+    <string name="food_dish_per_plate">a piatto</string>
+    <string name="food_before_overheads">Da qui vanno ancora pagati personale, affitto e utenze: per contarli, imposta la % extra nella schermata Food cost.</string>
 </resources>
