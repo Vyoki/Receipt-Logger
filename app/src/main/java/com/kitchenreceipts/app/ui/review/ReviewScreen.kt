@@ -518,27 +518,27 @@ private fun ChecksPanel(c: Reconcile.Report) {
     val status = LocalStatusColors.current
     Panel {
         Column(Modifier.fillMaxWidth().padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(stringResource(R.string.checks_title), fontWeight = FontWeight.SemiBold)
-            if (c.vatProven) Text("✓ " + stringResource(R.string.checks_vat_proven), color = status.ok, style = MaterialTheme.typography.bodyMedium)
+            Text(stringResource(R.string.proof_title), fontWeight = FontWeight.SemiBold)
+            if (c.vatProven) Text("✓ " + stringResource(R.string.proof_vat_proven), color = status.ok, style = MaterialTheme.typography.bodyMedium)
             if (c.recovered.isNotEmpty()) {
-                Text(pluralStringResource(R.plurals.checks_recovered, c.recovered.size, c.recovered.size), style = MaterialTheme.typography.bodyMedium)
+                Text(pluralStringResource(R.plurals.proof_recovered, c.recovered.size, c.recovered.size), style = MaterialTheme.typography.bodyMedium)
                 c.recovered.forEach { Text("   $it", style = MaterialTheme.typography.bodyMedium) }
             }
             if (c.dropped.isNotEmpty()) {
-                Text(pluralStringResource(R.plurals.checks_dropped, c.dropped.size, c.dropped.size), style = MaterialTheme.typography.bodyMedium)
+                Text(pluralStringResource(R.plurals.proof_dropped, c.dropped.size, c.dropped.size), style = MaterialTheme.typography.bodyMedium)
                 c.dropped.forEach { Text("   $it", style = MaterialTheme.typography.bodyMedium) }
             }
-            if (c.ratesFound > 0) Text(pluralStringResource(R.plurals.checks_rates, c.ratesFound, c.ratesFound), style = MaterialTheme.typography.bodyMedium)
+            if (c.ratesFound > 0) Text(pluralStringResource(R.plurals.proof_rates, c.ratesFound, c.ratesFound), style = MaterialTheme.typography.bodyMedium)
             c.packagesPrinted?.let { printed ->
                 if (c.packagesAgree) {
-                    Text("✓ " + stringResource(R.string.checks_packages_ok, printed), color = status.ok, style = MaterialTheme.typography.bodyMedium)
+                    Text("✓ " + stringResource(R.string.proof_packages_ok, printed), color = status.ok, style = MaterialTheme.typography.bodyMedium)
                 } else c.packagesCounted?.let { counted ->
-                    Text(stringResource(R.string.checks_packages_differ, counted, printed), color = status.uncertainBorder, style = MaterialTheme.typography.bodyMedium)
+                    Text(stringResource(R.string.proof_packages_differ, counted, printed), color = status.uncertainBorder, style = MaterialTheme.typography.bodyMedium)
                 }
             }
             c.pagesOf?.takeIf { c.pagesMissing.isNotEmpty() }?.let { of ->
                 Text(
-                    stringResource(R.string.checks_pages_missing, c.pagesMissing.joinToString(", "), of),
+                    stringResource(R.string.proof_pages_missing, c.pagesMissing.joinToString(", "), of),
                     color = if (c.vatProven) MaterialTheme.colorScheme.onSurfaceVariant else status.uncertainBorder,
                     style = MaterialTheme.typography.bodyMedium,
                 )
