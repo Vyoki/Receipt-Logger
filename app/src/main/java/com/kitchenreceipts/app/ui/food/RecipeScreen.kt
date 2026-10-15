@@ -48,12 +48,10 @@ import com.kitchenreceipts.app.ui.appContainer
 import com.kitchenreceipts.app.ui.components.AppScaffold
 import com.kitchenreceipts.app.ui.components.BigButton
 import com.kitchenreceipts.app.ui.components.ConfirmDialog
-import com.kitchenreceipts.app.ui.components.KeyValue
 import com.kitchenreceipts.app.ui.components.LoadingBox
 import com.kitchenreceipts.app.ui.components.OutlinedButton
 import com.kitchenreceipts.app.ui.components.Panel
 import com.kitchenreceipts.app.ui.components.SectionTitle
-import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.review.ProductPickerSheet
 import com.kitchenreceipts.app.ui.theme.Palette
 import com.kitchenreceipts.core.CostProblem
@@ -260,14 +258,12 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
 
             // ---------------------------------------------------------------- the cost, live
             Panel {
-                Column(Modifier.padding(16.dp)) {
-                    KeyValue(stringResource(R.string.recipe_cost_portion), euros(cost.foodCost), emphasize = true)
-                    if (c.settings.overheadPercent.signum() > 0) KeyValue(stringResource(R.string.recipe_full_cost), euros(cost.fullCost))
-                    cost.netPrice?.let { KeyValue(stringResource(R.string.recipe_net_price), euros(it)) }
-                    cost.foodCostPercent?.let { KeyValue(stringResource(R.string.food_title), ItalianNumbers.formatDecimal(it, maxScale = 1) + " %", emphasize = true) }
-                    cost.margin?.let { KeyValue(stringResource(R.string.recipe_margin), euros(it)) }
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     val target = c.settings.foodCostTarget
-                    FoodCost.priceForTarget(cost, target)?.let { KeyValue(stringResource(R.string.recipe_for_target, ItalianNumbers.formatDecimal(target)), euros(it)) }
+                    PlateSummary(cost, target)
+                    FoodCost.priceForTarget(cost, target)?.let {
+                        Text(stringResource(R.string.recipe_for_target_line, ItalianNumbers.formatDecimal(target), euros(it)), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                    }
                     val missing = cost.ingredients.count { it.problem != null }
                     if (missing > 0) Text(androidx.compose.ui.res.pluralStringResource(R.plurals.food_incomplete, missing, missing), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
                     if (cost.vatUncertain) Text(stringResource(R.string.food_vat_uncertain), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.Orange)
@@ -350,11 +346,8 @@ private fun IngredientEditor(ing: IngredientUi, line: IngredientCost?, quantityM
             }
             val p = line?.price
             when {
-                p != null && !p.manual -> Text(
-                    stringResource(R.string.recipe_price_from, euros(p.price), p.unit, listOfNotNull(p.sellerName, p.date?.let(::fmtDate)).joinToString(" ")) +
-                        if (p.vatUnknown) " · " + stringResource(R.string.recipe_vat_unknown) else "",
-                    style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
-                )
+                // The working, so the cost is never a mystery: grams x price per kilo = cost, and where the price is from.
+                p != null && line != null && line.cost != null -> IngredientMath(line)
                 line?.problem == CostProblem.UNITS_DONT_CONVERT && p != null ->
                     Text(stringResource(R.string.recipe_units_dont_convert, p.unit), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
             }
