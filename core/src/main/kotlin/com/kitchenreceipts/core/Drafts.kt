@@ -126,6 +126,8 @@ data class DocumentDraft(
     val aiCheck: AiCheck? = null,
     /** Other spellings of the supplier read on the document when they disagree (see [SupplierProof]): one tap each. */
     val sellerAlternatives: List<String> = emptyList(),
+    /** What the document's own sums say about the reading: lines recovered or dropped, packages, pages (see [Reconcile]). */
+    val checks: Reconcile.Report? = null,
 ) {
     val uncertainCount: Int
         get() = listOf(seller, date, number, currency, subtotal, vat, total).count { it.uncertain } +
@@ -173,6 +175,7 @@ data class DocumentDraft(
                 vatGroupProblems = p.vatChecks.filter { !it.ok },
                 aiCheck = p.aiCheck,
                 sellerAlternatives = p.supplierProof?.takeIf { p.sellerName?.confidence == Confidence.LOW }?.alternatives.orEmpty(),
+                checks = p.reconciled,
             )
         }
     }

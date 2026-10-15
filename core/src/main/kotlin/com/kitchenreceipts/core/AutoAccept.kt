@@ -26,6 +26,8 @@ enum class ReviewReason {
     UNUSUAL_PRICE,
     /** The same page was photographed twice (and another page maybe not at all). */
     DUPLICATE_PAGE,
+    /** Pages the document numbers were not photographed, and the sums do not prove no line is missing. */
+    PAGES_MISSING,
 }
 
 /**
@@ -62,6 +64,7 @@ object AutoAccept {
         if (d.vatGroupProblems.isNotEmpty()) out += ReviewReason.VAT_GROUP_MISMATCH
         if (ParseWarning.OTHER_BUYER in d.warnings) out += ReviewReason.OTHER_BUYER
         if (ParseWarning.DUPLICATE_PAGE in d.warnings) out += ReviewReason.DUPLICATE_PAGE
+        if (ParseWarning.PAGES_MISSING in d.warnings) out += ReviewReason.PAGES_MISSING
         if (d.vatBasis == VatBasis.UNKNOWN && inferVatBasis(d) == null && sumOk) {
             out += ReviewReason.VAT_BASIS_UNKNOWN
         }

@@ -687,7 +687,7 @@ object ReceiptParser {
 
     private val CHECK_WARNINGS = setOf(
         ParseWarning.NO_ITEMS_FOUND, ParseWarning.LINE_TOTAL_MISMATCH, ParseWarning.TOTALS_INCONSISTENT, ParseWarning.ITEMS_SUM_MISMATCH,
-        ParseWarning.VAT_GROUP_MISMATCH,
+        ParseWarning.VAT_GROUP_MISMATCH, ParseWarning.PAGES_MISSING,
     )
 
     /**
@@ -703,6 +703,13 @@ object ReceiptParser {
         items = VatSummary.fillMissingRates(items, groups)
         // Pkgs against the total printed at the foot ("N. COLLI 10").
         items = PackagesCheck.repair(items, text)
+        // The document checks itself: rows missed, readings that are no product, unreadable VAT codes, found where
+        // exactly one answer makes every VAT rate add up (see Reconcile).
+        val (checkedItems, report0) = runCatching { Reconcile.apply(items, groups, text) }.getOrElse { items to Reconcile.Report() }
+        items = checkedItems
+        // Read again (the AI's answers, a second pass): what an earlier check changed is still worth saying.
+        val report = doc.reconciled?.takeIf { it.changed && !report0.changed }
+            ?.let { report0.copy(recovered = it.recovered, dropped = it.dropped, ratesFound = it.ratesFound) } ?: report0
         // Lots under a "LOTTO" heading, found under (nearly) every product: read where the document prints them.
         items = settleLots(items, text)
         items = lotShapes(items)
@@ -782,6 +789,8 @@ object ReceiptParser {
         // Lines per VAT rate against the VAT summary: a group that does not add up points at the misread line.
         val vatChecks = VatSummary.check(items, groups)
         if (vatChecks.any { !it.ok }) warnings += ParseWarning.VAT_GROUP_MISMATCH
+        // Pages the document numbers and were not photographed, when nothing proves no line is missing.
+        if (report.pagesMissing.isNotEmpty() && !report.vatProven) warnings += ParseWarning.PAGES_MISSING
         val lotsPrinted = items.any { it.lotNumber != null } || LOTS_WORD.containsMatchIn(text)
         if (!derivedTotal) total = confirmTotal(total, subtotal, vat, itemsSum, groups, text, tolerance)
         // Taxable amount and VAT: sure when they add up to the total, or the lines / the VAT summary give the same.
@@ -800,7 +809,7 @@ object ReceiptParser {
         }
         return doc.copy(
             lineItems = items, totalCents = total, vatCents = vat, subtotalCents = subtotal, vatBasis = vatBasis, warnings = warnings,
-            vatChecks = vatChecks, lotsPrinted = lotsPrinted,
+            vatChecks = vatChecks, lotsPrinted = lotsPrinted, reconciled = report,
         )
     }
 
@@ -1286,7 +1295,7 @@ object ReceiptParser {
         val stripped = stripItemCode(line.split(' ').filter { it.isNotBlank() }, colliColumn)
         val codeFree = stripped.tokens
         val itemCode = stripped.code
-        var tokens = splitGluedUnit(codeFree)
+        var tokens = tidyTail(splitGluedUnit(codeFree))
         // Drop a VAT class letter after the price: "PANE 2,50 B" -> "PANE 2,50".
         while (tokens.size > 2 && VAT_CODE_TOKEN.matches(tokens.last()) && classify(tokens[tokens.size - 2]) != null) {
             tokens = tokens.dropLast(1)
@@ -1455,6 +1464,11 @@ object ReceiptParser {
             }
         }
 
+        var colliRead = stripped.packages
+        if (colliRead == null && colliColumn && consistent && !qtyWorkedOut) colliInName(description, qty)?.let { (c, name) ->
+            colliRead = c
+            description = name
+        }
         val conf = if (consistent) Confidence.HIGH else Confidence.LOW
         val qtyConf = if (qtyWorkedOut) Confidence.LOW else conf
         val warnings = if (qty != null && price != null && totalCents != null && !consistent) {
@@ -1474,11 +1488,52 @@ object ReceiptParser {
             expiryDate = null,
             warnings = warnings,
             itemCode = itemCode,
-            packages = stripped.packages?.let { Extracted(normalizeColli(it), Confidence.HIGH, line) },
+            packages = colliRead?.let { Extracted(normalizeColli(it), Confidence.HIGH, line) },
             // A size printed in the name ("700G") is read, not worked out: certain whatever the rest of the line.
             packSize = packSize?.let { Extracted(it.text, if (sizeOnly) Confidence.HIGH else conf, line) },
         )
     }
+
+    /**
+     * The camera's slips at the end of an item row, where the numbers are: a dot after the amount ("8,21." from a speck
+     * on the paper), a VAT code read with a letter for a digit ("D4", "1O"). Only when the token before the code is an
+     * amount, so a word at the end of a name is never touched.
+     */
+    private fun tidyTail(tokens0: List<String>): List<String> {
+        if (tokens0.size < 3) return tokens0
+        val t = tokens0.toMutableList()
+        fun amountDot(i: Int) { if (i >= 0 && AMOUNT_WITH_DOT.matches(t[i])) t[i] = t[i].dropLast(1) }
+        amountDot(t.size - 1)
+        amountDot(t.size - 2)
+        val code = t.last()
+        if (code.length == 2 && code.any(Char::isDigit) && !code.all(Char::isDigit) && rx("[.,]\\d{2}$").containsMatchIn(t[t.size - 2])) {
+            val folded = code.map { c -> RATE_LOOKALIKE[c] ?: c }.joinToString("")
+            if (VAT_RATE_CODE.matches(folded)) t[t.size - 1] = folded
+        }
+        return t
+    }
+
+    private val AMOUNT_WITH_DOT = Regex("^\\d{1,3}(?:\\.\\d{3})*,\\d{2}\\.$")
+    private val RATE_LOOKALIKE = mapOf('O' to '0', 'o' to '0', 'D' to '0', 'I' to '1', 'l' to '1', '|' to '1', 'Z' to '2', 'z' to '2', 'S' to '5', 's' to '5')
+
+    /**
+     * Pkgs read as the first word of the name, in a table with a Pkgs column: "Ixi" (1x1), "112" (1x2, the x read as a
+     * 1). Taken as Pkgs only when the pieces they count are the quantity printed on the row: A x B = quantity.
+     */
+    private fun colliInName(description: String, qty: BigDecimal?): Pair<String, String>? {
+        if (qty == null || qty.signum() <= 0 || !isWholeNumber(qty)) return null
+        val first = description.substringBefore(' ')
+        if (first.length == description.length) return null
+        val folded = first.map { c -> if (c in "IiLl|") '1' else c }.joinToString("")
+        val m = MISREAD_COLLI.matchEntire(folded) ?: return null
+        val a = m.groupValues[1].toInt(); val b = m.groupValues[3].toInt()
+        if (BigDecimal(a.toLong() * b).compareTo(qty) != 0) return null
+        // Without an x ("112"), only a 1 can stand for it, and it must not be a number of the name ("100 TOVAGLIOLI").
+        if (m.groupValues[2] == "1" && (first.length != 3 || !first.all(Char::isDigit))) return null
+        return "${a}x$b" to description.substringAfter(' ').trim()
+    }
+
+    private val MISREAD_COLLI = Regex("^([1-9])([xX×*1])([1-9]\\d?)$")
 
     private fun normalizeColli(raw: String): String =
         raw.map { c -> when (c) { 'l', 'I', 'L' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString("")

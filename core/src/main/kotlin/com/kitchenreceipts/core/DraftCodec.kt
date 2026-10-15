@@ -82,6 +82,7 @@ object DraftCodec {
             vatGroupProblems = hints?.vatGroupProblems.orEmpty(),
             aiCheck = hints?.aiCheck,
             sellerAlternatives = if (seller.uncertain) hints?.sellerAlternatives.orEmpty() else emptyList(),
+            checks = hints?.checks,
         )
     }.getOrNull()
 

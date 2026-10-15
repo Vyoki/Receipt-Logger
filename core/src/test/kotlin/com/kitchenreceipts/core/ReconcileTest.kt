@@ -1,0 +1,194 @@
+package com.kitchenreceipts.core
+
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
+import org.junit.Test
+import java.math.BigDecimal
+
+/**
+ * The document checks itself (content invented; the failures are those of a real cash & carry invoice):
+ * - one row's amount smudged ("8,21" read "g,21"), another with a speck after the amount ("8,21."): both lines kept;
+ * - another sheet's amount column showing at the edge of the photo, glued to a column heading: not a line;
+ * - the Pkgs column read into the name ("112" for 1x2, "Ixi" for 1x1): Pkgs, not name;
+ * - a VAT code with a letter for a digit ("D4");
+ * - the VAT summary, the packages total and the page count prove the result.
+ */
+class ReconcileTest {
+
+    private val page1 = """
+        ABC S.r.l.
+        VIA ESEMPIO, 1 00100 ROMA (RM)
+        P.IVA 01234567897
+        TIPO DOCUMENTO N.RO DOCUMENTO DATA DOCUMENTO CONDIZIONI DI PAGAMENTO PAG.
+        COPIA FATTURA 12A/34567 14/10/2026 RIMESSA DIRETTA 1/2
+        COLLI DESCRIZIONE BENI TIPO TOT. PREZZO IMPORTO COD
+        CODICE
+        N.xPz ( Natura e qualità ) CONF. PZ/KG UNIT. € EUR IVA
+        1000011 1x10 LATTE INTERO LT.1 BT LT 1 10 1,100 11,00 04
+        1000022 1x2 BISCOTTI FROLLINI GR.250 AS GR 250 2 1,300 2,60 10
+        O 1000033 1 PECORINO GRATTUGIATO KG 0,50 16,420d Sxf g,21 04
+        O 1000033 1 PECORINO GRATTUGIATO KG 0,50 16,420 8,21. 04
+        1000044 112 ERBA CIPOLLINA G30 GR 30 2 0,950 1,90 04
+        1000055 Ixi DETERSIVO PIATTI ML.750 FL ML 750 1 4,800 4,80 22
+        SEGUE >>>
+    """.trimIndent()
+
+    private val page2 = """
+        ABC S.r.l.
+        TIPO DOCUMENTO N.RO DOCUMENTO DATA DOCUMENTO CONDIZIONI DI PAGAMENTO PAG.
+        COPIA FATTURA 12A/34567 14/10/2026 RIMESSA DIRETTA 2/2
+        DESCRIZIONE BENI TIPO TOT. PREZZO IMPORTO COD
+        EUR IVA CODICE N.XPZ
+        (Natura e qualità ) CONF. PZ/KG UNIT. € EUR IVA
+        11,00 04
+        1000066 1x6 ACQUA MINERALE LT1 PZ 1 6 0,300 1,80 22
+        2,60 10
+        1000077 1x1 CAFFE MACINATO GR 250 1 3,890 3,89 10
+        1000088 1x1 LATTE PARZ. SCREMATO ML 500 1 0,850 0,85 D4
+        IMPONIBILI IVA IMPORTO IVA DESCRIZIONE COD IVA
+        30,17 04 1,21 ALIQUOTA 4%
+        6,49 10 0,65 ALIQUOTA 10%
+        6,60 22 1,45 ALIQUOTA 22%
+        TOTALE IMPONIBILI 43,26
+        TOTALE IVA 3,31
+        TOTALE DOCUMENTO 46,57
+        TOTALE COLLI 9
+    """.trimIndent()
+
+    private fun read(vararg pages: String) = ReceiptParser.parse(pages.joinToString("\n${ReceiptParser.PAGE_BREAK}\n"))
+
+    @Test fun everyLineIsFoundAndTheTotalsProveIt() {
+        val d = read(page1, page2)
+        val names = d.lineItems.map { it.originalDescription }
+        assertEquals(names.toString(), 9, d.lineItems.size)
+        assertEquals(2, names.count { it.startsWith("PECORINO") })
+        assertTrue(d.lineItems.all { (it.lineTotalCents?.value ?: 0) > 0 && it.quantity != null })
+        val r = d.reconciled!!
+        assertTrue(r.vatProven)
+        assertEquals(1, r.recovered.size)
+        assertTrue(r.recovered.single().contains("8,21"))
+        assertEquals(1, r.dropped.size)
+        assertTrue(r.dropped.single().endsWith("11,00"))
+        assertTrue(d.vatChecks.all { it.ok && it.differenceCents == 0L })
+        assertFalse(ParseWarning.VAT_GROUP_MISMATCH in d.warnings)
+    }
+
+    @Test fun theRecoveredLineIsWhereItWasPrinted() {
+        val names = read(page1, page2).lineItems.map { it.originalDescription }
+        assertTrue(names[1].startsWith("BISCOTTI"))
+        assertTrue(names[2].startsWith("PECORINO") && names[3].startsWith("PECORINO"))
+    }
+
+    @Test fun packagesAreNotLinesAndAddUp() {
+        val d = read(page1, page2)
+        val herbs = d.lineItems.single { it.originalDescription.startsWith("ERBA") }
+        assertEquals("1x2", herbs.packages?.value)
+        val soap = d.lineItems.single { it.originalDescription.startsWith("DETERSIVO") }
+        assertEquals("1x1", soap.packages?.value)
+        val r = d.reconciled!!
+        assertEquals(9, r.packagesPrinted)
+        assertEquals(9, r.packagesCounted)
+        assertTrue(r.packagesAgree)
+    }
+
+    @Test fun aVatCodeWithALetterForADigit() {
+        val milk = read(page1, page2).lineItems.single { it.originalDescription.startsWith("LATTE PARZ") }
+        assertEquals(0, BigDecimal(4).compareTo(milk.vatRatePercent?.value))
+    }
+
+    @Test fun allPagesPhotographed() {
+        val r = read(page1, page2).reconciled!!
+        assertEquals(2, r.pagesOf)
+        assertTrue(r.pagesMissing.isEmpty())
+    }
+
+    @Test fun aMissingPageIsSaidWhenTheSumsCannotProveNothingIsMissing() {
+        val d = read(page2)
+        assertEquals(listOf(1), d.reconciled!!.pagesMissing)
+        assertFalse(d.reconciled!!.vatProven)
+        assertTrue(ParseWarning.PAGES_MISSING in d.warnings)
+    }
+
+    @Test fun twoEqualAnswersChangeNothing() {
+        // Either "extra" line could be the one that is no product: nothing is decided, the gap stays to be checked.
+        fun line(name: String, cents: Long, rate: Int, qty: Boolean) = ParsedLineItem(
+            name, if (qty) Extracted(BigDecimal.ONE, Confidence.HIGH, name) else null, null,
+            if (qty) Extracted(BigDecimal(cents).movePointLeft(2), Confidence.HIGH, name) else null,
+            Extracted(cents, Confidence.HIGH, name), Extracted(BigDecimal(rate), Confidence.HIGH, name), null, null,
+        )
+        val items = listOf(
+            line("PANE", 1000, 4, true), line("LATTE", 300, 4, true), line("UOVA", 200, 4, true), line("BURRO", 400, 4, true),
+            line("FARINA", 100, 4, true), line("RISO", 250, 4, true), line("NOTA A", 500, 4, false), line("NOTA B", 500, 4, false),
+        )
+        val groups = listOf(VatSummary.Group(BigDecimal(4), 2750, 110, "27,50 04 1,10"))
+        val (out, report) = Reconcile.apply(items, groups, "")
+        assertEquals(items, out)
+        assertFalse(report.changed)
+        assertFalse(report.vatProven)
+    }
+
+    @Test fun aTillReceiptLineIsNeverDropped() {
+        // Every line an amount alone: one equal to the difference is a product all the same.
+        fun line(name: String, cents: Long) = ParsedLineItem(
+            name, null, null, null, Extracted(cents, Confidence.HIGH, name), Extracted(BigDecimal(10), Confidence.HIGH, name), null, null,
+        )
+        val items = listOf(line("PANE", 250), line("CAFFE", 600), line("ACQUA", 100))
+        val groups = listOf(VatSummary.Group(BigDecimal(10), 350, 35, "3,50 10 0,35"))
+        val (out, report) = Reconcile.apply(items, groups, "")
+        assertEquals(items, out)
+        assertFalse(report.changed)
+    }
+
+    @Test fun oneLineThatIsNoProductIsLeftOut() {
+        fun line(name: String, cents: Long, qty: Boolean) = ParsedLineItem(
+            name, if (qty) Extracted(BigDecimal.ONE, Confidence.HIGH, name) else null, null,
+            if (qty) Extracted(BigDecimal(cents).movePointLeft(2), Confidence.HIGH, name) else null,
+            Extracted(cents, Confidence.HIGH, name), Extracted(BigDecimal(4), Confidence.HIGH, name), null, null,
+        )
+        val items = listOf(line("PANE", 1000, true), line("LATTE", 300, true), line("UOVA", 200, true), line("IMPORTO EUR IVA", 1040, false))
+        val groups = listOf(VatSummary.Group(BigDecimal(4), 1500, 60, "15,00 04 0,60"))
+        val (out, report) = Reconcile.apply(items, groups, "")
+        assertEquals(3, out.size)
+        assertEquals(listOf("IMPORTO EUR IVA  10,40"), report.dropped)
+        assertTrue(report.vatProven)
+    }
+
+    @Test fun anUnreadableRateIsTheOneThatClosesTheSums() {
+        fun line(name: String, cents: Long, rate: Int?) = ParsedLineItem(
+            name, Extracted(BigDecimal.ONE, Confidence.HIGH, name), null, Extracted(BigDecimal(cents).movePointLeft(2), Confidence.HIGH, name),
+            Extracted(cents, Confidence.HIGH, name), rate?.let { Extracted(BigDecimal(it), Confidence.HIGH, name) }, null, null,
+        )
+        val items = listOf(line("PANE", 1000, 4), line("VINO", 2000, 22), line("LATTE", 80, null))
+        val groups = listOf(
+            VatSummary.Group(BigDecimal(4), 1080, 43, "10,80 04 0,43"),
+            VatSummary.Group(BigDecimal(22), 2000, 440, "20,00 22 4,40"),
+        )
+        val (out, report) = Reconcile.apply(items, groups, "")
+        assertEquals(0, BigDecimal(4).compareTo(out[2].vatRatePercent?.value))
+        assertEquals(1, report.ratesFound)
+        assertTrue(report.vatProven)
+    }
+
+    @Test fun aRowWithAnUnreadableAmountAndNoReadableCentsIsNotALine() {
+        assertNull(Reconcile.wholeLine("1000033 1 PECORINO GRATTUGIATO KG 0,50 16,420 xx 04", colliColumn = true))
+        // The cents readable but not those of quantity x price: not this line.
+        assertNull(Reconcile.wholeLine("1000033 1 PECORINO GRATTUGIATO KG 0,50 16,420 g,20 04", colliColumn = true))
+        assertNotNull(Reconcile.wholeLine("1000033 1 PECORINO GRATTUGIATO KG 0,50 16,420 g,21 04", colliColumn = true))
+    }
+
+    @Test fun pageMarks() {
+        val text = "TIPO DOCUMENTO PAG.\nFATTURA 1 14/10/2026 1/3\n\u000C\nTIPO DOCUMENTO PAG.\nFATTURA 1 14/10/2026 3/3"
+        assertEquals(3 to listOf(2), Reconcile.pageMarks(text))
+        assertEquals(4 to listOf(1, 3), Reconcile.pageMarks("Pagina 2 di 4\nPagina 4 di 4"))
+        assertNull(Reconcile.pageMarks("CONT. GN1/4 H150 1 6,10"))
+    }
+
+    @Test fun aPackagesColumnHeadingIsNoTotal() {
+        val text = "COD.ART. N.COLLI DESCRIZIONE ARTICOLO U.M. Q.TA PR.UNITARIO VALORE IVA\nKG 7,418 2,61 19,36 04\n100011 1 LIMONI"
+        assertNull(PackagesCheck.printedTotal(text))
+        assertEquals(12, PackagesCheck.printedTotal("TOTALE COLLI 12"))
+    }
+}
