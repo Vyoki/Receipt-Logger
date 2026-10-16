@@ -1555,28 +1555,68 @@ object ReceiptParser {
     private val MISREAD_COLLI = Regex("^([1-9])([xX×*1])([1-9]\\d?)$")
 
     /**
-     * "112 AROMI ERBA" in a table whose rows print their Pkgs as A x B ("1x6", "1x24"): "112" is 1x2 with its x read as
-     * a 1, when 1 x 2 is the quantity printed on the row. Most rows must print A x B (a product named "111 MINUTI" in a
-     * table without them keeps its name), and the Pkgs so worked out are shown for a check, never taken as read.
+     * Pkgs misread, whichever way the table was read (by rows, by columns, by the AI), always checked against the
+     * quantity printed on the row (A x B = quantity):
+     *  - with their x printed, read into the name ("ix2 ESTR.VANIGLIA"): moved to Pkgs, as read;
+     *  - in a table whose rows print their Pkgs as A x B ("1x6", "1x24"): "112" (in the name or in the Pkgs column) is
+     *    1x2 with its x read as a 1, and "x14" is 1x14 with its 1 lost. These are worked out, so shown for a check.
+     * A plain number in a table without A x B Pkgs ("111 MINUTI DI SOLE") keeps its place.
      */
     internal fun colliFromNames(items: List<ParsedLineItem>, text: String): List<ParsedLineItem> {
         if (!COLLI_HEADING.containsMatchIn(text)) return items
-        val axb = items.count { it.packages?.value?.let { p -> AXB_COLLI.matches(p) } == true }
-        if (axb < 3 || axb * 2 < items.size) return items
+        val axbTable = items.count { it.packages?.value?.let { p -> AXB_COLLI.matches(p) } == true }.let { n -> n >= 3 && n * 2 >= items.size }
         return items.map { it ->
             val q = it.quantity ?: return@map it
-            if (it.packages != null || q.confidence != Confidence.HIGH || q.value.signum() <= 0 || !isWholeNumber(q.value)) return@map it
-            val first = it.originalDescription.substringBefore(' ')
-            val m = DIGITS_COLLI.matchEntire(first) ?: return@map it
-            val a = m.groupValues[1].toInt(); val b = m.groupValues[2].toInt()
-            if (BigDecimal(a.toLong() * b).compareTo(q.value) != 0 || first.length == it.originalDescription.length) return@map it
-            it.copy(
-                originalDescription = it.originalDescription.substringAfter(' ').trim(),
-                packages = Extracted("${a}x$b", Confidence.LOW, "${q.source} (Pkgs \"$first\": the x read as a 1; $a x $b = quantity)"),
-            )
+            if (q.confidence != Confidence.HIGH || q.value.signum() <= 0 || !isWholeNumber(q.value)) return@map it
+            val qty = q.value
+            fun fits(a: Int, b: Int) = BigDecimal(a.toLong() * b).compareTo(qty) == 0
+            val p = it.packages?.value
+            when {
+                // Pkgs read into the name.
+                p == null -> {
+                    // "x14" with its 1 lost, in the name or on the row right after the article code.
+                    if (axbTable) {
+                        val src = it.lineTotalCents?.source.orEmpty().split(' ').filter { t -> t.isNotBlank() }
+                        val afterCode = it.itemCode?.let { c -> src.indexOf(c).takeIf { i -> i >= 0 }?.let { i -> src.getOrNull(i + 1) } }
+                        val firstWord = it.originalDescription.substringBefore(' ')
+                        val lost = listOfNotNull(firstWord, afterCode).firstOrNull { t -> LOST_COUNT.matches(t) && fits(1, t.drop(1).toInt()) }
+                        if (lost != null) {
+                            val name = if (lost == firstWord && it.originalDescription.contains(' ')) it.originalDescription.substringAfter(' ').trim() else it.originalDescription
+                            return@map it.copy(originalDescription = name, packages = Extracted("1x${lost.drop(1)}", Confidence.LOW, "${q.source} (Pkgs \"$lost\": 1 x ${lost.drop(1)} = quantity)"))
+                        }
+                    }
+                    val first = it.originalDescription.substringBefore(' ')
+                    if (first.length == it.originalDescription.length) return@map it
+                    val rest = it.originalDescription.substringAfter(' ').trim()
+                    colliInName(it.originalDescription, qty)?.let { (c, name) ->
+                        return@map it.copy(originalDescription = name, packages = Extracted(c, Confidence.HIGH, q.source))
+                    }
+                    if (!axbTable) return@map it
+                    val m = DIGITS_COLLI.matchEntire(first) ?: return@map it
+                    val a = m.groupValues[1].toInt(); val b = m.groupValues[2].toInt()
+                    if (!fits(a, b)) return@map it
+                    it.copy(originalDescription = rest, packages = Extracted("${a}x$b", Confidence.LOW, "${q.source} (Pkgs \"$first\": the x read as a 1; $a x $b = quantity)"))
+                }
+                !axbTable -> it
+                // "112" in the Pkgs column: 1x2 read without its x.
+                DIGITS_COLLI.matches(p) && qty.compareTo(BigDecimal(p)) != 0 -> {
+                    val m = DIGITS_COLLI.matchEntire(p)!!
+                    val a = m.groupValues[1].toInt(); val b = m.groupValues[2].toInt()
+                    if (!fits(a, b)) it
+                    else it.copy(packages = Extracted("${a}x$b", Confidence.LOW, "${it.packages?.source} (Pkgs \"$p\": the x read as a 1; $a x $b = quantity)"))
+                }
+                // "x14": 1x14 with its 1 lost.
+                LOST_COUNT.matches(p) -> {
+                    val b = p.drop(1).toInt()
+                    if (!fits(1, b)) it
+                    else it.copy(packages = Extracted("1x$b", Confidence.LOW, "${it.packages?.source} (Pkgs \"$p\": 1 x $b = quantity)"))
+                }
+                else -> it
+            }
         }
     }
 
+    private val LOST_COUNT = Regex("^[xX×]\\d{1,4}$")
     private val AXB_COLLI = Regex("^\\d{1,3}x\\d{1,4}$")
     private val DIGITS_COLLI = Regex("^([1-9])1([1-9]\\d?)$")
 
