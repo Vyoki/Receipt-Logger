@@ -186,11 +186,14 @@ private fun DocumentDraft.checkedLines() = items.map { listOf(it.key.toString(),
 
 /**
  * The document's proof ([DocumentDraft.checks]) holds only for the lines it was made on: once a line is added, removed,
- * or its amount, VAT rate or packages change, it is no longer shown (it would say "every VAT rate adds up" of lines
- * that may not).
+ * or its amount, VAT rate or packages change, what it proved is no longer said ("every VAT rate adds up", "packages as
+ * printed"). What the check added or left out stays listed: the operator is still asked to look at it.
  */
-fun DocumentDraft.checksStillFor(before: DocumentDraft): DocumentDraft =
-    if (checks != null && checkedLines() != before.checkedLines()) copy(checks = null) else this
+fun DocumentDraft.checksStillFor(before: DocumentDraft): DocumentDraft {
+    val c = checks ?: return this
+    if (checkedLines() == before.checkedLines()) return this
+    return copy(checks = c.copy(vatProven = false, packagesPrinted = null, packagesCounted = null))
+}
 
 enum class ErrorCode {
     REQUIRED, INVALID_NUMBER, INVALID_DATE, MUST_NOT_BE_ZERO, MUST_BE_POSITIVE, OUT_OF_RANGE, TOO_LONG, INVALID_CURRENCY,

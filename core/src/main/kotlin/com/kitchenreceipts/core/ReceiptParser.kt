@@ -1521,9 +1521,9 @@ object ReceiptParser {
         // Only where the row already reads as an item: the amount after a number ("16,420 8,21.") or before the VAT
         // code ("8,21. 04"). A note ("ordini superiori a 150,00.") or a name ("ACQUA PET 1,50.") keeps its full stop.
         if (AMOUNT_WITH_DOT.matches(t[n - 1]) && classify(t[n - 2]) is Tok.Num) t[n - 1] = t[n - 1].dropLast(1)
-        if (AMOUNT_WITH_DOT.matches(t[n - 2]) && VAT_RATE_CODE.matches(t[n - 1].map { c -> RATE_LOOKALIKE[c] ?: c }.joinToString(""))) {
-            t[n - 2] = t[n - 2].dropLast(1)
-        }
+        val rateAfter = VAT_RATE_CODE.matches(t[n - 1].map { c -> RATE_LOOKALIKE[c] ?: c }.joinToString("")) ||
+            (n >= 4 && classify(t[n - 3]) is Tok.Num && (classify(t[n - 1]) is Tok.Rate || VAT_CODE_TOKEN.matches(t[n - 1])))
+        if (AMOUNT_WITH_DOT.matches(t[n - 2]) && rateAfter) t[n - 2] = t[n - 2].dropLast(1)
         val code = t.last()
         if (code.length == 2 && code.any(Char::isDigit) && !code.all(Char::isDigit) && rx("[.,]\\d{2}$").containsMatchIn(t[t.size - 2])) {
             val folded = code.map { c -> RATE_LOOKALIKE[c] ?: c }.joinToString("")
