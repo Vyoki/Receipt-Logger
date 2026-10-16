@@ -291,4 +291,28 @@ class ReconcileTest {
         assertEquals(1, edited.checks!!.recovered.size)
         assertEquals(1, edited.checks!!.dropped.size)
     }
+
+    @Test fun pkgsMisreadInAColumnReading() {
+        // Read by columns: the Pkgs column value as read, the row text as the source.
+        fun line(code: String, pkgs: String?, name: String, qty: Int, row: String) = ParsedLineItem(
+            name, Extracted(BigDecimal(qty), Confidence.HIGH, row), null, Extracted(BigDecimal.ONE, Confidence.HIGH, row),
+            Extracted(qty * 100L, Confidence.HIGH, row), Extracted(BigDecimal(4), Confidence.HIGH, row), null, null,
+            itemCode = code, packages = pkgs?.let { Extracted(it, Confidence.HIGH, row) },
+        )
+        val items = listOf(
+            line("1000011", "1x6", "ACQUA", 6, "1000011 1x6 ACQUA 6 1,00 6,00 04"),
+            line("1000022", "1x24", "BIRRA", 24, "1000022 1x24 BIRRA 24 1,00 24,00 04"),
+            line("1000033", "1x2", "BURRO", 2, "1000033 1x2 BURRO 2 1,00 2,00 04"),
+            line("1000044", "112", "KIWI GREEN", 2, "1000044 112 KIWI GREEN 2 1,00 2,00 04"),
+            line("1000055", null, "BISCOTTI FROLLINI", 14, "1000055 x14 BISCOTTI FROLLINI 14 1,00 14,00 04"),
+            line("1000066", null, "ix2 ESTRATTO VANIGLIA", 2, "1000066 ix2 ESTRATTO VANIGLIA 2 1,00 2,00 04"),
+        )
+        val out = ReceiptParser.colliFromNames(items, "CODICE COLLI DESCRIZIONE")
+        assertEquals("1x2", out[3].packages?.value); assertEquals(Confidence.LOW, out[3].packages?.confidence)
+        assertEquals("1x14", out[4].packages?.value); assertEquals(Confidence.LOW, out[4].packages?.confidence)
+        assertEquals("1x2", out[5].packages?.value); assertEquals("ESTRATTO VANIGLIA", out[5].originalDescription)
+        assertEquals(1 + 1 + 1 + 1 + 1 + 1, Reconcile.countPackages(out))
+        // Without A x B Pkgs in the table nothing is worked out.
+        assertEquals(items.drop(3), ReceiptParser.colliFromNames(items.drop(3), "CODICE COLLI DESCRIZIONE").let { o -> o.take(2) + items.drop(5) })
+    }
 }
