@@ -41,6 +41,8 @@ data class PendingImport(
     val aiTargeted: List<String> = emptyList(),
     /** Width of the image each page was read from (the OCR boxes are in its pixels). */
     val ocrWidths: List<Int> = emptyList(),
+    /** Height of that image (with the width, its shape: to tell later whether a page is drawn the same way). */
+    val ocrHeights: List<Int> = emptyList(),
     /** The AI's questions included the double-check. */
     val aiSpot: Boolean = false,
     /** The AI's answer about column headings the app did not know (encoded SupplierLayout), if it was used. */
@@ -293,7 +295,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 (if (best.textPages > 0) ", text of the PDF on ${best.textPages} of ${best.lines.size} page(s)" else ""),
             options, System.currentTimeMillis() - started, aiSpot, aiLayout,
             // Worked out above from the same reading: not again (the AI's answers are replayed on it).
-            preParsed = parsed, aiPicks = aiPicks, aiKeys = aiKeys,
+            preParsed = parsed, aiPicks = aiPicks, aiKeys = aiKeys, heights = best.heights,
         )
     }
 
@@ -440,6 +442,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
     private inner class Reading(
         val lines: List<List<OcrLine>>,
         val widths: List<Int>,
+        val heights: List<Int>,
         val error: String?,
         val pass: Int,
         /** Pages read from the PDF's own text (with the OCR only where it has none). */
@@ -461,6 +464,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
     ): Reading {
         val raw = mutableListOf<List<OcrLine>>()
         val widths = mutableListOf<Int>()
+        val heights = mutableListOf<Int>()
         var error: String? = null
         var textPages = 0
         // A digital PDF's own text where it has some: exact, where the OCR can slip. The OCR still reads the page
@@ -483,11 +487,13 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 if (pass == 1) {
                     raw += withText(i, engine.recognize(bmp), bmp.width, bmp.height)
                     widths += bmp.width
+                    heights += bmp.height
                 } else {
                     val enhanced = withContext(Dispatchers.Default) { ImageEnhancer.enhance(bmp) }
                     try {
                         raw += withText(i, engine.recognize(enhanced), enhanced.width, enhanced.height)
                         widths += enhanced.width
+                        heights += enhanced.height
                     } finally { enhanced.recycle() }
                 }
             } catch (e: CancellationException) {
@@ -497,7 +503,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 break
             }
         }
-        return Reading(raw, widths, error, pass, textPages)
+        return Reading(raw, widths, heights, error, pass, textPages)
     }
 
     companion object {
@@ -526,6 +532,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             /** Which open question was asked each time (see AiLoop.replay). */
             aiPicks: List<Int> = emptyList(),
             aiKeys: List<String> = emptyList(),
+            heights: List<Int> = emptyList(),
         ): PendingImport = withContext(Dispatchers.Default) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
@@ -558,6 +565,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 aiRaw = aiRaw,
                 aiTargeted = aiTargeted,
                 ocrWidths = widths,
+                ocrHeights = heights,
                 aiSpot = aiSpot,
                 aiLayout = aiLayout,
                 aiPicks = aiPicks,

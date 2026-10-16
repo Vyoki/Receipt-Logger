@@ -192,11 +192,10 @@ object TrainingPackage {
 
     /** The VAT code as the row prints it ("04" for 4%), else the rate. */
     private fun printedRate(row: String?, rate: BigDecimal): String? {
-        val tokens = row?.trim()?.split(' ')?.filter { it.isNotBlank() } ?: return null
-        // The VAT column ends the row ("... 8,21 04"); elsewhere only a rate written as one ("4%").
-        val last = tokens.lastOrNull()?.trimEnd('%')
-        if (last != null && last.isNotEmpty() && last.all(Char::isDigit) && BigDecimal(last).compareTo(rate) == 0) return last
-        return tokens.firstOrNull { t -> t.endsWith("%") && ItalianNumbers.parse(t.dropLast(1))?.compareTo(rate) == 0 }
+        // The VAT column ends the row ("... 8,21 04", "... 8,21 4%"). A rate elsewhere on the row may be the discount
+        // ("10%" off): not taught as the VAT.
+        val last = row?.trim()?.split(' ')?.lastOrNull { it.isNotBlank() }?.trimEnd('%') ?: return null
+        return last.takeIf { it.isNotEmpty() && it.all(Char::isDigit) && BigDecimal(it).compareTo(rate) == 0 }
     }
 
     /** [lot] printed on the line's row or the row under it (lots often sit on a second line under the name). */

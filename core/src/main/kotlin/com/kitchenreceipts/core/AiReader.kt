@@ -824,8 +824,8 @@ object AiReader {
             totalCents = total,
             lineItems = if (useAi) aiItems else regular.lineItems,
             itemsReadBy = if (useAi) "ai" else regular.itemsReadBy,
-            // The regular reading's checks describe its own lines: not the AI's that replace them.
-            reconciled = if (useAi) null else regular.reconciled,
+            // The checks of the reading whose lines are kept.
+            reconciled = if (useAi) ai.reconciled else regular.reconciled,
         )
         return ReceiptParser.finish(merged, text)
     }
@@ -878,6 +878,13 @@ object AiReader {
             lineItems = pages.flatMap { it.lineItems },
             warnings = emptySet(),
             itemsReadBy = "ai",
+            // What each page's check left out stays known (what it added is marked on the lines).
+            reconciled = pages.mapNotNull { it.reconciled }.takeIf { it.isNotEmpty() }?.let { rs ->
+                Reconcile.Report(
+                    dropped = rs.flatMap { it.dropped }, droppedKeys = rs.flatMap { it.droppedKeys },
+                    droppedAfter = rs.flatMap { it.droppedAfter }, ratesFound = rs.sumOf { it.ratesFound },
+                )
+            },
         )
         return ReceiptParser.finish(d, text)
     }

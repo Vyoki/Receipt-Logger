@@ -124,4 +124,6 @@
     <string name="food_dish_per_kilo">a %1$s of %2$s earns %3$s</string>
     <string name="food_dish_per_plate">per plate</string>
     <string name="food_before_overheads">Staff, rent and utilities are still to be paid from it: to count them, set the extra % on the Food cost screen.</string>
+    <string name="food_per_kilo_losing">Per %1$s of %2$s: %3$s plates, losing %4$s</string>
+    <string name="food_dish_per_kilo_loses">a %1$s of %2$s loses %3$s</string>
 </resources>

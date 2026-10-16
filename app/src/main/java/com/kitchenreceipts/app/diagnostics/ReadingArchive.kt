@@ -14,18 +14,22 @@ class ReadingArchive(context: Context) {
     private val dir = File(context.filesDir, "readings").apply { mkdirs() }
 
     private fun file(documentId: Long) = File(dir, "doc$documentId.ocr")
-    /** The width of each page's picture the OCR read (its positions are in that picture's pixels). */
+    /** The size of each page's picture the OCR read (its positions are in that picture's pixels): "1700x2400,...". */
     private fun widthsFile(documentId: Long) = File(dir, "doc$documentId.widths")
 
-    fun save(documentId: Long, pages: List<List<OcrLine>>, widths: List<Int> = emptyList()) {
+    fun save(documentId: Long, pages: List<List<OcrLine>>, widths: List<Int> = emptyList(), heights: List<Int> = emptyList()) {
         if (pages.all { it.isEmpty() }) return
         runCatching { file(documentId).writeText(OcrLineCodec.encode(pages)) }
-        if (widths.size == pages.size && widths.all { it > 0 }) runCatching { widthsFile(documentId).writeText(widths.joinToString(",")) }
+        if (widths.size == pages.size && heights.size == pages.size && (widths + heights).all { it > 0 }) {
+            runCatching { widthsFile(documentId).writeText(widths.indices.joinToString(",") { "${widths[it]}x${heights[it]}" }) }
+        }
     }
 
-    /** The widths saved with the reading; null for a reading saved without them (before they were kept). */
-    fun widths(documentId: Long): List<Int>? =
-        widthsFile(documentId).takeIf { it.exists() }?.let { f -> runCatching { f.readText().trim().split(',').map { it.trim().toInt() } }.getOrNull() }
+    /** The picture sizes (width, height) saved with the reading; null for a reading saved without them. */
+    fun sizes(documentId: Long): List<Pair<Int, Int>>? =
+        widthsFile(documentId).takeIf { it.exists() }?.let { f ->
+            runCatching { f.readText().trim().split(',').map { s -> s.trim().split('x').let { (w, h) -> w.toInt() to h.toInt() } } }.getOrNull()
+        }
 
     fun load(documentId: Long): List<List<OcrLine>>? =
         file(documentId).takeIf { it.exists() }?.let { f -> runCatching { OcrLineCodec.decode(f.readText()) }.getOrNull() }

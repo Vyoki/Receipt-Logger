@@ -33,7 +33,12 @@ class TrainingExport(
     private val readings: ReadingArchive,
     private val renderer: PageRenderer,
 ) {
-    data class Result(val uri: Uri?, val exported: Int, val skipped: Int)
+    /** [older]: of the [skipped], those read before this version kept the size of the pictures they were read on. */
+    data class Result(val uri: Uri?, val exported: Int, val skipped: Int, val older: Int = 0)
+
+    /** Why a document is left out. */
+    private enum class Skip { OLDER_READING, OTHER }
+    private class Skipped(val why: Skip) : Exception()
 
     suspend fun export(ownVat: String?, onProgress: (done: Int, of: Int) -> Unit = { _, _ -> }): Result = withContext(Dispatchers.IO) {
         val sellers = db.sellerDao().allOnce().associateBy { it.id }
@@ -42,13 +47,19 @@ class TrainingExport(
         val out = File(File(context.cacheDir, "shared").apply { mkdirs() }, "kitchen-receipts-training.zip")
         var exported = 0
         var skipped = 0
+        var older = 0
         try {
             ZipOutputStream(out.outputStream().buffered()).use { zip ->
                 for ((i, d) in docs.withIndex()) {
                     ensureActive()
                     onProgress(i + 1, docs.size)
-                    val entries = entries(d, sellers, lines[d.id].orEmpty(), ownVat)
-                    if (entries == null) { skipped++; continue }
+                    val entries = try {
+                        entries(d, sellers, lines[d.id].orEmpty(), ownVat)
+                    } catch (s: Skipped) {
+                        skipped++
+                        if (s.why == Skip.OLDER_READING) older++
+                        continue
+                    }
                     // A document goes in whole or not at all.
                     for ((name, bytes) in entries) {
                         zip.putNextEntry(ZipEntry(name))
@@ -57,34 +68,38 @@ class TrainingExport(
                     }
                     exported++
                 }
+                ensureActive()
                 zip.putNextEntry(ZipEntry("README.txt"))
                 zip.write(README.toByteArray())
                 zip.closeEntry()
             }
+            ensureActive()
         } catch (t: Throwable) {
             // Cancelled or failed: no half-made file of real documents stays on the phone.
             out.delete()
             throw t
         }
-        if (exported == 0) { out.delete(); return@withContext Result(null, 0, skipped) }
-        Result(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", out), exported, skipped)
+        if (exported == 0) { out.delete(); return@withContext Result(null, 0, skipped, older) }
+        Result(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", out), exported, skipped, older)
     }
 
     /**
-     * The files of one document (pictures, readings, truth), or null when it cannot teach the model: an e-invoice, a
-     * reading of only some of its pages, a reading saved without the size of the pictures it was made on, positions
-     * that do not fit the picture, arithmetic that does not prove it, or totals not found where they were read.
+     * The files of one document (pictures, readings, truth); [Skipped] when it cannot teach the model: an e-invoice, a
+     * reading of only some of its pages, a reading saved without the size of the pictures it was made on, a page now
+     * drawn with another shape or with positions that do not fit it, arithmetic that does not prove it, or totals not
+     * found where they were read.
      */
     private suspend fun entries(
         d: com.kitchenreceipts.app.data.DocumentEntity,
         sellers: Map<Long, com.kitchenreceipts.app.data.SellerEntity>,
         items: List<com.kitchenreceipts.app.data.LineItemEntity>,
         ownVat: String?,
-    ): List<Pair<String, ByteArray>>? {
-        if (d.mimeType == FileStore.MIME_XML) return null
-        val pages = readings.load(d.id) ?: return null
-        val widths = readings.widths(d.id) ?: return null
-        if (pages.all { it.isEmpty() } || pages.size != d.pageCount || widths.size != pages.size) return null
+    ): List<Pair<String, ByteArray>> {
+        fun skip(why: Skip = Skip.OTHER): Nothing = throw Skipped(why)
+        if (d.mimeType == FileStore.MIME_XML) skip()
+        val pages = readings.load(d.id) ?: skip()
+        val sizes0 = readings.sizes(d.id) ?: skip(Skip.OLDER_READING)
+        if (pages.all { it.isEmpty() } || pages.size != d.pageCount || sizes0.size != pages.size) skip()
         val seller = sellers[d.sellerId]
         val doc = TrainingPackage.Doc(
             seller?.name, seller?.vatNumber, d.documentNumber, d.documentDate, d.subtotalCents, d.vatCents, d.totalCents,
@@ -98,19 +113,23 @@ class TrainingExport(
                 )
             },
         )
-        if (TrainingPackage.whyNot(doc) != null || TrainingPackage.whyNotReading(doc, pages) != null) return null
+        if (TrainingPackage.whyNot(doc) != null || TrainingPackage.whyNotReading(doc, pages) != null) skip()
         val dir = "doc${d.id}"
         val out = mutableListOf<Pair<String, ByteArray>>()
         val sizes = mutableListOf<Pair<Int, Int>>()
         val read = mutableListOf<List<com.kitchenreceipts.core.OcrLine>>()
-        return runCatching {
+        try {
             for (p in pages.indices) {
                 // The page as it is read; the OCR positions are scaled to it from the picture they were made on (a
-                // second reading works on a smaller, enhanced picture).
+                // second reading works on a smaller, enhanced picture). Drawn with another shape (the app's way of
+                // straightening photos changed since): the positions would point elsewhere.
                 val bmp = renderer.renderForReading(d.filePath, d.mimeType, p, ImportProcessor.OCR_LONG_SIDE)
                 try {
-                    val lines = TrainingPackage.scaled(pages[p], bmp.width.toDouble() / widths[p])
-                    if (!TrainingPackage.fits(lines, bmp.width, bmp.height)) return null
+                    val (w0, h0) = sizes0[p]
+                    val shape = bmp.width.toDouble() / bmp.height
+                    if (kotlin.math.abs(shape - w0.toDouble() / h0) > shape * 0.01) skip()
+                    val lines = TrainingPackage.scaled(pages[p], bmp.width.toDouble() / w0)
+                    if (!TrainingPackage.fits(lines, bmp.width, bmp.height)) skip()
                     sizes += bmp.width to bmp.height
                     read += lines
                     out += "$dir/page${suffix(p)}.jpg" to ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
@@ -120,8 +139,14 @@ class TrainingExport(
                 }
             }
             out += "$dir/truth.json" to TrainingPackage.truth(doc, read, sizes, ownVat?.ifBlank { null }).toByteArray()
-            out
-        }.getOrNull()
+            return out
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Skipped) {
+            throw e
+        } catch (e: Exception) {
+            skip()
+        }
     }
 
     /** A package made earlier is still on the phone. */

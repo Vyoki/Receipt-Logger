@@ -756,4 +756,5 @@
     <string name="training_forget">Delete the file from this phone</string>
     <string name="warn_checked_by_totals">The document\'s totals made the app add or leave out lines (listed above the lines): check them before saving.</string>
     <string name="reason_checked_by_totals">Lines added or left out to make the totals add up: check them.</string>
+    <string name="training_older">%1$d of them were saved before this version, which did not yet keep what the export needs (the size of the photo as read). Documents saved from now on can be used.</string>
 </resources>

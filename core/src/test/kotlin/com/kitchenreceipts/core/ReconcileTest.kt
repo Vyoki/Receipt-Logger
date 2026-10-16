@@ -315,4 +315,27 @@ class ReconcileTest {
         // Without A x B Pkgs in the table nothing is worked out.
         assertEquals(items.drop(3), ReceiptParser.colliFromNames(items.drop(3), "CODICE COLLI DESCRIZIONE").let { o -> o.take(2) + items.drop(5) })
     }
+
+    @Test fun aRecoveredLineStaysForReviewOnEveryLaterReading() {
+        // The AI loop finishes the reading again after each answer: what the check added must still be said.
+        val d = read(page1, page2)
+        val again = ReceiptParser.finish(d, listOf(page1, page2).joinToString("\n${ReceiptParser.PAGE_BREAK}\n"))
+        assertEquals(d.reconciled!!.recovered, again.reconciled!!.recovered)
+        assertEquals(d.reconciled!!.dropped, again.reconciled!!.dropped)
+        assertTrue(ParseWarning.CHECKED_BY_TOTALS in again.warnings)
+    }
+
+    @Test fun aRealLineWithTheSameAmountDoesNotUndoADrop() {
+        val earlier = Reconcile.Report(dropped = listOf("IMPORTO EUR IVA  5,00"), droppedKeys = listOf(500L to BigDecimal(4)), droppedAfter = listOf(1))
+        val items = listOf(proven("PANE", 1000, 4), amountOnly("GHIACCIO ALIMENTARE", 500, 4))
+        val carried = Reconcile.carry(earlier, Reconcile.Report(), items)
+        assertEquals(1, carried.dropped.size)
+        // The left-out reading came back as a line: no longer said to be left out.
+        val back = Reconcile.carry(earlier, Reconcile.Report(), items + amountOnly("IMPORTO EUR IVA", 500, 4))
+        assertTrue(back.dropped.isEmpty())
+    }
+
+    @Test fun aPageNumberInWordsCountsOnItsOwn() {
+        assertEquals(6 to listOf(1, 2, 4, 5, 6), Reconcile.pageMarks("Pagina 3 di 6"))
+    }
 }

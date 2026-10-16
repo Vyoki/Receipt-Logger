@@ -312,6 +312,7 @@ class ImportQueue(
         val d = File(dir, job.id).apply { mkdirs() }
         File(d, "ocr.txt").writeText(OcrLineCodec.encode(pending.rawLines))
         File(d, "widths.txt").writeText(pending.ocrWidths.joinToString(","))
+        File(d, "heights.txt").writeText(pending.ocrHeights.joinToString(","))
         val p = Properties()
         p["engine"] = pending.engineName
         p["readingNote"] = pending.readingNote.substringBefore(", items read by")
@@ -339,6 +340,7 @@ class ImportQueue(
         val p = Properties().apply { File(d, "reading.properties").inputStream().use { load(it) } }
         val lines = OcrLineCodec.decode(ocr.readText())
         val widths = File(d, "widths.txt").takeIf { it.exists() }?.readText()?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
+        val heights = File(d, "heights.txt").takeIf { it.exists() }?.readText()?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
         val aiRaw = (0 until (p.getProperty("aiPages")?.toIntOrNull() ?: 0)).map { i -> File(d, "ai-$i.json").takeIf { it.exists() }?.readText() ?: "" }
         val aiChecks = (0 until (p.getProperty("aiChecks")?.toIntOrNull() ?: 0)).map { i -> File(d, "ai-check-$i.json").takeIf { it.exists() }?.readText() ?: "" }
         ImportProcessor.rebuild(
@@ -350,6 +352,7 @@ class ImportQueue(
             // Keys of every answer, or none (an older reading): a partial list would pair answers wrongly.
             aiKeys = aiChecks.indices.map { i -> File(d, "ai-check-$i.key").takeIf { it.exists() }?.readText() }
                 .let { k -> if (k.all { it != null }) k.filterNotNull() else emptyList() },
+            heights = heights,
         )
     }
 

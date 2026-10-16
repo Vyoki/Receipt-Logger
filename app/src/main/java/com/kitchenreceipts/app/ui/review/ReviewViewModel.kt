@@ -122,6 +122,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     /** What the OCR found where, for showing the part of the photo behind a field (new documents only). */
     private var ocrPages: List<List<com.kitchenreceipts.core.OcrLine>> = emptyList()
     private var ocrWidths: List<Int> = emptyList()
+    private var ocrHeights: List<Int> = emptyList()
     private var peekPage: Pair<Int, android.graphics.Bitmap>? = null
     private var openedAt = System.currentTimeMillis()
 
@@ -197,6 +198,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         ocrPages = pending.rawLines
         readParsed = pending.parsed
         ocrWidths = pending.ocrWidths
+        ocrHeights = pending.ocrHeights
         initialDraft = prepared.initialDraft
         baseDraft = prepared.draft
         val kept = withContext(Dispatchers.IO) { readKept(prepared.draft) }
@@ -519,7 +521,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         run {
             if (documentId == null) jobId?.let { c.importQueue.markSaved(it) }
             // The reading as the camera saw it, so later versions can read this document again (see ReadingChecker).
-            if (documentId == null) runCatching { c.readings.save(id, ocrPages, ocrWidths) }
+            if (documentId == null) runCatching { c.readings.save(id, ocrPages, ocrWidths, ocrHeights) }
             val finalDraft = _state.value.draft
             val corrections = initialDraft?.let { Corrections.diff(it, finalDraft) }.orEmpty()
             c.log.event(

@@ -151,7 +151,8 @@ fun FoodCostScreen(onBack: () -> Unit, onOpenDish: (Long) -> Unit) {
             }
             // What a plate earns, most first (the owner's question); or the highest food cost first (the dishes to fix).
             val order = if (byCost) compareBy<RecipeCost> { it.recipe.ingredients.isEmpty() }.thenByDescending { it.foodCostPercent ?: BigDecimal.ZERO }
-            else compareBy<RecipeCost> { it.recipe.ingredients.isEmpty() }.thenBy { it.earns == null }.thenByDescending { it.earns ?: BigDecimal.ZERO }
+            else compareBy<RecipeCost> { it.recipe.ingredients.isEmpty() }.thenBy { FoodCost.split(it) == null }
+                .thenByDescending { FoodCost.split(it)?.earnsCents ?: Long.MIN_VALUE } // the amount shown, to the cent
             items(list.orEmpty().sortedWith(order), key = { "d" + it.recipe.id }) { d ->
                 Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { DishRow(d, targetValue) { onOpenDish(d.recipe.id) } }
             }
@@ -264,7 +265,11 @@ private fun DishRow(d: RecipeCost, target: BigDecimal, onClick: () -> Unit) {
                     )
                     d.perKilo?.earns?.let { e ->
                         val per = stringResource(if (d.perKilo!!.unit == "kg") R.string.food_unit_kg else R.string.food_unit_l)
-                        Text(stringResource(R.string.food_dish_per_kilo, per, d.perKilo!!.ingredient, euros(e)), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                        val loses = e.signum() < 0
+                        Text(
+                            stringResource(if (loses) R.string.food_dish_per_kilo_loses else R.string.food_dish_per_kilo, per, d.perKilo!!.ingredient, euros(e.abs())),
+                            style = MaterialTheme.typography.bodySmall, color = if (loses) Palette.Error else Palette.TextDim,
+                        )
                     }
                 }
                 val missing = d.ingredients.count { it.problem != null }
