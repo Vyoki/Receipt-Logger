@@ -272,12 +272,13 @@ private fun DishRow(d: RecipeCost, target: BigDecimal, onClick: () -> Unit) {
                 if (d.vatUncertain) Text(stringResource(R.string.food_vat_uncertain), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
             }
             // What one plate earns: the number the owner looks for.
-            d.earns?.takeIf { d.recipe.ingredients.isNotEmpty() }?.let { e ->
+            // To the cent as on the dish's own screen (the parts of the price add up there).
+            FoodCost.split(d)?.earnsCents?.takeIf { d.recipe.ingredients.isNotEmpty() }?.let { e ->
                 Column(horizontalAlignment = Alignment.End) {
                     Text(
-                        (if (e.signum() < 0) "−" else "") + euros(e.abs()),
+                        (if (e < 0) "−" else "") + fmtMoney(kotlin.math.abs(e)),
                         style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold,
-                        color = if (e.signum() < 0) Palette.Error else Palette.Ok,
+                        color = if (e < 0) Palette.Error else Palette.Ok,
                     )
                     Text(stringResource(R.string.food_dish_per_plate), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                 }

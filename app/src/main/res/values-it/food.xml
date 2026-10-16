@@ -121,7 +121,7 @@
     <string name="food_dish_sells">venduto %1$s</string>
     <string name="food_dish_ingredients">ingredienti %1$s</string>
     <string name="food_dish_percent">food cost %1$s%%</string>
-    <string name="food_dish_per_kilo">per un %1$s di %2$s: %3$s</string>
+    <string name="food_dish_per_kilo">un %1$s di %2$s rende %3$s</string>
     <string name="food_dish_per_plate">a piatto</string>
     <string name="food_before_overheads">Da qui vanno ancora pagati personale, affitto e utenze: per contarli, imposta la % extra nella schermata Food cost.</string>
 </resources>

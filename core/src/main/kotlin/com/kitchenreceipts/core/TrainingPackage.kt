@@ -41,7 +41,7 @@ object TrainingPackage {
         val lines: List<Line>,
     )
 
-    enum class NotProven { NO_LINES, LINE_DOES_NOT_ADD_UP, SUM_DOES_NOT_MATCH, NO_READING }
+    enum class NotProven { NO_LINES, LINE_DOES_NOT_ADD_UP, SUM_DOES_NOT_MATCH, NO_READING, TOTALS_NOT_READ }
 
     /** Why [d] cannot teach the model, or null when its arithmetic proves it. */
     fun whyNot(d: Doc): NotProven? {
@@ -55,6 +55,39 @@ object TrainingPackage {
         val sum = d.lines.sumOf { it.amountCents!! }
         if (sum != d.subtotalCents && sum != d.totalCents) return NotProven.SUM_DOES_NOT_MATCH
         return null
+    }
+
+    /**
+     * Why the reading of [d] cannot teach the model, or null: its total must be printed on a page that was read (the
+     * model is asked about the totals where they are; a total typed by the operator from a page not read would teach it
+     * to make totals up).
+     */
+    fun whyNotReading(d: Doc, pages: List<List<OcrLine>>): NotProven? {
+        if (pages.all { it.isEmpty() }) return NotProven.NO_READING
+        val total = d.totalCents ?: return NotProven.TOTALS_NOT_READ
+        val texts = pages.map { p -> LayoutRows.toText(p) }
+        return if (totalsPage(texts, total) == null) NotProven.TOTALS_NOT_READ else null
+    }
+
+    /** The last page that prints [totalCents] ("1.234,56" or "1234,56"). */
+    private fun totalsPage(texts: List<String>, totalCents: Long): Int? {
+        val grouped = ItalianNumbers.formatCents(totalCents)
+        val plain = grouped.replace(".", "")
+        return texts.indexOfLast { t -> t.contains(grouped) || t.contains(plain) }.takeIf { it >= 0 }
+    }
+
+    /** [page]'s positions multiplied by [k] (from the picture the OCR read to the picture exported). */
+    fun scaled(page: List<OcrLine>, k: Double): List<OcrLine> {
+        if (kotlin.math.abs(k - 1.0) < 1e-9) return page
+        fun s(v: Int) = kotlin.math.round(v * k).toInt()
+        fun one(l: OcrLine): OcrLine = l.copy(left = s(l.left), top = s(l.top), right = s(l.right), bottom = s(l.bottom), words = l.words.map(::one))
+        return page.map(::one)
+    }
+
+    /** Every position inside a [width] x [height] picture (a little slack for the OCR's rounding). */
+    fun fits(page: List<OcrLine>, width: Int, height: Int): Boolean {
+        val dx = width / 50; val dy = height / 50
+        return page.all { l -> l.left >= -dx && l.top >= -dy && l.right <= width + dx && l.bottom <= height + dy }
     }
 
     /** One page of the reading, written as the reading report writes it (tools/training's exporter reads this). */
@@ -97,16 +130,18 @@ object TrainingPackage {
                 "discount" to l.discount,
                 "amount" to amount,
                 "amount_cents" to l.amountCents,
+                // As printed on the row, or nothing: a rate worked out from the VAT summary, or a lot read elsewhere,
+                // is not on the picture the model is shown.
                 "vat" to l.vatRate?.let { r -> printedRate(row?.text, r) },
                 "vat_rate" to l.vatRate?.let { ItalianNumbers.formatDecimal(it) },
-                "lot" to l.lot,
+                "lot" to l.lot?.takeIf { lot -> at != null && printedNear(rows[at.first], at.second, lot) },
                 "page" to (at?.first ?: 0),
                 "box" to row?.box(),
             )
         }
         val texts = rows.map { p -> p.joinToString("\n") { it.text } }
         val total = d.totalCents?.let(ItalianNumbers::formatCents)
-        val totalsPage = total?.let { t -> texts.indexOfLast { it.contains(t) }.takeIf { it >= 0 } } ?: (pages.size - 1)
+        val totalsPage = d.totalCents?.let { totalsPage(texts, it) }
         val dateText = d.date?.let { date ->
             texts.asSequence().flatMap { ItalianDates.findDates(it).asSequence() }.firstOrNull { it.date == date }?.text ?: ItalianDates.format(date)
         }
@@ -156,10 +191,19 @@ object TrainingPackage {
     }
 
     /** The VAT code as the row prints it ("04" for 4%), else the rate. */
-    private fun printedRate(row: String?, rate: BigDecimal): String {
-        val plain = ItalianNumbers.formatDecimal(rate)
-        val last = row?.trim()?.split(' ')?.lastOrNull()?.trimEnd('%')
-        return if (last != null && last.all(Char::isDigit) && last.isNotEmpty() && BigDecimal(last).compareTo(rate) == 0) last else plain
+    private fun printedRate(row: String?, rate: BigDecimal): String? {
+        val tokens = row?.trim()?.split(' ')?.filter { it.isNotBlank() } ?: return null
+        // The VAT column ends the row ("... 8,21 04"); elsewhere only a rate written as one ("4%").
+        val last = tokens.lastOrNull()?.trimEnd('%')
+        if (last != null && last.isNotEmpty() && last.all(Char::isDigit) && BigDecimal(last).compareTo(rate) == 0) return last
+        return tokens.firstOrNull { t -> t.endsWith("%") && ItalianNumbers.parse(t.dropLast(1))?.compareTo(rate) == 0 }
+    }
+
+    /** [lot] printed on the line's row or the row under it (lots often sit on a second line under the name). */
+    private fun printedNear(page: List<Row>, row: Int, lot: String): Boolean {
+        fun norm(s: String) = s.uppercase().filter(Char::isLetterOrDigit)
+        val l = norm(lot)
+        return l.isNotEmpty() && (row..minOf(page.size - 1, row + 1)).any { r -> norm(page[r].text).contains(l) }
     }
 
     private fun words(s: String) = s.uppercase().split(rx("[^A-Z0-9]+")).filter { it.length >= 3 && it.any(Char::isLetter) }

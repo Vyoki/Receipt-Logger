@@ -83,7 +83,7 @@ object DraftCodec {
             aiCheck = hints?.aiCheck,
             sellerAlternatives = if (seller.uncertain) hints?.sellerAlternatives.orEmpty() else emptyList(),
             checks = hints?.checks,
-        )
+        ).let { d -> if (hints == null) d else d.checksStillFor(hints) }
     }.getOrNull()
 
     private fun field(v: Any?): DraftField {

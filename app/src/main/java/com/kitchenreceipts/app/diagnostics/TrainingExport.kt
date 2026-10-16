@@ -13,6 +13,7 @@ import com.kitchenreceipts.core.TrainingPackage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
@@ -41,57 +42,90 @@ class TrainingExport(
         val out = File(File(context.cacheDir, "shared").apply { mkdirs() }, "kitchen-receipts-training.zip")
         var exported = 0
         var skipped = 0
-        ZipOutputStream(out.outputStream().buffered()).use { zip ->
-            for ((i, d) in docs.withIndex()) {
-                ensureActive()
-                onProgress(i, docs.size)
-                val pages = readings.load(d.id)
-                if (d.mimeType == FileStore.MIME_XML || pages == null || pages.all { it.isEmpty() } || pages.size > d.pageCount) { skipped++; continue }
-                val seller = sellers[d.sellerId]
-                val doc = TrainingPackage.Doc(
-                    seller?.name, seller?.vatNumber, d.documentNumber, d.documentDate, d.subtotalCents, d.vatCents, d.totalCents,
-                    lines[d.id].orEmpty().sortedBy { it.position }.map { l ->
-                        TrainingPackage.Line(
-                            description = l.originalDescription, packages = l.packages, quantity = l.quantity, unit = l.unit,
-                            price = l.unitPrice, amountCents = l.lineTotalCents, vatRate = l.vatRate, lot = l.lotNumber, discount = l.discount,
-                            // A discount or charge line: an amount alone ("Sconto 4%", "Spese di trasporto").
-                            adjustment = l.quantity == null && l.unitPrice == null && (Adjustments.isDiscount(l.originalDescription) || (l.lineTotalCents ?: 0) < 0),
-                        )
-                    },
-                )
-                if (TrainingPackage.whyNot(doc) != null) { skipped++; continue }
-                val dir = "doc${d.id}"
-                val sizes = mutableListOf<Pair<Int, Int>>()
-                val ok = runCatching {
-                    for (p in pages.indices) {
-                        // The page as it was read: the OCR positions refer to this picture.
-                        val bmp = renderer.renderForReading(d.filePath, d.mimeType, p, ImportProcessor.OCR_LONG_SIDE)
-                        try {
-                            sizes += bmp.width to bmp.height
-                            zip.putNextEntry(ZipEntry("$dir/page${suffix(p)}.jpg"))
-                            bmp.compress(Bitmap.CompressFormat.JPEG, 90, zip)
-                            zip.closeEntry()
-                        } finally {
-                            bmp.recycle()
-                        }
-                        zip.putNextEntry(ZipEntry("$dir/reading${suffix(p)}.txt"))
-                        zip.write(TrainingPackage.reading(pages[p]).toByteArray())
+        try {
+            ZipOutputStream(out.outputStream().buffered()).use { zip ->
+                for ((i, d) in docs.withIndex()) {
+                    ensureActive()
+                    onProgress(i + 1, docs.size)
+                    val entries = entries(d, sellers, lines[d.id].orEmpty(), ownVat)
+                    if (entries == null) { skipped++; continue }
+                    // A document goes in whole or not at all.
+                    for ((name, bytes) in entries) {
+                        zip.putNextEntry(ZipEntry(name))
+                        zip.write(bytes)
                         zip.closeEntry()
                     }
-                    zip.putNextEntry(ZipEntry("$dir/truth.json"))
-                    zip.write(TrainingPackage.truth(doc, pages, sizes, ownVat?.ifBlank { null }).toByteArray())
-                    zip.closeEntry()
-                }.isSuccess
-                if (ok) exported++ else skipped++
+                    exported++
+                }
+                zip.putNextEntry(ZipEntry("README.txt"))
+                zip.write(README.toByteArray())
+                zip.closeEntry()
             }
-            zip.putNextEntry(ZipEntry("README.txt"))
-            zip.write(README.toByteArray())
-            zip.closeEntry()
+        } catch (t: Throwable) {
+            // Cancelled or failed: no half-made file of real documents stays on the phone.
+            out.delete()
+            throw t
         }
-        onProgress(docs.size, docs.size)
         if (exported == 0) { out.delete(); return@withContext Result(null, 0, skipped) }
         Result(FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", out), exported, skipped)
     }
+
+    /**
+     * The files of one document (pictures, readings, truth), or null when it cannot teach the model: an e-invoice, a
+     * reading of only some of its pages, a reading saved without the size of the pictures it was made on, positions
+     * that do not fit the picture, arithmetic that does not prove it, or totals not found where they were read.
+     */
+    private suspend fun entries(
+        d: com.kitchenreceipts.app.data.DocumentEntity,
+        sellers: Map<Long, com.kitchenreceipts.app.data.SellerEntity>,
+        items: List<com.kitchenreceipts.app.data.LineItemEntity>,
+        ownVat: String?,
+    ): List<Pair<String, ByteArray>>? {
+        if (d.mimeType == FileStore.MIME_XML) return null
+        val pages = readings.load(d.id) ?: return null
+        val widths = readings.widths(d.id) ?: return null
+        if (pages.all { it.isEmpty() } || pages.size != d.pageCount || widths.size != pages.size) return null
+        val seller = sellers[d.sellerId]
+        val doc = TrainingPackage.Doc(
+            seller?.name, seller?.vatNumber, d.documentNumber, d.documentDate, d.subtotalCents, d.vatCents, d.totalCents,
+            items.sortedBy { it.position }.map { l ->
+                TrainingPackage.Line(
+                    description = l.originalDescription, packages = l.packages, quantity = l.quantity, unit = l.unit,
+                    price = l.unitPrice, amountCents = l.lineTotalCents, vatRate = l.vatRate, lot = l.lotNumber, discount = l.discount,
+                    // A discount or charge line: an amount alone ("Sconto 4%", "Spese di trasporto", "Bollo").
+                    adjustment = l.quantity == null && l.unitPrice == null &&
+                        (Adjustments.isAdjustment(l.originalDescription, l.lineTotalCents, l.quantity) || (l.lineTotalCents ?: 0) < 0),
+                )
+            },
+        )
+        if (TrainingPackage.whyNot(doc) != null || TrainingPackage.whyNotReading(doc, pages) != null) return null
+        val dir = "doc${d.id}"
+        val out = mutableListOf<Pair<String, ByteArray>>()
+        val sizes = mutableListOf<Pair<Int, Int>>()
+        val read = mutableListOf<List<com.kitchenreceipts.core.OcrLine>>()
+        return runCatching {
+            for (p in pages.indices) {
+                // The page as it is read; the OCR positions are scaled to it from the picture they were made on (a
+                // second reading works on a smaller, enhanced picture).
+                val bmp = renderer.renderForReading(d.filePath, d.mimeType, p, ImportProcessor.OCR_LONG_SIDE)
+                try {
+                    val lines = TrainingPackage.scaled(pages[p], bmp.width.toDouble() / widths[p])
+                    if (!TrainingPackage.fits(lines, bmp.width, bmp.height)) return null
+                    sizes += bmp.width to bmp.height
+                    read += lines
+                    out += "$dir/page${suffix(p)}.jpg" to ByteArrayOutputStream().also { bmp.compress(Bitmap.CompressFormat.JPEG, 90, it) }.toByteArray()
+                    out += "$dir/reading${suffix(p)}.txt" to TrainingPackage.reading(lines).toByteArray()
+                } finally {
+                    bmp.recycle()
+                }
+            }
+            out += "$dir/truth.json" to TrainingPackage.truth(doc, read, sizes, ownVat?.ifBlank { null }).toByteArray()
+            out
+        }.getOrNull()
+    }
+
+    /** A package made earlier is still on the phone. */
+    fun exists(): Boolean = File(File(context.cacheDir, "shared"), "kitchen-receipts-training.zip").exists()
 
     /** Deletes the last package from the phone's cache (it holds real documents). */
     fun forget() { File(File(context.cacheDir, "shared"), "kitchen-receipts-training.zip").delete() }

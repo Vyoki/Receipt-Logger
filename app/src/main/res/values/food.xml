@@ -121,7 +121,7 @@
     <string name="food_dish_sells">sells %1$s</string>
     <string name="food_dish_ingredients">ingredients %1$s</string>
     <string name="food_dish_percent">food cost %1$s%%</string>
-    <string name="food_dish_per_kilo">per %1$s of %2$s: %3$s</string>
+    <string name="food_dish_per_kilo">a %1$s of %2$s earns %3$s</string>
     <string name="food_dish_per_plate">per plate</string>
     <string name="food_before_overheads">Staff, rent and utilities are still to be paid from it: to count them, set the extra % on the Food cost screen.</string>
 </resources>

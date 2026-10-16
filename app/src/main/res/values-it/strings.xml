@@ -721,8 +721,8 @@
         <item quantity="other">%d righe recuperate (la fotocamera non le leggeva bene; quantità × prezzo, provate dai totali):</item>
     </plurals>
     <plurals name="proof_dropped">
-        <item quantity="one">%d lettura esclusa: non era un prodotto (i totali tornano senza):</item>
-        <item quantity="other">%d letture escluse: non erano prodotti (i totali tornano senza):</item>
+        <item quantity="one">%d lettura esclusa perché non è un prodotto (i totali tornano senza). Controlla che non lo sia:</item>
+        <item quantity="other">%d letture escluse perché non sono prodotti (i totali tornano senza). Controlla che non lo siano:</item>
     </plurals>
     <plurals name="proof_rates">
         <item quantity="one">L\'aliquota IVA di %d riga era illeggibile: è quella che fa tornare i totali.</item>
@@ -742,4 +742,6 @@
     <string name="training_failed">Non è stato possibile creare gli esempi. Riprova.</string>
     <string name="training_share">Invia gli esempi di addestramento</string>
     <string name="training_forget">Elimina il file da questo telefono</string>
+    <string name="warn_checked_by_totals">I totali del documento hanno fatto aggiungere o escludere righe (elencate sopra le righe): controllale prima di salvare.</string>
+    <string name="reason_checked_by_totals">Righe aggiunte o escluse per far tornare i totali: controllale.</string>
 </resources>

@@ -824,6 +824,8 @@ object AiReader {
             totalCents = total,
             lineItems = if (useAi) aiItems else regular.lineItems,
             itemsReadBy = if (useAi) "ai" else regular.itemsReadBy,
+            // The regular reading's checks describe its own lines: not the AI's that replace them.
+            reconciled = if (useAi) null else regular.reconciled,
         )
         return ReceiptParser.finish(merged, text)
     }

@@ -41,6 +41,8 @@ enum class ParseWarning {
     DUPLICATE_PAGE,
     /** The document numbers its pages ("1/6") and some were not photographed, and the sums do not prove nothing is missing. */
     PAGES_MISSING,
+    /** The document's own sums made the reading add or leave out lines (see Reconcile): shown for the operator to confirm. */
+    CHECKED_BY_TOTALS,
 }
 
 data class ParsedLineItem(

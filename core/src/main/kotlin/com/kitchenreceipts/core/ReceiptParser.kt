@@ -687,7 +687,7 @@ object ReceiptParser {
 
     private val CHECK_WARNINGS = setOf(
         ParseWarning.NO_ITEMS_FOUND, ParseWarning.LINE_TOTAL_MISMATCH, ParseWarning.TOTALS_INCONSISTENT, ParseWarning.ITEMS_SUM_MISMATCH,
-        ParseWarning.VAT_GROUP_MISMATCH, ParseWarning.PAGES_MISSING,
+        ParseWarning.VAT_GROUP_MISMATCH, ParseWarning.PAGES_MISSING, ParseWarning.CHECKED_BY_TOTALS,
     )
 
     /**
@@ -703,13 +703,26 @@ object ReceiptParser {
         items = VatSummary.fillMissingRates(items, groups)
         // Pkgs against the total printed at the foot ("N. COLLI 10").
         items = PackagesCheck.repair(items, text)
+        // Pkgs read into the name as a plain number ("112" for 1x2) in a table that prints them as A x B.
+        items = colliFromNames(items, text)
         // The document checks itself: rows missed, readings that are no product, unreadable VAT codes, found where
         // exactly one answer makes every VAT rate add up (see Reconcile).
         val (checkedItems, report0) = runCatching { Reconcile.apply(items, groups, text) }.getOrElse { items to Reconcile.Report() }
         items = checkedItems
-        // Read again (the AI's answers, a second pass): what an earlier check changed is still worth saying.
-        val report = doc.reconciled?.takeIf { it.changed && !report0.changed }
-            ?.let { report0.copy(recovered = it.recovered, dropped = it.dropped, ratesFound = it.ratesFound) } ?: report0
+        // Read again (the AI's answers, a second pass): what an earlier check changed is still worth saying, as long as
+        // it still describes these lines (a recovered line is still here, a dropped reading is still left out).
+        val report = doc.reconciled?.takeIf { it.changed && !report0.changed }?.let { earlier ->
+            val recoveredNow = items.filter { it.lineTotalCents?.source?.endsWith(Reconcile.RECOVERED) == true }
+            val stillOut = earlier.droppedKeys.indices.filter { i ->
+                items.none { it.quantity == null && it.unitPrice == null && Reconcile.key(it) == earlier.droppedKeys[i] }
+            }
+            report0.copy(
+                recovered = recoveredNow.map { "${it.originalDescription}  ${it.lineTotalCents?.value?.let(ItalianNumbers::formatCents).orEmpty()}".trim() },
+                dropped = stillOut.mapNotNull { earlier.dropped.getOrNull(it) },
+                droppedKeys = stillOut.map { earlier.droppedKeys[it] },
+                ratesFound = earlier.ratesFound,
+            )
+        } ?: report0
         // Lots under a "LOTTO" heading, found under (nearly) every product: read where the document prints them.
         items = settleLots(items, text)
         items = lotShapes(items)
@@ -791,6 +804,8 @@ object ReceiptParser {
         if (vatChecks.any { !it.ok }) warnings += ParseWarning.VAT_GROUP_MISMATCH
         // Pages the document numbers and were not photographed, when nothing proves no line is missing.
         if (report.pagesMissing.isNotEmpty() && !report.vatProven) warnings += ParseWarning.PAGES_MISSING
+        // The checker added or left out lines: proven by the sums, but the operator confirms (never saved unseen).
+        if (report.recovered.isNotEmpty() || report.dropped.isNotEmpty()) warnings += ParseWarning.CHECKED_BY_TOTALS
         val lotsPrinted = items.any { it.lotNumber != null } || LOTS_WORD.containsMatchIn(text)
         if (!derivedTotal) total = confirmTotal(total, subtotal, vat, itemsSum, groups, text, tolerance)
         // Taxable amount and VAT: sure when they add up to the total, or the lines / the VAT summary give the same.
@@ -1502,9 +1517,13 @@ object ReceiptParser {
     private fun tidyTail(tokens0: List<String>): List<String> {
         if (tokens0.size < 3) return tokens0
         val t = tokens0.toMutableList()
-        fun amountDot(i: Int) { if (i >= 0 && AMOUNT_WITH_DOT.matches(t[i])) t[i] = t[i].dropLast(1) }
-        amountDot(t.size - 1)
-        amountDot(t.size - 2)
+        val n = t.size
+        // Only where the row already reads as an item: the amount after a number ("16,420 8,21.") or before the VAT
+        // code ("8,21. 04"). A note ("ordini superiori a 150,00.") or a name ("ACQUA PET 1,50.") keeps its full stop.
+        if (AMOUNT_WITH_DOT.matches(t[n - 1]) && classify(t[n - 2]) is Tok.Num) t[n - 1] = t[n - 1].dropLast(1)
+        if (AMOUNT_WITH_DOT.matches(t[n - 2]) && VAT_RATE_CODE.matches(t[n - 1].map { c -> RATE_LOOKALIKE[c] ?: c }.joinToString(""))) {
+            t[n - 2] = t[n - 2].dropLast(1)
+        }
         val code = t.last()
         if (code.length == 2 && code.any(Char::isDigit) && !code.all(Char::isDigit) && rx("[.,]\\d{2}$").containsMatchIn(t[t.size - 2])) {
             val folded = code.map { c -> RATE_LOOKALIKE[c] ?: c }.joinToString("")
@@ -1517,8 +1536,9 @@ object ReceiptParser {
     private val RATE_LOOKALIKE = mapOf('O' to '0', 'o' to '0', 'D' to '0', 'I' to '1', 'l' to '1', '|' to '1', 'Z' to '2', 'z' to '2', 'S' to '5', 's' to '5')
 
     /**
-     * Pkgs read as the first word of the name, in a table with a Pkgs column: "Ixi" (1x1), "112" (1x2, the x read as a
-     * 1). Taken as Pkgs only when the pieces they count are the quantity printed on the row: A x B = quantity.
+     * Pkgs read as the first word of the name, in a table with a Pkgs column, with their x printed: "Ixi" (1x1), "lx6".
+     * Taken as Pkgs only when the pieces they count are the quantity printed on the row: A x B = quantity. A plain
+     * number ("112", the x read as a 1) is decided on the whole table (see [colliFromNames]).
      */
     private fun colliInName(description: String, qty: BigDecimal?): Pair<String, String>? {
         if (qty == null || qty.signum() <= 0 || !isWholeNumber(qty)) return null
@@ -1528,12 +1548,37 @@ object ReceiptParser {
         val m = MISREAD_COLLI.matchEntire(folded) ?: return null
         val a = m.groupValues[1].toInt(); val b = m.groupValues[3].toInt()
         if (BigDecimal(a.toLong() * b).compareTo(qty) != 0) return null
-        // Without an x ("112"), only a 1 can stand for it, and it must not be a number of the name ("100 TOVAGLIOLI").
-        if (m.groupValues[2] == "1" && (first.length != 3 || !first.all(Char::isDigit))) return null
+        if (m.groupValues[2] == "1") return null
         return "${a}x$b" to description.substringAfter(' ').trim()
     }
 
     private val MISREAD_COLLI = Regex("^([1-9])([xX×*1])([1-9]\\d?)$")
+
+    /**
+     * "112 AROMI ERBA" in a table whose rows print their Pkgs as A x B ("1x6", "1x24"): "112" is 1x2 with its x read as
+     * a 1, when 1 x 2 is the quantity printed on the row. Most rows must print A x B (a product named "111 MINUTI" in a
+     * table without them keeps its name), and the Pkgs so worked out are shown for a check, never taken as read.
+     */
+    internal fun colliFromNames(items: List<ParsedLineItem>, text: String): List<ParsedLineItem> {
+        if (!COLLI_HEADING.containsMatchIn(text)) return items
+        val axb = items.count { it.packages?.value?.let { p -> AXB_COLLI.matches(p) } == true }
+        if (axb < 3 || axb * 2 < items.size) return items
+        return items.map { it ->
+            val q = it.quantity ?: return@map it
+            if (it.packages != null || q.confidence != Confidence.HIGH || q.value.signum() <= 0 || !isWholeNumber(q.value)) return@map it
+            val first = it.originalDescription.substringBefore(' ')
+            val m = DIGITS_COLLI.matchEntire(first) ?: return@map it
+            val a = m.groupValues[1].toInt(); val b = m.groupValues[2].toInt()
+            if (BigDecimal(a.toLong() * b).compareTo(q.value) != 0 || first.length == it.originalDescription.length) return@map it
+            it.copy(
+                originalDescription = it.originalDescription.substringAfter(' ').trim(),
+                packages = Extracted("${a}x$b", Confidence.LOW, "${q.source} (Pkgs \"$first\": the x read as a 1; $a x $b = quantity)"),
+            )
+        }
+    }
+
+    private val AXB_COLLI = Regex("^\\d{1,3}x\\d{1,4}$")
+    private val DIGITS_COLLI = Regex("^([1-9])1([1-9]\\d?)$")
 
     private fun normalizeColli(raw: String): String =
         raw.map { c -> when (c) { 'l', 'I', 'L' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString("")

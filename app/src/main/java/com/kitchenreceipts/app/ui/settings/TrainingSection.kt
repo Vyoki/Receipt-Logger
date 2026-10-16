@@ -36,7 +36,8 @@ fun TrainingSection(c: AppContainer) {
     var ask by remember { mutableStateOf(false) }
     var progress by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     var result by remember { mutableStateOf<String?>(null) }
-    var made by remember { mutableStateOf(false) }
+    // A package made earlier (another visit to Settings) can still be deleted.
+    var made by remember { mutableStateOf(c.trainingExport.exists()) }
     val shareTitle = stringResource(R.string.training_share)
     val none = stringResource(R.string.training_none)
     val failed = stringResource(R.string.training_failed)
@@ -45,7 +46,7 @@ fun TrainingSection(c: AppContainer) {
     SectionTitle(stringResource(R.string.training_title))
     Text(stringResource(R.string.training_hint), style = MaterialTheme.typography.bodySmall)
     progress?.let { (done, of) ->
-        Text(stringResource(R.string.training_progress, done, of), style = MaterialTheme.typography.bodyMedium)
+        if (of > 0) Text(stringResource(R.string.training_progress, done, of), style = MaterialTheme.typography.bodyMedium)
         LinearProgressIndicator(progress = { if (of == 0) 0f else done.toFloat() / of }, modifier = Modifier.fillMaxWidth())
     }
     result?.let { Text(it, style = MaterialTheme.typography.bodyMedium) }

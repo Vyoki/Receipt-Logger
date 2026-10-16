@@ -82,7 +82,7 @@ data class PerKilo(
     val perPlate: BigDecimal,
     /** 1 / [perPlate], one decimal. */
     val plates: BigDecimal,
-    /** [plates] x what one plate earns (after ingredients); null without a menu price. */
+    /** [plates] x what one plate earns (after ingredients and the staff and utilities share); null without a menu price. */
     val earns: BigDecimal?,
 )
 
@@ -235,14 +235,16 @@ object FoodCost {
             vatOfPrice = if (pays != null && net != null) pays.subtract(net).setScale(4, RoundingMode.HALF_UP) else null,
             overheads = full.subtract(food).setScale(4, RoundingMode.HALF_UP),
             earns = net?.subtract(full)?.setScale(4, RoundingMode.HALF_UP),
-            perKilo = perKilo(lines, margin),
+            // On the same footing as what one plate earns, so plates x per plate = per kilo.
+            perKilo = perKilo(lines, net?.subtract(full)),
             changePerPortion = changes.takeIf { it.isNotEmpty() }?.fold(BigDecimal.ZERO, BigDecimal::add)?.setScale(4, RoundingMode.HALF_UP),
         )
     }
 
     /**
      * The main ingredient (the dearest per plate among those bought by weight or volume): how many plates a kilo (or
-     * litre) of it makes and what they earn after ingredients ("per kilo of beef: 4 plates, 44,80 €").
+     * litre) of it makes and what they earn after ingredients and the staff and utilities share ("per kilo of beef: 4
+     * plates, 44,80 €").
      */
     private fun perKilo(lines: List<IngredientCost>, marginPerPlate: BigDecimal?): PerKilo? {
         val main = lines.filter { it.cost != null && it.boughtPerPortion != null && it.price != null && Units.dimension(it.price.unit) != null && it.price.unit != "pz" }
@@ -258,6 +260,20 @@ object FoodCost {
             plates = plates.setScale(1, RoundingMode.HALF_UP),
             earns = marginPerPlate?.multiply(plates, MC)?.setScale(2, RoundingMode.HALF_UP),
         )
+    }
+
+    /**
+     * What the customer pays for one plate, split to the cent: VAT, ingredients, staff and utilities, and what is left.
+     * Each part rounded to cents, the rest is what is left, so the parts always add up to what the customer pays.
+     */
+    data class Split(val paysCents: Long, val vatCents: Long, val foodCents: Long, val overheadsCents: Long, val earnsCents: Long)
+
+    fun split(c: RecipeCost): Split? {
+        val pays = c.customerPays ?: return null
+        val vat = c.vatOfPrice ?: return null
+        fun cents(v: BigDecimal) = v.movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
+        val p = cents(pays); val v = cents(vat); val f = cents(c.foodCost); val o = cents(c.overheads)
+        return Split(p, v, f, o, p - v - f - o)
     }
 
     /** The menu price (with VAT when the recipe's price includes it) that gives [targetPercent] food cost, to 0,50 €. */
