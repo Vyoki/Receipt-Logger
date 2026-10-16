@@ -259,11 +259,17 @@ class ReconcileTest {
         assertNull(ReceiptParser.parseItemLine("Consegna gratuita per ordini superiori a 150,00.", colliColumn = false))
         assertNull(ReceiptParser.parseItemLine("ACQUA MINERALE NATURALE PET 1,50.", colliColumn = false))
         assertEquals(821L, ReceiptParser.parseItemLine("PECORINO GRATTUGIATO KG 0,50 16,420 8,21.", colliColumn = false)?.lineTotalCents?.value)
+        assertEquals(821L, ReceiptParser.parseItemLine("PECORINO GRATTUGIATO KG 0,50 16,420 8,21. 10%", colliColumn = false)?.lineTotalCents?.value)
+        assertEquals(821L, ReceiptParser.parseItemLine("PECORINO GRATTUGIATO KG 0,50 16,420 8,21. B", colliColumn = false)?.lineTotalCents?.value)
     }
 
     @Test fun aPackagesTotalNextToTheQuantityTotal() {
         assertEquals(12, PackagesCheck.printedTotal("TOTALE COLLI 12 TOTALE QUANTITA' 48"))
         assertEquals(12, PackagesCheck.printedTotal("N. COLLI 12 Q.TA TOTALE 48"))
+        assertEquals(12, PackagesCheck.printedTotal("TOTALE COLLI TOTALE QUANTITA'\n12 48"))
+        // Column headings, whatever digits they carry ("SC.1"), are no total; nor is the line below them.
+        assertNull(PackagesCheck.printedTotal("COD.ART. N.COLLI DESCRIZIONE BENI U.M. QUANTITA' PREZZO UNIT. SC.1 SC.2 IMPORTO % IVA\n19966 7 PANE NR 10 1,50 15,00 04"))
+        assertNull(PackagesCheck.printedTotal("CODICE N.COLLI DESCR. U.M. Q.TA PREZZO IMPORTO\n123 2 LATTE LT 1 1,00 1,00 04"))
     }
 
     @Test fun aNumberStartingANameStaysInTheNameWithoutTableEvidence() {
@@ -273,5 +279,16 @@ class ReconcileTest {
         // In a table that prints its Pkgs as A x B, "112" is 1x2 when 1 x 2 is the quantity, shown for a check.
         val herbs = read(page1, page2).lineItems.single { it.originalDescription.startsWith("ERBA") }
         assertEquals(Confidence.LOW, herbs.packages?.confidence)
+    }
+
+    @Test fun afterAnEditTheProofGoesButTheListStays() {
+        val d = DocumentDraft.fromParsed(read(page1, page2))
+        assertTrue(d.checks!!.vatProven)
+        val edited = d.copy(items = d.items.mapIndexed { i, it -> if (i == 0) it.copy(lineTotal = it.lineTotal.copy(text = "12,00")) else it })
+            .checksStillFor(d)
+        assertFalse(edited.checks!!.vatProven)
+        assertNull(edited.checks!!.packagesPrinted)
+        assertEquals(1, edited.checks!!.recovered.size)
+        assertEquals(1, edited.checks!!.dropped.size)
     }
 }
