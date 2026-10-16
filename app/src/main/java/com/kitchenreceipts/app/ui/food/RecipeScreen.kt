@@ -260,7 +260,7 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
             Panel {
                 Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                     val target = c.settings.foodCostTarget
-                    PlateSummary(cost, target)
+                    PlateSummary(cost, target, c.settings.overheadPercent)
                     FoodCost.priceForTarget(cost, target)?.let {
                         Text(stringResource(R.string.recipe_for_target_line, ItalianNumbers.formatDecimal(target), euros(it)), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
                     }

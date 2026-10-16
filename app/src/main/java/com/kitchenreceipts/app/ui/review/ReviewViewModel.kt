@@ -1,5 +1,6 @@
 package com.kitchenreceipts.app.ui.review
 
+import com.kitchenreceipts.core.checksStillFor
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.kitchenreceipts.app.AppContainer
@@ -322,7 +323,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     }
 
     private fun editDraft(f: (DocumentDraft) -> DocumentDraft) {
-        _state.update { it.copy(draft = f(it.draft), saveError = null) }
+        // The document's proof is dropped as soon as the lines it was made on change.
+        _state.update { it.copy(draft = f(it.draft).checksStillFor(it.draft), saveError = null) }
         refreshChecks()
         refreshPrices()
         keepJob?.cancel()
@@ -517,7 +519,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         run {
             if (documentId == null) jobId?.let { c.importQueue.markSaved(it) }
             // The reading as the camera saw it, so later versions can read this document again (see ReadingChecker).
-            if (documentId == null) runCatching { c.readings.save(id, ocrPages) }
+            if (documentId == null) runCatching { c.readings.save(id, ocrPages, ocrWidths) }
             val finalDraft = _state.value.draft
             val corrections = initialDraft?.let { Corrections.diff(it, finalDraft) }.orEmpty()
             c.log.event(

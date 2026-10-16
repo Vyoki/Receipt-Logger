@@ -181,6 +181,8 @@ class FoodCostTest {
         eq("10.74", c.earns)
         eq("0.1", c.perKilo!!.perPlate)
         eq("10.0", c.perKilo!!.plates)
+        // A kilo earns its plates' earnings, staff and utilities included: 10 x 10,74.
+        eq("107.40", c.perKilo!!.earns)
     }
 
     @Test fun thePriceBeforeIsAnEarlierDelivery() {
@@ -200,5 +202,17 @@ class FoodCostTest {
     @Test fun noPerKiloForDishesOfPieces() {
         val r = Recipe(1, "Uovo", null, 500, true, BigDecimal.TEN, BigDecimal.ONE, listOf(RecipeIngredient(1, "Uova", BigDecimal("2"), "pz")))
         assertNull(FoodCost.cost(r, { IngredientPrice(BigDecimal("0.20"), "pz", null, null, false) }).perKilo)
+    }
+
+    @Test fun theSplitAddsUpToWhatTheCustomerPays() {
+        fun check(cents: Long, withVat: Boolean, price: String, overhead: Int) {
+            val r = Recipe(1, "Piatto", null, cents, withVat, BigDecimal.TEN, BigDecimal.ONE, listOf(RecipeIngredient(1, "Manzo", BigDecimal("150"), "g")))
+            val c = FoodCost.cost(r, { IngredientPrice(BigDecimal(price), "kg", null, null, false) }, overheadPercent = BigDecimal(overhead))
+            val s = FoodCost.split(c)!!
+            assertEquals(s.paysCents, s.vatCents + s.foodCents + s.overheadsCents + s.earnsCents)
+        }
+        check(1200, true, "22.23", 0)
+        check(1200, true, "22.23", 30)
+        check(1100, false, "22.233", 0)
     }
 }

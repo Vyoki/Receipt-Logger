@@ -26,6 +26,8 @@ object Reconcile {
         val recovered: List<String> = emptyList(),
         /** Readings dropped because they were not products: "text  amount". */
         val dropped: List<String> = emptyList(),
+        /** The same readings as (amount in cents, VAT rate): to tell, on a later reading, whether they are still left out. */
+        val droppedKeys: List<Pair<Long, BigDecimal?>> = emptyList(),
         /** Lines whose VAT rate was unreadable and is the one that makes the sums close. */
         val ratesFound: Int = 0,
         /** Every VAT rate of the summary adds up to the cent. */
@@ -54,10 +56,11 @@ object Reconcile {
         var out = items
         var recovered = emptyList<String>()
         var dropped = emptyList<String>()
+        var droppedKeys = emptyList<Pair<Long, BigDecimal?>>()
         var ratesFound = 0
-        if (groups.isNotEmpty() && items.none { it.lineTotalCents == null && !it.adjustment }) {
+        if (groups.isNotEmpty() && items.none { it.lineTotalCents == null && !isAdj(it) }) {
             solve(items, groups, text, colliColumn)?.let { s ->
-                out = s.items; recovered = s.recovered; dropped = s.dropped; ratesFound = s.ratesFound
+                out = s.items; recovered = s.recovered; dropped = s.dropped; droppedKeys = s.droppedKeys; ratesFound = s.ratesFound
             }
         }
         val printed = PackagesCheck.printedTotal(text)
@@ -66,6 +69,7 @@ object Reconcile {
         return out to Report(
             recovered = recovered,
             dropped = dropped,
+            droppedKeys = droppedKeys,
             ratesFound = ratesFound,
             vatProven = groups.isNotEmpty() && exact(out, groups),
             packagesPrinted = printed,
@@ -94,14 +98,41 @@ object Reconcile {
         return gaps
     }
 
-    private class Solved(val items: List<ParsedLineItem>, val recovered: List<String>, val dropped: List<String>, val ratesFound: Int)
+    private class Solved(
+        val items: List<ParsedLineItem>, val recovered: List<String>, val dropped: List<String>,
+        val droppedKeys: List<Pair<Long, BigDecimal?>>, val ratesFound: Int,
+    )
+
+    /**
+     * A discount or charge ("Sconto 4%", "Spese di trasporto"): part of the sums, never a product, never left out.
+     * Adjustments.mark runs after the reading, so its words decide here as well as the flag.
+     */
+    internal fun isAdj(it: ParsedLineItem) =
+        it.adjustment || Adjustments.isAdjustment(it.originalDescription, it.lineTotalCents?.value, it.quantity?.value)
+
+    /**
+     * A reading that names no product: no words of its own, or only the table's column headings ("IMPORTO EUR IVA",
+     * "(Natura e qualità) CONF. PZ/KG UNIT. € EUR IVA"). Only such a reading may be left out: "GHIACCIO ALIMENTARE
+     * 9,00" is a product printed with its amount alone, whatever the sums say.
+     */
+    internal fun namesNoProduct(description: String): Boolean {
+        val words = description.lowercase().split(rx("[^\\p{L}]+")).filter { it.length >= 2 }
+        return words.all { it in HEADING_WORDS }
+    }
+
+    private val HEADING_WORDS = setOf(
+        "natura", "qualità", "qualita", "conf", "pz", "kg", "unit", "unitario", "eur", "euro", "iva", "importo", "importi",
+        "prezzo", "descrizione", "codice", "cod", "colli", "quantità", "quantita", "qta", "tot", "totale", "imponibile",
+        "sconto", "um", "lotto", "scadenza", "beni", "tipo", "articolo", "aliquota", "valore", "netto", "lordo", "riga",
+        "amount", "price", "description", "qty", "total", "vat", "rate", "code", "unit",
+    )
 
     /** One possible change: [group] gets [delta] cents. */
     private class Option(val group: Int, val delta: Long)
 
     private fun solve(items: List<ParsedLineItem>, groups: List<VatSummary.Group>, text: String, colliColumn: Boolean): Solved? {
         val start = gaps(items, groups) ?: return null
-        val floating = items.indices.filter { items[it].vatRatePercent == null && !items[it].adjustment }
+        val floating = items.indices.filter { items[it].vatRatePercent == null && !isAdj(items[it]) }
         if (floating.isEmpty() && start.all { it == 0L }) return null
         val tolerance = groups.indices.map { g ->
             maxOf(1L, items.count { it.vatRatePercent?.value?.compareTo(groups[g].ratePercent) == 0 } / 4L)
@@ -111,14 +142,15 @@ object Reconcile {
         if (floating.size > MAX_FLOATING) return null
         fun groupOf(rate: BigDecimal?) = groups.indexOfFirst { rate != null && it.ratePercent.compareTo(rate) == 0 }
 
-        // Lines that may not be products: an amount with no quantity and no price, never a discount or charge. Only on
-        // a document whose lines print quantity x price (3 in 4 at least): on a till receipt every line is an amount
-        // alone, and dropping one that happens to equal a misread difference would lose a product.
-        val products = items.filter { !it.adjustment }
+        // Readings that may not be products: an amount above zero with no quantity and no price, whose words name no
+        // product (only column headings, or none); never a discount or charge. Only on a document whose lines print
+        // quantity x price (3 in 4 at least): on a till receipt every line is an amount alone.
+        val products = items.filter { !isAdj(it) }
         val linesProve = products.count { proven(it) } * 4 >= products.size * 3
         val weak = if (!linesProve) emptyList() else items.indices.filter { i ->
             val it = items[i]
-            !it.adjustment && it.quantity == null && it.unitPrice == null && groupOf(it.vatRatePercent?.value) >= 0 && i !in floating
+            !isAdj(it) && (it.lineTotalCents?.value ?: 0L) > 0 && it.quantity == null && it.unitPrice == null &&
+                namesNoProduct(it.originalDescription) && groupOf(it.vatRatePercent?.value) >= 0 && i !in floating
         }
         // Rows of the page that hold a whole line nobody took.
         val rows = missedRows(items, text, colliColumn).filter { groupOf(it.item.vatRatePercent?.value) >= 0 }
@@ -162,9 +194,9 @@ object Reconcile {
         val pick = best.singleOrNull() ?: return null
         if (pick.changes == 0) return null
         val newItems = applyMask(items, floating, pick.rates, groups, weak, rows, pick.mask)
-        val dropped = weak.filterIndexed { k, _ -> pick.mask and (1 shl k) != 0 }.map { i -> describe(items[i]) }
+        val droppedLines = weak.filterIndexed { k, _ -> pick.mask and (1 shl k) != 0 }.map { i -> items[i] }
         val recovered = rows.filterIndexed { k, _ -> pick.mask and (1 shl (weak.size + k)) != 0 }.map { describe(it.item) }
-        return Solved(newItems, recovered, dropped, floating.size)
+        return Solved(newItems, recovered, droppedLines.map(::describe), droppedLines.map(::key), floating.size)
     }
 
     private fun applyMask(
@@ -179,14 +211,16 @@ object Reconcile {
                 it.copy(vatRatePercent = Extracted(rate, Confidence.HIGH, "VAT summary (the ${ItalianNumbers.formatDecimal(rate)}% lines add up with it)"))
             } else it
         }
-        // A recovered line goes where its row was on the page: right after the line read above it.
+        // A recovered line goes where its row was on the page: right after the line read above it (at the end when no
+        // line read could be found on the page).
         val added = rows.filterIndexed { k, _ -> mask and (1 shl (weak.size + k)) != 0 }.groupBy { it.after }
         val out = mutableListOf<ParsedLineItem>()
-        added[-1]?.forEach { out += it.item }
+        added[FIRST]?.forEach { out += it.item }
         withRates.forEachIndexed { i, it ->
             if (i !in drop) out += it
             added[i]?.forEach { r -> out += r.item }
         }
+        added[UNPLACED]?.forEach { out += it.item }
         return out
     }
 
@@ -195,8 +229,11 @@ object Reconcile {
 
     // ------------------------------------------------------------ rows the reader missed
 
-    /** A whole line found on a row the reading did not take, and the index of the line it comes after (-1: first). */
+    /** A whole line found on a row the reading did not take, and the index of the line it comes after ([FIRST], [UNPLACED]). */
     private class Missed(val item: ParsedLineItem, val after: Int)
+
+    private const val FIRST = -1
+    private const val UNPLACED = -2
 
     /**
      * Rows that read as a whole line (quantity x price = amount, with a VAT code) more often than such a line was
@@ -215,22 +252,49 @@ object Reconcile {
         if (found.isEmpty()) return emptyList()
         // Lines already taken, by amount and rate (the reading may have tidied names; the amount is what the sums see).
         val taken = items.groupingBy { key(it) }.eachCount().toMutableMap()
-        // Where each line read was on the page, to put a recovered line back in its place.
-        val rowOf = items.map { it ->
-            val src = it.lineTotalCents?.source.orEmpty()
-            lines.indexOfFirst { l -> l.isNotBlank() && l.trim().length >= 8 && src.startsWith(l.trim()) }
-        }
+        val rowOf = rowsOfItems(items, lines)
+        val located = rowOf.any { it >= 0 }
         val out = mutableListOf<Missed>()
         for ((n, it) in found) {
             val k = key(it)
             val left = taken[k] ?: 0
             if (left > 0) { taken[k] = left - 1; continue }
-            out += Missed(it, rowOf.indices.lastOrNull { i -> rowOf[i] in 0 until n } ?: -1)
+            // After the line whose row is the nearest above this one.
+            val above = rowOf.indices.filter { i -> rowOf[i] in 0 until n }.maxByOrNull { i -> rowOf[i] }
+            out += Missed(it, above ?: if (located) FIRST else UNPLACED)
         }
         return out
     }
 
-    private fun key(it: ParsedLineItem) = (it.lineTotalCents?.value ?: 0L) to it.vatRatePercent?.value?.stripTrailingZeros()
+    internal fun key(it: ParsedLineItem): Pair<Long, BigDecimal?> = (it.lineTotalCents?.value ?: 0L) to it.vatRatePercent?.value?.stripTrailingZeros()
+
+    /**
+     * The text row each line read was taken from (-1: not found). A line read from the text carries its row as its
+     * source; one the AI read does not, and is found by its amount printed on a row with its code or a word of its name.
+     * Rows are taken in order and once each, so two identical lines get two rows.
+     */
+    private fun rowsOfItems(items: List<ParsedLineItem>, lines: List<String>): List<Int> {
+        val used = mutableSetOf<Int>()
+        var from = 0
+        return items.map { it ->
+            val src = it.lineTotalCents?.source.orEmpty()
+            fun fits(r: Int): Boolean {
+                val l = lines[r].trim()
+                if (l.length < 8 || r in used) return false
+                if (src.startsWith(l)) return true
+                val amount = it.lineTotalCents?.value?.let(ItalianNumbers::formatCents) ?: return false
+                val tokens = l.split(' ')
+                if (amount !in tokens) return false
+                val code = it.itemCode
+                if (code != null && code in tokens) return true
+                val words = it.originalDescription.uppercase().split(rx("[^A-Z0-9]+")).filter { w -> w.length >= 3 && w.any(Char::isLetter) }
+                return words.any { w -> l.uppercase().contains(w) }
+            }
+            val r = (from until lines.size).firstOrNull(::fits) ?: lines.indices.firstOrNull(::fits) ?: -1
+            if (r >= 0) { used += r; from = r + 1 }
+            r
+        }
+    }
 
     /**
      * A row that is a whole line: it reads with quantity x price = amount and a VAT code; or its amount is unreadable
@@ -272,7 +336,7 @@ object Reconcile {
         val q = it.quantity ?: return false
         val p = it.unitPrice ?: return false
         val t = it.lineTotalCents ?: return false
-        if (it.vatRatePercent == null || it.adjustment || it.originalDescription.count(Char::isLetter) < 3) return false
+        if (it.vatRatePercent == null || isAdj(it) || it.originalDescription.count(Char::isLetter) < 3) return false
         if (q.confidence != Confidence.HIGH || p.confidence != Confidence.HIGH) return false
         return ReceiptParser.matches(q.value, p.value, t.value)
     }
@@ -288,7 +352,7 @@ object Reconcile {
 
     /** Packages on the lines ("1x6" is one package of 6, "3" three); null when a product line has none or another form. */
     fun countPackages(items: List<ParsedLineItem>): Int? {
-        val products = items.filter { !it.adjustment }
+        val products = items.filter { !isAdj(it) }
         if (products.isEmpty()) return null
         var sum = 0
         for (it in products) {
@@ -302,36 +366,36 @@ object Reconcile {
 
     /**
      * The page count the document prints ("PAG. 1/6", "Pagina 2 di 6", "Page 3 of 6") and the numbers not found:
-     * (6, [6]) when pages 1 to 5 were photographed. Null when the document does not number its pages.
+     * (6, [6]) when pages 1 to 5 were photographed. Null when the document does not number its pages, or the marks do
+     * not agree on one count: a page is said missing only on evidence, never on a stray "1/4" (a GN tray) or "30/60"
+     * (payment terms).
      */
     fun pageMarks(text: String): Pair<Int, List<Int>>? {
-        val seen = mutableSetOf<Int>()
-        var of: Int? = null
+        val marks = mutableListOf<Pair<Int, Int>>()
+        fun add(n: Int, total: Int) { if (total in 2..30 && n in 1..total) marks += n to total }
+        fun termsAfter(line: String, end: Int) = PAYMENT_AFTER.containsMatchIn(line.substring(minOf(line.length, end + 1)))
         val lines = text.lines()
-        fun take(n: Int, total: Int): Boolean {
-            if (total !in 2..30 || n !in 1..total) return false
-            if (of != null && of != total) return false
-            of = total; seen += n
-            return true
-        }
         for ((i, l) in lines.withIndex()) {
-            WORDED.find(l)?.let { m -> take(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }
-            // "PAG." heading with the number below it, at the end of the row under the heading.
-            if (PAG_HEADING.containsMatchIn(l)) {
-                PAG_INLINE.find(l)?.let { m -> take(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }
-                // Every mark in the next rows: another sheet showing at the edge of the photo can put its own first.
-                for (next in lines.subList(i + 1, minOf(lines.size, i + 4))) {
-                    val m = TRAILING_MARK.find(next.trim()) ?: continue
-                    take(m.groupValues[1].toInt(), m.groupValues[2].toInt())
-                }
+            WORDED.findAll(l).forEach { m -> if (!termsAfter(l, m.range.last)) add(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }
+            // A "PAG." heading of the page column (not "COND. PAG.", the payment terms), with the mark at the end of a row below.
+            val head = PAG_HEADING.findAll(l).firstOrNull { m -> !PAYMENT_BEFORE.containsMatchIn(l.substring(0, m.range.first)) } ?: continue
+            PAG_INLINE.find(l, head.range.first)?.let { m -> if (!termsAfter(l, m.range.last)) add(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }
+            for (next in lines.subList(i + 1, minOf(lines.size, i + 4))) {
+                TRAILING_MARK.find(next.trim())?.let { m -> add(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }
             }
         }
-        val total = of ?: return null
-        if (seen.size < 1) return null
+        if (marks.isEmpty()) return null
+        // The count is the one marks agree on: two different pages, or the first or last page of it.
+        val byTotal = marks.groupBy({ it.second }, { it.first }).mapValues { it.value.toSet() }
+        val agreed = byTotal.filter { (total, ns) -> ns.size >= 2 || 1 in ns || total in ns }
+        val total = agreed.keys.singleOrNull() ?: return null
+        val seen = agreed.getValue(total)
         return total to (1..total).filter { it !in seen }
     }
 
-    private val WORDED = Regex("(?i)\\b(?:pagina|pag\\.?|page|seite|p\\.)\\s*(\\d{1,2})\\s*(?:di|of|von|de|/)\\s*(\\d{1,2})\\b")
+    private val PAYMENT_BEFORE = Regex("(?i)(\\bcond\\.?|\\bcondizioni\\s+di|\\bmod\\.?|\\bmodalit[àa]'?\\s+di|\\btermini\\s+di)\\s*$")
+    private val PAYMENT_AFTER = Regex("(?i)^\\s*(gg\\b|giorni\\b|d\\.?\\s?f\\b|f\\.?\\s?m\\b)")
+    private val WORDED = Regex("(?i)\\b(?:pagina|pag\\.?|page|seite)\\s*(\\d{1,2})\\s*(?:di|of|von|de|/)\\s*(\\d{1,2})\\b")
     private val PAG_HEADING = Regex("(?i)\\bpag(?:\\.|ina\\b|\\b)")
     private val PAG_INLINE = Regex("(?i)\\bpag(?:\\.|ina)?\\s*(\\d{1,2})\\s*/\\s*(\\d{1,2})\\b")
     private val TRAILING_MARK = Regex("(?<![\\d/])(\\d{1,2})\\s?/\\s?(\\d{1,2})$")

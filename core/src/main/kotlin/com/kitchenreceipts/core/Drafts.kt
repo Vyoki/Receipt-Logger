@@ -181,6 +181,17 @@ data class DocumentDraft(
     }
 }
 
+/** The lines as the totals check saw them: each line's key, amount, VAT rate and packages. */
+private fun DocumentDraft.checkedLines() = items.map { listOf(it.key.toString(), it.lineTotal.text, it.vatRate.text, it.packages.text) }
+
+/**
+ * The document's proof ([DocumentDraft.checks]) holds only for the lines it was made on: once a line is added, removed,
+ * or its amount, VAT rate or packages change, it is no longer shown (it would say "every VAT rate adds up" of lines
+ * that may not).
+ */
+fun DocumentDraft.checksStillFor(before: DocumentDraft): DocumentDraft =
+    if (checks != null && checkedLines() != before.checkedLines()) copy(checks = null) else this
+
 enum class ErrorCode {
     REQUIRED, INVALID_NUMBER, INVALID_DATE, MUST_NOT_BE_ZERO, MUST_BE_POSITIVE, OUT_OF_RANGE, TOO_LONG, INVALID_CURRENCY,
     /** "1.500": 1500 or 1,5? Typed values are never guessed (see ItalianNumbers.isAmbiguousTyped). */

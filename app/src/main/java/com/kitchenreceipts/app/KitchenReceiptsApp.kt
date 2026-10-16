@@ -99,7 +99,7 @@ class AppContainer(context: Context) {
     val readingChecker = com.kitchenreceipts.app.diagnostics.ReadingChecker(context, repository, readings, settings, problems, log) { importQueue.busy }
 
     init {
-        importQueue.onAutoSaved = { id, pending -> readings.save(id, pending.rawLines); checkDishes(id) }
+        importQueue.onAutoSaved = { id, pending -> readings.save(id, pending.rawLines, pending.ocrWidths); checkDishes(id) }
         // A supplier already saved under a VAT number proves the supplier of a new document with that number. Read on
         // the reading's background thread; never on the main thread (the database refuses it, and nothing is lost).
         settings.supplierLookup = { vat ->

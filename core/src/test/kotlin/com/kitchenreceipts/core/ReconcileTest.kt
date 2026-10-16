@@ -121,7 +121,7 @@ class ReconcileTest {
         )
         val items = listOf(
             line("PANE", 1000, 4, true), line("LATTE", 300, 4, true), line("UOVA", 200, 4, true), line("BURRO", 400, 4, true),
-            line("FARINA", 100, 4, true), line("RISO", 250, 4, true), line("NOTA A", 500, 4, false), line("NOTA B", 500, 4, false),
+            line("FARINA", 100, 4, true), line("RISO", 250, 4, true), line("IMPORTO", 500, 4, false), line("EUR IVA", 500, 4, false),
         )
         val groups = listOf(VatSummary.Group(BigDecimal(4), 2750, 110, "27,50 04 1,10"))
         val (out, report) = Reconcile.apply(items, groups, "")
@@ -190,5 +190,88 @@ class ReconcileTest {
         val text = "COD.ART. N.COLLI DESCRIZIONE ARTICOLO U.M. Q.TA PR.UNITARIO VALORE IVA\nKG 7,418 2,61 19,36 04\n100011 1 LIMONI"
         assertNull(PackagesCheck.printedTotal(text))
         assertEquals(12, PackagesCheck.printedTotal("TOTALE COLLI 12"))
+    }
+
+    // ------------------------------------------------------------ found by review (invented data)
+
+    private fun proven(name: String, cents: Long, rate: Int = 22) = ParsedLineItem(
+        name, Extracted(BigDecimal.ONE, Confidence.HIGH, name), null, Extracted(BigDecimal(cents).movePointLeft(2), Confidence.HIGH, name),
+        Extracted(cents, Confidence.HIGH, name), Extracted(BigDecimal(rate), Confidence.HIGH, name), null, null,
+    )
+    private fun amountOnly(name: String, cents: Long, rate: Int = 22) = ParsedLineItem(
+        name, null, null, null, Extracted(cents, Confidence.HIGH, name), Extracted(BigDecimal(rate), Confidence.HIGH, name), null, null,
+    )
+
+    @Test fun aDiscountOrChargeIsNeverLeftOut() {
+        val lines = listOf(proven("ACQUA", 1000), proven("BIRRA", 2000), proven("VINO", 3000), proven("COLA", 1200))
+        val groups = listOf(VatSummary.Group(BigDecimal(22), 7200 - 900, 1386, "63,00 22 13,86"))
+        for (adj in listOf(amountOnly("SCONTO PROMOZIONALE", -900), amountOnly("CONTRIBUTO TRASPORTO", 900))) {
+            val g = if (adj.lineTotalCents!!.value > 0) listOf(VatSummary.Group(BigDecimal(22), 7200, 1584, "72,00 22 15,84")) else groups
+            val (out, report) = Reconcile.apply(lines + adj, g, "")
+            assertEquals(5, out.size)
+            assertTrue(report.dropped.isEmpty())
+        }
+    }
+
+    @Test fun aProductPrintedWithItsAmountAloneIsNeverLeftOut() {
+        val items = listOf(proven("ACQUA", 1000), proven("BIRRA", 2000), proven("VINO", 3000), proven("COLA", 900), proven("COLA", 900), amountOnly("GHIACCIO ALIMENTARE", 900))
+        val groups = listOf(VatSummary.Group(BigDecimal(22), 7800, 1716, "78,00 22 17,16"))
+        val (out, report) = Reconcile.apply(items, groups, "")
+        assertEquals(items, out)
+        assertFalse(report.changed)
+    }
+
+    @Test fun whatTheCheckerChangedGoesToReview() {
+        val d = read(page1, page2)
+        assertTrue(ParseWarning.CHECKED_BY_TOTALS in d.warnings)
+    }
+
+    @Test fun paymentTermsAndTraysAreNoPageNumbers() {
+        assertNull(Reconcile.pageMarks("COND. PAG.\nRIBA 30/60\nVASSOIO GN 1/4"))
+        assertNull(Reconcile.pageMarks("DATA DOC. NUMERO PAG.\n14/10/2026 12/26"))
+        assertNull(Reconcile.pageMarks("Pag. 15/30 gg d.f."))
+        assertNull(Reconcile.pageMarks("P. 1/2 KG"))
+        // A stray mark and a real one disagree: nothing is said.
+        assertNull(Reconcile.pageMarks("TIPO DOCUMENTO PAG.\n01/10\nFATTURA 1 1/2"))
+        assertEquals(2 to listOf(1), Reconcile.pageMarks("TIPO DOCUMENTO PAG.\nFATTURA 1 14/10/2026 2/2"))
+    }
+
+    @Test fun aLineRecoveredForTheAiGoesWhereItWasPrinted() {
+        // The AI's lines carry no OCR row as their source: they are found on the page by amount and name.
+        fun ai(name: String, q: String, p: String, cents: Long) = ParsedLineItem(
+            name, Extracted(BigDecimal(q), Confidence.HIGH, "AI: $name"), null, Extracted(BigDecimal(p), Confidence.HIGH, "AI: $name"),
+            Extracted(cents, Confidence.HIGH, "AI: $name"), Extracted(BigDecimal(4), Confidence.HIGH, "AI: $name"), null, null,
+        )
+        val text = """
+            1000011 LATTE INTERO LT 1 10 1,100 11,00 04
+            1000022 BURRO KG 1 2 3,000 6,00 04
+            1000033 PECORINO GRATTUGIATO KG 0,50 16,420 8,21 04
+            1000044 FARINA 00 KG 1 5 0,800 4,00 04
+        """.trimIndent()
+        val items = listOf(ai("Latte intero", "10", "1.1", 1100), ai("Burro", "2", "3", 600), ai("Farina 00", "5", "0.8", 400))
+        val groups = listOf(VatSummary.Group(BigDecimal(4), 2921, 117, "29,21 04 1,17"))
+        val (out, report) = Reconcile.apply(items, groups, text)
+        assertEquals(1, report.recovered.size)
+        assertEquals(listOf("Latte intero", "Burro", "PECORINO GRATTUGIATO", "Farina 00"), out.map { it.originalDescription })
+    }
+
+    @Test fun aNoteEndingWithAnAmountIsNoLine() {
+        assertNull(ReceiptParser.parseItemLine("Consegna gratuita per ordini superiori a 150,00.", colliColumn = false))
+        assertNull(ReceiptParser.parseItemLine("ACQUA MINERALE NATURALE PET 1,50.", colliColumn = false))
+        assertEquals(821L, ReceiptParser.parseItemLine("PECORINO GRATTUGIATO KG 0,50 16,420 8,21.", colliColumn = false)?.lineTotalCents?.value)
+    }
+
+    @Test fun aPackagesTotalNextToTheQuantityTotal() {
+        assertEquals(12, PackagesCheck.printedTotal("TOTALE COLLI 12 TOTALE QUANTITA' 48"))
+        assertEquals(12, PackagesCheck.printedTotal("N. COLLI 12 Q.TA TOTALE 48"))
+    }
+
+    @Test fun aNumberStartingANameStaysInTheNameWithoutTableEvidence() {
+        val it = ReceiptParser.parseItemLine("1000099 111 MINUTI DI SOLE 1 3,00 3,00 22", colliColumn = true)!!
+        assertEquals("111 MINUTI DI SOLE", it.originalDescription)
+        assertNull(it.packages)
+        // In a table that prints its Pkgs as A x B, "112" is 1x2 when 1 x 2 is the quantity, shown for a check.
+        val herbs = read(page1, page2).lineItems.single { it.originalDescription.startsWith("ERBA") }
+        assertEquals(Confidence.LOW, herbs.packages?.confidence)
     }
 }

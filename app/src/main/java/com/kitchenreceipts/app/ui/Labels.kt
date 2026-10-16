@@ -32,6 +32,7 @@ fun warningText(w: ParseWarning): String = stringResource(
         ParseWarning.OTHER_BUYER -> R.string.warn_other_buyer
         ParseWarning.DUPLICATE_PAGE -> R.string.warn_duplicate_page
         ParseWarning.PAGES_MISSING -> R.string.warn_pages_missing
+        ParseWarning.CHECKED_BY_TOTALS -> R.string.warn_checked_by_totals
     },
 )
 
@@ -119,6 +120,7 @@ fun reviewReasonText(r: ReviewReason): String = stringResource(
         ReviewReason.UNUSUAL_PRICE -> R.string.reason_unusual_price
         ReviewReason.DUPLICATE_PAGE -> R.string.reason_duplicate_page
         ReviewReason.PAGES_MISSING -> R.string.reason_pages_missing
+        ReviewReason.CHECKED_BY_TOTALS -> R.string.reason_checked_by_totals
     },
 )
 

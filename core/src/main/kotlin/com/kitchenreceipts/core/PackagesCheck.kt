@@ -9,6 +9,7 @@ package com.kitchenreceipts.core
 object PackagesCheck {
 
     private val LABEL = Regex("(?i)(\\bn\\.?\\s*colli\\b|\\btotale\\s+colli\\b|\\bcolli\\s+totali\\b)")
+    private val DESCRIPTION_COLUMN = Regex("(?i)\\b(descrizione|articolo|prodotto|beni)\\b")
     private val FIRST_INT = Regex("^\\D{0,3}(\\d{1,4})\\b")
 
     /** The printed total, from the label's line or the line below it. */
@@ -16,10 +17,12 @@ object PackagesCheck {
         val lines = text.lines()
         for ((i, line) in lines.withIndex()) {
             val m = LABEL.find(line) ?: continue
-            // The column heading ("COD.ART. N.COLLI DESCRIZIONE ...") is no total: the number below it is a line's.
-            if (ReceiptParser.isTableHeader(line)) continue
             val after = line.substring(m.range.last + 1)
-            rx("\\b(\\d{1,4})\\b").find(after)?.let { return it.groupValues[1].toInt() }
+            val number = rx("\\b(\\d{1,4})\\b").find(after)
+            // The item table's column heading ("COD.ART. N.COLLI DESCRIZIONE ...") is no total: the number below it is a
+            // line's. A footer ("TOTALE COLLI 12 TOTALE QUANTITA' 48") names no description column.
+            if (number == null && ReceiptParser.isTableHeader(line) && DESCRIPTION_COLUMN.containsMatchIn(line)) continue
+            number?.let { return it.groupValues[1].toInt() }
             lines.getOrNull(i + 1)?.let { next -> FIRST_INT.find(next.trim())?.let { return it.groupValues[1].toInt() } }
         }
         return null

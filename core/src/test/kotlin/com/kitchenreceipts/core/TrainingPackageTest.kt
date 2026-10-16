@@ -1,7 +1,9 @@
 package com.kitchenreceipts.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -59,5 +61,34 @@ class TrainingPackageTest {
         val text = TrainingPackage.reading(page)
         val first = text.lines()[3]
         assertEquals("100,160,972,178,0.0 | PECORINO GRATTUGIATO 0,50 16,420 8,21 04  [100-188:PECORINO 210-331:GRATTUGIATO 500-544:0,50 650-716:16,420 800-844:8,21 950-972:04]", first)
+    }
+
+    @Test fun aRateOrLotNotPrintedOnTheRowIsNotTaught() {
+        val page = listOf(
+            row(60, 100 to "FATTURA", 400 to "14/10/2026"),
+            row(160, 100 to "BURRO", 300 to "2", 400 to "3,000", 500 to "6,00"),
+            row(260, 100 to "TOTALE", 500 to "6,24"),
+        )
+        val d = TrainingPackage.Doc(null, null, null, LocalDate.of(2026, 10, 14), 600, 24, 624,
+            listOf(TrainingPackage.Line("Burro", quantity = BigDecimal(2), price = BigDecimal(3), amountCents = 600, vatRate = BigDecimal(4), lot = "L123")))
+        val t = Json.parse(TrainingPackage.truth(d, listOf(page), listOf(1000 to 1400))) as Map<*, *>
+        val line = (t["items"] as List<*>)[0] as Map<*, *>
+        assertNull(line["vat"])
+        assertNull(line["lot"])
+        assertEquals("4", line["vat_rate"])
+    }
+
+    @Test fun theTotalMustBePrintedOnAPageRead() {
+        assertNull(TrainingPackage.whyNotReading(doc, listOf(page)))
+        val firstPageOnly = page.filter { !it.text.contains("19,98") }
+        assertEquals(TrainingPackage.NotProven.TOTALS_NOT_READ, TrainingPackage.whyNotReading(doc, listOf(firstPageOnly)))
+    }
+
+    @Test fun positionsAreScaledToTheExportedPicture() {
+        val scaled = TrainingPackage.scaled(page, 2.0)
+        assertEquals(200, scaled[3].left)
+        assertEquals(200, scaled[3].words[0].left)
+        assertTrue(TrainingPackage.fits(scaled, 2000, 700))
+        assertFalse(TrainingPackage.fits(scaled, 1000, 700))
     }
 }

@@ -24,11 +24,14 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.fmtDate
+import com.kitchenreceipts.app.ui.fmtMoney
 import com.kitchenreceipts.app.ui.theme.Palette
+import com.kitchenreceipts.core.FoodCost
 import com.kitchenreceipts.core.IngredientCost
 import com.kitchenreceipts.core.ItalianNumbers
 import com.kitchenreceipts.core.RecipeCost
 import java.math.BigDecimal
+import java.math.MathContext
 import java.math.RoundingMode
 
 /**
@@ -36,29 +39,35 @@ import java.math.RoundingMode
  * and utilities, and what is left; then per kilo of the main ingredient, and what the last price changes did.
  */
 @Composable
-fun PlateSummary(c: RecipeCost, target: BigDecimal) {
+fun PlateSummary(c: RecipeCost, target: BigDecimal, overheadPercent: BigDecimal) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-        val earns = c.earns
-        if (earns == null) {
-            Text(stringResource(R.string.food_cost_plate, euros(c.foodCost)), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
-            Text(stringResource(R.string.food_type_price), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
-        } else {
-            Text(
-                stringResource(if (earns.signum() >= 0) R.string.food_earns_plate else R.string.food_loses_plate, euros(earns.abs())),
-                style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
-                color = if (earns.signum() >= 0) Palette.Ok else Palette.Error,
-            )
-            c.customerPays?.let { pays ->
-                Text(stringResource(R.string.food_split_title, euros(pays)), style = MaterialTheme.typography.bodyMedium)
-                MoneyBar(c)
-                Legend(Palette.HairlineStrong, stringResource(R.string.food_split_vat, euros(c.vatOfPrice)))
-                Legend(Palette.Orange, stringResource(R.string.food_split_ingredients, euros(c.foodCost)))
-                if (c.overheads.signum() > 0) Legend(Palette.OrangeDim, stringResource(R.string.food_split_overheads, euros(c.overheads)))
-                Legend(if (earns.signum() >= 0) Palette.Ok else Palette.Error, stringResource(R.string.food_split_earns, euros(earns)))
-                if (c.overheads.signum() == 0) Text(stringResource(R.string.food_before_overheads), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+        val split = FoodCost.split(c)
+        when {
+            // A dish with no ingredients yet earns nothing worth saying.
+            c.recipe.ingredients.isEmpty() ->
+                Text(stringResource(R.string.food_no_ingredients), style = MaterialTheme.typography.bodyMedium, color = Palette.Orange)
+            split == null -> {
+                Text(stringResource(R.string.food_cost_plate, euros(c.foodCost)), style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.SemiBold)
+                Text(stringResource(R.string.food_type_price), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+            }
+            else -> {
+                // Every amount to the cent, the parts adding up to what the customer pays.
+                val earns = split.earnsCents
+                Text(
+                    stringResource(if (earns >= 0) R.string.food_earns_plate else R.string.food_loses_plate, fmtMoney(kotlin.math.abs(earns))),
+                    style = MaterialTheme.typography.headlineSmall, fontWeight = FontWeight.SemiBold,
+                    color = if (earns >= 0) Palette.Ok else Palette.Error,
+                )
+                Text(stringResource(R.string.food_split_title, fmtMoney(split.paysCents)), style = MaterialTheme.typography.bodyMedium)
+                MoneyBar(split)
+                Legend(Palette.HairlineStrong, stringResource(R.string.food_split_vat, fmtMoney(split.vatCents)))
+                Legend(Palette.Orange, stringResource(R.string.food_split_ingredients, fmtMoney(split.foodCents)))
+                if (split.overheadsCents > 0) Legend(Palette.OrangeDim, stringResource(R.string.food_split_overheads, fmtMoney(split.overheadsCents)))
+                Legend(if (earns >= 0) Palette.Ok else Palette.Error, stringResource(R.string.food_split_earns, fmtMoney(earns)))
+                if (overheadPercent.signum() == 0) Text(stringResource(R.string.food_before_overheads), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             }
         }
-        c.perKilo?.let { k ->
+        if (c.recipe.ingredients.isNotEmpty()) c.perKilo?.let { k ->
             val per = stringResource(if (k.unit == "kg") R.string.food_unit_kg else R.string.food_unit_l)
             Text(
                 k.earns?.let { stringResource(R.string.food_per_kilo, per, k.ingredient, ItalianNumbers.formatDecimal(k.plates, maxScale = 1), euros(it)) }
@@ -66,7 +75,7 @@ fun PlateSummary(c: RecipeCost, target: BigDecimal) {
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-        c.foodCostPercent?.let { p ->
+        c.foodCostPercent?.takeIf { c.recipe.ingredients.isNotEmpty() }?.let { p ->
             Text(
                 stringResource(R.string.food_percent_line, ItalianNumbers.formatDecimal(p, maxScale = 1), ItalianNumbers.formatDecimal(target)),
                 style = MaterialTheme.typography.bodySmall, color = if (p > target) Palette.Orange else Palette.TextDim,
@@ -83,16 +92,16 @@ fun PlateSummary(c: RecipeCost, target: BigDecimal) {
 
 /** The customer's money as one bar: VAT, ingredients, staff and utilities, what is left. */
 @Composable
-private fun MoneyBar(c: RecipeCost) {
-    val parts = listOfNotNull(
-        c.vatOfPrice?.let { it to Palette.HairlineStrong },
-        c.foodCost to Palette.Orange,
-        c.overheads.takeIf { it.signum() > 0 }?.let { it to Palette.OrangeDim },
-        c.earns?.takeIf { it.signum() > 0 }?.let { it to Palette.Ok },
-    ).filter { it.first.signum() > 0 }
+private fun MoneyBar(s: FoodCost.Split) {
+    val parts = listOf(
+        s.vatCents to Palette.HairlineStrong,
+        s.foodCents to Palette.Orange,
+        s.overheadsCents to Palette.OrangeDim,
+        s.earnsCents to Palette.Ok,
+    ).filter { it.first > 0 }
     if (parts.isEmpty()) return
     Row(Modifier.fillMaxWidth().height(14.dp).clip(RoundedCornerShape(7.dp)).background(Palette.Panel)) {
-        parts.forEach { (v, color) -> Box(Modifier.weight(v.toFloat().coerceAtLeast(0.001f)).fillMaxHeight().background(color)) }
+        parts.forEach { (v, color) -> Box(Modifier.weight(v.toFloat()).fillMaxHeight().background(color)) }
     }
 }
 
@@ -104,20 +113,29 @@ private fun Legend(color: Color, text: String) {
     }
 }
 
-/** A price per unit as printed on invoices: two decimals, or three when the third counts ("0,890 €"). */
+/** A price per unit as printed on invoices: two decimals, or three when the third counts ("0,890 €"); a small price per
+ * gram or millilitre keeps its digits ("0,0124 €"). */
 fun unitPrice(v: BigDecimal): String {
+    if (v.signum() > 0 && v < BigDecimal("0.10")) return ItalianNumbers.formatDecimal(significant(v, 3), minScale = 2, maxScale = 8) + " €"
     val three = v.setScale(3, RoundingMode.HALF_UP)
     return if (three.compareTo(three.setScale(2, RoundingMode.HALF_UP)) == 0) euros(v) else ItalianNumbers.formatDecimal(three, maxScale = 3) + " €"
 }
 
-/** "0,25 kg" as 250 g, "0,04 l" as 40 ml: kitchen quantities as the kitchen says them. */
+/** "0,25 kg" as 250 g, "0,04 l" as 40 ml: kitchen quantities as the kitchen says them, never a positive amount as 0. */
 fun kitchenQuantity(q: BigDecimal, unit: String): String {
     val small = q < BigDecimal.ONE && q.signum() > 0
     return when {
-        unit == "kg" && small -> ItalianNumbers.formatDecimal(q.movePointRight(3).setScale(0, RoundingMode.HALF_UP)) + " g"
-        unit == "l" && small -> ItalianNumbers.formatDecimal(q.movePointRight(3).setScale(0, RoundingMode.HALF_UP)) + " ml"
-        else -> ItalianNumbers.formatDecimal(q.setScale(3, RoundingMode.HALF_UP), maxScale = 3) + " " + unit
+        unit == "kg" && small -> ItalianNumbers.formatDecimal(significant(q.movePointRight(3), 4), maxScale = 8) + " g"
+        unit == "l" && small -> ItalianNumbers.formatDecimal(significant(q.movePointRight(3), 4), maxScale = 8) + " ml"
+        else -> ItalianNumbers.formatDecimal(significant(q, 4), maxScale = 8) + " " + unit
     }
+}
+
+/** [v] to [digits] significant digits, written without an exponent. */
+private fun significant(v: BigDecimal, digits: Int): BigDecimal {
+    if (v.signum() == 0) return v
+    val r = v.round(MathContext(digits, RoundingMode.HALF_UP))
+    return if (r.scale() < 0) r.setScale(0) else r
 }
 
 /**

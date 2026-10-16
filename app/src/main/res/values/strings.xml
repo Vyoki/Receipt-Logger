@@ -733,8 +733,8 @@
         <item quantity="other">%d lines recovered (the camera could not read them clearly; quantity × price, proven by the totals):</item>
     </plurals>
     <plurals name="proof_dropped">
-        <item quantity="one">%d reading left out: it was not a product (the totals add up without it):</item>
-        <item quantity="other">%d readings left out: they were not products (the totals add up without them):</item>
+        <item quantity="one">%d reading left out as not a product (the totals add up without it). Check that it is not one:</item>
+        <item quantity="other">%d readings left out as not products (the totals add up without them). Check that they are not:</item>
     </plurals>
     <plurals name="proof_rates">
         <item quantity="one">The VAT rate of %d line was unreadable: it is the one that makes the totals add up.</item>
@@ -754,4 +754,6 @@
     <string name="training_failed">The examples could not be made. Try again.</string>
     <string name="training_share">Send the training examples</string>
     <string name="training_forget">Delete the file from this phone</string>
+    <string name="warn_checked_by_totals">The document\'s totals made the app add or leave out lines (listed above the lines): check them before saving.</string>
+    <string name="reason_checked_by_totals">Lines added or left out to make the totals add up: check them.</string>
 </resources>

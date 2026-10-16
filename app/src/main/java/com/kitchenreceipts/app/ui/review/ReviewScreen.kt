@@ -507,7 +507,7 @@ private fun ReasonsCard(state: ReviewState) {
 }
 
 private fun hasSomethingToSay(c: Reconcile.Report) =
-    c.vatProven || c.changed || c.packagesPrinted != null || c.pagesMissing.isNotEmpty()
+    c.vatProven || c.changed || c.packagesAgree || c.packagesCounted != null || c.pagesMissing.isNotEmpty()
 
 /**
  * What the document's own sums prove about the reading: every VAT rate adds up, lines recovered or left out to make
