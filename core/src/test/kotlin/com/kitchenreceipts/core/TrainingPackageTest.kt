@@ -91,4 +91,16 @@ class TrainingPackageTest {
         assertTrue(TrainingPackage.fits(scaled, 2000, 700))
         assertFalse(TrainingPackage.fits(scaled, 1000, 700))
     }
+
+    @Test fun aDiscountIsNotTaughtAsTheVatRate() {
+        val page = listOf(
+            row(60, 100 to "FATTURA", 400 to "14/10/2026"),
+            row(160, 100 to "MOZZARELLA", 300 to "2", 400 to "5,000", 500 to "10%", 600 to "9,00"),
+            row(260, 100 to "TOTALE", 500 to "9,90"),
+        )
+        val d = TrainingPackage.Doc(null, null, null, LocalDate.of(2026, 10, 14), 900, 90, 990,
+            listOf(TrainingPackage.Line("Mozzarella", quantity = BigDecimal(2), price = BigDecimal(5), amountCents = 900, vatRate = BigDecimal.TEN, discount = "10")))
+        val line = ((Json.parse(TrainingPackage.truth(d, listOf(page), listOf(1000 to 1400))) as Map<*, *>)["items"] as List<*>)[0] as Map<*, *>
+        assertNull(line["vat"])
+    }
 }

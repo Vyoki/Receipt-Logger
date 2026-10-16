@@ -124,4 +124,6 @@
     <string name="food_dish_per_kilo">un %1$s di %2$s rende %3$s</string>
     <string name="food_dish_per_plate">a piatto</string>
     <string name="food_before_overheads">Da qui vanno ancora pagati personale, affitto e utenze: per contarli, imposta la % extra nella schermata Food cost.</string>
+    <string name="food_per_kilo_losing">Per un %1$s di %2$s: %3$s piatti, che perdono %4$s</string>
+    <string name="food_dish_per_kilo_loses">un %1$s di %2$s perde %3$s</string>
 </resources>

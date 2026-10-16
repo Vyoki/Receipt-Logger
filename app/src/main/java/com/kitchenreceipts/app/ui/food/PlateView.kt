@@ -69,10 +69,12 @@ fun PlateSummary(c: RecipeCost, target: BigDecimal, overheadPercent: BigDecimal)
         }
         if (c.recipe.ingredients.isNotEmpty()) c.perKilo?.let { k ->
             val per = stringResource(if (k.unit == "kg") R.string.food_unit_kg else R.string.food_unit_l)
+            val plates = ItalianNumbers.formatDecimal(k.plates, maxScale = 1)
+            val loses = k.earns?.signum() == -1
             Text(
-                k.earns?.let { stringResource(R.string.food_per_kilo, per, k.ingredient, ItalianNumbers.formatDecimal(k.plates, maxScale = 1), euros(it)) }
-                    ?: stringResource(R.string.food_per_kilo_plates, per, k.ingredient, ItalianNumbers.formatDecimal(k.plates, maxScale = 1)),
-                style = MaterialTheme.typography.bodyMedium,
+                k.earns?.let { e -> stringResource(if (loses) R.string.food_per_kilo_losing else R.string.food_per_kilo, per, k.ingredient, plates, euros(e.abs())) }
+                    ?: stringResource(R.string.food_per_kilo_plates, per, k.ingredient, plates),
+                style = MaterialTheme.typography.bodyMedium, color = if (loses) Palette.Error else MaterialTheme.colorScheme.onSurface,
             )
         }
         c.foodCostPercent?.takeIf { c.recipe.ingredients.isNotEmpty() }?.let { p ->
@@ -121,13 +123,18 @@ fun unitPrice(v: BigDecimal): String {
     return if (three.compareTo(three.setScale(2, RoundingMode.HALF_UP)) == 0) euros(v) else ItalianNumbers.formatDecimal(three, maxScale = 3) + " €"
 }
 
-/** "0,25 kg" as 250 g, "0,04 l" as 40 ml: kitchen quantities as the kitchen says them, never a positive amount as 0. */
+/**
+ * "0,25 kg" as 250 g, "0,04 l" as 40 ml: kitchen quantities as the kitchen says them. Whole amounts keep their three
+ * decimals (14,125 kg), small ones their significant digits (0,1 g): never a positive amount as 0.
+ */
 fun kitchenQuantity(q: BigDecimal, unit: String): String {
+    fun shown(v: BigDecimal) = if (v >= BigDecimal.ONE) ItalianNumbers.formatDecimal(v.setScale(3, RoundingMode.HALF_UP), maxScale = 3)
+    else ItalianNumbers.formatDecimal(significant(v, 3), maxScale = 8)
     val small = q < BigDecimal.ONE && q.signum() > 0
     return when {
-        unit == "kg" && small -> ItalianNumbers.formatDecimal(significant(q.movePointRight(3), 4), maxScale = 8) + " g"
-        unit == "l" && small -> ItalianNumbers.formatDecimal(significant(q.movePointRight(3), 4), maxScale = 8) + " ml"
-        else -> ItalianNumbers.formatDecimal(significant(q, 4), maxScale = 8) + " " + unit
+        unit == "kg" && small -> shown(q.movePointRight(3)) + " g"
+        unit == "l" && small -> shown(q.movePointRight(3)) + " ml"
+        else -> shown(q) + " " + unit
     }
 }
 

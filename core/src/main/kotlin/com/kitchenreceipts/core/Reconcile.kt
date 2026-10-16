@@ -28,6 +28,9 @@ object Reconcile {
         val dropped: List<String> = emptyList(),
         /** The same readings as (amount in cents, VAT rate): to tell, on a later reading, whether they are still left out. */
         val droppedKeys: List<Pair<Long, BigDecimal?>> = emptyList(),
+        /** For each dropped reading, how many amount-only lines with its amount and rate were left right after: more on a
+         * later reading means it came back. */
+        val droppedAfter: List<Int> = emptyList(),
         /** Lines whose VAT rate was unreadable and is the one that makes the sums close. */
         val ratesFound: Int = 0,
         /** Every VAT rate of the summary adds up to the cent. */
@@ -44,6 +47,34 @@ object Reconcile {
     }
 
     const val RECOVERED = "(amount = quantity x price; the VAT summary adds up)"
+
+    /** A line this check added (its amount's source carries [RECOVERED]), on this reading or an earlier one. */
+    fun isRecovered(it: ParsedLineItem) = it.lineTotalCents?.source?.endsWith(RECOVERED) == true
+
+    /** Lines with no quantity and no price whose amount and rate are [key]. */
+    fun amountOnly(items: List<ParsedLineItem>, key: Pair<Long, BigDecimal?>) =
+        items.count { it.quantity == null && it.unitPrice == null && key(it) == key }
+
+    /** "PECORINO GRATTUGIATO  8,21": how a line added or left out is shown. */
+    fun describe(it: ParsedLineItem) =
+        "${it.originalDescription.ifBlank { "?" }}  ${it.lineTotalCents?.value?.let(ItalianNumbers::formatCents).orEmpty()}".trim()
+
+    /**
+     * The report of a reading made again ([earlier] from a previous pass, [now] from this one) over [items]: lines added
+     * are those still carrying the mark; readings left out are this pass's and the earlier ones still out.
+     */
+    fun carry(earlier: Report?, now: Report, items: List<ParsedLineItem>): Report {
+        val recovered = items.filter(::isRecovered).map(::describe)
+        if (earlier == null) return now.copy(recovered = recovered)
+        val still = earlier.droppedKeys.indices.filter { i -> amountOnly(items, earlier.droppedKeys[i]) <= earlier.droppedAfter.getOrElse(i) { 0 } }
+        return now.copy(
+            recovered = recovered,
+            dropped = now.dropped + still.mapNotNull { earlier.dropped.getOrNull(it) },
+            droppedKeys = now.droppedKeys + still.map { earlier.droppedKeys[it] },
+            droppedAfter = now.droppedAfter + still.map { earlier.droppedAfter.getOrElse(it) { 0 } },
+            ratesFound = maxOf(now.ratesFound, earlier.ratesFound),
+        )
+    }
 
     /** Above this many possible changes the search is not run: a coincidence would become too likely. */
     private const val MAX_OPTIONAL = 12
@@ -70,6 +101,7 @@ object Reconcile {
             recovered = recovered,
             dropped = dropped,
             droppedKeys = droppedKeys,
+            droppedAfter = droppedKeys.map { k -> amountOnly(out, k) },
             ratesFound = ratesFound,
             vatProven = groups.isNotEmpty() && exact(out, groups),
             packagesPrinted = printed,
@@ -224,8 +256,6 @@ object Reconcile {
         return out
     }
 
-    private fun describe(it: ParsedLineItem) =
-        "${it.originalDescription.ifBlank { "?" }}  ${it.lineTotalCents?.value?.let(ItalianNumbers::formatCents).orEmpty()}".trim()
 
     // ------------------------------------------------------------ rows the reader missed
 
@@ -274,24 +304,31 @@ object Reconcile {
      * Rows are taken in order and once each, so two identical lines get two rows.
      */
     private fun rowsOfItems(items: List<ParsedLineItem>, lines: List<String>): List<Int> {
-        val used = mutableSetOf<Int>()
+        // Each row once: its text, its words, and an index by first word and by every amount on it.
+        val rows = lines.map { it.trim() }
+        val tokens = rows.map { r -> r.split(' ').filter { t -> t.isNotEmpty() } }
+        val upper = rows.map { it.uppercase() }
+        val byFirst = HashMap<String, MutableList<Int>>()
+        val byToken = HashMap<String, MutableList<Int>>()
+        for ((r, ts) in tokens.withIndex()) {
+            if (rows[r].length < 8) continue
+            ts.firstOrNull()?.let { byFirst.getOrPut(it) { mutableListOf() } += r }
+            for (t in ts.toSet()) if (t.any(Char::isDigit) && t.contains(',')) byToken.getOrPut(t) { mutableListOf() } += r
+        }
+        val used = BooleanArray(rows.size)
         var from = 0
         return items.map { it ->
             val src = it.lineTotalCents?.source.orEmpty()
-            fun fits(r: Int): Boolean {
-                val l = lines[r].trim()
-                if (l.length < 8 || r in used) return false
-                if (src.startsWith(l)) return true
-                val amount = it.lineTotalCents?.value?.let(ItalianNumbers::formatCents) ?: return false
-                val tokens = l.split(' ')
-                if (amount !in tokens) return false
-                val code = it.itemCode
-                if (code != null && code in tokens) return true
-                val words = it.originalDescription.uppercase().split(rx("[^A-Z0-9]+")).filter { w -> w.length >= 3 && w.any(Char::isLetter) }
-                return words.any { w -> l.uppercase().contains(w) }
-            }
-            val r = (from until lines.size).firstOrNull(::fits) ?: lines.indices.firstOrNull(::fits) ?: -1
-            if (r >= 0) { used += r; from = r + 1 }
+            val amount = it.lineTotalCents?.value?.let(ItalianNumbers::formatCents)
+            val code = it.itemCode
+            val words = it.originalDescription.uppercase().split(rx("[^A-Z0-9]+")).filter { w -> w.length >= 3 && w.any(Char::isLetter) }
+            // The row the line was read from (its source starts with it), else a row with its amount and its code or a
+            // word of its name (the AI's lines).
+            val bySource = byFirst[src.substringBefore(' ')].orEmpty().filter { r -> src.startsWith(rows[r]) }
+            val byAmount = amount?.let { a -> byToken[a].orEmpty().filter { r -> (code != null && code in tokens[r]) || words.any { w -> upper[r].contains(w) } } }.orEmpty()
+            val candidates = (bySource + byAmount).filter { r -> !used[r] }
+            val r = candidates.filter { it >= from }.minOrNull() ?: candidates.minOrNull() ?: -1
+            if (r >= 0) { used[r] = true; from = r + 1 }
             r
         }
     }
@@ -302,7 +339,7 @@ object Reconcile {
      */
     internal fun wholeLine(row: String, colliColumn: Boolean): ParsedLineItem? {
         ReceiptParser.parseItemLine(row, colliColumn)?.let { it ->
-            return it.takeIf { proven(it) }
+            return it.takeIf { proven(it) }?.let { p -> p.copy(lineTotalCents = p.lineTotalCents!!.copy(source = "${p.lineTotalCents.source} $RECOVERED")) }
         }
         val tokens = row.split(' ').filter { it.isNotBlank() }
         if (tokens.size < 5) return null
@@ -372,11 +409,17 @@ object Reconcile {
      */
     fun pageMarks(text: String): Pair<Int, List<Int>>? {
         val marks = mutableListOf<Pair<Int, Int>>()
+        val worded = mutableSetOf<Int>()
         fun add(n: Int, total: Int) { if (total in 2..30 && n in 1..total) marks += n to total }
         fun termsAfter(line: String, end: Int) = PAYMENT_AFTER.containsMatchIn(line.substring(minOf(line.length, end + 1)))
         val lines = text.lines()
         for ((i, l) in lines.withIndex()) {
-            WORDED.findAll(l).forEach { m -> if (!termsAfter(l, m.range.last)) add(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }
+            WORDED.findAll(l).forEach { m ->
+                if (!termsAfter(l, m.range.last)) {
+                    add(m.groupValues[1].toInt(), m.groupValues[2].toInt())
+                    if (m.value.contains(rx("(?i)\\b(di|of|von|de)\\b"))) worded += m.groupValues[2].toInt()
+                }
+            }
             // A "PAG." heading of the page column (not "COND. PAG.", the payment terms), with the mark at the end of a row below.
             val head = PAG_HEADING.findAll(l).firstOrNull { m -> !PAYMENT_BEFORE.containsMatchIn(l.substring(0, m.range.first)) } ?: continue
             PAG_INLINE.find(l, head.range.first)?.let { m -> if (!termsAfter(l, m.range.last)) add(m.groupValues[1].toInt(), m.groupValues[2].toInt()) }
@@ -385,9 +428,10 @@ object Reconcile {
             }
         }
         if (marks.isEmpty()) return null
-        // The count is the one marks agree on: two different pages, or the first or last page of it.
+        // The count is the one marks agree on: a mark in words ("Pagina 3 di 6") on its own, or two different pages, or
+        // the first or last page of it.
         val byTotal = marks.groupBy({ it.second }, { it.first }).mapValues { it.value.toSet() }
-        val agreed = byTotal.filter { (total, ns) -> ns.size >= 2 || 1 in ns || total in ns }
+        val agreed = byTotal.filter { (total, ns) -> total in worded || ns.size >= 2 || 1 in ns || total in ns }
         val total = agreed.keys.singleOrNull() ?: return null
         val seen = agreed.getValue(total)
         return total to (1..total).filter { it !in seen }

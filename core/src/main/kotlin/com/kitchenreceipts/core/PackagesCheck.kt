@@ -11,6 +11,8 @@ object PackagesCheck {
     private val LABEL = Regex("(?i)(\\bn\\.?\\s*colli\\b|\\btotale\\s+colli\\b|\\bcolli\\s+totali\\b)")
     private val NUMBER_AFTER_LABEL = Regex("^\\s*[:.]?\\s*(\\d{1,4})\\b")
     private val ITEM_COLUMN = Regex("(?i)\\b(descr\\w*|articolo|prodotto|beni|prezzo|importo|u\\.\\s?m\\.?)")
+    private val TOTAL_LABEL = Regex("(?i)totale|totali")
+    private val OTHER_COLUMN = Regex("(?i)\\b(cod\\w*|descr\\w*|denominazione|articolo|prodotto|beni|q\\.?\\s?t[àa']?\\b|quantit\\w*|prezzo|importo|u\\.\\s?m\\b|iva|sconto|lotto)")
     private val FIRST_INT = Regex("^\\D{0,3}(\\d{1,4})\\b")
 
     /** The printed total, from the label's line or the line below it. */
@@ -21,9 +23,11 @@ object PackagesCheck {
             val after = line.substring(m.range.last + 1)
             // The total follows its label ("TOTALE COLLI 12 TOTALE QUANTITA' 48", "N. COLLI: 12").
             NUMBER_AFTER_LABEL.find(after)?.let { return it.groupValues[1].toInt() }
-            // The item table's column heading ("COD.ART. N.COLLI DESCRIZIONE ... SC.1 SC.2") is no total, nor is the number
-            // below it (a line's). A footer's label row ("TOTALE COLLI TOTALE QUANTITA'") names no item column.
-            if (ReceiptParser.isTableHeader(line) && ITEM_COLUMN.containsMatchIn(line)) continue
+            // The item table's column heading ("COD.ART. N.COLLI DESCRIZIONE ... SC.1 SC.2", "COD. N.COLLI DENOMINAZIONE
+            // Q.TA") is no total, nor is the number below it (a line's). Only a total's own label ("TOTALE COLLI") may have
+            // its number on the row below; a footer's label row ("TOTALE COLLI TOTALE QUANTITA'") names no item column.
+            val heading = !TOTAL_LABEL.containsMatchIn(m.value) && OTHER_COLUMN.containsMatchIn(line.removeRange(m.range))
+            if (heading || (ReceiptParser.isTableHeader(line) && ITEM_COLUMN.containsMatchIn(line))) continue
             lines.getOrNull(i + 1)?.let { next -> FIRST_INT.find(next.trim())?.let { return it.groupValues[1].toInt() } }
         }
         return null

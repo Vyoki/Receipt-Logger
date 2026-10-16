@@ -744,4 +744,5 @@
     <string name="training_forget">Elimina il file da questo telefono</string>
     <string name="warn_checked_by_totals">I totali del documento hanno fatto aggiungere o escludere righe (elencate sopra le righe): controllale prima di salvare.</string>
     <string name="reason_checked_by_totals">Righe aggiunte o escluse per far tornare i totali: controllale.</string>
+    <string name="training_older">%1$d sono stati salvati prima di questa versione, che non conservava ancora ciò che serve all\'esportazione (la misura della foto letta). I documenti salvati da ora in poi si possono usare.</string>
 </resources>

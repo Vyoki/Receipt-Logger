@@ -42,6 +42,7 @@ fun TrainingSection(c: AppContainer) {
     val none = stringResource(R.string.training_none)
     val failed = stringResource(R.string.training_failed)
     val doneFormat = stringResource(R.string.training_done)
+    val olderFormat = stringResource(R.string.training_older)
 
     SectionTitle(stringResource(R.string.training_title))
     Text(stringResource(R.string.training_hint), style = MaterialTheme.typography.bodySmall)
@@ -71,11 +72,12 @@ fun TrainingSection(c: AppContainer) {
                         val r = c.trainingExport.export(c.settings.ownVatNumber) { d, of -> progress = d to of }
                         c.log.event("TRAINING_EXPORTED", "documents" to r.exported, "skipped" to r.skipped)
                         val uri = r.uri
+                        val olderNote = if (r.older > 0) "\n" + String.format(olderFormat, r.older) else ""
                         if (uri == null) {
-                            result = none
+                            result = none + olderNote
                         } else {
                             made = true
-                            result = String.format(doneFormat, r.exported, r.skipped)
+                            result = String.format(doneFormat, r.exported, r.skipped) + olderNote
                             val send = Intent(Intent.ACTION_SEND)
                                 .setType("application/zip")
                                 .putExtra(Intent.EXTRA_STREAM, uri)

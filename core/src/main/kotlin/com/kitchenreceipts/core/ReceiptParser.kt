@@ -709,20 +709,9 @@ object ReceiptParser {
         // exactly one answer makes every VAT rate add up (see Reconcile).
         val (checkedItems, report0) = runCatching { Reconcile.apply(items, groups, text) }.getOrElse { items to Reconcile.Report() }
         items = checkedItems
-        // Read again (the AI's answers, a second pass): what an earlier check changed is still worth saying, as long as
-        // it still describes these lines (a recovered line is still here, a dropped reading is still left out).
-        val report = doc.reconciled?.takeIf { it.changed && !report0.changed }?.let { earlier ->
-            val recoveredNow = items.filter { it.lineTotalCents?.source?.endsWith(Reconcile.RECOVERED) == true }
-            val stillOut = earlier.droppedKeys.indices.filter { i ->
-                items.none { it.quantity == null && it.unitPrice == null && Reconcile.key(it) == earlier.droppedKeys[i] }
-            }
-            report0.copy(
-                recovered = recoveredNow.map { "${it.originalDescription}  ${it.lineTotalCents?.value?.let(ItalianNumbers::formatCents).orEmpty()}".trim() },
-                dropped = stillOut.mapNotNull { earlier.dropped.getOrNull(it) },
-                droppedKeys = stillOut.map { earlier.droppedKeys[it] },
-                ratesFound = earlier.ratesFound,
-            )
-        } ?: report0
+        // Read again (the AI's answers, a second pass): the lines a check added are those still marked, and readings
+        // left out earlier stay listed while they are still out.
+        val report = Reconcile.carry(doc.reconciled, report0, items)
         // Lots under a "LOTTO" heading, found under (nearly) every product: read where the document prints them.
         items = settleLots(items, text)
         items = lotShapes(items)
