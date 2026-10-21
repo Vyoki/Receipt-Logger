@@ -35,8 +35,26 @@ object Units {
         "unidad" to "pz", "unidades" to "pz", "uds" to "pz", "szt" to "pz",
         "litre" to "l", "litres" to "l", "liter" to "l", "liters" to "l", "litro" to "l", "kilogram" to "kg", "kilos" to "kg",
         "heures" to "h", "heure" to "h", "hours" to "h", "hour" to "h", "hrs" to "h", "uur" to "h", "stunden" to "h", "std" to "h", "horas" to "h",
-        "ore" to "h", // Italian: hours of work on a service invoice
     )
+
+    /**
+     * Units only utility bills print (energy, gas, a monthly fee): no conversion, no product sold by them. Used only
+     * where a unit is printed (the U.M. cell, and the "pz" default for a line with no unit), never by the text
+     * tokenizer, so names holding these words read as before.
+     */
+    val PRINTED_ONLY: Set<String> = setOf("kwh", "kw", "kvarh", "smc", "mese", "kw*mese")
+
+    fun isPrintedOnly(raw: String?): Boolean = raw != null && raw.trim().lowercase().trimEnd('.') in PRINTED_ONLY
+
+    /**
+     * A unit printed in a U.M. column that the app has no name for, kept as printed: capitals, up to 8 letters,
+     * '*' and '/' ("ORE", "CAD", "MQ", "KW*MESE"). Null when [raw] is no such word.
+     */
+    fun asPrinted(raw: String?): String? {
+        val t = raw?.trim()?.trimEnd('.') ?: return null
+        if (t.length !in 2..8 || t.count(Char::isLetter) < 2 || !t.all { it.isLetter() || it == '*' || it == '/' }) return null
+        return t.uppercase()
+    }
 
     /** Unit -> (dimension, factor to the dimension's base unit kg / l). */
     private val PHYSICAL: Map<String, Pair<Dimension, BigDecimal>> = mapOf(

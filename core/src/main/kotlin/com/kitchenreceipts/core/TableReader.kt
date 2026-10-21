@@ -27,8 +27,8 @@ object TableReader {
     /** [qtyPzOrKg]: the quantity heading says "PZ/KG" (pieces or kilos, depending on the product). */
     data class Header(val columns: List<Column>, val hasLotColumn: Boolean = false, val qtyPzOrKg: Boolean = false)
 
-    /** [conf]: how sure the OCR was of the word (1 = not said). */
-    private data class Word(val text: String, val left: Double, val right: Double, val conf: Float = 1f) {
+    /** [conf]: how sure the OCR was of the word (1 = not said); [spaced]: part of a name printed letter by letter. */
+    private data class Word(val text: String, val left: Double, val right: Double, val conf: Float = 1f, val spaced: Boolean = false) {
         val center: Double get() = (left + right) / 2
     }
 
@@ -196,31 +196,6 @@ object TableReader {
             return@flatMap listOf(Word(mark.groupValues[1], w.left, cut), Word(mark.groupValues[2], after, w.right))
         }
         val text = OcrCleanup.fixWordToken(OcrCleanup.fixNumericToken(w.text))
-        // Two numbers of neighbouring columns printed without a space ("12,500000003,25000000": a quantity and
-        // a price with as many decimals each). Cut so both have the decimals of the second; the arithmetic of the row
-        // (quantity x price = amount) still decides whether the line checks out.
-        TWO_NUMBERS.matchEntire(text)?.let { m ->
-            val d = m.groupValues[3].length
-            val mid = m.groupValues[2]
-            if (d >= 2 && mid.length > d) {
-                val a = m.groupValues[1] + "," + mid.substring(0, d)
-                val b = mid.substring(d) + "," + m.groupValues[3]
-                if (!b.startsWith("0") || b.startsWith("0,")) {
-                    val cut = w.left + (w.right - w.left) * a.length / text.length
-                    val gap = 0.3 * (w.right - w.left) / text.length
-                    return@flatMap listOf(Word(a, w.left, cut - gap), Word(b, cut + gap, w.right))
-                }
-            }
-        }
-        // A price with its unit glued ("0,4100KWH"): the unit is a word of its own.
-        NUMBER_WITH_UNIT.matchEntire(text)?.let { m ->
-            val u = m.groupValues[2]
-            // A known unit, or a unit of measure built of unit words ("KW*MESE", "KWH"): never a currency.
-            if (Units.normalizeKnown(u.substringBefore('*')) != null || (u.count(Char::isLetter) >= 2 && u.uppercase().trimEnd('.') !in CURRENCY_WORDS && m.groupValues[1].substringAfter(',').length >= 2)) {
-                val cut = w.left + (w.right - w.left) * m.groupValues[1].length / text.length
-                return@flatMap listOf(Word(m.groupValues[1], w.left, cut), Word(m.groupValues[2], cut, w.right))
-            }
-        }
         val pd = PRICE_WITH_DISCOUNT.matchEntire(text)
         if (pd != null) {
             // "13,20010+10": the unit price and a cascaded discount printed without a space.
@@ -263,15 +238,27 @@ object TableReader {
 
     // ------------------------------------------------------------------ rows
 
-    /** The parties' boxes that both e-invoice stylesheets print on every invoice. */
-    private val E_INVOICE_PARTIES = Regex("(?i)(cedente\\s*/\\s*prestatore|cessionario\\s*/\\s*committente|dati\\s+del\\s+cedente)")
+    // Line notes of the e-invoice stylesheets, printed under their line: "Tipo dato: LOTTO" over "Rif. testo: AB123"
+    // (AssoSoftware) or "Valore testo: AB123" (SdI); the lot form "Lotto: AB123" / "Scadenza: ..." / "Quantità del
+    // suddetto lotto: ...".
     private val NOTE_TYPE = Regex("(?i)^\\s*tipo\\s+dato\\s*:\\s*(.*)$")
-    private val NOTE_TEXT = Regex("(?i)^\\s*rif\\.?\\s*testo\\s*:\\s*(.*)$")
+    private val NOTE_VALUE = Regex("(?i)^\\s*(?:rif\\.?\\s*(testo|numero|data)|valore\\s+(testo|numerico|data))\\s*:\\s*(.*)$")
+    private val NOTE_LOT = Regex("(?i)^\\s*lott[oi]\\s*:\\s*\\S+\\s*$")
     private val LOT_TYPE = Regex("(?i)^(lott[oi]|lot|batch|n\\.?\\s?lotto)$")
+    /** The payment block under the item table ("MODALITÀ PAGAMENTO", "Modalita' di pagamento"): the table has ended. */
+    private val PAYMENT_BLOCK = Regex("(?i)\\bmodalit\\S*\\s+(?:di\\s+)?pagamento\\b")
+    /** A row that starts with a weight label ("Peso netto 12,40", "PESO: 8,00"): no item unless quantity x price = amount. */
+    private val WEIGHT_LABEL = Regex("(?i)^\\W*peso\\b")
+    /** Quality marks printed in brackets inside a name: never a code's kind. */
+    private val QUALITY_MARKS = setOf("DOP", "IGP", "BIO", "DOC", "DOCG", "IGT", "STG")
+    private const val NAME_CONTINUES = "the name continues on the next printed line"
+    private const val SEVERAL_LOTS = "several lots printed for this line: "
+    private const val NOTE_AWAY = "a lot note not right under its line: "
+
+    /** A lot the reading itself doubts (see the line notes in [readRows]): no other lot on the page makes it sure. */
+    internal fun isDoubtedLot(source: String) = source.startsWith(SEVERAL_LOTS) || source.startsWith(NOTE_AWAY)
+
     private val MONEY = Regex("^-?€?\\d{1,3}(?:\\.\\d{3})*,\\d{2,4}-?€?$|^-?€?\\d+[.,]\\d{2,4}-?€?$")
-    private val CURRENCY_WORDS = setOf("EUR", "EURO", "EUROS")
-    private val TWO_NUMBERS = Regex("^(\\d{1,5}),(\\d{3,16}),(\\d{2,8})$")
-    private val NUMBER_WITH_UNIT = Regex("^(-?\\d+,\\d{1,8})([A-Za-z][A-Za-z*/]{0,11})$")
     private val NUMBER = Regex("^-?\\d+(?:[.,]\\d+)*(?:%)?$")
     private val LONG_CODE = Regex("^\\d{4,}$")
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
@@ -295,20 +282,17 @@ object TableReader {
 
     /**
      * Reads the items of every page that has an item table heading. Returns null when no page has one
-     * (the text reading is then used).
+     * (the text reading is then used). [textLayerPages]: the pages read from a PDF's own text (see
+     * [ParseOptions.textLayerPages]).
      */
-    fun read(pages: List<LayoutRows.Layout>, headings: Map<String, Kind> = emptyMap()): List<ParsedLineItem>? =
-        withLearned(headings) { readPages(pages) }
+    fun read(pages: List<LayoutRows.Layout>, headings: Map<String, Kind> = emptyMap(), textLayerPages: Set<Int> = emptySet()): List<ParsedLineItem>? =
+        withLearned(headings) { readPages(pages, textLayerPages) }
 
-    private fun readPages(pages: List<LayoutRows.Layout>): List<ParsedLineItem>? {
+    private fun readPages(pages: List<LayoutRows.Layout>, textLayerPages: Set<Int>): List<ParsedLineItem>? {
         var any = false
         val items = mutableListOf<ParsedLineItem>()
-        // The e-invoice stylesheets print the kind of each article code in brackets after it: only on their pages.
-        val eInvoice = pages.any { l -> l.rows.any { row -> row.any { E_INVOICE_PARTIES.containsMatchIn(it.text) } } }
-        for (layout in pages) {
-            val rows = layout.rows.map { row ->
-                letterSpaced(row.flatMap { words(it, layout.slope) }.sortedBy { it.left }).let { if (eInvoice) codeTypeOut(it) else it }
-            }
+        for ((p, layout) in pages.withIndex()) {
+            val rows = layout.rows.map { row -> row.flatMap { words(it, layout.slope) }.sortedBy { it.left } }
             var hIdx = rows.indexOfFirst { headerOf(it) != null }
             // A heading printed as a band of staggered labels ("PREZZO / UNITARIO" and "SCONTO / O MAGG." over
             // two lines, the other labels between them): the rows split it so that none names the table alone. The band
@@ -346,19 +330,22 @@ object TableReader {
                 header = header.copy(hasLotColumn = true)
                 start++
             }
-            val body = rows.drop(start).toMutableList()
+            // The PDF's own text: letters printed one by one in a name are one word, and the kind of code printed in
+            // brackets after an article code is no part of the code or the name. Never guessed on a photo.
+            val textLayer = p in textLayerPages
+            val body = rows.drop(start).map { if (textLayer) codeTypeOut(letterSpaced(it, header), header) else it }.toMutableList()
             if (stray.isNotEmpty()) {
                 val firstItem = body.indexOfFirst { r -> r.any { it.text.count(Char::isDigit) >= 5 } }
                 if (firstItem >= 0 && body[firstItem].none { isMoney(it.text) && it.left > (header.columns.lastOrNull { c -> c.kind == Kind.PRICE }?.right ?: Double.MAX_VALUE) }) {
                     body[firstItem] = (body[firstItem] + stray).sortedBy { it.left }
                 }
             }
-            var read = readRows(body, header)
+            var read = readRows(body, header, textLayer)
             // The headings are a hint; the arithmetic decides. When the numbers show the columns better than the
             // headings do ("Prezzo totale" for the amount, "Prezzo / unitario" over two lines, the unit after the
             // price), the columns the numbers show are used.
             solveColumns(body, header)?.let { solved ->
-                val alt = readRows(body, solved)
+                val alt = readRows(body, solved, textLayer)
                 if (proven(alt) > proven(read)) read = alt
             }
             items += read
@@ -381,13 +368,14 @@ object TableReader {
     private fun solveColumns(body: List<List<Word>>, header: Header): Header? {
         val rows = mutableListOf<List<Word>>()
         for (r in body) {
-            if (ReceiptParser.isFooterRow(r.joinToString(" ") { it.text })) break
+            if (endsTable(r.joinToString(" ") { it.text })) break
             rows += r
         }
         /** [disc]: the word read as a discount ("10", "10+10", "5%"), when it can be one. */
         class N(val row: Int, val w: Word, val v: BigDecimal, val disc: String?)
         val nums = rows.flatMapIndexed { i, r ->
             r.mapNotNull { w ->
+                if (w.spaced) return@mapNotNull null // part of a name printed letter by letter
                 val t = w.text.trim('|', '¦', '€', ' ')
                 val disc = t.takeIf { CASCADE.matches(it) }?.let { LineDiscount.normalize(it) }
                 if (!isNumeric(t) && !isMoney(t) && disc == null) return@mapNotNull null
@@ -474,36 +462,52 @@ object TableReader {
     }
 
     /**
-     * A name printed letter by letter ("S A P O N E 5 0 0"): four or more one-character words in a
-     * row, three of them letters, are one word. The spaces between the printed words cannot be told from those
-     * between letters. Single digits alone ("1 2 3 4": numbers of columns side by side) are never joined.
+     * A name printed letter by letter ("S A P O N E 5 0 0"): one-character words with gaps the size of a letter, four
+     * or more of them letters, most of those under the description heading. The letters next to each other are one
+     * word (the spaces between the printed words cannot be told from those between letters); digits and signs are
+     * never joined ("1 2 , 5 0" stays as printed). Every part stays in the name: a lone "G" or "L" of such a name is
+     * no unit.
      */
-    private fun letterSpaced(row: List<Word>): List<Word> {
+    private fun letterSpaced(row: List<Word>, header: Header): List<Word> {
+        fun single(w: Word) = w.text.length == 1
         val out = mutableListOf<Word>()
         var i = 0
         while (i < row.size) {
-            var j = i
-            while (j < row.size && row[j].text.length == 1 && row[j].text[0] != '(' && row[j].text[0] != ')' &&
-                (j == i || row[j].left - row[j - 1].right < 1.2 * (row[j - 1].right - row[j - 1].left) + 4)) j++
-            if (j - i >= 4 && row.subList(i, j).count { it.text[0].isLetter() } >= 3) {
-                out += Word(row.subList(i, j).joinToString("") { it.text }, row[i].left, row[j - 1].right, row.subList(i, j).minOf { it.conf })
-                i = j
-            } else { out += row[i]; i++ }
+            var j = i + 1
+            if (single(row[i])) while (j < row.size && single(row[j]) && row[j].left - row[j - 1].right < 1.2 * (row[j - 1].right - row[j - 1].left) + 4) j++
+            val zone = row.subList(i, j)
+            val letters = zone.filter { it.text[0].isLetter() }
+            if (letters.size >= 4 && letters.count { inDescription(it, header) } * 2 > letters.size) {
+                var k = 0
+                while (k < zone.size) {
+                    var e = k + 1
+                    if (zone[k].text[0].isLetter()) while (e < zone.size && zone[e].text[0].isLetter()) e++
+                    val part = zone.subList(k, e)
+                    out += Word(part.joinToString("") { it.text }, part.first().left, part.last().right, part.minOf { it.conf }, spaced = true)
+                    k = e
+                }
+            } else out += zone
+            i = j
         }
         return out
     }
 
     /**
-     * "1234567 ( INTERNO )": the kind of article code printed after it is no part of the code or the name. Only on an
-     * e-invoice printout, so a name with words in brackets on any other document keeps them.
+     * "1234567 ( INTERNO )": the kind of article code printed in brackets right after the code is no part of the code
+     * or the name. Only right after a code with a digit, under the code heading: brackets inside a name stay, and so
+     * do quality marks ("MOZZARELLA (DOP)").
      */
-    private fun codeTypeOut(row: List<Word>): List<Word> {
-        if (row.size < 4) return row
+    private fun codeTypeOut(row: List<Word>, header: Header): List<Word> {
+        val cols = header.columns
+        if (row.size < 2 || cols.none { it.kind == Kind.CODE }) return row
         val open = row.indexOfFirst { it.text == "(" || it.text.startsWith("(") }
         if (open !in 1..2) return row
+        val code = row[open - 1]
+        if (!code.text.any(Char::isDigit) || cols[columnIndex(code.center, cols)].kind != Kind.CODE) return row
         val close = (open until minOf(row.size, open + 5)).firstOrNull { row[it].text == ")" || row[it].text.endsWith(")") } ?: return row
         val inside = row.subList(open, close + 1).joinToString(" ") { it.text }.trim('(', ')', ' ')
         if (inside.isEmpty() || inside.length > 24 || inside.count(Char::isLetter) < 2 || inside.any(Char::isDigit)) return row
+        if (inside.uppercase() in QUALITY_MARKS) return row
         return row.subList(0, open) + row.subList(close + 1, row.size)
     }
 
@@ -563,7 +567,18 @@ object TableReader {
         return header.copy(columns = cols, hasLotColumn = lots || cols.any { it.kind == Kind.LOT }, qtyPzOrKg = pzKg)
     }
 
-    private fun readRows(rows: List<List<Word>>, header: Header): List<ParsedLineItem> {
+    /** A row that ends the item table: totals, the VAT summary, the payment block. */
+    private fun endsTable(text: String) = ReceiptParser.isFooterRow(text) || PAYMENT_BLOCK.containsMatchIn(text)
+
+    /** [w] stands under the description heading. */
+    private fun inDescription(w: Word, header: Header) = header.columns[columnIndex(w.center, header.columns)].kind == Kind.DESCRIPTION
+
+    /** Quantity x price (less the discount) = amount, all three read. */
+    private fun provenLine(it: ParsedLineItem) = it.quantity?.confidence == Confidence.HIGH && it.unitPrice?.confidence == Confidence.HIGH &&
+        it.lineTotalCents != null && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings
+
+    /** [textLayer]: the rows come from a PDF's own text (see [ParseOptions.textLayerPages]). */
+    private fun readRows(rows: List<List<Word>>, header: Header, textLayer: Boolean = false): List<ParsedLineItem> {
         val items = mutableListOf<ParsedLineItem>()
         var pendingDescription: String? = null
         // A numbers row with no name above it: on a tilted photo the name is on the row below ("KG 4,58 2,890 13,24" /
@@ -571,40 +586,90 @@ object TableReader {
         var pendingNumbers: ParsedLineItem? = null
         // Numbers that landed on a section title ("Merce non alimentare"): they belong to the product on the next row.
         var headingNumbers: ParsedLineItem? = null
-        // E-invoice line notes ("Tipo dato: LOTTO" / "Rif. testo: AB123"): the pair is a note of the line
-        // above; it gives that line its lot when the type says lot, and is never an item, a name or a lot otherwise.
+        // E-invoice line notes ("Tipo dato: LOTTO" / "Rif. testo: AB123", the lot form "Lotto: AB123"): notes of the
+        // line above. They give that line its lot when they say lot, and are never an item, a name or an amount.
         var noteType: String? = null
-        for (row in rows) {
-            if (row.isEmpty()) continue
+        var noteTypeInDescription = false
+        // Lines that took a lot from a note: a second lot note under the same line is a second lot.
+        val noteLots = mutableSetOf<Int>()
+        // A priced row came after the last item without becoming an item: a note under it may not be that item's.
+        var pricedSinceItem = false
+        var rowPriced = false
+        // The item a words-only row printed right under it may continue (PDF text only): see [NAME_CONTINUES].
+        var runsOn: Int? = null
+        // This row took the words-only row above as its name.
+        var tookName = false
+        var lastRowAddedItem = false
+
+        fun noteLot(value: String, source: String, inDescriptionCell: Boolean) {
+            val i = items.lastIndex
+            val lot = value.trim()
+            if (i < 0 || lot.isEmpty() || lot.length > 30 || LotExtractor.neverALot(lot) || ItalianDates.findDates(lot).isNotEmpty()) return
+            val prev = items[i]
+            val cur = prev.lotNumber
+            // Sure only under the item it belongs to: in its description cell, no priced row in between.
+            val conf = if (inDescriptionCell && !pricedSinceItem) Confidence.HIGH else Confidence.LOW
+            val listed = when {
+                cur == null -> emptyList()
+                cur.source.startsWith(SEVERAL_LOTS) -> cur.source.removePrefix(SEVERAL_LOTS).split(", ")
+                else -> listOf(cur.value)
+            }
+            items[i] = when {
+                cur == null || (i !in noteLots && cur.confidence == Confidence.LOW && conf == Confidence.HIGH) ->
+                    prev.copy(lotNumber = Extracted(lot, conf, if (conf == Confidence.HIGH) source else NOTE_AWAY + source))
+                listed.any { it.equals(lot, ignoreCase = true) } -> prev
+                // One line, two lots (two notes, or a note and another reading): the first is kept, shown for a check
+                // with all of them.
+                else -> prev.copy(lotNumber = cur.copy(confidence = Confidence.LOW, source = SEVERAL_LOTS + (listed + lot).joinToString(", ")))
+            }
+            noteLots += i
+        }
+
+        /** Reads one row; false when the table has ended. */
+        fun readRow(row: List<Word>): Boolean {
             val text = row.joinToString(" ") { it.text }
-            if (ReceiptParser.isFooterRow(text)) break
+            if (endsTable(text)) return false
+            val noteIn = inDescription(row.first(), header)
             val typeMatch = NOTE_TYPE.find(text)
-            if (typeMatch != null) { noteType = typeMatch.groupValues[1].trim(); pendingDescription = null; continue }
-            val m = NOTE_TEXT.find(text)
+            if (typeMatch != null) {
+                noteType = typeMatch.groupValues[1].trim(); noteTypeInDescription = noteIn; pendingDescription = null
+                return true
+            }
+            val m = NOTE_VALUE.find(text)
             if (m != null) {
                 val t = noteType
                 noteType = null
-                val prev = items.lastOrNull()
-                if (t != null && LOT_TYPE.matches(t) && prev != null && prev.lotNumber?.confidence != Confidence.HIGH) {
-                    m.groupValues[1].trim().takeIf { it.isNotEmpty() && it.length <= 30 }?.let { lot ->
-                        items[items.lastIndex] = prev.copy(lotNumber = Extracted(lot, Confidence.HIGH, "Tipo dato: $t / $text"))
-                    }
-                }
+                // Only a text value can be a lot ("Rif. testo", "Valore testo"); numbers and dates are notes only.
+                val textValue = m.groupValues[1].equals("testo", ignoreCase = true) || m.groupValues[2].equals("testo", ignoreCase = true)
+                if (t != null && LOT_TYPE.matches(t) && textValue) noteLot(m.groupValues[3], "Tipo dato: $t / $text", noteIn && noteTypeInDescription)
                 pendingDescription = null
-                continue
+                return true
             }
             noteType = null
-            if (ReceiptParser.isNotAnItemRow(text)) { pendingDescription = null; headingNumbers = null; continue }
+            if (NOTE_LOT.matches(text)) {
+                LotExtractor.scan(text).lot?.let { noteLot(it.value, text, noteIn) }
+                pendingDescription = null
+                return true
+            }
+            if (ReceiptParser.isNotAnItemRow(text)) { pendingDescription = null; headingNumbers = null; return true }
+            rowPriced = row.any { isMoney(it.text) }
             // A lot printed alone on the row under its item ("429342"), in a table with a lot column: never an item.
             val codeOnly = row.size <= 2 && row.all { w -> w.text.any(Char::isDigit) && !isMoney(w.text) } && ItalianDates.findDates(text).isEmpty()
             val last = items.lastOrNull()
-            if (header.hasLotColumn && codeOnly && last != null && last.lotNumber == null && row.first().text.length >= 4) {
+            if (header.hasLotColumn && codeOnly && last != null && last.lotNumber == null && row.first().text.length >= 4 && !LotExtractor.neverALot(row.first().text)) {
                 items[items.lastIndex] = last.copy(lotNumber = Extracted(row.first().text, Confidence.LOW, text))
                 pendingDescription = null
-                continue
+                return true
             }
             val cells = assign(row, header)
             val item = buildItem(cells, text, header)
+            // "DDT 77/ZZ del 03-02-2031": another document named among the lines; "Peso netto 12,40": a weight. Never
+            // items, unless quantity x price = amount proves a line ("DDT 77/ZZ del 03-02-2031 PANCETTA 2,00 9,20 18,40").
+            val reference = LotExtractor.isDeliveryNoteRef(text)
+            if ((reference || (item != null && WEIGHT_LABEL.containsMatchIn(text))) && (item == null || !provenLine(item))) {
+                rowPriced = false; pendingDescription = null
+                return true
+            }
             val scan = LotExtractor.scan(text)
             val waiting = headingNumbers
             if (waiting != null) {
@@ -618,12 +683,12 @@ object TableReader {
                         itemCode = code ?: waiting.itemCode,
                         packages = colli?.let { Extracted(it, Confidence.HIGH, text) } ?: waiting.packages,
                     )
-                    continue
+                    return true
                 }
             }
             if (item != null && ReceiptParser.isSectionHeading(item.originalDescription)) {
                 headingNumbers = item
-                continue
+                return true
             }
             val numbersWaiting = pendingNumbers
             pendingNumbers = null
@@ -653,17 +718,20 @@ object TableReader {
                     if (prev != null && (scan.lot != null || scan.expiry != null) && (desc.count(Char::isLetter) < 12 || rest.count(Char::isLetter) < 12)) {
                         items[items.lastIndex] = prev.copy(lotNumber = prev.lotNumber ?: scan.lot, expiryDate = prev.expiryDate ?: scan.expiry)
                         pendingDescription = null
-                    } else if (prev != null && header.hasLotColumn && onlyCode && prev.lotNumber == null) {
+                    } else if (prev != null && header.hasLotColumn && onlyCode && prev.lotNumber == null && !LotExtractor.neverALot(row.first().text)) {
                         items[items.lastIndex] = prev.copy(lotNumber = Extracted(row.first().text, Confidence.LOW, text))
                         pendingDescription = null
                     } else {
                         pendingDescription = desc.takeIf { it.count(Char::isLetter) >= 3 }
+                        // Words only, under the name of the item printed right above: maybe the rest of its name.
+                        if (textLayer && lastRowAddedItem && pendingDescription != null && cells.keys.all { it == Kind.DESCRIPTION } &&
+                            !ReceiptParser.isSectionHeading(desc)) runsOn = items.lastIndex
                     }
                 }
                 item.originalDescription.isBlank() -> {
                     // Amounts on the row below a description-only row: one item over two rows.
                     val d = pendingDescription
-                    if (d != null) items += item.copy(originalDescription = d) else pendingNumbers = item
+                    if (d != null) { items += item.copy(originalDescription = d); tookName = true } else pendingNumbers = item
                     pendingDescription = null
                 }
                 else -> {
@@ -676,7 +744,29 @@ object TableReader {
                     pendingDescription = null
                 }
             }
+            return true
         }
+
+        /** The words-only row under item [i] was not the name of a numbers row below it: the name may be cut short. */
+        fun nameContinues(i: Int) {
+            val it = items.getOrNull(i) ?: return
+            items[i] = it.copy(nameNote = it.nameNote ?: NAME_CONTINUES)
+        }
+
+        for (row in rows) {
+            if (row.isEmpty()) continue
+            val count = items.size
+            val continued = runsOn
+            runsOn = null
+            tookName = false
+            rowPriced = false
+            val more = readRow(row)
+            if (continued != null && !tookName) nameContinues(continued)
+            lastRowAddedItem = items.size > count
+            if (lastRowAddedItem) pricedSinceItem = false else if (rowPriced) pricedSinceItem = true
+            if (!more) break
+        }
+        runsOn?.let { nameContinues(it) }
         return items
     }
 
@@ -693,6 +783,8 @@ object TableReader {
             val numeric = isNumeric(t) || ReceiptParser.COLLI_PATTERN.matches(t)
             val letters = t.count(Char::isLetter)
             kind = when {
+                // A name printed letter by letter: every part of it is the name, wherever it reaches.
+                w.spaced -> Kind.DESCRIPTION
                 // The first word of the name printed close to the code or Pkgs ("1x10 LATTE ARBOREA", "1 COPPA SUINO").
                 !numeric && letters >= 2 && kind in setOf(Kind.CODE, Kind.PACKAGES) && !(t.length == 1 && lastKind == null) &&
                     Units.normalizeKnown(t.trimEnd('.')) == null -> Kind.DESCRIPTION
@@ -704,7 +796,9 @@ object TableReader {
                     if (lastKind == Kind.DESCRIPTION || x < cols[idx].left) Kind.DESCRIPTION else Kind.PACK_TYPE
                 !numeric && kind == Kind.PACK_TYPE && letters >= 4 && Units.normalizeKnown(t) == null && lastKind == Kind.DESCRIPTION -> Kind.DESCRIPTION
                 !numeric && kind == Kind.PACK_SIZE && letters >= 4 && Units.normalizeKnown(t.trimEnd('.')) == null && lastKind == Kind.DESCRIPTION -> Kind.DESCRIPTION
-                !numeric && kind == Kind.UNIT && Units.normalizeKnown(t) == null && letters >= 3 && lastKind == Kind.DESCRIPTION -> Kind.DESCRIPTION
+                // A word the app has no unit for, right after the name, is the name running on; a bill's own unit
+                // ("KWH", "MESE") stays the unit.
+                !numeric && kind == Kind.UNIT && Units.normalizeKnown(t) == null && !Units.isPrintedOnly(t) && letters >= 3 && lastKind == Kind.DESCRIPTION -> Kind.DESCRIPTION
                 !numeric && kind == Kind.CODE && letters >= 3 && !t.any(Char::isDigit) -> Kind.DESCRIPTION
                 else -> kind
             }
@@ -718,7 +812,7 @@ object TableReader {
                 if (u != null && Units.dimension(u) != null) kind = Kind.PACK_SIZE
             }
             // Single-letter marker before the code ("O" offer, read as "0").
-            if (lastKind == null && t.length == 1 && (t == "0" || t == "O")) continue
+            if (lastKind == null && t.length == 1 && (t == "0" || t == "O") && !w.spaced) continue
             out.getOrPut(kind) { mutableListOf() } += w
             lastKind = kind
         }
@@ -808,21 +902,15 @@ object TableReader {
         var qty = cell(Kind.QUANTITY).mapNotNull { numberIn(it.text) }.lastOrNull()
         // Without a U.M. column, unit words come from neighbouring columns ("CF GR 0,48"): kg/g/l beat packaging codes.
         val units = cell(Kind.UNIT).mapNotNull { Units.normalizeKnown(it.text.trimEnd('.')) }
-        var unit: String? = if (header.columns.any { it.kind == Kind.UNIT }) units.firstOrNull()
+        val unitColumn = header.columns.any { it.kind == Kind.UNIT }
+        var unit: String? = if (unitColumn) units.firstOrNull()
         else units.firstOrNull { Units.dimension(it) != null } ?: units.firstOrNull()
-        // A unit printed under the U.M. heading that the app has no name for ("KWH", "MESE", "KW*MESE"): kept as
-        // printed, never replaced by a guessed "pz".
-        if (unit == null && header.columns.any { it.kind == Kind.UNIT }) {
-            unit = cell(Kind.UNIT).map { it.text.trimEnd('.') }
-                .firstOrNull { w -> w.length in 2..10 && w.count(Char::isLetter) >= 2 && w.all { it.isLetter() || it == '*' || it == '/' } }
-                ?.let(Units::normalize)
-        }
+        // A unit printed alone under the U.M. heading that the app has no name for ("ORE", "KWH", "KW*MESE"): kept
+        // as printed, never replaced by a made-up "pz".
+        if (unit == null && unitColumn) unit = cell(Kind.UNIT).filter { !isNumeric(it.text) }.singleOrNull()?.let { Units.asPrinted(it.text) }
         // "4,45KG" in the quantity column
         if (unit == null) cell(Kind.QUANTITY).firstNotNullOfOrNull { rx("^[\\d.,]+([A-Za-z]{1,3})\\.?$").find(it.text)?.groupValues?.get(1)?.let(Units::normalizeKnown) }?.let { unit = it }
         var price = cell(Kind.PRICE).mapNotNull { numberIn(it.text) }.lastOrNull()
-        // A line printed negative in both its price and its amount ("1,00  -0,39  -0,39": a rounding or a refund): the
-        // price keeps its sign, so quantity x price = amount checks out as printed.
-        if (price != null && amount != null && amount < 0 && cell(Kind.PRICE).lastOrNull { numberIn(it.text) != null }?.text?.trim()?.startsWith("-") == true) price = price.negate()
         val discountText = cell(Kind.DISCOUNT).joinToString("") { it.text }
         val discount = discountOf(discountText)
         var vat = cell(Kind.VAT).mapNotNull { numberIn(it.text) }.firstOrNull { it.stripTrailingZeros().toPlainString() in VAT_RATES }
@@ -864,7 +952,6 @@ object TableReader {
             if (added.isEmpty() || !named.containsAll(added)) descWords = descWords + size.map { it.uppercase() }
         }
         val packSize = if (packHasNumber) PackSizes.parse(packWords) else null
-        val unitColumn = header.columns.any { it.kind == Kind.UNIT }
         if (packUnit != null && (unit == null || !unitColumn)) {
             // "GR 800" + TOT 1 = one 800 g pack; "KG" + TOT 4,45 = 4,45 kg weighed.
             unit = if (packHasNumber) "pz" else packUnit

@@ -184,4 +184,74 @@ class TableReaderTest {
         assertEquals("2x3", c.packages?.value)
         assertEquals(1074L, c.lineTotalCents?.value)
     }
+
+    // ------------------------------------------------------------------ units as printed, names that run on (C2)
+
+    @Test fun unitsPrintedUnderTheUnitHeadingAreKept() {
+        val hdr = listOf(Cell("DESCRIZIONE", 40), Cell("QUANTITA", 380), Cell("U.M.", 480), Cell("PREZZO", 560), Cell("IMPORTO", 680))
+        fun r(d: String, q: String, u: String, p: String, a: String) = listOf(Cell(d, 40), Cell(q, 450, true), Cell(u, 480), Cell(p, 640, true), Cell(a, 760, true))
+        val page = page(listOf(
+            listOf(Cell("ABC S.R.L.", 40)), hdr,
+            r("MANODOPERA TECNICO", "2", "ORE", "30,00", "60,00"),
+            r("GUARNIZIONE RUBINETTO", "3", "CAD", "1,50", "4,50"),
+            r("PIASTRELLE POSATE", "4", "MQ", "12,00", "48,00"),
+            r("CONSUMO FASCIA F1", "100", "KWH", "0,20", "20,00"),
+            r("PANE COMUNE", "5", "KG", "0,90", "4,50"),
+            listOf(Cell("TOTALE IMPONIBILE", 400), Cell("137,00", 760, true)),
+        ))
+        // Kept as printed (a unit the app knows is named as always); never a made-up "pz".
+        assertEquals(listOf("ORE", "CAD", "MQ", "KWH", "kg"), TableReader.read(listOf(LayoutRows.layout(page)))!!.map { it.unit?.value })
+    }
+
+    @Test fun aLineWithNoUnitPrintedStillCountsPieces() {
+        val hdr = listOf(Cell("DESCRIZIONE", 40), Cell("QUANTITA", 380), Cell("PREZZO", 520), Cell("IMPORTO", 640))
+        fun r(d: String, q: String, p: String, a: String) = listOf(Cell(d, 40), Cell(q, 450, true), Cell(p, 600, true), Cell(a, 720, true))
+        val d = ReceiptParser.parsePages(listOf(page(listOf(
+            listOf(Cell("ESEMPIO INGROSSO S.R.L.", 40)), hdr,
+            r("CARTA FORNO ROTOLO", "2", "3,45", "6,90"),
+            r("SPUGNE ABRASIVE", "3", "1,20", "3,60"),
+            listOf(Cell("TOTALE", 400), Cell("10,50", 720, true)),
+        ), tilt = 1.0)))
+        assertEquals(listOf("pz", "pz"), d.lineItems.map { it.unit?.value })
+    }
+
+    private val codeHeader = listOf(Cell("CODICE", 40), Cell("DESCRIZIONE", 140), Cell("QUANTITA", 420), Cell("PREZZO", 540), Cell("IMPORTO", 660))
+    private fun codeRow(c: String, d: String, q: String, p: String, a: String) =
+        listOf(Cell(c, 40), Cell(d, 140), Cell(q, 490, true), Cell(p, 620, true), Cell(a, 740, true))
+
+    @Test fun aNameRunningOnHoldsTheSaveOnThePdfsOwnText() {
+        val layouts = listOf(LayoutRows.layout(page(listOf(
+            listOf(Cell("ESEMPIO INGROSSO S.R.L.", 40)), codeHeader,
+            codeRow("1000011", "PROSCIUTTO CRUDO STAGIONATO", "2", "20,00", "40,00"),
+            listOf(Cell("DI PROVA AFFETTATO", 140)),
+            codeRow("1000012", "MOZZARELLA FIOR DI LATTE", "3", "4,00", "12,00"),
+            listOf(Cell("TOTALE IMPONIBILE", 400), Cell("52,00", 740, true)),
+        ))))
+        val pdf = TableReader.read(layouts, textLayerPages = setOf(0))!!
+        assertEquals(listOf(4000L, 1200L), pdf.map { it.lineTotalCents?.value })
+        assertEquals("the name continues on the next printed line", pdf[0].nameNote)
+        assertNull(pdf[1].nameNote)
+        // A photo: read as before.
+        assertTrue(TableReader.read(layouts)!!.all { it.nameNote == null })
+    }
+
+    @Test fun namesAboveOrBelowTheirNumbersAreNoContinuation() {
+        val layouts = listOf(LayoutRows.layout(page(listOf(
+            codeHeader,
+            codeRow("1000011", "PROSCIUTTO CRUDO", "2", "20,00", "40,00"),
+            // The name above its numbers.
+            listOf(Cell("MOZZARELLA FIOR DI LATTE", 140)),
+            listOf(Cell("1000012", 40), Cell("3", 490, true), Cell("4,00", 620, true), Cell("12,00", 740, true)),
+            // The name below its numbers (a tilted photo reads them so).
+            listOf(Cell("1000013", 40), Cell("2", 490, true), Cell("1,50", 620, true), Cell("3,00", 740, true)),
+            listOf(Cell("BASILICO FRESCO", 140)),
+            listOf(Cell("TOTALE IMPONIBILE", 400), Cell("55,00", 740, true)),
+        ))))
+        for (pages in listOf(setOf(0), emptySet())) {
+            val items = TableReader.read(layouts, textLayerPages = pages)!!
+            assertEquals(listOf("PROSCIUTTO CRUDO", "MOZZARELLA FIOR DI LATTE", "BASILICO FRESCO"), items.map { it.originalDescription })
+            assertTrue(items.all { it.nameNote == null })
+            assertTrue(items[2].nameDoubt)
+        }
+    }
 }

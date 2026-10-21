@@ -64,7 +64,6 @@ object LotExtractor {
         return LotScan(lot, expiry, consumed.sortedBy { it.first }, rejected)
     }
 
-    /** Removes the consumed ranges from [line]. */
     private val DIMENSIONS = Regex("\\d+[X×]\\d+")
 
     /** Units and packs printed with numbers in a pack size ("KG9X7", "ML.333", "MT45X3PZ", "G300X4"). */
@@ -86,6 +85,28 @@ object LotExtractor {
         return words.isNotEmpty() && words.all { it in PACK_WORDS }
     }
 
+    /** A month and year ("03/2031"): an expiry or a period, never a lot. */
+    private val MONTH_YEAR = Regex("^(0?[1-9]|1[0-2])[/.\\-](19|20)\\d{2}$")
+
+    /** A code that is never offered as a lot when nothing labels it: a pack size ("KG9X7", "ML.333") or a month and year. */
+    fun neverALot(token: String): Boolean = packSizeLike(token) || MONTH_YEAR.matches(token.trim())
+
+    private val DELIVERY_NOTE = Regex("(?i)(\\bd\\.?\\s?d\\.?\\s?t\\b\\.?|\\bdoc(?:umento|\\.)?\\s+di\\s+trasporto\\b)")
+
+    /**
+     * A delivery-note reference printed among the lines ("DDT 77/ZZ del 03-02-2031", "Documento di trasporto n. 12 del
+     * 03/02/2031"): the note's name, a number and a date. It names another document: never a lot, never an item.
+     */
+    fun isDeliveryNoteRef(text: String): Boolean {
+        val m = DELIVERY_NOTE.find(text) ?: return false
+        val dates = ItalianDates.findDates(text)
+        if (dates.isEmpty()) return false
+        // A number of its own, besides the date: what is left once the label and the dates are taken out.
+        val rest = strip(text, listOf(m.range) + dates.map { it.range })
+        return rest.any(Char::isDigit)
+    }
+
+    /** Removes the consumed ranges from [line]. */
     fun strip(line: String, ranges: List<IntRange>): String {
         if (ranges.isEmpty()) return line
         val sb = StringBuilder()

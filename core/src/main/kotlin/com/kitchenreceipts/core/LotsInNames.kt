@@ -28,7 +28,7 @@ object LotsInNames {
         if (words.size < 3 || words.dropLast(1).sumOf { w -> w.count(Char::isLetter) } < 4) return null
         val t = words.last().trimEnd('.', ',', '-', ';').uppercase()
         val m = BATCH.matchEntire(t) ?: return null
-        if (m.groupValues[1] in SIZE_PREFIX || m.groupValues[2].count(Char::isDigit) < 3) return null
+        if (m.groupValues[1] in SIZE_PREFIX || m.groupValues[2].count(Char::isDigit) < 3 || LotExtractor.neverALot(t)) return null
         return t
     }
 

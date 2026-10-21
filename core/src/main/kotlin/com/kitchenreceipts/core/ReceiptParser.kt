@@ -34,6 +34,12 @@ data class ParseOptions(
      * number (its check digit valid) proves the supplier whatever its logo looks like (see [SupplierProof]).
      */
     val supplierByVat: ((String) -> String?)? = null,
+    /**
+     * Pages (indexes from 0, as passed to [ReceiptParser.parsePages]) whose words came from the PDF's own text layer:
+     * every letter and position as printed. Rules that would be guesses on a photo apply only there. Empty for
+     * photos (and in the benchmark).
+     */
+    val textLayerPages: Set<Int> = emptySet(),
 )
 
 object ReceiptParser {
@@ -141,9 +147,12 @@ object ReceiptParser {
             "vendita|rt\\b|matricola|arrotondamento|sconto\\s+totale|scadenza\\s+pagamento|iban|abi|cab|banca|" +
             "trasporto\\s+a\\s+cura|peso\\s+lordo|colli|vettore|causale|aliquota|riepilogo|cassiere|grazie|" +
             "elettronico|non\\s+riscosso|operatore|transazione|" +
-            // E-invoice line notes ("Rif. numero: 12,00", "Quantità del suddetto lotto: 4,00"): numbers that are no item.
-            "rif\\.?\\s*numero|rif\\.?\\s*data|quantit\\S*\\s+del\\s+suddett\\S*\\s+lott\\S*)\\b",
+            // E-invoice line notes ("Rif. numero: 12,00", "Valore numerico: 3,00", "Quantità del suddetto lotto: 4,00"):
+            // numbers that are no item.
+            "rif\\.?\\s*numero|rif\\.?\\s*data|valore\\s+(?:testo|numerico|data)|quantit\\S*\\s+del\\s+suddett\\S*\\s+lott\\S*)\\b",
     )
+    /** The VAT summary's own rows ("RIEPILOGHI IVA E TOTALI", "Esigibilità IVA ..."): never items. */
+    private val SUMMARY_ROW = Regex("(?i)^\\W*(riepiloghi|esigibilit)")
     /**
      * Notes printed under fresh produce: origin, class and size ("Prov ITALIA Cat II Cal 40-45", "Origine: Spagna",
      * "Categoria I Calibro 70/80"). They are never items and never the name of the numbers next to them.
@@ -207,8 +216,18 @@ object ReceiptParser {
         if (text.isBlank()) return ParsedDocument.EMPTY
         val grid = runCatching { HeaderGrid.read(layouts) }.getOrDefault(HeaderGrid.Grid())
         val supplier = runCatching { Parties.supplier(layouts, options.ownVatNumber) }.getOrNull()
+        // The supplier's VAT number (the one the page's text gives, as learned at save) came from its role-labelled
+        // box when that box prints the same number.
+        val vatSource = runCatching {
+            val fromText = SellerProfiles.supplierVatNumber(text, options.ownVatNumber)
+            when {
+                supplier?.vatNumber != null && supplier.vatNumber == fromText -> SupplierVatSource.ROLE_BOX
+                fromText != null -> SupplierVatSource.OTHER
+                else -> null
+            }
+        }.getOrNull()
         fun read(o: ParseOptions): ParsedDocument {
-            val table = runCatching { TableReader.read(layouts, o.layout?.headings.orEmpty()) }.getOrNull()
+            val table = runCatching { TableReader.read(layouts, o.layout?.headings.orEmpty(), o.textLayerPages) }.getOrNull()
             val doc = parse(text, o, table)
             // Discounts and charges are part of the sums, never products; values under their headings settle totals.
             val marked = doc.copy(
@@ -242,7 +261,7 @@ object ReceiptParser {
             // Lots at the end of the product names ("... AB500168"): offered, or taken once learned for this supplier.
             val named = runCatching { LotsInNames.apply(coded, o.layout) }.getOrDefault(coded)
             val lotted = runCatching { LotsByPosition.apply(named, pages, o.ownVatNumber) }.getOrDefault(named)
-            val marked2 = Handwriting.mark(lotted, pages)
+            val marked2 = Handwriting.mark(lotted, pages).copy(supplierVatSource = vatSource)
             return if (repeats.isEmpty()) marked2 else marked2.copy(warnings = marked2.warnings + ParseWarning.DUPLICATE_PAGE)
         }
         val plain = read(options.copy(layoutLookup = null))
@@ -263,7 +282,7 @@ object ReceiptParser {
 
     /** Payment, address, VAT-number rows inside the table area. */
     internal fun isNotAnItemRow(line: String): Boolean =
-        NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line)
+        NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line) || SUMMARY_ROW.containsMatchIn(line)
 
     /**
      * How well a list of items explains the document: lines where quantity x price = amount count most,
@@ -708,6 +727,12 @@ object ReceiptParser {
         return total.copy(confidence = Confidence.LOW)
     }
 
+    /** The printed row holds a unit only bills print ("KWH", "120KWH", "€/KWH", "KW*MESE"): see [Units.PRINTED_ONLY]. */
+    private fun printsUnitOfItsOwn(row: String): Boolean = row.split(' ', '\t').any { w ->
+        Units.isPrintedOnly(w.trim('|', '¦', ':', ',', ';', '(', ')').replace(LEADING_NUMBER, "").removePrefix("€").removePrefix("/"))
+    }
+    private val LEADING_NUMBER = Regex("^-?[\\d.,]+")
+
     private val CHECK_WARNINGS = setOf(
         ParseWarning.NO_ITEMS_FOUND, ParseWarning.LINE_TOTAL_MISMATCH, ParseWarning.TOTALS_INCONSISTENT, ParseWarning.ITEMS_SUM_MISMATCH,
         ParseWarning.VAT_GROUP_MISMATCH, ParseWarning.PAGES_MISSING, ParseWarning.CHECKED_BY_TOTALS,
@@ -739,10 +764,11 @@ object ReceiptParser {
         items = settleLots(items, text)
         items = lotShapes(items)
         // A whole number with no unit printed counts pieces ("CARTA FORNO 1 6,90 6,90"); a quantity with decimals and no
-        // unit (a weight?) stays empty for the operator.
+        // unit (a weight?) stays empty for the operator. A line that prints a unit the app has no name for ("KWH",
+        // "MESE") gets no "pz" either: its unit stays empty rather than made up.
         items = items.map { it ->
             val q = it.quantity
-            if (it.unit == null && q != null && q.value.signum() > 0 && q.value.stripTrailingZeros().scale() <= 0) {
+            if (it.unit == null && q != null && q.value.signum() > 0 && q.value.stripTrailingZeros().scale() <= 0 && !printsUnitOfItsOwn(q.source)) {
                 it.copy(unit = Extracted("pz", q.confidence, "a count (no unit printed)"))
             } else it
         }
@@ -1119,7 +1145,8 @@ object ReceiptParser {
         return items.map { it ->
             val lot = it.lotNumber ?: return@map it
             val ok = lot.value.any(Char::isDigit) && LOT_VALUE.matches(lot.value) && ItalianDates.findDates(lot.value).isEmpty()
-            if (ok && lot.confidence == Confidence.LOW) it.copy(lotNumber = lot.copy(confidence = Confidence.HIGH)) else it
+            // A lot the reading doubts on its own (two lots for one line, a note away from its line) stays doubted.
+            if (ok && lot.confidence == Confidence.LOW && !TableReader.isDoubtedLot(lot.source)) it.copy(lotNumber = lot.copy(confidence = Confidence.HIGH)) else it
         }
     }
 

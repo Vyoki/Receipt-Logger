@@ -165,4 +165,17 @@ class ReceiptParserTest {
         assertNull(ReceiptParser.parseItemLine("Via Roma 12"))
         assertNull(ReceiptParser.parseItemLine("12,00"))
     }
+
+    @Test fun billUnitsInsideNamesReadAsBefore() {
+        // "KW", "KWH" and "MESE" are units only bills print: the text reading splits such lines as it always did.
+        fun read(line: String) = ReceiptParser.parseItemLine(line)!!.let {
+            listOf(it.originalDescription, it.quantity?.value?.toPlainString(), it.unit?.value, it.unitPrice?.value?.toPlainString(), it.lineTotalCents?.value?.toString())
+        }
+        assertEquals(listOf("STUFA ELETTRICA 2", "1", null, "49.90", "4990"), read("STUFA ELETTRICA 2 KW 1 49,90 49,90"))
+        assertEquals(listOf("CANONE MESE GIUGNO", "1", null, "30.00", "3000"), read("CANONE MESE GIUGNO 1 30,00 30,00"))
+        assertEquals(listOf("CONSUMO F1 KWH", "120", null, "0.20", "2400"), read("CONSUMO F1 KWH 120 0,20 24,00"))
+        // Such a line prints a unit of its own: no "pz" is made up for it. A line with no unit printed still counts pieces.
+        assertNull(ReceiptParser.parse("ESEMPIO SRL\nCONSUMO F1 KWH 120 0,20 24,00\nTOTALE 24,00").lineItems.single().unit)
+        assertEquals("pz", ReceiptParser.parse("ESEMPIO SRL\nCARTA FORNO 2 3,45 6,90\nTOTALE 6,90").lineItems.single().unit?.value)
+    }
 }

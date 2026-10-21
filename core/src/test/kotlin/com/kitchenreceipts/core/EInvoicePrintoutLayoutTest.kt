@@ -16,7 +16,11 @@ class EInvoicePrintoutLayoutTest {
 
     private val options = ParseOptions(ownVatNumber = CUSTOMER_VAT, today = LocalDate.of(2031, 5, 2))
 
-    private fun read(inv: EInvoicePrintoutFixture.Invoice) = ReceiptParser.parsePages(EInvoicePrintoutFixture.pages(inv), options)
+    /** Read as the app reads a PDF with a text layer: every page's words are the PDF's own text. */
+    private fun read(inv: EInvoicePrintoutFixture.Invoice) = readPages(EInvoicePrintoutFixture.pages(inv))
+
+    private fun readPages(pages: List<List<OcrLine>>, textLayer: Boolean = true) =
+        ReceiptParser.parsePages(pages, options.copy(textLayerPages = if (textLayer) pages.indices.toSet() else emptySet()))
 
     private fun text(inv: EInvoicePrintoutFixture.Invoice) =
         EInvoicePrintoutFixture.pages(inv).joinToString("\n") { p -> p.joinToString("\n") { it.text } }
@@ -81,20 +85,23 @@ class EInvoicePrintoutLayoutTest {
     @Test fun utilityUnitsAreKeptAsPrinted() {
         val d = read(EInvoicePrintoutFixture.ENERGY)
         assertEquals(3, d.lineItems.size)
-        // Units the app has no name for are kept as printed; a "pz" is never made up.
-        assertEquals(listOf("kwh", "mese", "cad"), d.lineItems.map { it.unit?.value })
+        // Units the app has no name for are kept as printed, in capitals; a "pz" is never made up.
+        assertEquals(listOf("KWH", "MESE", "CAD"), d.lineItems.map { it.unit?.value })
         assertTrue(d.lineItems.none { it.unit?.value == "pz" })
     }
 
-    @Test fun vatNatureCodeAndNegativeLine() {
+    @Test fun negativeLineAndNatureCodeLeaveTheBillInReview() {
         val d = read(EInvoicePrintoutFixture.ENERGY)
         val rounding = d.lineItems.last()
+        // The amount as printed; the price is read without its sign, so quantity x price does not prove the line.
         assertEquals(-30L, rounding.lineTotalCents?.value)
-        assertEquals(0, BigDecimal("-0.30").compareTo(rounding.unitPrice?.value))
+        assertTrue(rounding.unitPrice?.value?.signum() != -1)
+        assertTrue(rounding.unitPrice?.confidence != Confidence.HIGH || ParseWarning.LINE_TOTAL_MISMATCH in rounding.warnings)
         // "N2.2" in the VAT column is no rate: the line has none, and nothing is made up for it.
         assertEquals(null, rounding.vatRatePercent?.value)
         // Without the nature row the summary does not add up to the total: the bill is not proven, so it goes to review.
-        assertTrue(d.totalCents?.confidence != Confidence.HIGH || d.warnings.isNotEmpty())
+        assertTrue(d.totalCents?.confidence != Confidence.HIGH)
+        assertTrue(AutoAccept.reasons(DocumentDraft.fromParsed(d)).isNotEmpty())
     }
 
     @Test fun soleTraderAndLetterSpacedNames() {
@@ -134,5 +141,194 @@ class EInvoicePrintoutLayoutTest {
         assertTrue(LotExtractor.packSizeLike("BIA3V40X40X30"))
         assertTrue(!LotExtractor.packSizeLike("L.0042"))
         assertTrue(!LotExtractor.packSizeLike("AB731942"))
+    }
+
+    // ------------------------------------------------------------------ line notes (F10)
+
+    private val meat = EInvoicePrintoutFixture.MEAT
+    private fun meatWith(first: EInvoicePrintoutFixture.Line) = meat.copy(lines = listOf(first) + meat.lines.drop(1))
+
+    @Test fun sdiValueNotesGiveTheLot() {
+        val first = meat.lines[0].copy(notes = listOf(EInvoicePrintoutFixture.Note("LOTTO", "QX481", valueLabel = "Valore testo")))
+        val d = read(meatWith(first))
+        assertEquals("QX481", d.lineItems[0].lotNumber?.value)
+        assertEquals(Confidence.HIGH, d.lineItems[0].lotNumber?.confidence)
+    }
+
+    @Test fun numericAndDateNotesAreNeverItemsOrLots() {
+        val first = meat.lines[0].copy(notes = emptyList(), more = listOf("Tipo dato: LOTTO", "Valore numerico: 7,00", "Tipo dato: CONSEGNA", "Valore data: 03-02-2031"))
+        val d = read(meatWith(first))
+        assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
+        assertEquals(null, d.lineItems[0].lotNumber)
+        assertTrue(d.lineItems.none { it.quantity?.value?.compareTo(BigDecimal("7")) == 0 })
+    }
+
+    @Test fun quantityOfTheLotIsNeverAQuantityOrALine() {
+        for (label in listOf("Quantità del suddetto lotto: 12,00", "Quantita' del suddetto lotto: 12,00")) {
+            val first = meat.lines[0].copy(notes = emptyList(), more = listOf("Lotto: KQ702", "Scadenza: 20-04-2031", label))
+            val d = read(meatWith(first))
+            assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
+            assertTrue(d.lineItems.none { it.quantity?.value?.compareTo(BigDecimal("12")) == 0 })
+            assertEquals("KQ702", d.lineItems[0].lotNumber?.value)
+            assertEquals(LocalDate.of(2031, 4, 20), d.lineItems[0].expiryDate?.value)
+        }
+    }
+
+    @Test fun aLotNoteAfterAPricedRowThatIsNoItemIsUncertain() {
+        // Two priced rows above the note: the item, then a row of numbers with no name. The note may be either's.
+        val numbersOnly = EInvoicePrintoutFixture.Line("", "2,00", "5,00", "kg", "10,00", "10,00", code = null, codeType = null,
+            notes = listOf(EInvoicePrintoutFixture.Note("LOTTO", "RT550")))
+        val d = read(meat.copy(lines = listOf(meat.lines[0].copy(notes = emptyList()), numbersOnly) + meat.lines.drop(1)))
+        val lot = d.lineItems.firstOrNull { it.lotNumber?.value == "RT550" }?.lotNumber
+        assertTrue(lot == null || lot.confidence == Confidence.LOW)
+    }
+
+    @Test fun aLotNoteOutsideTheDescriptionCellIsUncertain() {
+        val first = meat.lines[0].copy(notes = listOf(EInvoicePrintoutFixture.Note("LOTTO", "MN204", x = 1290)))
+        val d = read(meatWith(first))
+        assertEquals("MN204", d.lineItems[0].lotNumber?.value)
+        assertEquals(Confidence.LOW, d.lineItems[0].lotNumber?.confidence)
+    }
+
+    @Test fun twoLotNotesUnderOneLineAreShownForACheck() {
+        val notes = listOf(EInvoicePrintoutFixture.Note("LOTTO", "AB123"), EInvoicePrintoutFixture.Note("LOTTO", "AB124"))
+        val d = read(meatWith(meat.lines[0].copy(notes = notes)))
+        val lot = d.lineItems[0].lotNumber!!
+        assertEquals("AB123", lot.value)
+        assertEquals(Confidence.LOW, lot.confidence)
+        assertTrue(lot.source.contains("AB124"))
+    }
+
+    // ------------------------------------------------------------------ letters one by one (F12), code kinds (F13)
+
+    @Test fun lettersOneByOneAreJoinedOnlyOnThePdfsOwnText() {
+        val pages = EInvoicePrintoutFixture.pages(EInvoicePrintoutFixture.HOUSEHOLD)
+        assertTrue(readPages(pages).lineItems.first().originalDescription.startsWith("SAPONE"))
+        // On a photo the same row is not guessed at.
+        assertTrue(readPages(pages, textLayer = false).lineItems.none { it.originalDescription.startsWith("SAPONE") })
+    }
+
+    @Test fun aLongNamePrintedLetterByLetterStaysOneName() {
+        // It starts a little left of its column and runs past its heading; a lone "G" after a digit is part of it.
+        val inv = EInvoicePrintoutFixture.HOUSEHOLD
+        val d = read(inv.copy(lines = listOf(inv.lines[0].copy(desc = "LAVAPIATTI LIMONE 3 G", descX = 628), inv.lines[1])))
+        val first = d.lineItems.first()
+        assertTrue(first.originalDescription, first.originalDescription.startsWith("LAVAPIATTILIMONE"))
+        assertTrue(first.originalDescription, first.originalDescription.endsWith("3 G"))
+        assertEquals("pz", first.unit?.value)
+        assertEquals(300L, first.lineTotalCents?.value)
+        assertTrue(ParseWarning.LINE_TOTAL_MISMATCH !in first.warnings)
+    }
+
+    @Test fun spacedDigitsAreNeverJoined() {
+        val inv = EInvoicePrintoutFixture.HOUSEHOLD
+        val d = read(inv.copy(lines = listOf(inv.lines[0].copy(desc = "SALE 1 2 , 5 0"), inv.lines[1])))
+        val name = d.lineItems.first().originalDescription
+        assertTrue(name, name.startsWith("SALE"))
+        assertTrue(name, !name.contains("12,50") && !name.contains("1250"))
+    }
+
+    @Test fun packTextWithASingleLetterIsKept() {
+        val inv = EInvoicePrintoutFixture.WHOLESALER
+        val d = read(inv.copy(lines = listOf(inv.lines[0].copy(desc = "SPUGNE x 2")) + inv.lines.drop(1)))
+        assertEquals("SPUGNE X 2", d.lineItems.first().originalDescription.uppercase())
+    }
+
+    @Test fun qualityMarksInBracketsStayInTheName() {
+        val inv = EInvoicePrintoutFixture.WHOLESALER
+        val d = read(inv.copy(lines = listOf(inv.lines[0].copy(desc = "MOZZARELLA (DOP) 125G", codeType = "Cod.Forn.")) + inv.lines.drop(1)))
+        assertEquals("MOZZARELLA (DOP) 125G", d.lineItems.first().originalDescription)
+    }
+
+    @Test fun codeKindOnlyRightAfterACodeWithADigit() {
+        // On a photo nothing is dropped: the kind printed after the code stays in what was read.
+        val photo = readPages(EInvoicePrintoutFixture.pages(meat), textLayer = false)
+        assertTrue(photo.lineItems.any { it.originalDescription.contains("FORNITORE") })
+        // A "code" without a digit is no article code: what follows it in brackets is not dropped.
+        val inv = EInvoicePrintoutFixture.WHOLESALER
+        val d = read(inv.copy(lines = listOf(inv.lines[0].copy(code = "ZZ", codeType = "PROVA")) + inv.lines.drop(1)))
+        assertTrue(d.lineItems.first().originalDescription.contains("PROVA"))
+    }
+
+    // ------------------------------------------------------------------ rows that are no items (F19, F20)
+
+    @Test fun deliveryNoteRowIsNeverALotOrAnItem() {
+        val d = read(meat.copy(ddtRefs = listOf("DDT 77/ZZ del 03-02-2031", "Documento di trasporto n. 78 del 04-02-2031"),
+            lines = meat.lines.map { it.copy(notes = emptyList()) }))
+        assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
+        assertTrue(d.lineItems.none { l -> l.lotNumber?.value?.let { it.contains("77") || it.contains("78") } == true })
+        assertTrue(d.lineItems.none { it.originalDescription.contains("DDT") || it.originalDescription.contains("trasporto") })
+        assertTrue(LotExtractor.isDeliveryNoteRef("D.D.T. 77/ZZ del 03-02-2031"))
+        assertTrue(!LotExtractor.isDeliveryNoteRef("DDT del 03-02-2031"))
+    }
+
+    @Test fun packSizesAndMonthsAreNeverLots() {
+        for (t in listOf("KG9X7", "ML.333", "MT45X8PZ", "03/2031")) assertTrue(t, LotExtractor.neverALot(t))
+        assertTrue(!LotExtractor.neverALot("AB731942"))
+        val first = meat.lines[0].copy(notes = listOf(EInvoicePrintoutFixture.Note("LOTTO", "03/2031")))
+        assertEquals(null, read(meatWith(first)).lineItems[0].lotNumber)
+    }
+
+    @Test fun thePaymentBlockEndsTheTable() {
+        // No totals between the lines and the payment block: the payment row ("MP05 Bonifico 242,42") is no line.
+        val pages = EInvoicePrintoutFixture.pages(meat.copy(summary = false, payment = "MP05 Bonifico"))
+        val layouts = pages.map { LayoutRows.layout(OcrCleanup.repairLabels(OcrCleanup.stripRules(it))) }
+        assertEquals(listOf(11500L, 6000L, 4800L), TableReader.read(layouts, textLayerPages = pages.indices.toSet())?.map { it.lineTotalCents?.value })
+    }
+
+    @Test fun summaryRowsAreNeverItems() {
+        val groups = meat.groups.map { it.copy(label = "Esigibilità immediata") }
+        val d = read(meat.copy(groups = groups, summaryHeading = false))
+        assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
+    }
+
+    @Test fun aWeightIsNeverAnItem() {
+        val d = read(meat.copy(footRows = listOf("PESO NETTO KG" to "23,50")))
+        assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
+    }
+
+    // ------------------------------------------------------------------ totals not proven by the summary (F5)
+
+    @Test fun stampDutyRoundingOrDiscountLeaveTaxableAndVatUnproven() {
+        val src = "VAT summary rows add up to the total under its heading"
+        for (inv in listOf(
+            meat.copy(bollo = "2,00", total = "244,42"),
+            meat.copy(rounding = "0,01", total = "242,43"),
+            meat.copy(docDiscount = "-2,42", total = "240,00"),
+        )) {
+            val d = read(inv)
+            assertTrue(d.subtotalCents?.source != src && d.vatCents?.source != src)
+            assertTrue(d.totalCents?.confidence != Confidence.HIGH || d.totalCents?.source != src)
+            assertTrue(AutoAccept.reasons(DocumentDraft.fromParsed(d)).isNotEmpty())
+        }
+    }
+
+    // ------------------------------------------------------------------ the supplier's VAT number (F7)
+
+    @Test fun supplierVatFromItsRoleBox() {
+        assertEquals(SupplierVatSource.ROLE_BOX, read(meat).supplierVatSource)
+        val letterhead = listOf(
+            EInvoicePrintoutFixture.t(100, 100, "ABC S.r.l."),
+            EInvoicePrintoutFixture.t(100, 150, "P.IVA 01234567897 - Reg. Imp. Roma"),
+            EInvoicePrintoutFixture.t(100, 250, "FATTURA N. 12 DEL 03-02-2031"),
+            EInvoicePrintoutFixture.t(100, 300, "PANE 1 2,00 2,00"),
+            EInvoicePrintoutFixture.t(100, 350, "TOTALE DOCUMENTO 2,00"),
+        )
+        assertEquals(SupplierVatSource.OTHER, readPages(listOf(letterhead)).supplierVatSource)
+    }
+
+    // ------------------------------------------------------------------ a name printed over two lines (C2)
+
+    @Test fun aNameRunningOnHoldsTheSave() {
+        val first = meat.lines[0].copy(more = listOf("STAGIONATA DI PROVA"))
+        val d = read(meatWith(first))
+        assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
+        assertEquals("the name continues on the next printed line", d.lineItems[0].nameNote)
+        assertTrue(d.lineItems.drop(1).all { it.nameNote == null })
+        val draft = DocumentDraft.fromParsed(d)
+        assertTrue(draft.items[0].description.uncertain)
+        assertTrue(ReviewReason.UNCERTAIN_VALUES in AutoAccept.reasons(draft))
+        // On a photo the row is dropped as before, with no new hold.
+        assertTrue(readPages(EInvoicePrintoutFixture.pages(meatWith(first)), textLayer = false).lineItems.all { it.nameNote == null })
     }
 }

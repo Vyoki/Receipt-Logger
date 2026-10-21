@@ -152,7 +152,10 @@ data class DocumentDraft(
                 items = p.lineItems.mapIndexed { i, it ->
                     LineItemDraft(
                         key = keyStart + i,
-                        description = DraftField(it.originalDescription, uncertain = it.nameDoubt, source = if (it.nameDoubt) it.lineTotalCents?.source else null),
+                        description = DraftField(
+                            it.originalDescription, uncertain = it.nameDoubt || it.nameNote != null,
+                            source = it.nameNote ?: if (it.nameDoubt) it.lineTotalCents?.source else null,
+                        ),
                         quantity = f(it.quantity, dec),
                         unit = f(it.unit) { u -> u },
                         unitPrice = f(it.unitPrice, dec),

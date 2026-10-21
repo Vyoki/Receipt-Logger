@@ -28,7 +28,7 @@ object LotsByPosition {
         fun codeLike(t: String) = t in codes || (codeLength != null && t.length == codeLength && t.all(Char::isDigit))
         // A delivery-note reference printed among the lines ("DDT 123/AB/2031 del 17-03-2031") names a document, not a lot.
         val rowText = map.words.groupBy { it.word.page to it.word.row }.mapValues { (_, w) -> w.sortedBy { it.word.box.left }.joinToString(" ") { it.word.text } }
-        fun reference(p: PageMap.Placed) = rowText[p.word.page to p.word.row]?.let { DELIVERY_REF.containsMatchIn(it) } == true
+        fun reference(p: PageMap.Placed) = rowText[p.word.page to p.word.row]?.let { DELIVERY_REF.containsMatchIn(it) || LotExtractor.isDeliveryNoteRef(it) } == true
         // Candidates: leftover lot-like words under an item, not on its own first row.
         data class Cand(val item: Int, val text: String, val x: Int, val column: String?)
         val cands = map.unexplained.filter { p ->
@@ -36,7 +36,7 @@ object LotsByPosition {
             val item = p.item
             item != null && p.region == PageMap.Region.TABLE && doc.lineItems.getOrNull(item)?.lotNumber == null &&
                 LOT_LIKE.matches(t) && t.any(Char::isDigit) && !t.contains(',') && ItalianDates.findDates(t).isEmpty() &&
-                !LotExtractor.packSizeLike(t) && !reference(p) &&
+                !LotExtractor.neverALot(t) && !reference(p) &&
                 // Under the item on its own page (an item read on another page has no rows here), off its first row.
                 (p.word.page to item) in ownRow && ownRow[p.word.page to item] != p.word.row && !codeLike(t)
         }.map { Cand(it.item!!, it.word.text, it.word.box.left, it.column) }

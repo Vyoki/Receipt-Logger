@@ -85,6 +85,12 @@ data class ParsedLineItem(
      * and its meaning from the page's legend ("F" = "fresco"), the row type, the group printed above the line.
      */
     val marks: List<ItemMark> = emptyList(),
+    /**
+     * Why the name needs a look although its numbers may be proven ("the name continues on the next printed line"):
+     * the name is shown uncertain, so the document is not saved by itself. The AI agreeing with the name does not
+     * clear it.
+     */
+    val nameNote: String? = null,
 )
 
 /** One code the page explains ([kind] "storage", "tipo riga", "group"...): [code] as printed (none for a group line), [meaning] from the page. */
@@ -117,6 +123,14 @@ data class AiCheck(
  */
 data class AiDisagreement(val field: String, val line: Int?, val ours: String, val ai: String)
 
+/** Where the supplier's VAT number was read. */
+enum class SupplierVatSource {
+    /** In the supplier's own box, under its role label ("Cedente/prestatore"): never the customer's number. */
+    ROLE_BOX,
+    /** Anywhere else on the page (the letterhead, a footer). */
+    OTHER,
+}
+
 data class ParsedDocument(
     val sellerName: Extracted<String>?,
     val documentDate: Extracted<LocalDate>?,
@@ -148,6 +162,8 @@ data class ParsedDocument(
     val supplierProof: SupplierProof.Result? = null,
     /** What the document's own sums (VAT summary, packages, page count) say about this reading (see [Reconcile]). */
     val reconciled: Reconcile.Report? = null,
+    /** Where the supplier's VAT number was read; null when none was found (or not looked for). */
+    val supplierVatSource: SupplierVatSource? = null,
 ) {
     companion object {
         val EMPTY = ParsedDocument(
