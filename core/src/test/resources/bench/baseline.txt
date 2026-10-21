@@ -3,3 +3,22 @@
 right=99.21
 silent=0.02
 autoWrong=0.00
+# Each group, counted exactly: fields read right (sure or highlighted), wrong values not highlighted (lines read that
+# are not on the document included), documents saved by the app although wrong. A group may not get worse in any of
+# them; when a change makes it better, copy the new lines from the report ("Counts per group") here.
+group invented: cashcarry / clean | fields 1014 right 1014 silent 0 | documents 29 autoWrong 0
+group invented: cashcarry / heavy noise | fields 784 right 784 silent 0 | documents 22 autoWrong 0
+group invented: cashcarry / light noise | fields 1464 right 1464 silent 0 | documents 40 autoWrong 0
+group invented: ddt / clean | fields 1395 right 1395 silent 0 | documents 30 autoWrong 0
+group invented: ddt / heavy noise | fields 1234 right 1231 silent 0 | documents 29 autoWrong 0
+group invented: ddt / light noise | fields 1377 right 1377 silent 0 | documents 32 autoWrong 0
+group invented: invoice / clean | fields 1512 right 1512 silent 0 | documents 44 autoWrong 0
+group invented: invoice / heavy noise | fields 1616 right 1611 silent 0 | documents 48 autoWrong 0
+group invented: invoice / light noise | fields 2520 right 2509 silent 0 | documents 72 autoWrong 0
+group invented: receipt / clean | fields 293 right 275 silent 0 | documents 17 autoWrong 0
+group invented: receipt / heavy noise | fields 336 right 309 silent 1 | documents 21 autoWrong 0
+group invented: receipt / light noise | fields 863 right 814 silent 2 | documents 56 autoWrong 0
+group real documents (invented copies) | fields 93 right 91 silent 1 | documents 3 autoWrong 0
+# The invented e-invoice printouts (EInvoicePrintGen), outside the headline. Its target is silent 0 and autoWrong 0:
+# the documents still wrong today are the TODO lists in BenchTest.
+group e-invoice printout | fields 6324 right 4838 silent 51 | documents 154 autoWrong 4
