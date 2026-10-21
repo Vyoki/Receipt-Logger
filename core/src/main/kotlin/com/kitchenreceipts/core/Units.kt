@@ -35,6 +35,7 @@ object Units {
         "unidad" to "pz", "unidades" to "pz", "uds" to "pz", "szt" to "pz",
         "litre" to "l", "litres" to "l", "liter" to "l", "liters" to "l", "litro" to "l", "kilogram" to "kg", "kilos" to "kg",
         "heures" to "h", "heure" to "h", "hours" to "h", "hour" to "h", "hrs" to "h", "uur" to "h", "stunden" to "h", "std" to "h", "horas" to "h",
+        "ore" to "h", // Italian: hours of work on a service invoice
     )
 
     /** Unit -> (dimension, factor to the dimension's base unit kg / l). */

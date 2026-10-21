@@ -65,6 +65,27 @@ object LotExtractor {
     }
 
     /** Removes the consumed ranges from [line]. */
+    private val DIMENSIONS = Regex("\\d+[X×]\\d+")
+
+    /** Units and packs printed with numbers in a pack size ("KG9X7", "ML.333", "MT45X3PZ", "G300X4"). */
+    private val PACK_WORDS = setOf(
+        "G", "GR", "KG", "HG", "CC", "CL", "ML", "LT", "PZ", "X", "NR", "CF", "MM", "CM", "MT", "CT", "CRT", "PK", "CS",
+        "BT", "SC", "CONF", "VS", "TB", "PET", "ROT", "RT", "BRIK", "BOX",
+    )
+
+    /**
+     * A token made only of pack words and numbers ("KG9X7", "ML.333", "ROT.MT45X3PZ"): a pack size, never a lot.
+     * A lone "L" (a lot prefix as often as litres, "L.0042") does not make a token a pack size on its own.
+     */
+    fun packSizeLike(token: String): Boolean {
+        val t = token.uppercase()
+        if (!t.any(Char::isDigit)) return false
+        // Sizes and multipacks: "40X40X30", "G300X4".
+        if (DIMENSIONS.containsMatchIn(t)) return true
+        val words = Regex("[A-Z]+").findAll(t).map { it.value }.toList()
+        return words.isNotEmpty() && words.all { it in PACK_WORDS }
+    }
+
     fun strip(line: String, ranges: List<IntRange>): String {
         if (ranges.isEmpty()) return line
         val sb = StringBuilder()

@@ -37,7 +37,7 @@ class BenchTest {
     }
 
     /** Invented copies of documents read on the phone, with what is really printed on them. */
-    private fun realDocs(): List<BenchDoc> {
+    internal fun realDocs(): List<BenchDoc> {
         val own = DocGen.OWN_VAT
         val out = mutableListOf<BenchDoc>()
         resource("fixtures/ddt_surgelati_boxes.txt")?.let { t ->
@@ -89,7 +89,7 @@ class BenchTest {
         return out
     }
 
-    private fun generated(): List<BenchDoc> =
+    internal fun generated(): List<BenchDoc> =
         (1..120).map { DocGen.generate(it, DocGen.Noise.CLEAN) } +
             (1001..1200).map { DocGen.generate(it, DocGen.Noise.LIGHT) } +
             (2001..2120).map { DocGen.generate(it, DocGen.Noise.HEAVY) }

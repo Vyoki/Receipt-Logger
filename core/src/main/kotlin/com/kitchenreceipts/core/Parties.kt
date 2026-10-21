@@ -16,7 +16,9 @@ object Parties {
 
     private val SUPPLIER = rx("(?i)\\b(cedente|prestatore|fornitore|mittente|venditore|emittente)")
     private val CUSTOMER = rx("(?i)(cessionario|committente|\\bcliente\\b|destinatario|spett\\.?\\s?le|spettabile|intestatario|acquirente)")
-    private val NAME_LABEL = rx("(?i)^\\s*(denominazione|ragione\\s+sociale|rag\\.?\\s?soc(iale)?\\.?|deno\\w*|ditta)\\s*:?\\s*")
+    private val NAME_LABEL = rx("(?i)^\\s*(denominazione|ragione\\s+sociale|rag\\.?\\s?soc(iale)?\\.?|deno\\w*|ditta|cognome\\s+(?:e\\s+)?nome|nome\\s+e\\s+cognome)\\s*:?\\s*")
+    /** Other blocks printed under the parties (an intermediary, the issuer, a fiscal representative) and the document data. */
+    private val OTHER_BLOCK = rx("(?i)^\\s*(terzo\\s+intermediario|soggetto\\s+emittente|rappresentante\\s+fiscale|stabile\\s+organizzazione|tipologia\\s+documento)")
     private val OTHER_LABEL = rx(
         "(?i)^\\s*(identificativo|ldentificativo|codice|cod\\.|c\\.?\\s?f\\.?\\b|partita|p\\.?\\s?iva|regime|indirizzo|via\\b|viale|piazza|comune|cap\\b|" +
             "provincia|nazione|tel|fax|e-?mail|pec|sede|iban|sito|web|www)",
@@ -42,6 +44,7 @@ object Parties {
                     for (k in r + 1 until minOf(rows.size, r + 14)) {
                         val inBox = rows[k].filter { c -> c.centerX >= cell.left - 40 && c.centerX < right && c.left < right }
                         if (inBox.any { c -> (SUPPLIER.containsMatchIn(c.text) || CUSTOMER.containsMatchIn(c.text)) && c.text.split(' ').size <= 6 }) break
+                        if (inBox.any { c -> OTHER_BLOCK.containsMatchIn(c.text) }) break
                         if (inBox.isEmpty()) { if (++empty >= 2) break else continue }
                         // A wide gap ends the box (the next part of the page starts under it).
                         val last = lines.lastOrNull() ?: cell
@@ -77,6 +80,8 @@ object Parties {
             val t = l.text.trim()
             val nameLabel = NAME_LABEL.find(t)
             when {
+                // One box, one name: a second name label is another party's.
+                nameLabel != null && labelled -> break
                 nameLabel != null -> {
                     labelled = true
                     afterName = true

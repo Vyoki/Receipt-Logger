@@ -30,13 +30,19 @@ object VatSummary {
 
     fun parse(text: String): List<Group> {
         val out = mutableListOf<Group>()
+        var inTable = false
         for (line in text.lines()) {
             val clean = DOT_DECIMAL.replace(OcrCleanup.cleanLine(line)) { m -> "${m.groupValues[1]},${m.groupValues[2]}" }
+            // Inside a VAT summary table (its heading names the taxable amount and the tax), a rate may be
+            // printed with decimals ("10,00"); the arithmetic below still has to prove the row.
+            if (SUMMARY_HEADING.findAll(clean).map { it.value.lowercase().take(5) }.distinct().count() >= 2 && MONEY.findAll(clean).none()) { inTable = true; continue }
+            if (inTable && SUMMARY_END.containsMatchIn(clean)) inTable = false
             // A unit price with three decimals ("10,210") makes it a product line, never a VAT summary row.
             if (UNIT_PRICE.containsMatchIn(clean)) continue
             val money = MONEY.findAll(clean).toList()
             if (money.size < 2) continue
-            val rates = RATE_TOKEN.findAll(clean).filter { r -> money.none { m -> r.range.first in m.range } }.map { BigDecimal(it.value) }.toList()
+            val decimalRates = if (!inTable) emptyList() else money.filter { DECIMAL_RATE.matches(it.value) }.map { BigDecimal(it.value.substringBefore(',')) }
+            val rates = RATE_TOKEN.findAll(clean).filter { r -> money.none { m -> r.range.first in m.range } }.map { BigDecimal(it.value) }.toList() + decimalRates
             if (rates.isEmpty()) continue
             val amounts = money.mapNotNull { ItalianNumbers.parseCents(it.value) }
             found@ for (rate in rates.distinct()) {
@@ -84,6 +90,9 @@ object VatSummary {
         return groups
     }
 
+    private val SUMMARY_HEADING = Regex("(?i)\\b(imponibil\\w*|imposta|aliquota|%\\s?iva)")
+    private val SUMMARY_END = Regex("(?i)\\b(totale\\s+documento|modalit\\S*\\s+pagamento|importo\\s+bollo)\\b")
+    private val DECIMAL_RATE = Regex("^(4|5|10|22),00$")
     private val UNIT_PRICE = Regex("(?<![\\d,.])\\d{1,3},\\d{3}(?![\\d,])")
     private val SUMMARY_WORDS = Regex("(?i)(aliquota|\\biva\\b|imponibil|imposta|esente|%)")
 

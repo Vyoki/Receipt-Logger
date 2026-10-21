@@ -205,6 +205,7 @@ object SellerProfiles {
         return prev[b.length] <= allowed
     }
 
+    private val ROLE_SUPPLIER = Regex("(?i)\\bcedente\\s*/\\s*prestatore\\b")
     private val LETTERHEAD_HINT = Regex("(?i)(reg\\.?\\s*imp|\\breg\\.\\s|iscr|\\brea\\b|\\brea\\s?n\\b|cap\\.?\\s*soc|capitale|sede|c\\.\\s?f\\.\\s*(e|-|/)\\s*p\\.?\\s?iva|codice fiscale e partita)")
     private val CUSTOMER_HINT = Regex("(?i)(spett|destinatario|cliente|intestatario|codice\\s+fiscale\\s*$)")
 
@@ -220,6 +221,13 @@ object SellerProfiles {
         val lines = repairDigits(documentText).lines()
         val candidates = vatNumbers(documentText).filter { it != own }
         if (candidates.isEmpty()) return null
+        // Parties printed under their role labels (e-invoice printouts): the supplier's number is the first
+        // one after "Cedente/prestatore", in its box on the left of the merged rows; the customer's is never it.
+        if (own != null) {
+            val at = lines.indexOfFirst { ROLE_SUPPLIER.containsMatchIn(it) }
+            if (at >= 0) lines.drop(at).take(4).asSequence().flatMap { l -> candidates.asSequence().filter { v -> l.replace(" ", "").contains(v) }.map { v -> l.replace(" ", "").indexOf(v) to v }.sortedBy { it.first } }
+                .firstOrNull()?.let { return it.second }
+        }
         val squeezed = lines.map { it.replace(" ", "") }
         val scored = candidates.mapIndexed { order, v ->
             val re = Regex(v)

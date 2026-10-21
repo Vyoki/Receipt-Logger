@@ -77,6 +77,8 @@ object HeaderGrid {
         return ItalianNumbers.parseCents(m.groupValues[1].replace(" ", ""))
     }
 
+    private val SHORT_NUMBER = rx("^\\d{1,3}$")
+
     private class Label(val left: Int, val right: Int, val text: String, val row: Int)
 
     /** A row that is only labels: no amount, no date. */
@@ -112,8 +114,12 @@ object HeaderGrid {
                 // the closest reading first, so a value is taken under its own label.
                 for (n in 1..3) {
                     val from = v - n
-                    if (from < 0 || !labelsOnly(rows[from])) break
-                    g = readValues(g, stack(rows.subList(from, v)), values)
+                    // A stacked label may hold a short number on its own line ("ART." over "73"): the row is
+                    // still a row of labels, and the labels are judged once stacked.
+                    if (from < 0 || !rows[from].all { c -> kind(c.text) != null || SHORT_NUMBER.matches(c.text.trim()) }) break
+                    val labels = stack(rows.subList(from, v))
+                    if (labels.any { kind(it.text) == null }) continue
+                    g = readValues(g, labels, values)
                 }
             }
         }

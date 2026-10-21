@@ -140,7 +140,9 @@ object ReceiptParser {
         "(?i)\\b(resto|contanti|contante|pagamento|pagato|bancomat|carta\\s+di\\s+(?:credito|debito)|pos|ricevuto|documento\\s+commerciale|" +
             "vendita|rt\\b|matricola|arrotondamento|sconto\\s+totale|scadenza\\s+pagamento|iban|abi|cab|banca|" +
             "trasporto\\s+a\\s+cura|peso\\s+lordo|colli|vettore|causale|aliquota|riepilogo|cassiere|grazie|" +
-            "elettronico|non\\s+riscosso|operatore|transazione)\\b",
+            "elettronico|non\\s+riscosso|operatore|transazione|" +
+            // E-invoice line notes ("Rif. numero: 12,00", "Quantità del suddetto lotto: 4,00"): numbers that are no item.
+            "rif\\.?\\s*numero|rif\\.?\\s*data|quantit\\S*\\s+del\\s+suddett\\S*\\s+lott\\S*)\\b",
     )
     /**
      * Notes printed under fresh produce: origin, class and size ("Prov ITALIA Cat II Cal 40-45", "Origine: Spagna",
@@ -214,7 +216,20 @@ object ReceiptParser {
                 // A discount line is never the supplier ("Sconto inc." on a page whose letterhead is a picture).
                 sellerName = doc.sellerName?.takeUnless { Adjustments.isDiscount(it.value) },
             )
-            val withParties = Parties.apply(HeaderGrid.apply(marked, grid, o.today), supplier)
+            // The total under its heading proven by the VAT summary rows (one row per rate): taxable and VAT
+            // are their sums when taxable + VAT of every row is exactly the printed total.
+            val gridded = HeaderGrid.apply(marked, grid, o.today).let { d ->
+                val gt = grid.total
+                if (d.totalCents != null || gt == null) return@let d
+                val gs = runCatching { VatSummary.parse(text) }.getOrDefault(emptyList())
+                // Not proven (a summary row this reader does not know): the printed total is shown, flagged for a check.
+                if (gs.isEmpty() || gs.sumOf { it.taxableCents + it.vatCents } != gt)
+                    return@let d.copy(totalCents = Extracted(gt, Confidence.LOW, "under its heading; the VAT summary does not prove it"))
+                val src = "VAT summary rows add up to the total under its heading"
+                d.copy(subtotalCents = Extracted(gs.sumOf { it.taxableCents }, Confidence.HIGH, src), vatCents = Extracted(gs.sumOf { it.vatCents }, Confidence.HIGH, src),
+                    totalCents = Extracted(gt, Confidence.HIGH, src), warnings = d.warnings - ParseWarning.ITEMS_SUM_MISMATCH - ParseWarning.TOTALS_INCONSISTENT)
+            }
+            val withParties = Parties.apply(gridded, supplier)
             // The supplier's name is sure only when independent places on the page agree (or the phone knows its VAT).
             val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o) }.getOrDefault(withParties)
                 .let { d -> runCatching { ReadingSanity.apply(d, text, o.ownVatNumber) }.getOrDefault(d) }
@@ -609,7 +624,15 @@ object ReceiptParser {
         val columnsFirst = options.layout?.readByColumns == true // this supplier's tables were read best by columns
         val tableScore = if (tableItems.isNullOrEmpty()) Int.MIN_VALUE else itemScore(tableItems, subtotal?.value, total?.value)
         val textScore = itemScore(items, subtotal?.value, total?.value)
-        if (!tableItems.isNullOrEmpty() && (tableScore > textScore || (columnsFirst && tableScore == textScore))) {
+        // A tie between the readings goes to the columns when every line read by columns checks out
+        // (quantity x price = amount) and the text reading has lines that do not (a VAT summary row taken as a product).
+        val tableClean = !tableItems.isNullOrEmpty() && tableItems.none { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings }
+        val textDirty = items.any { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings }
+        // ... and also when the columns prove as many lines as the text does, all of them, while the text
+        // adds lines that do not check out (summary rows, a "Peso spedizione 12,40").
+        fun proven(l: List<ParsedLineItem>) = l.count { it.quantity?.confidence == Confidence.HIGH && it.unitPrice?.confidence == Confidence.HIGH && it.lineTotalCents != null && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings }
+        val columnsProveAll = tableClean && textDirty && tableItems!!.size == proven(tableItems) && proven(tableItems) >= proven(items)
+        if (!tableItems.isNullOrEmpty() && (tableScore > textScore || columnsProveAll || (tableScore == textScore && (columnsFirst || (tableClean && textDirty))))) {
             items.clear()
             items += tableItems
             itemsReadBy = "columns"

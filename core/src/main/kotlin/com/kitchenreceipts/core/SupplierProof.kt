@@ -65,11 +65,12 @@ object SupplierProof {
     /** Mailbox names that are not a company: info@, amministrazione@... */
     private val GENERIC_MAILBOX = rx("^(info|amministrazione|ammin\\w*|ordini|ordine|commerciale|vendite|fatture|fatturazione|contabilita|segreteria|ufficio\\w*|direzione|posta|mail|pec|sales|office|admin|acquisti|logistica|magazzino)$")
 
-    fun collect(pages: List<List<String>>, reading: Extracted<String>?, boxName: String?, options: ParseOptions): List<Source> {
+    fun collect(pages: List<List<String>>, reading: Extracted<String>?, boxName: String?, options: ParseOptions, boxVat: String? = null): List<Source> {
         val ownVat = options.ownVatNumber?.filter(Char::isDigit)?.takeIf { it.length >= 8 }
         val ownName = DuplicateDetector.normalizeSeller(options.ownBusinessName)?.takeIf { it.length >= 4 }
         val all = pages.joinToString("\n") { it.joinToString("\n") }
-        val supplierVat = SellerProfiles.supplierVatNumber(all, ownVat)
+        // The VAT number printed in the supplier's own box (under its role label) first.
+        val supplierVat = boxVat?.takeIf { it != ownVat && SellerProfiles.isValidPartitaIva(it) } ?: SellerProfiles.supplierVatNumber(all, ownVat)
         val out = mutableListOf<Source>()
         fun own(name: String) = ownName != null && (DuplicateDetector.normalizeSeller(name) ?: "").contains(ownName)
 
@@ -163,7 +164,15 @@ object SupplierProof {
     // ------------------------------------------------------------------ judging
 
     fun judge(sources: List<Source>): Result {
-        val named = sources.filter { it.name != null && key(it.name) != null }
+        // The second line of a name printed over two lines in the supplier's box ("ROSSI CARNI DI ROSSI" over "MARIA
+        // & C. SNC"), read on its own, is that same name cut in two: not a rival spelling, and not a second place.
+        val boxKeys = sources.filter { it.kind == Kind.SUPPLIER_BOX && it.name != null }.mapNotNull { key(it.name!!) }
+        fun tailOfBox(s: Source): Boolean {
+            if (s.kind == Kind.SUPPLIER_BOX) return false
+            val k = key(s.name ?: return false) ?: return false
+            return k.length >= 3 && boxKeys.any { b -> b.length > k.length && b.endsWith(k) }
+        }
+        val named = sources.filter { it.name != null && key(it.name) != null && !tailOfBox(it) }
         val anchored = named.filter { it.anchor }
         if (anchored.isEmpty()) return Result(State.NONE, null, emptyList(), sources, 0)
         // Spellings in play: the supplier as read (the reading, its box, the registry, the AI) and other mentions of
@@ -244,7 +253,7 @@ object SupplierProof {
      * spellings read when they disagree. A reading the camera found clear is no longer sure on its own.
      */
     fun apply(doc: ParsedDocument, pages: List<List<String>>, box: Parties.Supplier?, options: ParseOptions): ParsedDocument {
-        val sources = collect(pages, doc.sellerName, box?.name?.value, options)
+        val sources = collect(pages, doc.sellerName, box?.name?.value, options, box?.vatNumber)
         val r = judge(sources)
         return applyResult(doc, r)
     }
