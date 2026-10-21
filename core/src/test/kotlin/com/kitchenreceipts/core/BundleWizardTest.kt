@@ -1,10 +1,13 @@
 package com.kitchenreceipts.core
 
+import com.kitchenreceipts.core.BundleWizard.Saved
+import com.kitchenreceipts.core.BundleWizard.Step
 import com.kitchenreceipts.core.EInvoicePrintoutFixture.CUSTOMER_VAT
 import com.kitchenreceipts.core.EInvoicePrintoutFixture.ENERGY
 import com.kitchenreceipts.core.EInvoicePrintoutFixture.HOUSEHOLD
 import com.kitchenreceipts.core.EInvoicePrintoutFixture.MEAT
 import com.kitchenreceipts.core.EInvoicePrintoutFixture.WHOLESALER
+import com.kitchenreceipts.core.InvoiceBundle.Flag
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
@@ -12,20 +15,31 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.LocalDate
 
-/** Importing a file of many invoices (invented): what is found, sorted, checked and read. */
+/** Importing a file of many invoices (invented): what is found, sorted, read, and what became of each invoice. */
 class BundleWizardTest {
 
     private val invoices = listOf(
         MEAT, WHOLESALER, ENERGY, MEAT.copy(number = "319", date = "28-03-2031"), HOUSEHOLD,
         WHOLESALER.copy(number = "7C 000012400", type = "TD04 nota di credito"),
     )
-    private val segments = InvoiceBundle.find(EInvoicePrintoutFixture.bundle(invoices), CUSTOMER_VAT)
-    private val base = BundlePlan(id = "b1", file = "x.pdf", fileSha = "abc", pageCount = 6, status = BundleStatus.SCANNING)
+    private val pages = EInvoicePrintoutFixture.bundle(invoices).mapIndexed { i, p -> InvoiceBundle.signals(i, p, CUSTOMER_VAT).copy(rowTexts = emptyList()) }
+    private val segments = InvoiceBundle.segments(pages, CUSTOMER_VAT)
+    private val base = BundlePlan(id = "ab".repeat(32), file = "x.pdf", pageCount = pages.size, status = BundleStatus.SCANNING, scanned = pages.size, signals = pages)
 
-    private fun plan(known: Map<String, String?> = emptyMap(), savedOn: (PlannedInvoice) -> String? = { null }, ownVat: String? = CUSTOMER_VAT) =
-        BundleWizard.plan(base, segments, segments.map { SupplierCategories.suggest(it.lines) }, known, ownVat, savedOn)
+    private fun plan(memory: Map<String, String> = emptyMap(), saved: List<Saved> = emptyList()) = BundleWizard.plan(base, segments, memory, saved)
+    private fun vatKey(vat: String) = SupplierCategories.memoryKeys(vat, null).single()
+    private fun known(vararg pairs: Pair<String, String>) = pairs.associate { (vat, c) -> vatKey(vat) to c }
+    private fun keyOf(p: BundlePlan, vat: String) = p.suppliers.single { it.vat == vat }.key
 
-    @Test fun suppliersByVatNumber() {
+    /** A hand-made segment, for the cases the fixture does not print. */
+    private fun seg(first: Int, vat: String?, number: String?, flags: Set<Flag> = emptySet(), total: Long? = 1000L, proven: Boolean = true, kind: InvoiceBundle.Kind = InvoiceBundle.Kind.INVOICE) =
+        InvoiceBundle.Segment(
+            first = first, last = first, kind = kind, start = InvoiceBundle.Start.ASSO, supplierVat = vat, supplierName = vat?.let { "FORNITORE $it" },
+            customerVat = CUSTOMER_VAT, docType = "TD01", number = number, date = LocalDate.of(2031, 3, 1 + first % 28), printedTotalCents = total,
+            vatGroups = emptyList(), totalProven = proven, creditNote = false, flags = flags, ended = true,
+        )
+
+    @Test fun suppliersByVatNumberWithSuggestions() {
         val p = plan()
         assertEquals(BundleStatus.SORTING, p.status)
         assertEquals(6, p.invoices.size)
@@ -35,84 +49,285 @@ class BundleWizardTest {
         assertEquals("food", meat.suggestion)
         // A suggestion is never a choice.
         assertNull(meat.category)
+        assertFalse(meat.known)
         assertEquals("utilities", p.suppliers.single { it.vat == ENERGY.supplierVat }.suggestion)
+        assertEquals(SupplierCategory.FOOD, p.invoices[0].suggestion)
     }
 
-    @Test fun everyNewSupplierNeedsATap() {
+    @Test fun onlyStepsWithSomethingToDecideAreShownAndNumbered() {
+        val p = plan()
+        assertEquals(listOf(Step.FOUND, Step.SUPPLIERS, Step.READ), BundleWizard.steps(p))
+        assertEquals(listOf(1, 1, 2, 3), Step.entries.map { BundleWizard.numberOf(p, it) })
+        // Every supplier remembered by VAT number: no Suppliers step, and Read is step 2.
+        val all = plan(memory = known(MEAT.supplierVat to "food", WHOLESALER.supplierVat to "food", ENERGY.supplierVat to "utilities", HOUSEHOLD.supplierVat to "supplies"))
+        assertTrue(all.suppliers.all { it.known && it.category != null })
+        assertEquals(listOf(Step.FOUND, Step.READ), BundleWizard.steps(all))
+        assertNull(BundleWizard.numberOf(all, Step.SUPPLIERS))
+        assertEquals(2, BundleWizard.numberOf(all, Step.READ))
+        assertEquals(4, BundleWizard.knownSuppliers(all).size)
+        // A supplier whose only invoice is left out is not asked about.
+        val energyLeftOut = BundleWizard.setInvoiceIncluded(plan(memory = known(MEAT.supplierVat to "food", WHOLESALER.supplierVat to "food", HOUSEHOLD.supplierVat to "supplies")), 2, false)
+        assertEquals(listOf(Step.FOUND, Step.READ), BundleWizard.steps(energyLeftOut))
+    }
+
+    @Test fun aNameRememberedWithoutVatNumberIsOnlyShown() {
+        val nameKey = SupplierCategories.memoryKeys(null, MEAT.supplierName).single()
+        val p = plan(memory = mapOf(nameKey to "food", "vat:junk" to "food"))
+        val meat = p.suppliers.single { it.vat == MEAT.supplierVat }
+        assertFalse(meat.known)
+        assertNull(meat.category)
+        assertEquals("food", meat.lastTime)
+        assertTrue(Step.SUPPLIERS in BundleWizard.steps(p))
+    }
+
+    @Test fun sortingSuppliers() {
         var p = plan()
-        assertEquals(listOf(BundleWizard.Step.FOUND, BundleWizard.Step.SUPPLIERS, BundleWizard.Step.SUMMARY), BundleWizard.steps(p))
-        assertFalse(BundleWizard.canContinue(p, BundleWizard.Step.SUPPLIERS))
-        for (s in p.suppliers) p = BundleWizard.setCategory(p, s.key, s.suggestion ?: SupplierChoice.LATER)
-        assertTrue(BundleWizard.canContinue(p, BundleWizard.Step.SUPPLIERS))
+        assertEquals(4, BundleWizard.toSort(p).size)
+        // "Use the suggestion for N suppliers" is one explicit tap; the others stay to be sorted. Next is always possible.
+        assertEquals(4, BundleWizard.suggestable(p).size)
+        p = BundleWizard.setCategory(p, keyOf(p, HOUSEHOLD.supplierVat), SupplierChoice.LATER)
+        assertEquals(3, BundleWizard.suggestable(p).size)
+        p = BundleWizard.useSuggestions(p)
+        assertEquals(listOf("food", "food", "utilities", SupplierChoice.LATER), p.suppliers.map { it.category })
+        assertTrue(BundleWizard.toSort(p).isEmpty())
+        assertTrue(BundleWizard.canContinue(plan(), Step.SUPPLIERS))
+        // "Leave these invoices out".
+        val energy = keyOf(p, ENERGY.supplierVat)
+        p = BundleWizard.setSupplierIncluded(p, energy, false)
+        assertEquals(4, BundleWizard.toRead(p).size)
+        assertEquals(1, BundleWizard.summary(p).leftOut[LeftOut.BY_OPERATOR])
     }
 
-    @Test fun knownSuppliersAreNotAskedAgain() {
-        val known = invoices.associate { it.supplierVat to "food" as String? }
-        val p = plan(known = known)
-        assertTrue(p.suppliers.all { it.known && it.category == "food" })
-        assertEquals(listOf(BundleWizard.Step.FOUND, BundleWizard.Step.SUMMARY), BundleWizard.steps(p))
+    @Test fun defaultTicks() {
+        val segs = listOf(
+            seg(0, null, null, kind = InvoiceBundle.Kind.UNKNOWN),
+            seg(1, "01234567897", "1"),
+            seg(2, "01234567897", "2", flags = setOf(Flag.OTHER_BUYER)),
+            seg(3, "01234567897", "3", flags = setOf(Flag.SEVERAL_IN_ONE)),
+            seg(4, "01234567897", "4", flags = setOf(Flag.START_UNSURE)),
+            seg(5, "01234567897", "5").copy(creditNote = true),
+        )
+        val p = BundleWizard.plan(base.copy(signals = emptyList()), segs)
+        assertEquals(listOf(false, true, false, false, true, false), p.invoices.map { it.include })
+        assertEquals(
+            listOf(LeftOut.NOT_RECOGNISED, null, LeftOut.OTHER_BUYER, LeftOut.SEVERAL_IN_ONE, null, LeftOut.CREDIT_NOTE),
+            p.invoices.map { it.leftOut },
+        )
+        // The rows of the first step.
+        val f = BundleWizard.found(p)
+        assertEquals(5, f.invoices)
+        assertEquals(1, f.otherBuyer)
+        assertEquals(1, f.creditNotes)
+        assertEquals(1, f.unknownPages)
+        // The invoice with an unsure start, and the one holding several invoices, need a look.
+        assertEquals(2, f.needLook)
+        assertEquals(1, BundleWizard.keep(p, 4).let { BundleWizard.found(it).needLook })
+        // A credit note is never imported; unrecognised pages can be read as one document.
+        assertEquals(p, BundleWizard.setInvoiceIncluded(p, 5, true))
+        assertTrue(BundleWizard.setInvoiceIncluded(p, 0, true).invoices[0].include)
+        assertTrue(BundleWizard.setInvoiceIncluded(p, 2, true).invoices[2].let { it.include && it.leftOut == null })
+        assertEquals(LeftOut.BY_OPERATOR, BundleWizard.setInvoiceIncluded(p, 1, false).invoices[1].leftOut)
     }
 
-    @Test fun alreadySavedAndOtherBuyerStartLeftOut() {
-        val p = plan(savedOn = { inv -> if (inv.number == "318") "17/03/2031" else null })
-        val saved = p.invoices.single { it.number == "318" }
-        assertFalse(saved.include)
-        assertEquals(LeftOut.ALREADY_SAVED, saved.leftOut)
-        assertEquals("17/03/2031", saved.savedOn)
-        assertEquals(5, BundleWizard.toQueue(p).size)
-        // "Import anyway".
-        val again = BundleWizard.setInvoiceIncluded(p, p.invoices.indexOf(saved), true)
-        assertEquals(6, BundleWizard.toQueue(again).size)
-        // An invoice addressed to someone else.
-        val other = plan(ownVat = "11111111111")
-        assertTrue(other.invoices.all { !it.include && it.leftOut == LeftOut.OTHER_BUYER })
-        // Without the own VAT number, the company most invoices are addressed to is the restaurant.
-        val majority = plan(ownVat = null)
-        assertTrue(majority.invoices.all { it.include })
+    @Test fun alreadySavedBySupplierVatNumberAndDateNotByNameOnly() {
+        val march14 = LocalDate.of(2031, 3, 14)
+        val saved = listOf(
+            // The same supplier VAT number, number (written another way) and date: already saved.
+            Saved(7, "IT${MEAT.supplierVat}", "another spelling", "0318", march14, "11".repeat(32), savedAt = 1234L),
+            // The same name, number and date but no VAT number to compare: maybe.
+            Saved(8, null, "Carni Esempio srl", "319", LocalDate.of(2031, 3, 28), null),
+            // Another supplier VAT number with the same name, number and date: not this one.
+            Saved(9, EInvoicePrintoutFixture.pIva("0555555000"), "CARNI ESEMPIO S.R.L.", "319", LocalDate.of(2031, 3, 28), null),
+            // Another date.
+            Saved(10, WHOLESALER.supplierVat, null, WHOLESALER.number, LocalDate.of(2030, 3, 19), null),
+        )
+        val p = plan(saved = saved)
+        val first = p.invoices[0]
+        assertEquals(7L, first.alreadySavedId)
+        assertEquals(1234L, first.alreadySavedOn)
+        assertFalse(first.include)
+        assertEquals(LeftOut.ALREADY_SAVED, first.leftOut)
+        val maybe = p.invoices[3]
+        assertNull(maybe.alreadySavedId)
+        assertEquals(8L, maybe.maybeSavedId)
+        assertTrue(maybe.include)
+        assertNull(p.invoices[1].alreadySavedId)
+        assertEquals(1, BundleWizard.found(p).alreadySaved)
+        assertEquals(1, BundleWizard.found(p).maybeSaved)
+        assertFalse(p.sameFileWarning)
+        // "Import anyway" stays when the check runs again.
+        val again = BundleWizard.setInvoiceIncluded(p, 0, true)
+        assertTrue(BundleWizard.alreadySaved(again, saved).invoices[0].include)
+        // A newly saved one is left out when the check runs again.
+        val later = BundleWizard.alreadySaved(plan(), saved)
+        assertFalse(later.invoices[0].include)
     }
 
-    @Test fun leaveOutASupplier() {
-        var p = plan()
-        val energy = p.suppliers.single { it.vat == ENERGY.supplierVat }
-        p = BundleWizard.setSupplierIncluded(p, energy.key, false)
-        assertEquals(5, BundleWizard.toQueue(p).size)
-        assertTrue(BundleWizard.toSort(p).none { it.key == energy.key })
+    @Test fun theWholeFileSavedBeforeIsAWarningNeverAMatch() {
+        val earlier = Saved(5, MEAT.supplierVat, MEAT.supplierName, MEAT.number, LocalDate.of(2031, 3, 14), base.id.uppercase())
+        val p = plan(saved = listOf(earlier))
+        assertTrue(p.sameFileWarning)
+        assertEquals(5L, p.sameFileDocumentId)
+        assertNull(p.invoices[0].alreadySavedId)
+        assertTrue(p.invoices[0].include)
     }
 
-    @Test fun summaryInCents() {
-        var p = plan()
-        for (s in p.suppliers) p = BundleWizard.setCategory(p, s.key, s.suggestion ?: SupplierChoice.LATER)
+    @Test fun printedSumsOnlyWhenEveryTotalIsProven() {
+        val groups = BundleWizard.groupBySupplier(plan()).associateBy { it.supplier.vat }
+        val meat = groups.getValue(MEAT.supplierVat)
+        assertEquals(2, meat.invoices)
+        assertEquals(24242L * 2, meat.provenCents)
+        assertTrue(meat.sumComplete)
+        assertEquals(LocalDate.of(2031, 3, 14), meat.first)
+        assertEquals(LocalDate.of(2031, 3, 28), meat.last)
+        // The electricity bill's total is printed but not proven: "€ 0,00 + 1 not checked".
+        val energy = groups.getValue(ENERGY.supplierVat)
+        assertEquals(0L, energy.provenCents)
+        assertEquals(1, energy.notProven)
+        assertFalse(energy.sumComplete)
+        // A total not found.
+        val p = BundleWizard.plan(base.copy(signals = emptyList()), listOf(seg(0, "01234567897", "1"), seg(1, "01234567897", "2", total = null, proven = false)))
+        val g = BundleWizard.groupBySupplier(p).single()
+        assertEquals(1000L, g.provenCents)
+        assertEquals(1, g.notProven)
+    }
+
+    @Test fun aCreditNoteIsKeptApart() {
+        val p = plan()
+        val w = BundleWizard.groupBySupplier(p).single { it.supplier.vat == WHOLESALER.supplierVat }
+        assertEquals(1, w.invoices)
+        assertEquals(9761L, w.provenCents)
+        // Shown apart, never added to the invoices or taken from them.
+        assertEquals(1, w.creditNotes)
+        assertEquals(9761L, w.creditNoteCents)
         val s = BundleWizard.summary(p)
-        assertEquals(6, s.invoices)
-        assertEquals(4, s.suppliers)
+        assertEquals(5, s.invoices)
+        assertEquals(1, s.creditNotes)
+        assertEquals(1, s.leftOut[LeftOut.CREDIT_NOTE])
+        assertEquals(24242L + 9761L + 24242L + 659L, s.provenCents)
+        assertEquals(1, s.notProven)
         assertEquals(LocalDate.of(2031, 3, 14), s.first)
         assertEquals(LocalDate.of(2031, 3, 28), s.last)
-        // The invoices: 242,42 + 97,61 + 255,90 + 242,42 + 6,59. The credit note is shown on its own, never netted.
-        assertEquals(24242L + 9761L + 25590L + 24242L + 659L, s.totalCents)
-        assertEquals(0, s.totalsMissing)
-        assertEquals(1, s.creditNotes)
-        assertEquals(9761L, s.creditNoteCents)
-        assertEquals(2, s.byCategory["food"])
+        assertEquals(mapOf<String?, Int>(null to 5), s.byCategory)
     }
 
-    @Test fun joinWithTheInvoiceBefore() {
+    @Test fun estimateAndReadingOrder() {
+        // Every supplier new: their first invoices are read first, then the rest in page order.
         val p = plan()
+        assertEquals(listOf(0, 1, 2, 4, 3), BundleWizard.planOrder(p))
+        assertEquals(BundleWizard.Estimate(newSuppliers = 4, notGoods = 0, flagged = 0), BundleWizard.estimate(p))
+        // Known suppliers: the electricity bill still needs a check.
+        val k = plan(memory = known(MEAT.supplierVat to "food", WHOLESALER.supplierVat to "food", ENERGY.supplierVat to "utilities", HOUSEHOLD.supplierVat to "supplies"))
+        assertEquals(listOf(0, 1, 2, 3, 4), BundleWizard.planOrder(k))
+        assertEquals(1, BundleWizard.estimate(k).atLeast)
+        assertEquals(1, BundleWizard.estimate(k).notGoods)
+        // Only the meat supplier known: it is read after the new ones.
+        val m = plan(memory = known(MEAT.supplierVat to "food"))
+        assertEquals(listOf(1, 2, 4, 0, 3), BundleWizard.planOrder(m))
+        // A flagged invoice counts once.
+        val f = BundleWizard.plan(base.copy(signals = emptyList()), listOf(seg(0, "01234567897", "1", flags = setOf(Flag.START_UNSURE)), seg(1, "01234567897", "2", flags = setOf(Flag.NO_TOTAL))))
+        assertEquals(BundleWizard.Estimate(newSuppliers = 1, notGoods = 0, flagged = 1), BundleWizard.estimate(f))
+    }
+
+    @Test fun readingOneInvoiceAfterAnother() {
+        var p = BundleWizard.confirm(plan())
+        assertEquals(BundleStatus.PREPARING, p.status)
+        assertEquals(InvoiceOutcome.LEFT_OUT, p.invoices[5].outcome)
+        val order = BundleWizard.planOrder(p)
+        p = BundleWizard.queued(p, order.associateWith { "job$it" })
+        assertEquals(BundleStatus.QUEUED, p.status)
+        assertEquals(BundleWizard.Counts(total = 5, read = 0, savedByApp = 0, savedByYou = 0, toCheck = 0, reading = 5, failed = 0, stopped = 0, leftOut = 1), BundleWizard.counts(p))
+        assertNull(BundleWizard.nextToCheck(p))
+        for (i in listOf(0, 1, 2)) p = BundleWizard.record(p, "job$i", InvoiceOutcome.READY)
+        p = BundleWizard.record(p, "job4", InvoiceOutcome.SAVED_BY_APP, documentId = 44)
+        assertEquals(listOf(0, 1, 2), BundleWizard.chain(p))
+        assertEquals(1 to 3, BundleWizard.positionInChain(p, 0))
+        assertEquals(0, BundleWizard.nextToCheck(p))
+        assertEquals(1, BundleWizard.nextToCheck(p, after = 0))
+        // "Check later" goes to the end of the chain.
+        p = BundleWizard.checkLater(p, 0)
+        assertEquals(listOf(1, 2, 0), BundleWizard.chain(p))
+        assertEquals(1, BundleWizard.nextToCheck(p, after = 0))
+        p = BundleWizard.record(p, "job1", InvoiceOutcome.SAVED_BY_YOU, documentId = 11)
+        assertEquals(2, BundleWizard.nextToCheck(p, after = 1))
+        // A late event never undoes a saved invoice.
+        p = BundleWizard.record(p, "job1", InvoiceOutcome.READY)
+        assertEquals(InvoiceOutcome.SAVED_BY_YOU, p.invoices[1].outcome)
+        assertEquals(11L, p.invoices[1].documentId)
+        val c = BundleWizard.counts(p)
+        assertEquals(4, c.read)
+        assertEquals(2, c.saved)
+        assertEquals(2, c.toCheck)
+        assertEquals(1, c.reading)
+        // When nothing is left to read or to check, the plan is done.
+        p = BundleWizard.record(p, "job3", InvoiceOutcome.FAILED)
+        p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_YOU, 10)
+        assertEquals(BundleStatus.QUEUED, p.status)
+        p = BundleWizard.record(p, "job2", InvoiceOutcome.SAVED_BY_YOU, 20)
+        assertEquals(BundleStatus.DONE, p.status)
+        assertNull(BundleWizard.nextToCheck(p))
+        assertEquals(mapOf<String?, Int>(null to 4), BundleWizard.savedByCategory(p))
+    }
+
+    @Test fun stopReadingAndReadTheRest() {
+        var p = BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" })
+        p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_APP, 1)
+        p = BundleWizard.record(p, "job1", InvoiceOutcome.READY)
+        assertEquals(listOf("job1", "job2", "job3", "job4"), BundleWizard.unsavedJobs(p))
+        p = BundleWizard.stop(p)
+        assertEquals(InvoiceOutcome.SAVED_BY_APP, p.invoices[0].outcome)
+        assertEquals(4, BundleWizard.counts(p).stopped)
+        assertTrue(p.invoices.drop(1).take(4).all { it.jobId == null })
+        p = BundleWizard.readRest(p)
+        assertEquals(4, BundleWizard.counts(p).reading)
+        assertEquals(InvoiceOutcome.SAVED_BY_APP, p.invoices[0].outcome)
+    }
+
+    @Test fun joinAndSplitRoundTrip() {
+        var p = plan()
+        p = BundleWizard.setCategory(p, keyOf(p, HOUSEHOLD.supplierVat), "supplies")
+        p = BundleWizard.setInvoiceIncluded(p, 4, false)
         val joined = BundleWizard.joinWithPrevious(p, 1)
         assertEquals(5, joined.invoices.size)
-        assertEquals(p.invoices[0].first, joined.invoices[0].first)
-        assertEquals(p.invoices[1].last, joined.invoices[0].last)
-        assertTrue(InvoiceBundle.Problem.SEVERAL_DOCUMENTS in joined.invoices[0].problems)
-        assertTrue(BundleWizard.Step.CHECK in BundleWizard.steps(joined))
+        assertEquals(0..1, joined.invoices[0].first..joined.invoices[0].last)
+        assertTrue(Flag.SEVERAL_IN_ONE in joined.invoices[0].flags)
+        assertFalse(joined.invoices[0].include)
+        assertEquals(1, BundleWizard.found(joined).needLook)
+        // The operator's choices on the other invoices and suppliers stay.
+        assertFalse(joined.invoices[3].include)
+        assertEquals("supplies", joined.suppliers.single { it.vat == HOUSEHOLD.supplierVat }.category)
+        val split = BundleWizard.splitAt(joined, 1)
+        assertEquals(p.invoices.map { it.first..it.last }, split.invoices.map { it.first..it.last })
+        assertEquals(InvoiceBundle.Start.BY_HAND, split.invoices[1].start)
+        assertEquals(p.invoices[1].copy(start = InvoiceBundle.Start.BY_HAND), split.invoices[1])
+        assertEquals(p.invoices.drop(2), split.invoices.drop(2))
+        assertEquals(p.suppliers.map { it.key }.toSet(), split.suppliers.map { it.key }.toSet())
+        // Nothing to join before the first, and no split where an invoice already starts.
         assertEquals(p, BundleWizard.joinWithPrevious(p, 0))
+        assertEquals(p, BundleWizard.splitAt(p, 2))
     }
 
-    @Test fun planSurvivesAsText() {
-        var p = plan(savedOn = { inv -> if (inv.number == "318") "17/03/2031" else null })
-        p = BundleWizard.setCategory(p, p.suppliers.first().key, "food")
-        p = p.copy(queued = 3, saved = 1, discarded = 1, scannedPages = 6, createdAt = 1234L)
-        val q = p.copy(suppliers = p.suppliers.map { it.copy(name = it.name + " | a\\b\nc") })
-        assertEquals(q, BundlePlanCodec.decode(BundlePlanCodec.encode(q)))
-        assertEquals(p, BundlePlanCodec.decode(BundlePlanCodec.encode(p) + "future=1\n"))
-        assertNull(BundlePlanCodec.decode("garbage"))
+    @Test fun atMost300InvoicesAtOnce() {
+        val segs = (0 until 302).map { seg(it, "01234567897", "N$it") }
+        val p = BundleWizard.plan(base.copy(signals = emptyList()), segs)
+        assertEquals(BundleWizard.MAX_INVOICES, BundleWizard.toRead(p).size)
+        assertEquals(listOf(LeftOut.NEXT_IMPORT, LeftOut.NEXT_IMPORT), p.invoices.takeLast(2).map { it.leftOut })
+        assertEquals(p, BundleWizard.setInvoiceIncluded(p, 301, true))
+    }
+
+    @Test fun closingKeepsOnlyPagesOutcomesAndDocuments() {
+        var p = BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" })
+        p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_YOU, 99)
+        for (status in listOf(BundleStatus.CLOSED, BundleStatus.CANCELLED)) {
+            val closed = BundleWizard.close(p, status)
+            assertEquals(status, closed.status)
+            assertTrue(closed.suppliers.isEmpty() && closed.signals.isEmpty())
+            assertEquals(p.invoices.map { it.first..it.last }, closed.invoices.map { it.first..it.last })
+            assertEquals(p.invoices.map { it.outcome }, closed.invoices.map { it.outcome })
+            assertEquals(99L, closed.invoices[0].documentId)
+            assertTrue(closed.invoices.all { it.supplierVat == null && it.supplierName == null && it.number == null && it.date == null && it.printedTotalCents == null })
+            val text = BundlePlanCodec.encode(closed)
+            for (secret in invoices.flatMap { listOf(it.supplierVat, it.supplierName, it.number) }) assertFalse(secret, text.contains(secret))
+        }
     }
 }

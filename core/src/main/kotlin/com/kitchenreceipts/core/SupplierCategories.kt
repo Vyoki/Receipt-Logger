@@ -1,20 +1,22 @@
 package com.kitchenreceipts.core
 
+import java.security.MessageDigest
+
 /**
- * What a supplier sells the restaurant, chosen by the operator once per supplier. [key] is what is stored.
+ * What a supplier sells the restaurant, chosen by the operator once per supplier; null means "not sorted yet". [key]
+ * is what is stored. It is separate from the product [Category].
  *
- * [goods]: the supplier's lines are kitchen goods (products, prices to watch, lots). The others (electricity, fuel,
- * equipment, services) are expenses: their invoices are kept and totalled, but their lines never become products,
- * price alerts or lines to link. [food]: counted as food in food cost (only once the owner turns that on).
+ * [goods]: the supplier's lines are kitchen goods. The others (electricity, fuel, repairs, other expenses) are kept,
+ * read and totalled exactly as today; only where their products are shown changes.
  */
-enum class SupplierCategory(val key: String, val goods: Boolean, val food: Boolean) {
-    FOOD("food", true, true),
-    DRINKS("drinks", true, true),
-    SUPPLIES("supplies", true, true),
-    UTILITIES("utilities", false, false),
-    FUEL("fuel", false, false),
-    EQUIPMENT("equipment", false, false),
-    OTHER("other", false, false),
+enum class SupplierCategory(val key: String, val goods: Boolean) {
+    FOOD("food", true),
+    DRINKS("drinks", true),
+    SUPPLIES("supplies", true),
+    UTILITIES("utilities", false),
+    FUEL("fuel", false),
+    EQUIPMENT("equipment", false),
+    OTHER("other", false),
     ;
 
     companion object {
@@ -26,38 +28,109 @@ enum class SupplierCategory(val key: String, val goods: Boolean, val food: Boole
 }
 
 /**
- * A suggestion for a supplier's category from its invoices' lines, by general signals only (fuel in litres, the
- * charges of an electricity or gas bill, the kind of products). Only shown as "Suggested": the operator always
- * chooses, and nothing is applied without a tap.
+ * A suggestion for a supplier's category from its invoices, by general signals only (the charges of an electricity or
+ * gas bill, fuel in litres, the kind of products). Only shown as "Suggested": nothing is applied without a tap. It never
+ * suggests repairs or other expenses.
+ *
+ * The phone remembers the operator's choice under [memoryKeys]: the VAT number, and the name only as an unreadable code.
  */
 object SupplierCategories {
 
-    private val FUEL_WORD = rx("(?i)\\b(gasolio|benzina|gpl|metano|carburante|carburanti|adblue|diesel|rifornimento)\\b")
-    private val LITRES = rx("(?i)(\\blt\\b|\\blitri\\b|\\bl\\b)")
-    private val FUEL_CODE = rx("(?i)(\\(\\s*carb\\s*\\)|^\\s*271[01]\\d{4}\\b)")
+    /**
+     * The signs found on a page or a supplier's pages. [utility] and [fuel] are bit sets (one bit per kind of sign, so
+     * two pages with the same sign count it once); [kinds] counts product rows by the kind of product they name.
+     */
+    data class Hints(val utility: Int = 0, val fuel: Int = 0, val kinds: Map<Category, Int> = emptyMap()) {
+        operator fun plus(o: Hints) = Hints(
+            utility or o.utility, fuel or o.fuel,
+            (kinds.keys + o.kinds.keys).associateWith { (kinds[it] ?: 0) + (o.kinds[it] ?: 0) },
+        )
+    }
+
+    /** kWh / Smc / kvarh, POD / PDR, accisa, oneri di sistema, dispacciamento, quota fissa (with potenza on the page). */
     private val UTILITY_SIGNS = listOf(
-        rx("(?i)\\bpod\\b"), rx("(?i)\\bpdr\\b"), rx("(?i)\\bkwh\\b"), rx("(?i)\\bsmc\\b"), rx("(?i)oneri\\s+(di\\s+sistema|generali)"),
-        rx("(?i)\\baccisa\\b"), rx("(?i)dispacciamento"), rx("(?i)quota\\s+fissa"), rx("(?i)quota\\s+potenza"),
+        rx("(?i)\\b(kwh|smc|kvarh)\\b"), rx("(?i)\\b(pod|pdr)\\b"), rx("(?i)\\baccis[ae]\\b"),
+        rx("(?i)\\boneri\\s+(generali\\s+)?di\\s+sistema\\b"), rx("(?i)\\bdispacciamento\\b"),
     )
-    /** A product line: words and an amount at the end ("PANCETTA TESA 12,50 9,20 kg 10,00 115,00"). */
+    private val FIXED_FEE = rx("(?i)\\bquota\\s+fissa\\b")
+    private val POWER = rx("(?i)\\bpotenza\\b")
+    private val FUEL_WORD = rx("(?i)\\b(gasolio|benzina|gpl|metano|carburant[ei]|rifornimento)\\b")
+    private val LITRES = rx("(?i)(?<![\\p{L}'])(lt|litri|l)(?![\\p{L}'])")
+    /** The code kind fuel is invoiced with: "( CARB )". */
+    private val FUEL_CODE_KIND = rx("(?i)\\(\\s*carb\\s*\\)")
+    /** A combined-nomenclature code for mineral oils (2710xxxx) or fuel gases (2711xxxx), in the code column. */
+    private val FUEL_NOMENCLATURE = rx("^\\s*271[01]\\d{4}\\b")
+    /** A product row: words and an amount at the end ("PANCETTA TESA 12,50 9,20 kg 10,00 115,00"). */
     private val PRODUCT_LINE = rx("\\p{L}{3}.*\\d,\\d{2}\\s*$")
+    /** Rows of the foot, not items: a payment (the standard MPnn codes) or a VAT summary row. */
+    private val FOOT_ROW = rx("(?i)^\\s*(MP\\d{2}\\b|[IDS]\\s*\\(\\s*esigibilit|esigibilit|riepiloghi)")
+    /** A name printed letter by letter ("S A P O N E"): four or more single letters. */
+    private val SPACED = rx("(?<![\\p{L}\\p{N}])\\p{L}(?: \\p{L}){3,}(?![\\p{L}\\p{N}])")
     private val FOOD = setOf(
         Category.FRUIT_VEG, Category.MEAT, Category.FISH, Category.CURED_MEATS, Category.DAIRY_EGGS, Category.BAKERY,
         Category.DRY_GOODS, Category.FROZEN,
     )
 
-    fun suggest(lines: List<String>): SupplierCategory? {
-        if (lines.any { FUEL_CODE.containsMatchIn(it) || (FUEL_WORD.containsMatchIn(it) && LITRES.containsMatchIn(it)) }) return SupplierCategory.FUEL
-        val text = lines.joinToString("\n")
-        if (UTILITY_SIGNS.count { it.containsMatchIn(text) } >= 2) return SupplierCategory.UTILITIES
-        val kinds = lines.filter { PRODUCT_LINE.containsMatchIn(it) }.map { Categories.guess(it) }.filter { it != Category.OTHER }
-        if (kinds.size < 2) return null
-        fun share(set: Set<Category>) = kinds.count { it in set } * 100 / kinds.size
+    /** The signs in some rows of text (one row: a product's words and numbers). */
+    fun hints(rows: List<String>): Hints {
+        var utility = 0
+        for ((bit, sign) in UTILITY_SIGNS.withIndex()) if (rows.any { sign.containsMatchIn(it) }) utility = utility or (1 shl bit)
+        if (rows.any { FIXED_FEE.containsMatchIn(it) } && rows.any { POWER.containsMatchIn(it) }) utility = utility or (1 shl UTILITY_SIGNS.size)
+        var fuel = 0
+        for (r in rows) {
+            if (FUEL_CODE_KIND.containsMatchIn(r)) fuel = fuel or 1
+            if (FUEL_NOMENCLATURE.containsMatchIn(r) && LITRES.containsMatchIn(r)) fuel = fuel or 2
+            if (FUEL_WORD.containsMatchIn(r) && LITRES.containsMatchIn(r)) fuel = fuel or 4
+        }
+        val kinds = rows.map { r -> SPACED.replace(r) { m -> m.value.replace(" ", "") } }
+            .filter { PRODUCT_LINE.containsMatchIn(it) && !FOOT_ROW.containsMatchIn(it) }
+            .map { Categories.guess(it) }.filter { it != Category.OTHER }
+            .groupingBy { it }.eachCount()
+        return Hints(utility, fuel, kinds)
+    }
+
+    /**
+     * Utilities on two or more different signs; otherwise fuel (before the product guesser, which reads some fuel
+     * abbreviations as food); otherwise the kind of 60% or more of the product rows; otherwise nothing.
+     */
+    fun suggest(h: Hints): SupplierCategory? {
+        if (Integer.bitCount(h.utility) >= 2) return SupplierCategory.UTILITIES
+        if (h.fuel != 0) return SupplierCategory.FUEL
+        val total = h.kinds.filterKeys { it != Category.OTHER }.values.sum()
+        if (total < 2) return null
+        fun atLeast60(set: Set<Category>) = h.kinds.filterKeys { it in set }.values.sum() * 100 >= 60 * total
         return when {
-            share(setOf(Category.BEVERAGES)) >= 60 -> SupplierCategory.DRINKS
-            share(setOf(Category.CLEANING, Category.DISPOSABLES)) >= 60 -> SupplierCategory.SUPPLIES
-            share(FOOD) >= 60 -> SupplierCategory.FOOD
+            atLeast60(setOf(Category.BEVERAGES)) -> SupplierCategory.DRINKS
+            atLeast60(setOf(Category.CLEANING, Category.DISPOSABLES)) -> SupplierCategory.SUPPLIES
+            atLeast60(FOOD) -> SupplierCategory.FOOD
             else -> null
         }
     }
+
+    /** The suggestion for the pages of one supplier's invoices. */
+    fun suggest(pages: List<InvoiceBundle.PageSignals>): SupplierCategory? = suggest(pages.fold(Hints()) { a, p -> a + p.hints })
+
+    /** The suggestion from a document's lines as text. */
+    fun suggestFromLines(lines: List<String>): SupplierCategory? = suggest(hints(lines))
+
+    /**
+     * Where the choice is remembered: "vat:<11 digits>" when the VAT number's check digit is right, then "name#" and the
+     * SHA-256 of the normalised name (accents, case and legal form do not matter). No readable name is ever stored.
+     */
+    fun memoryKeys(vat: String?, name: String?): List<String> = buildList {
+        vatKey(vat)?.let { add(it) }
+        DuplicateDetector.normalizeSeller(name)?.let { add(NAME_PREFIX + sha256(it)) }
+    }
+
+    /** "vat:<11 digits>" for a valid Italian VAT number (an "IT" prefix and spaces allowed), else null. */
+    fun vatKey(vat: String?): String? {
+        val v = vat?.replace(rx("\\s+"), "")?.uppercase()?.removePrefix("IT") ?: return null
+        return if (SellerProfiles.isValidPartitaIva(v)) VAT_PREFIX + v else null
+    }
+
+    const val VAT_PREFIX = "vat:"
+    const val NAME_PREFIX = "name#"
+
+    private fun sha256(s: String): String =
+        MessageDigest.getInstance("SHA-256").digest(s.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it) }
 }

@@ -3,190 +3,364 @@ package com.kitchenreceipts.core
 import java.time.LocalDate
 
 /** Where an import of a file of many invoices is. */
-enum class BundleStatus { SCANNING, NOT_SPLITTABLE, SORTING, PREPARING, QUEUED, CANCELLED }
+enum class BundleStatus { SCANNING, NOT_SPLITTABLE, SORTING, PREPARING, QUEUED, PAUSED, DONE, CANCELLED, CLOSED }
 
-/** Why an invoice of the file starts left out (the operator can still take it). */
-enum class LeftOut { ALREADY_SAVED, OTHER_BUYER, BY_OPERATOR }
+/** What became of one invoice of the file. */
+enum class InvoiceOutcome { WAITING, QUEUED, READY, SAVED_BY_APP, SAVED_BY_YOU, CHECK_LATER, STOPPED, FAILED, LEFT_OUT }
 
-/** One invoice found in the file: its pages and what its first page prints. */
+/** Why an invoice starts left out. The operator can take it back, except a credit note (never imported). */
+enum class LeftOut { NOT_RECOGNISED, ALREADY_SAVED, CREDIT_NOTE, OTHER_BUYER, SEVERAL_IN_ONE, NEXT_IMPORT, BY_OPERATOR }
+
+/** One invoice found in the file: its pages, what they print, and what became of it. */
 data class PlannedInvoice(
     val first: Int,
     val last: Int,
-    val supplierVat: String?,
-    val supplierName: String?,
-    val customerVat: String?,
-    val docType: String?,
-    val number: String?,
-    val date: LocalDate?,
-    val totalCents: Long?,
-    val problems: Set<InvoiceBundle.Problem>,
+    val kind: InvoiceBundle.Kind = InvoiceBundle.Kind.INVOICE,
+    val start: InvoiceBundle.Start = InvoiceBundle.Start.ASSO,
+    /** For a plan made from an e-invoice file: this invoice's own file. Null for pages of the PDF. */
+    val file: String? = null,
+    val supplierVat: String? = null,
+    val supplierName: String? = null,
+    val number: String? = null,
+    val date: LocalDate? = null,
+    /** As printed; only [totalProven] ones are added up. */
+    val printedTotalCents: Long? = null,
+    val totalProven: Boolean = false,
+    val creditNote: Boolean = false,
+    val flags: Set<InvoiceBundle.Flag> = emptySet(),
+    val suggestion: SupplierCategory? = null,
+    /** A saved document with the same supplier VAT number, number and date. */
+    val alreadySavedId: Long? = null,
+    /** When that document was saved (epoch milliseconds), when known. */
+    val alreadySavedOn: Long? = null,
+    /** A saved document with the same name, number and date, but no VAT number to compare: maybe the same one. */
+    val maybeSavedId: Long? = null,
     val include: Boolean = true,
     val leftOut: LeftOut? = null,
-    /** When it is already in the app: the saved document's date, as shown. */
-    val savedOn: String? = null,
-    /** The operator looked at this uncertain invoice and kept it as it is. */
+    /** The operator looked at this flagged invoice and kept it as it is. */
     val checked: Boolean = false,
+    val jobId: String? = null,
+    val outcome: InvoiceOutcome = InvoiceOutcome.WAITING,
+    val documentId: Long? = null,
 ) {
     val pageCount: Int get() = last - first + 1
-    val creditNote: Boolean get() = docType == "TD04" || docType == "TD08"
-    val uncertain: Boolean get() = problems.isNotEmpty() && !checked
+    val isInvoice: Boolean get() = kind == InvoiceBundle.Kind.INVOICE
 }
 
-/** One supplier of the file: its invoices are imported or not together, and it gets one category. */
+/** One supplier of the file: one category for all its invoices. */
 data class SupplierChoice(
-    /** The VAT number, or the name when no VAT number was found. */
+    /** The VAT number, else the normalised name, else [BundleWizard.NO_SUPPLIER]. */
     val key: String,
     val name: String?,
     val vat: String?,
     /** A [SupplierCategory] key, [LATER] ("decide later"), or null while not chosen. */
-    val category: String?,
-    /** Its category was saved before: nothing to ask. */
-    val known: Boolean,
-    val suggestion: String?,
+    val category: String? = null,
+    /** Its category is remembered by VAT number: nothing to ask. */
+    val known: Boolean = false,
+    /** The category chosen last time for the same name (no VAT number to be sure): shown, never applied. */
+    val lastTime: String? = null,
+    val suggestion: String? = null,
     val include: Boolean = true,
 ) {
-    val chosen: Boolean get() = category != null
-
     companion object {
         const val LATER = "later"
     }
 }
 
 data class BundlePlan(
+    /** The file's SHA-256: the same file shared again reopens this plan. */
     val id: String,
-    /** The app's copy of the file (its stored name) and its fingerprint. */
+    /** The app's copy of the file (its stored name). */
     val file: String,
-    val fileSha: String,
     val pageCount: Int,
     val status: BundleStatus,
-    val scannedPages: Int = 0,
+    /** Pages looked through so far, and their signals: a scan resumes from here. */
+    val scanned: Int = 0,
+    val signals: List<InvoiceBundle.PageSignals> = emptyList(),
     val invoices: List<PlannedInvoice> = emptyList(),
     val suppliers: List<SupplierChoice> = emptyList(),
+    val step: BundleWizard.Step = BundleWizard.Step.FOUND,
     val createdAt: Long = 0L,
-    /** After queuing: how many invoices went to be read, and how many of them are saved or thrown away. */
-    val queued: Int = 0,
-    val saved: Int = 0,
-    val discarded: Int = 0,
+    /** A document saved earlier from this very file (read as one document): reading it again counts its invoices twice. */
+    val sameFileDocumentId: Long? = null,
 ) {
-    fun supplierOf(inv: PlannedInvoice): SupplierChoice? = suppliers.firstOrNull { it.key == BundleWizard.supplierKey(inv) }
+    val sameFileWarning: Boolean get() = sameFileDocumentId != null
+
+    fun supplierOf(inv: PlannedInvoice): SupplierChoice? =
+        if (!inv.isInvoice) null else suppliers.firstOrNull { it.key == BundleWizard.supplierKey(inv) }
 }
 
 /**
- * The steps of importing a file of many invoices, as pure decisions: what is found, which suppliers to sort, which
- * invoices need a look, and what goes to be read. Nothing here is guessed: a category is the operator's choice (a
- * suggestion is only shown), an invoice already in the app or addressed to another company starts left out, and the
- * operator can take any of them back.
+ * The decisions of importing a file of many invoices: what is found, which suppliers to sort, what is read and in
+ * which order, and what became of each invoice. Nothing here is guessed: a category is the operator's choice (a
+ * suggestion is only shown), an invoice already in the app or addressed to another business starts left out, and only
+ * totals the VAT summary proves are added up.
  */
 object BundleWizard {
 
-    enum class Step { FOUND, SUPPLIERS, CHECK, SUMMARY }
+    /** At most this many invoices are planned at once; the rest wait for the same file to be imported again. */
+    const val MAX_INVOICES = 300
+    const val NO_SUPPLIER = "?"
+
+    /** The wizard's steps. [PAGES] (where each invoice starts) is opened from [FOUND] and has no number of its own. */
+    enum class Step { FOUND, PAGES, SUPPLIERS, READ }
+
+    /** A document already saved in the app, as the duplicate check sees it. */
+    data class Saved(
+        val id: Long,
+        val sellerVat: String?,
+        val sellerName: String?,
+        val number: String?,
+        val date: LocalDate?,
+        val fileSha256: String?,
+        val savedAt: Long? = null,
+    )
 
     fun supplierKey(inv: PlannedInvoice): String =
-        inv.supplierVat ?: DuplicateDetector.normalizeSeller(inv.supplierName)?.takeIf { it.isNotBlank() } ?: "?"
+        digits(inv.supplierVat) ?: inv.supplierVat?.uppercase()?.filterNot(Char::isWhitespace)
+            ?: DuplicateDetector.normalizeSeller(inv.supplierName) ?: NO_SUPPLIER
+
+    // ------------------------------------------------------------------ the plan
 
     /**
-     * The plan from the scan. [known]: the saved category of each supplier VAT number the app knows (null when the
-     * supplier is known but not sorted). [savedOn]: the date to show when an invoice is already in the app, else null.
-     * [suggestions]: the suggested category of each segment (same order).
+     * The plan from the scan. [memory]: the remembered categories by memory key ([SupplierCategories.memoryKeys]);
+     * [saved]: the documents already in the app.
      */
     fun plan(
         base: BundlePlan,
         segments: List<InvoiceBundle.Segment>,
-        suggestions: List<SupplierCategory?>,
-        known: Map<String, String?>,
-        ownVat: String?,
-        savedOn: (PlannedInvoice) -> String?,
-    ): BundlePlan {
-        // The restaurant: its own VAT number, or the one most invoices are addressed to.
-        val buyer = ownVat?.filter(Char::isDigit)?.takeIf { it.length >= 8 }
-            ?: segments.mapNotNull { it.customerVat }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-        val invoices = segments.map { s ->
-            val inv = PlannedInvoice(
-                first = s.first, last = s.last, supplierVat = s.supplierVat, supplierName = s.supplierName,
-                customerVat = s.customerVat, docType = s.docType, number = s.number, date = s.date, totalCents = s.totalCents,
-                problems = s.problems,
-            )
-            val saved = runCatching { savedOn(inv) }.getOrNull()
-            when {
-                saved != null -> inv.copy(include = false, leftOut = LeftOut.ALREADY_SAVED, savedOn = saved)
-                buyer != null && inv.customerVat != null && inv.customerVat != buyer -> inv.copy(include = false, leftOut = LeftOut.OTHER_BUYER)
-                else -> inv
-            }
+        memory: Map<String, String> = emptyMap(),
+        saved: List<Saved> = emptyList(),
+    ): BundlePlan = prepare(base, segments.map { invoiceOf(it, base.signals) }, memory, saved)
+
+    /** The plan from invoices already known (an e-invoice file of many invoices), or from [plan]. */
+    fun prepare(base: BundlePlan, invoices: List<PlannedInvoice>, memory: Map<String, String> = emptyMap(), saved: List<Saved> = emptyList()): BundlePlan {
+        val marked = alreadySaved(base.copy(invoices = invoices), saved)
+        var n = 0
+        val ticked = marked.invoices.map(::withDefaultTick).map {
+            if (it.include && ++n > MAX_INVOICES) it.copy(include = false, leftOut = LeftOut.NEXT_IMPORT) else it
         }
-        val suppliers = invoices.withIndex().groupBy { supplierKey(it.value) }.map { (key, group) ->
-            val firstInv = group.first().value
-            val vat = firstInv.supplierVat
-            val knownCategory = vat?.let { known[it] }
-            val suggestion = group.mapNotNull { suggestions.getOrNull(it.index) }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key
-            SupplierChoice(
-                key = key, name = group.firstNotNullOfOrNull { it.value.supplierName }, vat = vat,
-                category = knownCategory, known = knownCategory != null, suggestion = suggestion?.key,
-            )
-        }
-        return base.copy(status = BundleStatus.SORTING, invoices = invoices, suppliers = suppliers)
+        return marked.copy(status = BundleStatus.SORTING, step = Step.FOUND, invoices = ticked, suppliers = choices(ticked, memory, emptyList()))
     }
 
-    /** The invoices that go to be read, in page order. */
-    fun toQueue(plan: BundlePlan): List<PlannedInvoice> = plan.invoices.filter { inv -> inv.include && plan.supplierOf(inv)?.include != false }
+    private fun invoiceOf(s: InvoiceBundle.Segment, signals: List<InvoiceBundle.PageSignals>) = PlannedInvoice(
+        first = s.first, last = s.last, kind = s.kind, start = s.start,
+        supplierVat = s.supplierVat, supplierName = s.supplierName, number = s.number, date = s.date,
+        printedTotalCents = s.printedTotalCents, totalProven = s.totalProven, creditNote = s.creditNote, flags = s.flags,
+        suggestion = if (s.kind == InvoiceBundle.Kind.INVOICE) SupplierCategories.suggest(signals.filter { it.index in s.first..s.last }) else null,
+    )
 
-    /** The steps to show; a step with nothing to do is left out. */
+    /** Credit notes, invoices to another business, several invoices in one, and unrecognised pages start left out. */
+    private fun withDefaultTick(inv: PlannedInvoice): PlannedInvoice {
+        val reason = when {
+            !inv.isInvoice -> LeftOut.NOT_RECOGNISED
+            inv.alreadySavedId != null -> LeftOut.ALREADY_SAVED
+            inv.creditNote -> LeftOut.CREDIT_NOTE
+            InvoiceBundle.Flag.OTHER_BUYER in inv.flags -> LeftOut.OTHER_BUYER
+            InvoiceBundle.Flag.SEVERAL_IN_ONE in inv.flags -> LeftOut.SEVERAL_IN_ONE
+            else -> null
+        }
+        return inv.copy(include = reason == null, leftOut = reason)
+    }
+
+    private fun choices(invoices: List<PlannedInvoice>, memory: Map<String, String>, previous: List<SupplierChoice>): List<SupplierChoice> =
+        invoices.filter { it.isInvoice }.groupBy(::supplierKey).map { (key, group) ->
+            val vat = group.firstNotNullOfOrNull { it.supplierVat }
+            val name = group.firstNotNullOfOrNull { it.supplierName }
+            val suggestion = group.mapNotNull { it.suggestion }.groupingBy { it }.eachCount().maxByOrNull { it.value }?.key?.key
+            previous.firstOrNull { it.key == key }?.let { return@map it.copy(suggestion = suggestion, name = it.name ?: name, vat = it.vat ?: vat) }
+            fun remembered(prefix: String) = SupplierCategories.memoryKeys(vat, name).firstOrNull { it.startsWith(prefix) }
+                ?.let { memory[it] }?.takeIf { SupplierCategory.fromKey(it) != null }
+            val byVat = remembered(SupplierCategories.VAT_PREFIX)
+            SupplierChoice(
+                key = key, name = name, vat = vat, category = byVat, known = byVat != null,
+                lastTime = if (byVat == null) remembered(SupplierCategories.NAME_PREFIX) else null, suggestion = suggestion,
+            )
+        }
+
+    /**
+     * Marks the invoices already in the app: same supplier VAT number, same number (normalised) and same date. A match
+     * by name only (no VAT number on one side) is a "maybe" and stays ticked. A document saved from this very file
+     * (the whole file read as one document) never marks an invoice: it sets [BundlePlan.sameFileDocumentId] instead.
+     * An invoice newly found saved is left out; the operator's ticks are kept otherwise.
+     */
+    fun alreadySaved(plan: BundlePlan, saved: List<Saved>): BundlePlan {
+        fun sameFile(s: Saved) = s.fileSha256 != null && s.fileSha256.equals(plan.id, ignoreCase = true)
+        val others = saved.filterNot(::sameFile)
+        val invoices = plan.invoices.map { inv ->
+            val num = DuplicateDetector.normalizeNumber(inv.number)
+            val date = inv.date
+            if (!inv.isInvoice || num == null || date == null) return@map inv.copy(alreadySavedId = null, alreadySavedOn = null, maybeSavedId = null)
+            val vat = digits(inv.supplierVat)
+            val same = others.filter { DuplicateDetector.normalizeNumber(it.number) == num && it.date == date }
+            val match = same.firstOrNull { vat != null && digits(it.sellerVat) == vat }
+            val name = DuplicateDetector.normalizeSeller(inv.supplierName)
+            val maybe = if (match != null || name == null) null
+                else same.firstOrNull { (vat == null || digits(it.sellerVat) == null) && DuplicateDetector.normalizeSeller(it.sellerName) == name }
+            val out = inv.copy(alreadySavedId = match?.id, alreadySavedOn = match?.savedAt, maybeSavedId = maybe?.id)
+            if (match != null && inv.alreadySavedId == null && inv.include) out.copy(include = false, leftOut = LeftOut.ALREADY_SAVED) else out
+        }
+        return plan.copy(invoices = invoices, sameFileDocumentId = saved.firstOrNull(::sameFile)?.id)
+    }
+
+    private fun digits(vat: String?): String? = vat?.filter(Char::isDigit)?.takeIf { it.length == 11 }
+
+    // ------------------------------------------------------------------ the steps
+
+    /** The invoices that go to be read: ticked, and their supplier not left out. In page order. */
+    fun toRead(plan: BundlePlan): List<PlannedInvoice> = plan.invoices.filter { isRead(plan, it) }
+
+    private fun isRead(plan: BundlePlan, inv: PlannedInvoice) = inv.include && plan.supplierOf(inv)?.include != false
+
+    /** Suppliers of ticked invoices whose category is not remembered by VAT number (the Suppliers step). */
+    fun newSuppliers(plan: BundlePlan): List<SupplierChoice> = plan.suppliers.filter { s ->
+        s.key != NO_SUPPLIER && !s.known && plan.invoices.any { it.isInvoice && it.include && supplierKey(it) == s.key }
+    }
+
+    /** Suppliers of ticked invoices already sorted by VAT number (folded into "N suppliers already sorted"). */
+    fun knownSuppliers(plan: BundlePlan): List<SupplierChoice> = plan.suppliers.filter { s ->
+        s.known && plan.invoices.any { it.isInvoice && it.include && supplierKey(it) == s.key }
+    }
+
+    /** The new suppliers still without a choice. */
+    fun toSort(plan: BundlePlan): List<SupplierChoice> = newSuppliers(plan).filter { it.include && it.category == null }
+
+    /** The numbered steps: Found and Read always, Suppliers only when there is a supplier to sort. */
     fun steps(plan: BundlePlan): List<Step> = buildList {
         add(Step.FOUND)
-        val queued = toQueue(plan)
-        val suppliers = queued.map(::supplierKey).toSet()
-        if (plan.suppliers.any { it.key in suppliers && !it.known }) add(Step.SUPPLIERS)
-        if (plan.invoices.any { it.include && it.problems.isNotEmpty() }) add(Step.CHECK)
-        add(Step.SUMMARY)
+        if (newSuppliers(plan).isNotEmpty()) add(Step.SUPPLIERS)
+        add(Step.READ)
     }
 
-    /** The suppliers of the file that still need a category (imported, new, not yet chosen). */
-    fun toSort(plan: BundlePlan): List<SupplierChoice> {
-        val queued = toQueue(plan).map(::supplierKey).toSet()
-        return plan.suppliers.filter { it.key in queued && !it.known && !it.chosen }
-    }
+    /** "Step n of N" for a shown step (the page check shares Found's number), or null. */
+    fun numberOf(plan: BundlePlan, step: Step): Int? =
+        steps(plan).indexOf(if (step == Step.PAGES) Step.FOUND else step).takeIf { it >= 0 }?.plus(1)
 
     fun canContinue(plan: BundlePlan, step: Step): Boolean = when (step) {
-        Step.SUPPLIERS -> toSort(plan).isEmpty()
-        Step.SUMMARY -> toQueue(plan).isNotEmpty()
+        Step.READ -> toRead(plan).isNotEmpty()
+        // The suppliers left without a choice are decided later.
         else -> true
     }
 
     fun setCategory(plan: BundlePlan, key: String, category: String?): BundlePlan =
         plan.copy(suppliers = plan.suppliers.map { if (it.key == key) it.copy(category = category) else it })
 
+    /** The suppliers a suggestion can be used for ("Use the suggestion for N suppliers"). */
+    fun suggestable(plan: BundlePlan): List<SupplierChoice> = toSort(plan).filter { it.suggestion != null }
+
+    fun useSuggestions(plan: BundlePlan): BundlePlan {
+        val keys = suggestable(plan).map { it.key }.toSet()
+        return plan.copy(suppliers = plan.suppliers.map { if (it.key in keys) it.copy(category = it.suggestion) else it })
+    }
+
     fun setSupplierIncluded(plan: BundlePlan, key: String, include: Boolean): BundlePlan =
         plan.copy(suppliers = plan.suppliers.map { if (it.key == key) it.copy(include = include) else it })
 
-    fun setInvoiceIncluded(plan: BundlePlan, index: Int, include: Boolean): BundlePlan =
-        plan.copy(invoices = plan.invoices.mapIndexed { i, it ->
+    /** Tick or untick one invoice. A credit note is never imported (money back is not a purchase). */
+    fun setInvoiceIncluded(plan: BundlePlan, index: Int, include: Boolean): BundlePlan {
+        val inv = plan.invoices.getOrNull(index) ?: return plan
+        if (include && (inv.creditNote || (!inv.include && toRead(plan).size >= MAX_INVOICES))) return plan
+        return plan.copy(invoices = plan.invoices.mapIndexed { i, it ->
             if (i != index) it else it.copy(include = include, leftOut = if (include) null else (it.leftOut ?: LeftOut.BY_OPERATOR))
         })
+    }
 
+    /** The operator looked at a flagged invoice and keeps it as it is. */
     fun keep(plan: BundlePlan, index: Int): BundlePlan =
         plan.copy(invoices = plan.invoices.mapIndexed { i, it -> if (i == index) it.copy(checked = true) else it })
 
-    /** The pages of invoice [index] belong to the one before it (the app took a page for the start of a new one). */
-    fun joinWithPrevious(plan: BundlePlan, index: Int): BundlePlan {
-        if (index <= 0 || index >= plan.invoices.size) return plan
-        val prev = plan.invoices[index - 1]
-        val cur = plan.invoices[index]
-        val total = cur.totalCents ?: prev.totalCents
-        val number = prev.number ?: cur.number
-        val problems = (prev.problems + cur.problems).toMutableSet().apply {
-            if (total != null) remove(InvoiceBundle.Problem.NO_TOTAL)
-            if (number != null) remove(InvoiceBundle.Problem.NO_NUMBER)
-            if (prev.supplierVat != null || prev.supplierName != null) remove(InvoiceBundle.Problem.NO_SUPPLIER)
-            if (prev.totalCents != null && cur.totalCents != null) add(InvoiceBundle.Problem.SEVERAL_DOCUMENTS)
+    /** The invoice needs a look in the page check (its start, end, supplier or text). */
+    fun needsLook(inv: PlannedInvoice): Boolean = inv.isInvoice && !inv.checked &&
+        (inv.flags - InvoiceBundle.Flag.OTHER_BUYER).isNotEmpty() && (inv.include || inv.leftOut == LeftOut.SEVERAL_IN_ONE)
+
+    /** "These pages belong to the invoice before": every field worked out again from the pages' signals. */
+    fun joinWithPrevious(plan: BundlePlan, index: Int, ownVat: String? = null): BundlePlan {
+        if (index <= 0 || index >= plan.invoices.size || plan.signals.isEmpty()) return plan
+        val starts = plan.invoices.filterIndexed { i, _ -> i != index }.map { it.first to it.start }
+        return replan(plan, InvoiceBundle.rebuild(plan.signals, starts, ownVat))
+    }
+
+    /** "A new invoice starts here" on [page]: every field worked out again from the pages' signals. */
+    fun splitAt(plan: BundlePlan, page: Int, ownVat: String? = null): BundlePlan {
+        if (plan.signals.isEmpty() || page <= 0 || plan.invoices.any { it.first == page } || plan.invoices.none { page in it.first..it.last }) return plan
+        val starts = plan.invoices.map { it.first to it.start } + (page to InvoiceBundle.Start.BY_HAND)
+        return replan(plan, InvoiceBundle.rebuild(plan.signals, starts, ownVat))
+    }
+
+    /** Invoices whose pages did not change keep everything the operator did; the others start again. */
+    private fun replan(plan: BundlePlan, segments: List<InvoiceBundle.Segment>): BundlePlan {
+        val invoices = segments.map { s ->
+            plan.invoices.firstOrNull { it.first == s.first && it.last == s.last && it.kind == s.kind && it.start == s.start }
+                ?: withDefaultTick(invoiceOf(s, plan.signals))
         }
-        val merged = prev.copy(
-            last = cur.last, supplierVat = prev.supplierVat ?: cur.supplierVat, supplierName = prev.supplierName ?: cur.supplierName,
-            customerVat = prev.customerVat ?: cur.customerVat, number = number, date = prev.date ?: cur.date, totalCents = total,
-            problems = problems, checked = false,
+        return plan.copy(invoices = invoices, suppliers = choices(invoices, emptyMap(), plan.suppliers))
+    }
+
+    // ------------------------------------------------------------------ what the screens show
+
+    data class Found(
+        val invoices: Int,
+        val suppliers: Int,
+        val first: LocalDate?,
+        val last: LocalDate?,
+        val alreadySaved: Int,
+        val maybeSaved: Int,
+        val creditNotes: Int,
+        val otherBuyer: Int,
+        /** Pages that are no invoice the app recognises. */
+        val unknownPages: Int,
+        val needLook: Int,
+        val newSuppliers: Int,
+    )
+
+    /** The first step: "This file holds N invoices from M suppliers, dated ...", and its rows. */
+    fun found(plan: BundlePlan): Found {
+        val inv = plan.invoices.filter { it.isInvoice }
+        val dates = inv.mapNotNull { it.date }
+        return Found(
+            invoices = inv.size,
+            suppliers = inv.map(::supplierKey).filter { it != NO_SUPPLIER }.distinct().size,
+            first = dates.minOrNull(), last = dates.maxOrNull(),
+            alreadySaved = inv.count { it.alreadySavedId != null && !it.include },
+            maybeSaved = inv.count { it.maybeSavedId != null },
+            creditNotes = inv.count { it.creditNote },
+            otherBuyer = inv.count { it.leftOut == LeftOut.OTHER_BUYER },
+            unknownPages = plan.invoices.filter { !it.isInvoice && !it.include }.sumOf { it.pageCount },
+            needLook = inv.count(::needsLook),
+            newSuppliers = newSuppliers(plan).size,
         )
-        val invoices = plan.invoices.toMutableList().apply { this[index - 1] = merged; removeAt(index) }
-        // A supplier with no invoice left goes.
-        val keys = invoices.map(::supplierKey).toSet()
-        return plan.copy(invoices = invoices, suppliers = plan.suppliers.filter { it.key in keys })
+    }
+
+    data class SupplierGroup(
+        val supplier: SupplierChoice,
+        /** The invoices to read (credit notes apart). */
+        val invoices: Int,
+        val first: LocalDate?,
+        val last: LocalDate?,
+        /** The printed totals the VAT summary proves, added up. */
+        val provenCents: Long,
+        /** Invoices whose total was not found or not proven: "+ N not found/not checked". */
+        val notProven: Int,
+        val creditNotes: Int,
+        /** Proven credit-note totals as printed: shown apart, never added to or taken from the invoices. */
+        val creditNoteCents: Long,
+        val creditNotesNotProven: Int,
+    ) {
+        /** Every invoice's total is proven: the sum can be shown on its own. */
+        val sumComplete: Boolean get() = notProven == 0
+    }
+
+    fun groupBySupplier(plan: BundlePlan): List<SupplierGroup> = plan.suppliers.map { s ->
+        val mine = plan.invoices.filter { it.isInvoice && supplierKey(it) == s.key }
+        val inv = mine.filter { !it.creditNote && it.include }
+        val credits = mine.filter { it.creditNote }
+        val dates = inv.mapNotNull { it.date }
+        SupplierGroup(
+            supplier = s, invoices = inv.size, first = dates.minOrNull(), last = dates.maxOrNull(),
+            provenCents = inv.filter { it.totalProven }.sumOf { it.printedTotalCents ?: 0L }, notProven = inv.count { !it.totalProven || it.printedTotalCents == null },
+            creditNotes = credits.size, creditNoteCents = credits.filter { it.totalProven }.sumOf { it.printedTotalCents ?: 0L },
+            creditNotesNotProven = credits.count { !it.totalProven || it.printedTotalCents == null },
+        )
     }
 
     data class Summary(
@@ -194,125 +368,277 @@ object BundleWizard {
         val suppliers: Int,
         val first: LocalDate?,
         val last: LocalDate?,
-        /** Sum of the totals printed on the invoices going to be read, credit notes not included, in cents. */
-        val totalCents: Long,
-        val totalsMissing: Int,
+        val provenCents: Long,
+        val notProven: Int,
+        /** Invoices to read by the supplier's category key (null: not sorted, or decide later). */
         val byCategory: Map<String?, Int>,
         val leftOut: Map<LeftOut, Int>,
         val creditNotes: Int,
-        /** Sum of the totals printed on the credit notes, as printed (never netted against the invoices). */
-        val creditNoteCents: Long,
     )
 
-    fun summary(plan: BundlePlan, of: List<PlannedInvoice> = toQueue(plan)): Summary {
-        val dates = of.mapNotNull { it.date }
+    /** The Read step: what goes to be read, by category, and what is left out. */
+    fun summary(plan: BundlePlan): Summary {
+        val read = toRead(plan)
+        val dates = read.mapNotNull { it.date }
         return Summary(
-            invoices = of.size,
-            suppliers = of.map(::supplierKey).distinct().size,
+            invoices = read.size,
+            suppliers = read.map(::supplierKey).filter { it != NO_SUPPLIER }.distinct().size,
             first = dates.minOrNull(), last = dates.maxOrNull(),
-            totalCents = of.filter { !it.creditNote }.sumOf { it.totalCents ?: 0L },
-            totalsMissing = of.count { it.totalCents == null },
-            byCategory = of.groupingBy { plan.supplierOf(it)?.category?.takeIf { c -> c != SupplierChoice.LATER } }.eachCount(),
-            leftOut = plan.invoices.filter { !it.include || plan.supplierOf(it)?.include == false }
-                .groupingBy { it.leftOut ?: LeftOut.BY_OPERATOR }.eachCount(),
-            creditNotes = of.count { it.creditNote },
-            creditNoteCents = of.filter { it.creditNote }.sumOf { it.totalCents ?: 0L },
+            provenCents = read.filter { it.totalProven }.sumOf { it.printedTotalCents ?: 0L },
+            notProven = read.count { !it.totalProven || it.printedTotalCents == null },
+            byCategory = read.groupingBy { categoryOf(plan, it) }.eachCount(),
+            leftOut = plan.invoices.filter { !isRead(plan, it) }.groupingBy { it.leftOut ?: LeftOut.BY_OPERATOR }.eachCount(),
+            creditNotes = plan.invoices.count { it.isInvoice && it.creditNote },
         )
     }
+
+    /** The category chosen for the invoice's supplier, or null (not sorted, or decide later). */
+    fun categoryOf(plan: BundlePlan, inv: PlannedInvoice): String? =
+        plan.supplierOf(inv)?.category?.takeIf { SupplierCategory.fromKey(it) != null }
+
+    data class Estimate(val newSuppliers: Int, val notGoods: Int, val flagged: Int) {
+        /** "At least N will need your check": each invoice counted once. */
+        val atLeast: Int get() = newSuppliers + notGoods + flagged
+    }
+
+    /**
+     * The invoices that will surely need the operator's check: the first invoice of each new supplier, then the bills of
+     * suppliers that sell no goods (electricity, fuel, repairs, other), then the flagged ones (each counted once).
+     */
+    fun estimate(plan: BundlePlan): Estimate {
+        val order = planOrder(plan)
+        val first = firstsOfNewSuppliers(plan, order).toSet()
+        val notGoods = order.filter { it !in first && SupplierCategory.fromKey(categoryOf(plan, plan.invoices[it]))?.goods == false }.toSet()
+        val flagged = order.count { it !in first && it !in notGoods && plan.invoices[it].let { inv -> inv.flags.isNotEmpty() || !inv.isInvoice } }
+        return Estimate(first.size, notGoods.size, flagged)
+    }
+
+    /**
+     * The order the invoices are read in (indexes into [BundlePlan.invoices]): the first invoice of each supplier not
+     * known by VAT number first (once it is saved, that supplier is known and its other invoices check out more often),
+     * then the rest in page order.
+     */
+    fun planOrder(plan: BundlePlan): List<Int> {
+        val read = plan.invoices.indices.filter { isRead(plan, plan.invoices[it]) }
+        val first = firstsOfNewSuppliers(plan, read)
+        return first + read.filter { it !in first.toSet() }
+    }
+
+    private fun firstsOfNewSuppliers(plan: BundlePlan, order: List<Int>): List<Int> = order.filter { i ->
+        val s = plan.supplierOf(plan.invoices[i])
+        s != null && s.key != NO_SUPPLIER && !s.known
+    }.distinctBy { supplierKey(plan.invoices[it]) }
+
+    // ------------------------------------------------------------------ reading and its outcomes
+
+    /** The operator taps Read: the invoices not read are marked left out. */
+    fun confirm(plan: BundlePlan): BundlePlan = plan.copy(
+        status = BundleStatus.PREPARING, step = Step.READ,
+        invoices = plan.invoices.map { inv -> if (isRead(plan, inv)) inv.copy(outcome = InvoiceOutcome.WAITING) else inv.copy(outcome = InvoiceOutcome.LEFT_OUT) },
+    )
+
+    /** The invoices were split and queued: [jobs] maps an invoice's index to its job. */
+    fun queued(plan: BundlePlan, jobs: Map<Int, String>): BundlePlan = plan.copy(
+        status = BundleStatus.QUEUED,
+        invoices = plan.invoices.mapIndexed { i, inv -> jobs[i]?.let { inv.copy(jobId = it, outcome = InvoiceOutcome.QUEUED) } ?: inv },
+    )
+
+    private val SAVED = setOf(InvoiceOutcome.SAVED_BY_APP, InvoiceOutcome.SAVED_BY_YOU)
+    private val OPEN = setOf(InvoiceOutcome.WAITING, InvoiceOutcome.QUEUED, InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER)
+
+    /**
+     * A job of the plan moved on. A saved invoice stays saved (a late event never undoes it). When nothing is left to
+     * read or to check, the plan is done.
+     */
+    fun record(plan: BundlePlan, jobId: String, outcome: InvoiceOutcome, documentId: Long? = null): BundlePlan {
+        val invoices = plan.invoices.map { inv ->
+            if (inv.jobId != jobId || (inv.outcome in SAVED && outcome !in SAVED)) inv
+            else inv.copy(outcome = outcome, documentId = documentId ?: inv.documentId)
+        }
+        val reading = plan.status == BundleStatus.QUEUED || plan.status == BundleStatus.PAUSED
+        val done = reading && invoices.none { it.outcome in OPEN }
+        return plan.copy(invoices = invoices, status = if (done) BundleStatus.DONE else plan.status)
+    }
+
+    /** "Check later": to the end of the chain. */
+    fun checkLater(plan: BundlePlan, index: Int): BundlePlan = plan.copy(invoices = plan.invoices.mapIndexed { i, inv ->
+        if (i == index && inv.outcome == InvoiceOutcome.READY) inv.copy(outcome = InvoiceOutcome.CHECK_LATER) else inv
+    })
+
+    /** The jobs "Stop reading this file" removes: not saved yet. */
+    fun unsavedJobs(plan: BundlePlan): List<String> = plan.invoices.filter { it.outcome in OPEN }.mapNotNull { it.jobId }
+
+    /** Stop reading this file: what is not saved yet is stopped; saved invoices are untouched. */
+    fun stop(plan: BundlePlan): BundlePlan = plan.copy(
+        status = BundleStatus.DONE,
+        invoices = plan.invoices.map { if (it.outcome in OPEN) it.copy(outcome = InvoiceOutcome.STOPPED, jobId = null) else it },
+    )
+
+    /** "Read the N not read yet": the stopped invoices go to be read again. */
+    fun readRest(plan: BundlePlan): BundlePlan = plan.copy(
+        status = BundleStatus.PREPARING,
+        invoices = plan.invoices.map { if (it.outcome == InvoiceOutcome.STOPPED) it.copy(outcome = InvoiceOutcome.WAITING, jobId = null) else it },
+    )
+
+    data class Counts(
+        /** Invoices that go (or went) to be read. */
+        val total: Int,
+        val read: Int,
+        val savedByApp: Int,
+        val savedByYou: Int,
+        val toCheck: Int,
+        /** Still to be read. */
+        val reading: Int,
+        val failed: Int,
+        val stopped: Int,
+        val leftOut: Int,
+    ) {
+        val saved: Int get() = savedByApp + savedByYou
+    }
+
+    /** The Home card and the messages: always from the plan's outcomes, never from the job list. */
+    fun counts(plan: BundlePlan): Counts {
+        val by = plan.invoices.groupingBy { it.outcome }.eachCount()
+        fun n(vararg o: InvoiceOutcome) = o.sumOf { by[it] ?: 0 }
+        return Counts(
+            total = plan.invoices.size - n(InvoiceOutcome.LEFT_OUT),
+            read = n(InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER, InvoiceOutcome.SAVED_BY_APP, InvoiceOutcome.SAVED_BY_YOU, InvoiceOutcome.FAILED),
+            savedByApp = n(InvoiceOutcome.SAVED_BY_APP), savedByYou = n(InvoiceOutcome.SAVED_BY_YOU),
+            toCheck = n(InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER),
+            reading = n(InvoiceOutcome.WAITING, InvoiceOutcome.QUEUED),
+            failed = n(InvoiceOutcome.FAILED), stopped = n(InvoiceOutcome.STOPPED), leftOut = n(InvoiceOutcome.LEFT_OUT),
+        )
+    }
+
+    /** The review chain: invoices ready to check in plan order, then the ones put off with "Check later". */
+    fun chain(plan: BundlePlan): List<Int> {
+        val order = planOrder(plan)
+        return order.filter { plan.invoices[it].outcome == InvoiceOutcome.READY } + order.filter { plan.invoices[it].outcome == InvoiceOutcome.CHECK_LATER }
+    }
+
+    /** "Invoice n of N to check": n (from 1) and N, or null when [index] is not to check. */
+    fun positionInChain(plan: BundlePlan, index: Int): Pair<Int, Int>? {
+        val c = chain(plan)
+        val at = c.indexOf(index)
+        return if (at < 0) null else (at + 1) to c.size
+    }
+
+    /** The next invoice to check after [after] (an index), going round; null when nothing is ready. */
+    fun nextToCheck(plan: BundlePlan, after: Int? = null): Int? {
+        val order = planOrder(plan)
+        val pos = after?.let { order.indexOf(it) } ?: -1
+        val ready = order.filter { it != after && plan.invoices[it].outcome == InvoiceOutcome.READY }
+        return ready.firstOrNull { order.indexOf(it) > pos } ?: ready.firstOrNull()
+            ?: order.firstOrNull { it != after && plan.invoices[it].outcome == InvoiceOutcome.CHECK_LATER }
+    }
+
+    /** The Done screen: saved invoices by category key (null: not sorted). */
+    fun savedByCategory(plan: BundlePlan): Map<String?, Int> =
+        plan.invoices.filter { it.outcome in SAVED }.groupingBy { categoryOf(plan, it) }.eachCount()
+
+    /**
+     * A closed or cancelled plan keeps only the pages, outcomes and document ids: supplier names, VAT numbers,
+     * document numbers, dates, totals and the pages' signals are dropped.
+     */
+    fun close(plan: BundlePlan, status: BundleStatus = BundleStatus.CLOSED): BundlePlan = plan.copy(
+        status = status, signals = emptyList(), suppliers = emptyList(),
+        invoices = plan.invoices.map {
+            PlannedInvoice(
+                first = it.first, last = it.last, kind = it.kind, start = it.start, file = it.file, include = it.include, leftOut = it.leftOut,
+                alreadySavedId = it.alreadySavedId, jobId = it.jobId, outcome = it.outcome, documentId = it.documentId,
+            )
+        },
+    )
 }
 
-/** The plan as text (one value per line), so a file being imported survives the app being closed. */
+/**
+ * The plan as text, one record per line, so an import survives the app being closed. Versioned; a reader skips keys
+ * it does not know, and a field left out takes its default.
+ */
 object BundlePlanCodec {
 
-    private fun esc(s: String?): String = s?.replace("\\", "\\\\")?.replace("|", "\\p")?.replace("\n", "\\n") ?: "\\0"
-    private fun unesc(s: String): String? {
-        if (s == "\\0") return null
-        val b = StringBuilder()
-        var i = 0
-        while (i < s.length) {
-            val c = s[i]
-            if (c == '\\' && i + 1 < s.length) {
-                when (s[i + 1]) { 'p' -> b.append('|'); 'n' -> b.append('\n'); '\\' -> b.append('\\'); else -> b.append(s[i + 1]) }
-                i += 2
-            } else { b.append(c); i++ }
-        }
-        return b.toString()
-    }
-    private fun fields(line: String): List<String?> {
-        val out = mutableListOf<String?>()
-        val cur = StringBuilder()
-        var i = 0
-        while (i < line.length) {
-            val c = line[i]
-            if (c == '\\' && i + 1 < line.length) { cur.append(c).append(line[i + 1]); i += 2; continue }
-            if (c == '|') { out += unesc(cur.toString()); cur.clear() } else cur.append(c)
-            i++
-        }
-        out += unesc(cur.toString())
-        return out
-    }
+    const val VERSION = 2
 
     fun encode(p: BundlePlan): String = buildString {
-        append("v=1\n")
-        append("id=").append(esc(p.id)).append('\n')
-        append("file=").append(esc(p.file)).append('\n')
-        append("sha=").append(esc(p.fileSha)).append('\n')
-        append("pages=").append(p.pageCount).append('\n')
-        append("status=").append(p.status.name).append('\n')
-        append("scanned=").append(p.scannedPages).append('\n')
-        append("created=").append(p.createdAt).append('\n')
-        append("queued=").append(p.queued).append('\n')
-        append("saved=").append(p.saved).append('\n')
-        append("discarded=").append(p.discarded).append('\n')
-        for (i in p.invoices) {
-            append("inv=").append(listOf(
-                i.first.toString(), i.last.toString(), esc(i.supplierVat), esc(i.supplierName), esc(i.customerVat), esc(i.docType),
-                esc(i.number), esc(i.date?.toString()), esc(i.totalCents?.toString()), i.problems.joinToString(",") { it.name },
-                i.include.toString(), esc(i.leftOut?.name), esc(i.savedOn), i.checked.toString(),
-            ).joinToString("|")).append('\n')
-        }
-        for (s in p.suppliers) {
-            append("sup=").append(listOf(
-                esc(s.key), esc(s.name), esc(s.vat), esc(s.category), s.known.toString(), esc(s.suggestion), s.include.toString(),
-            ).joinToString("|")).append('\n')
-        }
+        fun line(k: String, v: Any?) { if (v != null) append(k).append('=').append(BundleText.esc(v.toString())).append('\n') }
+        // A record is one line already (its fields escaped).
+        fun record(k: String, r: String) { append(k).append('=').append(r).append('\n') }
+        line("v", VERSION)
+        line("id", p.id)
+        line("file", p.file)
+        line("pages", p.pageCount)
+        line("status", p.status.name)
+        line("scanned", p.scanned)
+        line("created", p.createdAt)
+        line("step", p.step.name)
+        line("samefile", p.sameFileDocumentId)
+        for (s in p.signals) record("sig", InvoiceBundle.encode(s))
+        for (i in p.invoices) record("inv", BundleText.record(
+            "f" to i.first.toString(), "l" to i.last.toString(),
+            "k" to i.kind.takeIf { it != InvoiceBundle.Kind.INVOICE }?.name, "s" to i.start.name, "fi" to i.file,
+            "sv" to i.supplierVat, "sn" to i.supplierName, "n" to i.number, "d" to i.date?.toString(),
+            "pt" to i.printedTotalCents?.toString(), "pr" to flag(i.totalProven), "cn" to flag(i.creditNote),
+            "fl" to i.flags.takeIf { it.isNotEmpty() }?.joinToString(",") { it.name }, "sg" to i.suggestion?.key,
+            "as" to i.alreadySavedId?.toString(), "ao" to i.alreadySavedOn?.toString(), "ms" to i.maybeSavedId?.toString(),
+            "in" to if (i.include) null else "0", "lo" to i.leftOut?.name, "ck" to flag(i.checked),
+            "j" to i.jobId, "o" to i.outcome.takeIf { it != InvoiceOutcome.WAITING }?.name, "doc" to i.documentId?.toString(),
+        ))
+        for (s in p.suppliers) record("sup", BundleText.record(
+            "k" to s.key, "n" to s.name, "v" to s.vat, "c" to s.category, "kn" to flag(s.known), "lt" to s.lastTime,
+            "sg" to s.suggestion, "in" to if (s.include) null else "0",
+        ))
     }
 
     fun decode(text: String): BundlePlan? = runCatching {
         val single = mutableMapOf<String, String>()
+        val signals = mutableListOf<InvoiceBundle.PageSignals>()
         val invoices = mutableListOf<PlannedInvoice>()
         val suppliers = mutableListOf<SupplierChoice>()
-        for (line in text.lines()) {
-            if (line.isBlank()) continue
-            val key = line.substringBefore('=')
-            val value = line.substringAfter('=')
+        for (raw in text.lines()) {
+            val eq = raw.indexOf('=')
+            if (raw.isBlank() || eq <= 0) continue
+            val key = raw.substring(0, eq)
+            val value = raw.substring(eq + 1)
             when (key) {
-                "inv" -> {
-                    val f = fields(value)
-                    invoices += PlannedInvoice(
-                        first = f[0]!!.toInt(), last = f[1]!!.toInt(), supplierVat = f[2], supplierName = f[3], customerVat = f[4],
-                        docType = f[5], number = f[6], date = f[7]?.let(LocalDate::parse), totalCents = f[8]?.toLong(),
-                        problems = f[9].orEmpty().split(',').filter { it.isNotBlank() }.mapNotNull { n -> InvoiceBundle.Problem.entries.firstOrNull { it.name == n } }.toSet(),
-                        include = f[10] == "true", leftOut = f[11]?.let { n -> LeftOut.entries.firstOrNull { it.name == n } },
-                        savedOn = f.getOrNull(12), checked = f.getOrNull(13) == "true",
-                    )
-                }
-                "sup" -> {
-                    val f = fields(value)
-                    suppliers += SupplierChoice(
-                        key = f[0]!!, name = f[1], vat = f[2], category = f[3], known = f[4] == "true", suggestion = f[5], include = f.getOrNull(6) != "false",
-                    )
-                }
-                else -> single[key] = value
+                "sig" -> InvoiceBundle.decode(value)?.let { signals += it }
+                "inv" -> invoice(BundleText.fields(value))?.let { invoices += it }
+                "sup" -> supplier(BundleText.fields(value))?.let { suppliers += it }
+                else -> single[key] = BundleText.unesc(value)
             }
         }
         BundlePlan(
-            id = unesc(single.getValue("id"))!!, file = unesc(single.getValue("file"))!!, fileSha = unesc(single["sha"] ?: "\\0") ?: "",
+            id = single.getValue("id"), file = single.getValue("file"),
             pageCount = single["pages"]?.toIntOrNull() ?: 0,
-            status = BundleStatus.entries.firstOrNull { it.name == single["status"] } ?: BundleStatus.CANCELLED,
-            scannedPages = single["scanned"]?.toIntOrNull() ?: 0, invoices = invoices, suppliers = suppliers,
-            createdAt = single["created"]?.toLongOrNull() ?: 0L, queued = single["queued"]?.toIntOrNull() ?: 0,
-            saved = single["saved"]?.toIntOrNull() ?: 0, discarded = single["discarded"]?.toIntOrNull() ?: 0,
+            status = enumOr(single["status"], BundleStatus.CANCELLED),
+            scanned = single["scanned"]?.toIntOrNull() ?: 0, signals = signals, invoices = invoices, suppliers = suppliers,
+            step = enumOr(single["step"], BundleWizard.Step.FOUND),
+            createdAt = single["created"]?.toLongOrNull() ?: 0L, sameFileDocumentId = single["samefile"]?.toLongOrNull(),
         )
     }.getOrNull()
+
+    private fun invoice(f: Map<String, String?>): PlannedInvoice? = runCatching {
+        PlannedInvoice(
+            first = f.getValue("f")!!.toInt(), last = f.getValue("l")!!.toInt(),
+            kind = enumOr(f["k"], InvoiceBundle.Kind.INVOICE), start = enumOr(f["s"], InvoiceBundle.Start.ASSO), file = f["fi"],
+            supplierVat = f["sv"], supplierName = f["sn"], number = f["n"], date = f["d"]?.let(LocalDate::parse),
+            printedTotalCents = f["pt"]?.toLong(), totalProven = f["pr"] == "1", creditNote = f["cn"] == "1",
+            flags = f["fl"].orEmpty().split(',').mapNotNull { n -> InvoiceBundle.Flag.entries.firstOrNull { it.name == n } }.toSet(),
+            suggestion = SupplierCategory.fromKey(f["sg"]),
+            alreadySavedId = f["as"]?.toLong(), alreadySavedOn = f["ao"]?.toLong(), maybeSavedId = f["ms"]?.toLong(),
+            include = f["in"] != "0", leftOut = f["lo"]?.let { n -> LeftOut.entries.firstOrNull { it.name == n } }, checked = f["ck"] == "1",
+            jobId = f["j"], outcome = enumOr(f["o"], InvoiceOutcome.WAITING), documentId = f["doc"]?.toLong(),
+        )
+    }.getOrNull()
+
+    private fun supplier(f: Map<String, String?>): SupplierChoice? = f["k"]?.let { key ->
+        SupplierChoice(
+            key = key, name = f["n"], vat = f["v"], category = f["c"], known = f["kn"] == "1", lastTime = f["lt"],
+            suggestion = f["sg"], include = f["in"] != "0",
+        )
+    }
+
+    private fun flag(b: Boolean): String? = if (b) "1" else null
+
+    private inline fun <reified E : Enum<E>> enumOr(name: String?, default: E): E =
+        enumValues<E>().firstOrNull { it.name == name } ?: default
 }
