@@ -10,8 +10,8 @@ import kotlin.math.max
  */
 object ScrollbarMath {
 
-    /** A list is long enough for a thumb when its items fill at least this many screens. */
-    const val LONG_SCREENS = 3f
+    /** A list is long enough for a thumb when its items fill at least this many screens (as Android does). */
+    const val LONG_SCREENS = 4f
 
     /**
      * The thumb's place from 0 (top) to 1 (end). [firstIndex] is the first visible item, [scrolledFraction] how much of

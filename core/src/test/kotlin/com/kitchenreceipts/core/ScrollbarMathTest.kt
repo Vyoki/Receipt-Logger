@@ -35,9 +35,12 @@ class ScrollbarMathTest {
     }
 
     @Test fun longLists() {
-        assertTrue(ScrollbarMath.isLong(30, 10f))
-        assertFalse(ScrollbarMath.isLong(29, 10f))
-        assertFalse(ScrollbarMath.isLong(30, 0f))
+        // Four screens or more get a thumb; a three-screen list does not.
+        assertTrue(ScrollbarMath.isLong(40, 10f))
+        assertTrue(ScrollbarMath.isLong(41, 10.25f))
+        assertFalse(ScrollbarMath.isLong(39, 10f))
+        assertFalse(ScrollbarMath.isLong(30, 10f))
+        assertFalse(ScrollbarMath.isLong(40, 0f))
     }
 
     @Test fun thumbPlace() {
