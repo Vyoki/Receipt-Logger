@@ -38,8 +38,8 @@ class AiLoopTest {
         }
     }
 
-    private fun run(answer: (AiTarget) -> String): Pair<AiLoop, List<AiTarget>> {
-        val loop = AiLoop(listOf(lines), text, ParseOptions(), start())
+    private fun run(answer: (AiTarget) -> String, scope: AiScope? = null): Pair<AiLoop, List<AiTarget>> {
+        val loop = if (scope == null) AiLoop(listOf(lines), text, ParseOptions(), start()) else AiLoop(listOf(lines), text, ParseOptions(), start(), scope = scope)
         val asked = mutableListOf<AiTarget>()
         while (true) {
             val t = loop.next() ?: break
@@ -105,6 +105,73 @@ class AiLoopTest {
         assertTrue(open.first() is AiTarget.Number)
         // Asking the model which comes next would make the phone process the picture again for nothing.
         assertTrue(!loop.worthDeciding(open))
+    }
+
+    private val good = """{"code":"10003","colli":null,"description":"SALE MARINO FINO","unit":"NR","quantity":"10","price":"0,422","discount":null,"amount":"4,22","vat_rate":null,"lot":null}"""
+
+    @Test fun headerTotalsLoopNeverAsksAboutLines() {
+        val (loop, asked) = run(ai(good), AiScope.HEADER_TOTALS)
+        assertTrue(asked.isNotEmpty())
+        // The supplier double-check stays, and comes first.
+        assertTrue(asked.first() is AiTarget.Supplier)
+        assertTrue(asked.none { it is AiTarget.Row || it is AiTarget.Number || it is AiTarget.Choice })
+        // The line that does not add up is left as read: the arithmetic still flags it for the operator.
+        assertEquals(462L, loop.doc.lineItems[2].lineTotalCents?.value)
+        assertTrue(ParseWarning.LINE_TOTAL_MISMATCH in loop.doc.lineItems[2].warnings)
+        assertEquals(AiScope.HEADER_TOTALS, loop.copy().scope)
+        assertTrue(loop.copy().candidates().isEmpty())
+    }
+
+    @Test fun headerTotalsLoopStillFlagsWhatTheAiReadsDifferently() {
+        assertEquals(Confidence.HIGH, start().documentNumber?.confidence)
+        // The AI reads another number in the header and another printed amount as the total.
+        val misread: (AiTarget) -> String = { t ->
+            when (t) {
+                is AiTarget.Header -> """{"seller":"ESEMPIO FORNITURE S.R.L.","seller_vat":null,"number":"54","date":"12/09/2026"}"""
+                is AiTarget.Totals -> """{"subtotal":"70,03","vat":null,"total":"70,03"}"""
+                else -> ai(good)(t)
+            }
+        }
+        val (loop, asked) = run(misread, AiScope.HEADER_TOTALS)
+        assertTrue(asked.any { it is AiTarget.Header } && asked.any { it is AiTarget.Totals })
+        // The number read with confidence is highlighted (LOW), with the AI's reading next to it.
+        assertEquals("45", loop.doc.documentNumber?.value)
+        assertEquals(Confidence.LOW, loop.doc.documentNumber?.confidence)
+        assertTrue(loop.doc.aiCheck!!.disagreements.any { it.startsWith("number") })
+        // The total is never replaced by an amount that does not add up: only offered.
+        assertEquals(7643L, loop.doc.totalCents?.value)
+        assertEquals(Confidence.LOW, loop.doc.totalCents?.confidence)
+        assertEquals("70,03", loop.doc.aiCheck!!.header["total"])
+    }
+
+    @Test fun headerTotalsLoopDoesNotFollowUpOnALine() {
+        // Even after a whole-line answer that does not add up, no follow-up number is asked in HEADER_TOTALS.
+        val loop = AiLoop(listOf(lines), text, ParseOptions(), start(), scope = AiScope.HEADER_TOTALS)
+        val row = AiTargets.plan(listOf(lines), start(), spotCheck = true)!!.filterIsInstance<AiTarget.Row>().single()
+        loop.answer(row, """{"code":"10003","colli":"10","description":"SALE MARINO FINO","unit":"NR","quantity":"0,422","price":"4,62","discount":null,"amount":"4,62","vat_rate":null,"lot":null}""")
+        assertTrue(loop.candidates().all { it is AiTarget.Supplier || it is AiTarget.Header || it is AiTarget.Totals })
+    }
+
+    @Test fun headerTotalsReplayGivesTheSameDocument() {
+        val (loop, _) = run(ai(good), AiScope.HEADER_TOTALS)
+        val byKeys = AiLoop.replay(listOf(lines), text, ParseOptions(), start(), loop.answers, loop.picks, loop.keys, AiScope.HEADER_TOTALS)
+        assertEquals(loop.doc, byKeys)
+        // Older readings without keys: the picks, in the same scope.
+        val byPicks = AiLoop.replay(listOf(lines), text, ParseOptions(), start(), loop.answers, loop.picks, scope = AiScope.HEADER_TOTALS)
+        assertEquals(loop.doc, byPicks)
+    }
+
+    @Test fun allScopeAsksTheSameAsBefore() {
+        val (today, asked) = run(ai(good))
+        val (all, askedAll) = run(ai(good), AiScope.ALL)
+        assertEquals(asked, askedAll)
+        assertEquals(today.doc, all.doc)
+        assertEquals(today.doc, AiLoop.replay(listOf(lines), text, ParseOptions(), start(), today.answers, today.picks, today.keys))
+        // The questions asked on this page before the scope existed, in order.
+        assertEquals(
+            listOf("supplier", "row:10003 SALE MARINO FINO NR 10 0,422 4,62", "totals", "number:AMOUNT:true:10002 POMODORI PELATI CT 2 21,78 43,56", "header"),
+            asked.map { AiLoop.key(it) },
+        )
     }
 
     @Test fun limitStopsTheLoop() {

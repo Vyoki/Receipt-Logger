@@ -110,6 +110,49 @@ class AiTargetsTest {
         assertTrue(other.sellerName!!.value.contains("ROSSI"))
     }
 
+    private fun supplierHeaderOrTotals(t: AiTarget) = t is AiTarget.Supplier || t is AiTarget.Header || t is AiTarget.Totals
+
+    @Test fun headerTotalsScopeAsksOnlySupplierHeaderAndTotals() {
+        val doc = ReceiptParser.parsePages(listOf(lines))
+        val all = AiTargets.plan(listOf(lines), doc, spotCheck = true)!!
+        val light = AiTargets.plan(listOf(lines), doc, spotCheck = true, scope = AiScope.HEADER_TOTALS)!!
+        // The line that does not add up is not asked; the supplier double-check stays.
+        assertTrue(light.all(::supplierHeaderOrTotals))
+        assertTrue(light.any { it is AiTarget.Supplier })
+        assertEquals(all.filter(::supplierHeaderOrTotals), light)
+        // Without the double-checks: only the doubts among them.
+        assertEquals(AiTargets.plan(listOf(lines), doc)!!.filter(::supplierHeaderOrTotals), AiTargets.plan(listOf(lines), doc, scope = AiScope.HEADER_TOTALS))
+    }
+
+    @Test fun allScopeIsTheSameAsBefore() {
+        val doc = ReceiptParser.parsePages(listOf(lines))
+        val all = AiTargets.plan(listOf(lines), doc, spotCheck = true)!!
+        assertEquals(all, AiTargets.plan(listOf(lines), doc, spotCheck = true, scope = AiScope.ALL))
+        assertEquals(AiTargets.plan(listOf(lines), doc), AiTargets.plan(listOf(lines), doc, scope = AiScope.ALL))
+        // The questions on this page before the scope existed, in the planner's order.
+        assertEquals(
+            listOf("row:10003 SALE MARINO FINO NR 10 0,422 4,62", "header", "supplier", "totals", "number:AMOUNT:true:10002 POMODORI PELATI CT 2 21,78 43,56"),
+            all.map { AiLoop.key(it) },
+        )
+    }
+
+    @Test fun headerTotalsScopeStillAsksWhenTheLinesAreTooPoorForSmallQuestions() {
+        // Twelve lines that do not add up: too many for small questions, so ALL gives up (whole pages are read instead).
+        val bad = page(listOf(
+            listOf("ESEMPIO FORNITURE S.R.L." to 40),
+            listOf("FATTURA N. 45 DEL 12/09/2031" to 40),
+            header,
+        ) + (10..21).map { n -> row("200$n", "PRODOTTO PROVA NUMERO $n", "NR", "10", "1,00", "8,$n") } + listOf(
+            listOf("TOTALE IMPONIBILE" to 520, "97,86" to 830),
+            listOf("TOTALE DOCUMENTO" to 520, "119,39" to 830),
+        ))
+        val doc = ReceiptParser.parsePages(listOf(bad))
+        assertNull(AiTargets.plan(listOf(bad), doc, spotCheck = true))
+        val light = AiTargets.plan(listOf(bad), doc, spotCheck = true, scope = AiScope.HEADER_TOTALS)!!
+        assertTrue(light.isNotEmpty())
+        assertTrue(light.all(::supplierHeaderOrTotals))
+    }
+
     @Test fun grammarsAreWellFormed() {
         assertTrue(AiReader.ROW_GRAMMAR.startsWith("root ::= \"{\" ws \"\\\"code\\\":\" ws value"))
         assertTrue(AiReader.TOTALS_GRAMMAR.contains("\"\\\"total\\\":\" ws value ws \"}\""))
