@@ -14,6 +14,8 @@ import com.kitchenreceipts.core.BundlePlan
 import com.kitchenreceipts.core.BundleStatus
 import com.kitchenreceipts.core.BundleWizard
 import com.kitchenreceipts.core.InvoiceBundle
+import com.kitchenreceipts.core.InvoiceOutcome
+import com.kitchenreceipts.app.jobs.JobStatus
 import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.SupplierChoice
 import kotlinx.coroutines.Dispatchers
@@ -68,7 +70,7 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
         val scan: BundleStore.ScanProgress? = null,
         /** A string resource: why the last action did not go through. */
         val error: Int? = null,
-        /** Seconds the reading of the invoices to read will take, about. */
+        /** Seconds the reading of the invoices to read will take, about; while they are read, what is left. */
         val seconds: Long = 0,
     )
 
@@ -119,13 +121,41 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
         return news.indexOfFirst { it.include && it.category == null }.coerceAtLeast(0)
     }
 
-    /** The reading time of what goes to be read: each invoice's pages (at most 20 are read), and the AI per invoice. */
+    /**
+     * The reading time of what goes to be read: each invoice's pages (at most 20 are read), and the AI per invoice.
+     * While the file is read: of what is still to be read, from the running averages measured on this phone.
+     */
     private fun seconds(plan: BundlePlan, ai: Boolean): Long {
-        val read = BundleWizard.toRead(plan)
+        val reading = plan.status == BundleStatus.QUEUED || plan.status == BundleStatus.PAUSED
+        val read = if (reading) plan.invoices.filter { it.outcome == InvoiceOutcome.WAITING || it.outcome == InvoiceOutcome.QUEUED }
+        else BundleWizard.toRead(plan)
         // An e-invoice is read from its own values: no pages to read, no AI.
         if (plan.file.isBlank()) return read.size.toLong()
         val pages = read.sumOf { minOf(it.pageCount, InvoiceBundle.PAGE_LIMIT) }
         return ReadingTime.seconds(c.settings, pages, read.size, ai)
+    }
+
+    // ------------------------------------------------------------------ the file's list while it is read
+
+    /** The job being read now (its row says so). */
+    val readingJob: StateFlow<String?> = c.importQueue.jobs.map { list -> list.firstOrNull { it.status == JobStatus.READING }?.id }
+        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
+
+    /** Jobs the app is checking again right now: not opened meanwhile. */
+    val rechecking: StateFlow<Set<String>> = c.importQueue.rechecking
+
+    /** "5 more from this supplier saved by the app" (see BundleStore.rechecked). */
+    val rechecked: StateFlow<BundleStore.Rechecked?> = store.rechecked
+
+    fun recheckedShown(r: BundleStore.Rechecked) = store.shown(r)
+
+    /** The next invoice to check, in plan order (its job). */
+    fun nextToCheck(): String? = store.next(planId)
+
+    /** "Try again" on an invoice that could not be read. */
+    fun retry(jobId: String) = change {
+        retry(planId, jobId)
+        ReadingService.ensureRunning(c.appContext)
     }
 
     // ------------------------------------------------------------------ the operator's choices

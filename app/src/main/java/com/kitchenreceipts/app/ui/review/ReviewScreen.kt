@@ -134,12 +134,25 @@ import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneOffset
 
+/**
+ * The check of a document before it is saved, or the edit of a saved one. An invoice of a file of many is checked in
+ * that file's chain: "Invoice 3 of 25 to check" under the top bar, "Check later", and after Save the next one opens
+ * by itself ([onChain]: the next job, or null for the file's list).
+ */
 @Composable
-fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOriginal: () -> Unit, onSaved: (Long, Boolean) -> Unit) {
+fun ReviewScreen(
+    documentId: Long?,
+    jobId: String?,
+    onBack: () -> Unit,
+    onViewOriginal: () -> Unit,
+    onSaved: (Long, Boolean) -> Unit,
+    onChain: (next: String?, planId: String) -> Unit = { _, _ -> },
+) {
     val vm = appViewModel(key = "review-${documentId ?: jobId}") { ReviewViewModel(it, documentId, jobId) }
     val state by vm.state.collectAsStateWithLifecycle()
     val products by vm.products.collectAsStateWithLifecycle()
     val sellerNames by vm.sellerNames.collectAsStateWithLifecycle()
+    val chain by vm.chain.collectAsStateWithLifecycle()
 
     var askDiscard by remember { mutableStateOf(false) }
     var pickerFor by rememberSaveable { mutableStateOf<Long?>(null) }
@@ -147,7 +160,8 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
 
-    LaunchedEffect(state.savedId) { state.savedId?.let { onSaved(it, state.autoSaved) } }
+    // An invoice of a file of many goes on in its chain instead (below).
+    LaunchedEffect(state.savedId) { if (vm.bundleId == null) state.savedId?.let { onSaved(it, state.autoSaved) } }
 
     // Which lines are shown in full (see core ReviewRows): those that needed a look when the screen opened stay open
     // while they are corrected; lines that check out fold into one row per run, opened with a tap.
@@ -239,6 +253,26 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
     // Said once: not again after turning the phone or coming back from the original.
     LaunchedEffect(state.restored) { if (state.restored) { vm.restoredShown(); reviewSnackbar.showSnackbar(restoredText) } }
 
+    // The chain: after a save, "Saved ✓ · next: <supplier>" for about 2 s, then the next invoice (or the file's list).
+    val savedNext = state.chainMove?.let { m -> stringResource(R.string.bundle_saved_next, m.nextSupplier ?: "…") }
+    LaunchedEffect(state.chainMove) {
+        val m = state.chainMove ?: return@LaunchedEffect
+        if (m.saved && m.next != null) {
+            launch { reviewSnackbar.showSnackbar(savedNext ?: "") }
+            kotlinx.coroutines.delay(CHAIN_PAUSE_MS)
+        }
+        onChain(m.next, m.planId)
+    }
+    // "5 more from this supplier saved by the app", once, while this invoice is still to be checked.
+    val rechecked by vm.rechecked.collectAsStateWithLifecycle()
+    val res = androidx.compose.ui.platform.LocalContext.current.resources
+    LaunchedEffect(rechecked, state.savedId) {
+        val r = rechecked ?: return@LaunchedEffect
+        if (r.planId != vm.bundleId || state.savedId != null) return@LaunchedEffect
+        vm.recheckedShown(r)
+        reviewSnackbar.showSnackbar(res.getQuantityString(R.plurals.bundle_rechecked, r.count, r.count))
+    }
+
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
     val onPeek: (PeekRequest?) -> Unit = remember { { r -> if (r != null) peekRequest = r else if (enlarged == null) peekRequest = null } }
     // A replacement under every value the app could not settle (worked out by the view model as the operator edits).
@@ -250,6 +284,7 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
         title = title,
         onBack = leave,
         snackbarHostState = reviewSnackbar,
+        subBar = chain?.let { ch -> { ChainBar(ch, canPutOff = !state.loading && state.fatal == null && state.savedId == null && state.chainMove == null, onCheckLater = vm::checkLater) } },
         actions = {
             if (state.isNew && state.fatal == null && !state.loading) {
                 IconButton(onClick = { askDiscard = true }, modifier = Modifier.size(48.dp)) {
@@ -304,6 +339,15 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
         },
     ) { padding ->
         when {
+            // An invoice of a file of many is rebuilt from what was stored when opened (about a second).
+            state.loading && vm.bundleId != null -> Column(
+                Modifier.padding(padding).fillMaxSize().padding(24.dp),
+                verticalArrangement = Arrangement.spacedBy(16.dp, Alignment.CenterVertically),
+                horizontalAlignment = Alignment.CenterHorizontally,
+            ) {
+                androidx.compose.material3.CircularProgressIndicator()
+                Text(stringResource(R.string.bundle_preparing_one), style = MaterialTheme.typography.titleMedium)
+            }
             state.loading -> LoadingBox(Modifier.padding(padding))
             state.fatal != null -> Column(Modifier.padding(padding).padding(16.dp)) {
                 EmptyState(stringResource(R.string.nothing_to_review))
@@ -472,6 +516,25 @@ fun ReviewScreen(documentId: Long?, jobId: String?, onBack: () -> Unit, onViewOr
                 onClear = { vm.assignProduct(key, null); pickerFor = null },
                 onDismiss = { pickerFor = null },
             )
+        }
+    }
+}
+
+/** The pause after "Saved ✓ · next: …" before the next invoice of the chain opens. */
+private const val CHAIN_PAUSE_MS = 2_000L
+
+/** "Invoice 3 of 25 to check (+ 40 still being read)" under the top bar, with "Check later" beside it. */
+@Composable
+private fun ChainBar(chain: Chain, canPutOff: Boolean, onCheckLater: () -> Unit) {
+    val at = chain.position ?: return
+    var text = stringResource(R.string.bundle_position, at, chain.of)
+    if (chain.stillReading > 0) text += " (" + pluralStringResource(R.plurals.bundle_position_more, chain.stillReading, chain.stillReading) + ")"
+    Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
+        com.kitchenreceipts.app.ui.components.SubBarText(text, Modifier.weight(1f))
+        if (canPutOff) {
+            TextButton(onClick = onCheckLater, modifier = Modifier.heightIn(min = 56.dp).padding(bottom = 6.dp)) {
+                Text(stringResource(R.string.bundle_check_later))
+            }
         }
     }
 }

@@ -14,20 +14,33 @@ import com.kitchenreceipts.app.diagnostics.AppLog
 import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.files.PageRenderer
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.app.jobs.BundleStore
 import com.kitchenreceipts.app.jobs.DraftPreparer
+import com.kitchenreceipts.app.jobs.ImportIntake
+import com.kitchenreceipts.app.jobs.ImportJob
 import com.kitchenreceipts.app.jobs.ImportQueue
 import com.kitchenreceipts.app.jobs.JobEvent
 import com.kitchenreceipts.app.jobs.JobStatus
+import com.kitchenreceipts.app.jobs.Notifier
 import com.kitchenreceipts.app.jobs.ReadingNotifier
 import com.kitchenreceipts.app.ocr.ImportProcessor
 import com.kitchenreceipts.app.ocr.MlKitOcrEngine
 import com.kitchenreceipts.app.settings.AppSettings
+import com.kitchenreceipts.core.BundlePlan
+import com.kitchenreceipts.core.BundlePlanCodec
+import com.kitchenreceipts.core.BundleStatus
+import com.kitchenreceipts.core.BundleWizard
+import com.kitchenreceipts.core.InvoiceOutcome
 import com.kitchenreceipts.core.OcrLine
 import com.kitchenreceipts.core.OcrLineCodec
+import com.kitchenreceipts.core.PlannedInvoice
+import com.kitchenreceipts.core.PriceChange
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -37,8 +50,12 @@ import org.junit.After
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.Properties
+import java.util.concurrent.CopyOnWriteArrayList
+import java.util.zip.ZipEntry
+import java.util.zip.ZipOutputStream
 
 /**
  * Background reading: a queued document is read without any screen open, and after a restart the finished
@@ -296,5 +313,270 @@ class ImportQueueTest {
         assertEquals(listOf(jobs[0].id), q.jobs.value.map { it.id })
         jobsDir.deleteRecursively()
         files.forEach { File(context.filesDir, it.relativePath).delete() }
+    }
+
+    // ------------------------------------------------------------------ one message for a file of many, the chain, the recheck
+
+    /** What the reading would post, counted instead (see Notifier). */
+    private class CountingNotifier : Notifier {
+        val finished = CopyOnWriteArrayList<ImportJob>()
+        val prices = CopyOnWriteArrayList<ImportJob>()
+        val bundles = CopyOnWriteArrayList<BundlePlan>()
+        override fun finished(job: ImportJob) { finished += job }
+        override fun priceChanges(job: ImportJob, changes: List<PriceChange>, saved: Boolean) { prices += job }
+        override fun bundleScanned(planId: String) = Unit
+        override fun bundleLong(planId: String, pages: Int) = Unit
+        override fun bundleFinished(plan: BundlePlan) { bundles += plan }
+        override fun cancelPaused() = Unit
+    }
+
+    private val plansDir get() = File(context.filesDir, "bundles-queue-test")
+
+    /**
+     * A queue that reads (e-invoices only here: no OCR, quick), with a plan store listening to it, as in the app. The
+     * restaurant's own VAT number is left blank, so no invented invoice counts as addressed to another business.
+     */
+    private inner class Reading : AutoCloseable {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val notifier = CountingNotifier()
+        val files = FileStore(context)
+        val queue = ImportQueue(context, scope, ImportProcessor(PageRenderer(files)), MlKitOcrEngine(), settings, { null }, preparer, files, log, notifier)
+        val store = BundleStore(context, scope, files, queue, settings, log, notifier, fileInUse = { false }, dir = plansDir)
+        private val ownBefore = settings.ownVatNumber
+        private val autoBefore = settings.autoSave
+
+        init {
+            settings.ownVatNumber = ""
+            queue.listener = { store.onJobEvent(it) }
+            queue.bundleOpen = { store.isOpen(it) }
+        }
+
+        /** A plan made from an invented zip of e-invoices ([xmls], in that order). */
+        suspend fun bundle(name: String, xmls: List<String>): String {
+            val r = ImportIntake(context, files, queue, store, log).take(zip(name, xmls), "test")
+            assertTrue("$r", r is ImportIntake.Intake.Bundle)
+            return (r as ImportIntake.Intake.Bundle).planId
+        }
+
+        fun plan(id: String) = store.plan(id)!!
+
+        /** The job of the invoice numbered [number]. */
+        fun jobOf(id: String, number: String) = plan(id).invoices.single { it.number == number }.jobId!!
+
+        fun outcomeOf(id: String, number: String) = plan(id).invoices.single { it.number == number }.outcome
+
+        override fun close() {
+            scope.cancel()
+            settings.ownVatNumber = ownBefore
+            settings.autoSave = autoBefore
+            plansDir.deleteRecursively()
+            jobsDir.deleteRecursively()
+        }
+    }
+
+    private suspend fun until(what: String, cond: () -> Boolean) {
+        runCatching { withTimeout(60_000) { while (!cond()) delay(50) } }
+        assertTrue("timed out waiting: $what", cond())
+    }
+
+    private fun einvoice(number: String, sellerVat: String, seller: String): String = """<?xml version="1.0" encoding="UTF-8"?>
+<p:FatturaElettronica versione="FPR12" xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">
+  <FatturaElettronicaHeader>
+    <CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>$sellerVat</IdCodice></IdFiscaleIVA><Anagrafica><Denominazione>$seller</Denominazione></Anagrafica></DatiAnagrafici></CedentePrestatore>
+    <CessionarioCommittente><DatiAnagrafici><Anagrafica><Denominazione>RISTORANTE PROVA SAS</Denominazione></Anagrafica></DatiAnagrafici></CessionarioCommittente>
+  </FatturaElettronicaHeader>
+  <FatturaElettronicaBody>
+    <DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>2031-02-03</Data><Numero>$number</Numero><ImportoTotaleDocumento>9.90</ImportoTotaleDocumento></DatiGeneraliDocumento></DatiGenerali>
+    <DatiBeniServizi>
+      <DettaglioLinee><NumeroLinea>1</NumeroLinea><Descrizione>PATATE</Descrizione><Quantita>10.00</Quantita><UnitaMisura>KG</UnitaMisura><PrezzoUnitario>0.90</PrezzoUnitario><PrezzoTotale>9.00</PrezzoTotale><AliquotaIVA>10.00</AliquotaIVA></DettaglioLinee>
+      <DatiRiepilogo><AliquotaIVA>10.00</AliquotaIVA><ImponibileImporto>9.00</ImponibileImporto><Imposta>0.90</Imposta></DatiRiepilogo>
+    </DatiBeniServizi>
+  </FatturaElettronicaBody>
+</p:FatturaElettronica>"""
+
+    private fun abc(number: String) = einvoice(number, "01234567897", "ABC S.r.l.")
+    private fun verde(number: String) = einvoice(number, "09876543217", "VERDE FRESCO S.p.A.")
+
+    private fun zip(name: String, xmls: List<String>): android.net.Uri {
+        val out = ByteArrayOutputStream()
+        ZipOutputStream(out).use { z ->
+            xmls.forEachIndexed { i, x ->
+                z.putNextEntry(ZipEntry("IT01234567897_${"%05d".format(i + 1)}.xml"))
+                z.write(x.toByteArray())
+                z.closeEntry()
+            }
+        }
+        return android.net.Uri.fromFile(File(context.cacheDir, name).apply { writeBytes(out.toByteArray()) })
+    }
+
+    @Test fun theInvoicesOfAFileGetOneMessageForAllOfThem() = runBlocking<Unit> {
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        Reading().use { r ->
+            val id = r.bundle("one-message.zip", (1..5).map { abc("$it/2031") })
+            assertEquals(BundleStore.Prepared.Queued(5), r.store.confirm(id))
+            until("all read") { r.plan(id).invoices.none { it.outcome == InvoiceOutcome.WAITING || it.outcome == InvoiceOutcome.QUEUED } }
+            until("the file's message") { r.notifier.bundles.size == 1 }
+            delay(500)
+            // No message for each invoice: one for the file, counted from its plan.
+            assertEquals(0, r.notifier.finished.size)
+            assertEquals(0, r.notifier.prices.size)
+            assertEquals(1, r.notifier.bundles.size)
+            assertEquals(5, BundleWizard.counts(r.notifier.bundles.single()).read)
+            // Not again after a restart.
+            r.store.flush()
+            val again = CountingNotifier()
+            BundleStore(context, r.scope, r.files, r.queue, settings, log, again, fileInUse = { false }, dir = plansDir).afterRestore(r.queue.jobs.value)
+            assertTrue(again.bundles.isEmpty())
+        }
+    }
+
+    @Test fun aDocumentOnItsOwnStillGetsItsOwnMessage() = runBlocking<Unit> {
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        Reading().use { r ->
+            val f = File(context.filesDir, "${FileStore.DOCUMENTS_DIR}/single-message.xml").apply { parentFile?.mkdirs(); writeText(abc("9/2031")) }
+            val stored = r.files.storedXml("${FileStore.DOCUMENTS_DIR}/${f.name}")!!
+            val job = r.queue.enqueue(stored, "test")
+            until("its message") { r.notifier.finished.size == 1 }
+            assertEquals(job.id, r.notifier.finished.single().id)
+            assertTrue(r.notifier.finished.single().status == JobStatus.READY || r.notifier.finished.single().status == JobStatus.SAVED)
+            assertTrue(r.notifier.bundles.isEmpty())
+            f.delete()
+        }
+    }
+
+    /**
+     * Once the operator saves the first invoice of a supplier, its other invoices waiting to be checked are checked
+     * again with the usual rules, and saved by the app when they now check out; another supplier's are not touched.
+     * The invented e-invoices are exact, so they would check out at once: the app saving by itself is off while they
+     * are read, and on again when the first one is saved.
+     */
+    @Test fun afterTheFirstSaveOfASupplierItsOtherInvoicesAreCheckedAgain() = runBlocking<Unit> {
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        Reading().use { r ->
+            settings.autoSave = false
+            val id = r.bundle("recheck.zip", listOf(abc("1/2031"), abc("2/2031"), verde("3/2031")))
+            r.store.confirm(id)
+            until("all read") { r.plan(id).invoices.all { it.outcome == InvoiceOutcome.READY } }
+            settings.autoSave = true
+            r.queue.markSaved(r.jobOf(id, "1/2031"), 77L)
+            until("checked again") { r.outcomeOf(id, "2/2031") == InvoiceOutcome.SAVED_BY_APP }
+            assertEquals(JobStatus.SAVED, r.queue.job(r.jobOf(id, "2/2031"))!!.status)
+            // VERDE FRESCO S.p.A. is another supplier: still to check, untouched.
+            assertEquals(InvoiceOutcome.READY, r.outcomeOf(id, "3/2031"))
+            assertEquals(JobStatus.READY, r.queue.job(r.jobOf(id, "3/2031"))!!.status)
+            until("said once") { r.store.rechecked.value?.count == 1 }
+            assertTrue(r.queue.rechecking.value.isEmpty())
+            // The second save of the same supplier checks nothing again.
+            assertEquals(emptyList<String>(), BundleWizard.recheckAfterSave(r.plan(id), r.jobOf(id, "2/2031")))
+        }
+    }
+
+    @Test fun stopRemovesOnlyWhatIsNotSavedAndReadRestQueuesItAgain() = runBlocking<Unit> {
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        Reading().use { r ->
+            settings.autoSave = false
+            val id = r.bundle("stop.zip", listOf(abc("4/2031"), abc("5/2031"), verde("6/2031")))
+            r.store.confirm(id)
+            until("all read") { r.plan(id).invoices.all { it.outcome == InvoiceOutcome.READY } }
+            r.queue.markSaved(r.jobOf(id, "4/2031"), 78L)
+            // Let the check again of 5/2031 (auto-save is off: it stays to check) finish first.
+            until("checked again") { r.queue.rechecking.value.isEmpty() }
+            r.store.stop(id)
+            assertTrue(r.queue.jobs.value.none { it.bundleId == id })
+            assertEquals(InvoiceOutcome.SAVED_BY_YOU, r.outcomeOf(id, "4/2031"))
+            assertEquals(InvoiceOutcome.STOPPED, r.outcomeOf(id, "5/2031"))
+            assertEquals(InvoiceOutcome.STOPPED, r.outcomeOf(id, "6/2031"))
+            // The e-invoices are the originals: they stay, to be read again.
+            assertTrue(r.plan(id).invoices.mapNotNull { it.file }.all { r.files.file(it).isFile })
+            assertEquals(BundleStore.Prepared.Queued(2), r.store.readRest(id))
+            assertEquals(2, r.queue.jobs.value.count { it.bundleId == id })
+            until("read again") { r.outcomeOf(id, "5/2031") == InvoiceOutcome.READY && r.outcomeOf(id, "6/2031") == InvoiceOutcome.READY }
+            assertEquals(InvoiceOutcome.SAVED_BY_YOU, r.outcomeOf(id, "4/2031"))
+            // One message for the first reading, one for the rest.
+            until("two messages") { r.notifier.bundles.size == 2 }
+            assertEquals(0, r.notifier.finished.size)
+        }
+    }
+
+    @Test fun theChainGoesInPlanOrder() = runBlocking<Unit> {
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        Reading().use { r ->
+            settings.autoSave = false
+            // In the file: ABC 1, ABC 2, VERDE 3, VERDE 4. Read first: the first invoice of each new supplier.
+            val id = r.bundle("chain.zip", listOf(abc("1/2031"), abc("2/2031"), verde("3/2031"), verde("4/2031")))
+            r.store.confirm(id)
+            val queued = r.queue.jobs.value.filter { it.bundleId == id }.sortedBy { it.createdAt }.map { it.id }
+            val order = listOf("1/2031", "3/2031", "2/2031", "4/2031").map { r.jobOf(id, it) }
+            assertEquals(order, queued)
+            until("all read") { r.plan(id).invoices.all { it.outcome == InvoiceOutcome.READY } }
+            assertEquals(order[0], r.store.next(id))
+            assertEquals(order[1], r.store.next(id, afterJob = order[0]))
+            assertEquals(order[2], r.store.next(id, afterJob = order[1]))
+            assertEquals(order[3], r.store.next(id, afterJob = order[2]))
+            assertEquals(1 to 4, r.store.position(id, order[0]))
+            // After the last, round again to the first.
+            assertEquals(order[0], r.store.next(id, afterJob = order[3]))
+            // "Check later": to the end of the chain, after the others still to check.
+            r.store.checkLater(id, order[0])
+            assertEquals(order[1], r.store.next(id))
+            assertEquals(order[1], r.store.next(id, afterJob = order[3]))
+            assertEquals(4 to 4, r.store.position(id, order[0]))
+            assertEquals(1 to 4, r.store.position(id, order[1]))
+        }
+    }
+
+    /**
+     * Invoices of a file saved by the app yesterday stay through a restart while the file is still being imported, so
+     * its counts stay right; and a file whose last invoice was read just before the app stopped gets its message now.
+     */
+    @Test fun countsStayRightAfterYesterdaysSavedInvoicesPassARestart() = runBlocking<Unit> {
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        val file = part("restart-counts.pdf")
+        val yesterday = System.currentTimeMillis() - 26 * 60 * 60 * 1000L
+        writeMeta("y-0", JobStatus.SAVED, yesterday, file, mapOf("bundle" to "plan-restart", "order" to "0", "savedId" to "21"))
+        writeMeta("y-1", JobStatus.SAVED, yesterday + 1, file, mapOf("bundle" to "plan-restart", "order" to "1", "savedId" to "22"))
+        // Read just before the app stopped: its plan had not heard yet.
+        writeMeta("y-2", JobStatus.READY, System.currentTimeMillis(), file, mapOf("bundle" to "plan-restart", "order" to "2"))
+        val plan = BundlePlan(
+            id = "plan-restart", file = file.relativePath, pageCount = 3, status = BundleStatus.QUEUED, createdAt = yesterday,
+            invoices = listOf(
+                PlannedInvoice(0, 0, supplierName = "ABC S.r.l.", jobId = "y-0", outcome = InvoiceOutcome.SAVED_BY_APP, documentId = 21),
+                PlannedInvoice(1, 1, supplierName = "ABC S.r.l.", jobId = "y-1", outcome = InvoiceOutcome.SAVED_BY_APP, documentId = 22),
+                PlannedInvoice(2, 2, supplierName = "ABC S.r.l.", jobId = "y-2", outcome = InvoiceOutcome.QUEUED),
+            ),
+        )
+        File(plansDir, plan.id).apply { mkdirs() }.resolve("plan.txt").writeText(BundlePlanCodec.encode(plan))
+        val notifier = CountingNotifier()
+        val files = FileStore(context)
+        val q = ImportQueue(
+            context, CoroutineScope(Job().apply { cancel() }), ImportProcessor(PageRenderer(files)), MlKitOcrEngine(), settings, { null },
+            preparer, files, log, notifier,
+        )
+        val storeScope = CoroutineScope(SupervisorJob())
+        val store = BundleStore(context, storeScope, files, q, settings, log, notifier, fileInUse = { false }, dir = plansDir)
+        q.listener = { store.onJobEvent(it) }
+        q.bundleOpen = { store.isOpen(it) }
+        q.restore()
+        store.afterRestore(q.jobs.value)
+        assertEquals(listOf("y-0", "y-1", "y-2"), q.jobs.value.map { it.id })
+        val n = BundleWizard.counts(store.plan(plan.id)!!)
+        assertEquals(3, n.total)
+        assertEquals(3, n.read)
+        assertEquals(2, n.savedByApp)
+        assertEquals(1, n.toCheck)
+        assertEquals(BundleStatus.QUEUED, store.plan(plan.id)!!.status)
+        assertEquals(1, notifier.bundles.size)
+        assertTrue(notifier.finished.isEmpty())
+        store.flush()
+        storeScope.cancel()
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        File(context.filesDir, file.relativePath).delete()
     }
 }

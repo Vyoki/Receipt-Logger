@@ -25,6 +25,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.util.Properties
@@ -94,6 +96,8 @@ data class JobEvent(
         DISCARDED,
         /** Loaded again after the app was closed. */
         RESTORED,
+        /** Its prices changed by 5% or more (a file of many posts one message for all its invoices). */
+        PRICES_CHANGED,
     }
 }
 
@@ -113,7 +117,7 @@ class ImportQueue(
     private val preparer: DraftPreparer,
     private val fileStore: FileStore,
     private val log: AppLog,
-    private val notifier: ReadingNotifier,
+    private val notifier: Notifier,
     /** True when a saved document uses the file: it is then never deleted with the job. */
     private val fileInUse: suspend (String) -> Boolean = { false },
     /** Where the reading runs: threads of background priority, so the screen in use stays smooth. */
@@ -130,8 +134,11 @@ class ImportQueue(
     @Volatile private var currentId: String? = null
     private val started = java.util.concurrent.atomic.AtomicBoolean(false)
 
-    /** Called when a document read in the background was saved without review (keeps its reading, see ReadingArchive). */
-    @Volatile var onAutoSaved: (Long, PendingImport) -> Unit = { _, _ -> }
+    /**
+     * Called when a document read in the background was saved without review (keeps its reading, see ReadingArchive);
+     * the third value is the job's file of many invoices, if any.
+     */
+    @Volatile var onAutoSaved: (Long, PendingImport, String?) -> Unit = { _, _, _ -> }
 
     /**
      * Told what happens to every job (read, saved by the app or the operator, failed, hidden, thrown away, loaded
@@ -152,6 +159,15 @@ class ImportQueue(
     private val kept = object : LinkedHashMap<String, PendingImport>(LAZY_KEEP + 1, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PendingImport>?): Boolean = size > LAZY_KEEP
     }
+
+    /** Jobs open in a review now: the app never saves one of them by itself meanwhile (see [recheck]). */
+    private val inReview = java.util.Collections.synchronizedSet(HashSet<String>())
+
+    private val _rechecking = MutableStateFlow<Set<String>>(emptySet())
+
+    /** Jobs being checked again right now (see [recheck]): not opened for a check meanwhile. */
+    val rechecking: StateFlow<Set<String>> = _rechecking.asStateFlow()
+    private val recheckLock = Mutex()
 
     /** True while something is still to be read (the foreground service stays up meanwhile). */
     val busy: Boolean get() = _jobs.value.any { it.status == JobStatus.QUEUED || it.status == JobStatus.READING }
@@ -330,7 +346,7 @@ class ImportQueue(
             val failed = start.copy(status = JobStatus.FAILED, error = STOPPED, progress = null)
             update(failed)
             emit(JobEvent(JobEvent.Kind.FAILED, failed.id, failed.bundleId, failed.order))
-            notifier.finished(failed)
+            if (failed.bundleId == null) notifier.finished(failed)
             return
         }
         var j = start.copy(status = JobStatus.READING, progress = ImportProgress(0, start.file.pageCount, 1), attempts = start.attempts + 1)
@@ -361,7 +377,7 @@ class ImportQueue(
             // Discarded while it was being read: nothing is saved.
             if (job(j.id) == null) return
             val savedId = runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()
-            savedId?.let { id -> runCatching { onAutoSaved(id, pending) } }
+            savedId?.let { id -> runCatching { onAutoSaved(id, pending, j.bundleId) } }
             // An invoice of a file of many waits on the phone, not in memory: it is rebuilt when opened (see load).
             val lazy = savedId == null && j.bundleId != null
             // Dropped while it was being saved: the document is in the app all the same, and its file's plan says so.
@@ -384,11 +400,13 @@ class ImportQueue(
                 if (savedId != null) JobEvent(JobEvent.Kind.SAVED_BY_APP, j.id, j.bundleId, j.order, savedId)
                 else JobEvent(JobEvent.Kind.READY, j.id, j.bundleId, j.order),
             )
-            notifier.finished(j)
+            // An invoice of a file of many: no message of its own (its file posts one for all, see BundleStore).
+            if (j.bundleId == null) notifier.finished(j)
             val alerts = runCatching { preparer.priceAlerts(savedId, prepared) }.onFailure { log.error("priceAlerts", it) }.getOrDefault(emptyList())
             if (alerts.isNotEmpty()) {
                 log.event("PRICE_ALERT", "job" to j.id.take(8), "changes" to alerts.size, "saved" to (savedId != null))
-                notifier.priceChanges(j, alerts, saved = savedId != null)
+                if (j.bundleId == null) notifier.priceChanges(j, alerts, saved = savedId != null)
+                else emit(JobEvent(JobEvent.Kind.PRICES_CHANGED, j.id, j.bundleId, j.order, savedId))
             }
         } catch (e: CancellationException) {
             throw e
@@ -401,8 +419,84 @@ class ImportQueue(
             j = (job(j.id) ?: return).copy(status = JobStatus.FAILED, error = message, progress = null)
             update(j)
             emit(JobEvent(JobEvent.Kind.FAILED, j.id, j.bundleId, j.order))
-            notifier.finished(j)
+            if (j.bundleId == null) notifier.finished(j)
         }
+    }
+
+    /** A review of job [id] opened ([open]) or closed: while open, the app does not save that job by itself. */
+    fun reviewing(id: String, open: Boolean) {
+        if (open) inReview.add(id) else inReview.remove(id)
+    }
+
+    /** The jobs [ids] are about to be checked again ([recheck]): from now on they are not opened for a check meanwhile. */
+    fun holdForRecheck(ids: Collection<String>) = _rechecking.update { it + ids }
+
+    /**
+     * Checks the read jobs [ids] again, one after another at background priority, with today's rules and gates
+     * unchanged: each reading is rebuilt from what was stored (nothing is read again, but the supplier is looked up
+     * again), prepared, and saved by the app when it now checks out (for example because its supplier was just saved,
+     * so its name is proven by its VAT number). The others stay to check, their reading no longer held in memory. A
+     * job open in a review, gone, or no longer waiting is left alone. Returns the documents saved.
+     */
+    suspend fun recheck(ids: List<String>): List<Long> {
+        _rechecking.update { it + ids }
+        try {
+            return recheckLock.withLock {
+                val todo = ids.filter { job(it)?.status == JobStatus.READY }
+                val saved = ArrayList<Long>()
+                withContext(worker) {
+                    for (id in todo) {
+                        try {
+                            recheckOne(id)?.let { saved += it }
+                        } catch (e: CancellationException) {
+                            throw e
+                        } catch (e: Exception) {
+                            log.error("recheck", e)
+                        } finally {
+                            _rechecking.update { it - id }
+                        }
+                    }
+                }
+                if (todo.isNotEmpty()) log.event("RECHECKED", "jobs" to todo.size, "saved" to saved.size)
+                saved
+            }
+        } finally {
+            _rechecking.update { it - ids.toSet() }
+        }
+    }
+
+    private suspend fun recheckOne(id: String): Long? {
+        val start = job(id)?.takeIf { it.status == JobStatus.READY && id !in inReview } ?: return null
+        // Rebuilt now, not the reading in memory: the supplier saved since is looked up by its VAT number again.
+        val pending = loadReading(start) ?: return null
+        val prepared = preparer.prepare(pending, start.flags)
+        // Opened, saved, thrown away or read again meanwhile: left as it is.
+        val now = job(id)?.takeIf { it.status == JobStatus.READY && id !in inReview } ?: return null
+        val savedId = runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()
+        val d = prepared.draft
+        if (savedId == null) {
+            // Still to check: the list's summary as it is now; an invoice of a file of many is rebuilt again when opened.
+            if (now.bundleId != null) synchronized(kept) { kept.remove(id) } else update(now.copy(pending = pending), persist = false)
+            update(
+                (job(id) ?: return null).copy(
+                    sellerName = d.seller.text.ifBlank { null }, totalCents = com.kitchenreceipts.core.ItalianNumbers.parseCents(d.total.text),
+                    itemCount = d.items.size, uncertainCount = d.uncertainCount, reasons = prepared.reasons,
+                ),
+            )
+            return null
+        }
+        runCatching { onAutoSaved(savedId, pending, now.bundleId) }
+        val done = (job(id) ?: now).copy(
+            status = JobStatus.SAVED, pending = null, savedDocumentId = savedId, progress = null,
+            sellerName = d.seller.text.ifBlank { null }, totalCents = com.kitchenreceipts.core.ItalianNumbers.parseCents(d.total.text),
+            itemCount = d.items.size, uncertainCount = d.uncertainCount, reasons = prepared.reasons,
+        )
+        synchronized(kept) { kept.remove(id) }
+        if (job(id) != null) update(done)
+        dropReading(id)
+        emit(JobEvent(JobEvent.Kind.SAVED_BY_APP, id, done.bundleId, done.order, savedId))
+        if (done.bundleId == null) notifier.finished(done)
+        return savedId
     }
 
     // ------------------------------------------------------------------ state + storage

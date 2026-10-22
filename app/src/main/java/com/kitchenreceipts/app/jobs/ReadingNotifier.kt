@@ -15,15 +15,18 @@ import androidx.core.content.ContextCompat
 import com.kitchenreceipts.app.MainActivity
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.settings.AppSettings
+import com.kitchenreceipts.core.BundlePlan
+import com.kitchenreceipts.core.BundleWizard
 import com.kitchenreceipts.core.ItalianNumbers
 import com.kitchenreceipts.core.PriceChange
 
 /**
  * Notifications for background reading: an ongoing one while documents are read (with progress), and one when
  * a document is ready to check or was saved by itself. Tapping opens the right screen. Only counts, supplier
- * names and totals are shown — they stay on the lock screen as "private" (content hidden when locked).
+ * names and totals are shown — they stay on the lock screen as "private" (content hidden when locked). The invoices of
+ * a file of many get no message each: one ongoing line for the file, and one result when it is read.
  */
-class ReadingNotifier(private val context: Context) {
+class ReadingNotifier(private val context: Context) : Notifier {
 
     private val manager = NotificationManagerCompat.from(context)
 
@@ -61,13 +64,17 @@ class ReadingNotifier(private val context: Context) {
 
     /**
      * The ongoing notification of the reading service: the document being read, or else the file of many invoices
-     * being looked through ([scan]: its plan and where the look is).
+     * being looked through ([scan]: its plan and where the look is). An invoice of a file of many ([plans]) shows the
+     * file's count instead ("Reading 120 of 173 · 12 ready to check"), and a tap opens the next one to check.
      */
-    fun progress(jobs: List<ImportJob>, scan: Pair<String, BundleStore.ScanProgress>? = null): Notification {
+    fun progress(jobs: List<ImportJob>, scan: Pair<String, BundleStore.ScanProgress>? = null, plans: List<BundlePlan> = emptyList()): Notification {
         val c = localized()
         val reading = jobs.firstOrNull { it.status == JobStatus.READING }
-        val waiting = jobs.count { it.status == JobStatus.QUEUED }
-        if (reading == null && waiting == 0 && scan != null) return scanning(c, scan.first, scan.second)
+        // The invoices of a file of many are counted by their file, not as documents waiting.
+        val waiting = jobs.count { it.status == JobStatus.QUEUED && it.bundleId == null }
+        if (reading == null && waiting == 0 && scan != null && jobs.none { it.status == JobStatus.QUEUED }) return scanning(c, scan.first, scan.second)
+        val plan = (reading ?: jobs.firstOrNull { it.status == JobStatus.QUEUED })?.bundleId?.let { id -> plans.firstOrNull { it.id == id } }
+        if (plan != null) return bundleProgress(c, plan, reading?.progress)
         val p = reading?.progress
         val text = when {
             p == null -> c.getString(R.string.notif_starting)
@@ -95,6 +102,28 @@ class ReadingNotifier(private val context: Context) {
         return b.build()
     }
 
+    /**
+     * "Reading 120 of 173 · 12 ready to check", updated quietly; the page of the invoice being read below. A tap opens
+     * the next invoice to check, or the file's list while none is ready.
+     */
+    private fun bundleProgress(c: Context, plan: BundlePlan, p: com.kitchenreceipts.app.ocr.ImportProgress?): Notification {
+        val n = BundleWizard.counts(plan)
+        val next = BundleWizard.nextJob(plan)
+        val b = NotificationCompat.Builder(context, CHANNEL_PROGRESS)
+            .setSmallIcon(R.drawable.ic_stat_reading)
+            .setContentTitle(c.getString(R.string.notif_bundle_progress, (n.read + 1).coerceAtMost(n.total), n.total, n.toCheck))
+            .setContentText(bundleTitle(c.resources, plan))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openIntent(next?.let { "review/$it" } ?: bundleRoute(plan.id), 0))
+        if (n.total > 0) b.setProgress(n.total, n.read.coerceIn(0, n.total), false) else b.setProgress(0, 0, true)
+        if (p != null && p.of > 0) b.setSubText(c.getString(R.string.notif_page, p.page, p.of))
+        return b.build()
+    }
+
     /** "Looking through the file: page 120 of 344", with the invoices found so far; a tap opens the file's import. */
     private fun scanning(c: Context, planId: String, s: BundleStore.ScanProgress): Notification =
         NotificationCompat.Builder(context, CHANNEL_PROGRESS)
@@ -111,14 +140,14 @@ class ReadingNotifier(private val context: Context) {
             .build()
 
     /** A long file was looked through: its invoices are ready to be sorted (a tap opens the file's import). */
-    fun bundleScanned(planId: String) {
+    override fun bundleScanned(planId: String) {
         if (!canPost()) return
         val c = localized()
         result(BUNDLE_PREFIX + planId, c.getString(R.string.notif_bundle_scanned), "", bundleRoute(planId))
     }
 
     /** A long file holds no invoices the app can cut apart: the question waits in the app ("Read the first 20 pages"). */
-    fun bundleLong(planId: String, pages: Int) {
+    override fun bundleLong(planId: String, pages: Int) {
         if (!canPost()) return
         val c = localized()
         result(BUNDLE_PREFIX + planId, c.getString(R.string.import_long_title, pages), c.getString(R.string.import_long_body), bundleRoute(planId))
@@ -140,7 +169,31 @@ class ReadingNotifier(private val context: Context) {
     }
 
     /** The paused message goes once the work carries on. */
-    fun cancelPaused() = manager.cancel(PAUSED_ID)
+    override fun cancelPaused() = manager.cancel(PAUSED_ID)
+
+    /**
+     * The file was read: one result in place of the "file is ready" message (the file's name, then "Invoices read: 173 ·
+     * Saved: 148 · To check: 25 · Not readable: 0"), a tap opens the file's list. When prices changed on some of its
+     * invoices, one more message, which opens the list showing those.
+     */
+    override fun bundleFinished(plan: BundlePlan) {
+        if (!canPost()) return
+        val c = localized()
+        val n = BundleWizard.counts(plan)
+        val title = bundleTitle(c.resources, plan)
+        result(BUNDLE_PREFIX + plan.id, title, c.getString(R.string.notif_bundle_done, n.read, n.saved, n.toCheck, n.failed), bundleRoute(plan.id))
+        val prices = plan.invoices.count { it.pricesChanged }
+        if (prices == 0) return
+        val tag = PRICES_PREFIX + plan.id
+        val b = NotificationCompat.Builder(context, CHANNEL_PRICES)
+            .setSmallIcon(R.drawable.ic_stat_reading)
+            .setContentTitle(c.resources.getQuantityString(R.plurals.notif_bundle_prices, prices, prices))
+            .setContentText(title)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openIntent(bundleRoute(plan.id) + "?prices=true", tag.hashCode()))
+        manager.notify(tag.hashCode(), b.build())
+    }
 
     private fun result(tag: String, title: String, text: String, route: String?) {
         val b = NotificationCompat.Builder(context, CHANNEL_RESULTS)
@@ -155,7 +208,7 @@ class ReadingNotifier(private val context: Context) {
 
     private fun bundleRoute(planId: String) = "bundle/$planId"
 
-    fun finished(job: ImportJob) {
+    override fun finished(job: ImportJob) {
         if (!canPost()) return
         val c = localized()
         val (title, text, route) = when (job.status) {
@@ -188,7 +241,7 @@ class ReadingNotifier(private val context: Context) {
      * Prices of a document read in the background that changed by 5% or more against the last purchase.
      * [saved]: the app saved the document itself (tap opens it); otherwise it waits to be checked (tap opens the check).
      */
-    fun priceChanges(job: ImportJob, changes: List<PriceChange>, saved: Boolean) {
+    override fun priceChanges(job: ImportJob, changes: List<PriceChange>, saved: Boolean) {
         if (changes.isEmpty() || !canPost()) return
         val c = localized()
         val lines = changes.map { ch ->
@@ -265,5 +318,6 @@ class ReadingNotifier(private val context: Context) {
         const val PROGRESS_ID = 4711
         const val PAUSED_ID = 4712
         private const val BUNDLE_PREFIX = "bundle:"
+        private const val PRICES_PREFIX = "bundleprices:"
     }
 }

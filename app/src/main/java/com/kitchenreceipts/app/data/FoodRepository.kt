@@ -55,11 +55,14 @@ class FoodRepository(private val db: AppDatabase) {
      * Dishes the prices of document [documentId] pushed over [target] food cost: prices without that document
      * against prices with it (see FoodCost.dishAlerts).
      */
-    suspend fun dishAlerts(documentId: Long, target: BigDecimal): List<FoodCost.DishAlert> = withContext(Dispatchers.IO) {
+    suspend fun dishAlerts(documentId: Long, target: BigDecimal): List<FoodCost.DishAlert> = dishAlerts(setOf(documentId), target)
+
+    /** The same for several documents saved together (the invoices of one file): their prices against those before them. */
+    suspend fun dishAlerts(documentIds: Set<Long>, target: BigDecimal): List<FoodCost.DishAlert> = withContext(Dispatchers.IO) {
         val recipes = dao.recipesOnce()
         if (recipes.isEmpty()) return@withContext emptyList()
         val rows = dao.pricedPurchases().first().filter { it.productId != null }
-        if (rows.none { it.documentId == documentId }) return@withContext emptyList()
+        if (rows.none { it.documentId in documentIds }) return@withContext emptyList()
         fun pricesOf(list: List<PricedRow>) = list.groupBy { it.productId!! }
             .mapNotNull { (pid, l) -> FoodCost.lastPrice(l.map { it.toPurchase() })?.let { pid to it } }.toMap()
         val items = dao.allItemsOnce().groupBy { it.recipeId }
@@ -67,7 +70,7 @@ class FoodRepository(private val db: AppDatabase) {
         withContext(Dispatchers.Default) {
             FoodCost.dishAlerts(
                 recipes.map { it.toCore(items[it.id].orEmpty()) },
-                pricesOf(rows.filter { it.documentId != documentId }), pricesOf(rows),
+                pricesOf(rows.filter { it.documentId !in documentIds }), pricesOf(rows),
                 { conv[it].orEmpty() }, target,
             )
         }

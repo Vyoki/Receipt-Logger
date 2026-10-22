@@ -8,7 +8,9 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.kitchenreceipts.app.files.EInvoiceEntry
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.settings.AppSettings
+import com.kitchenreceipts.core.BundleStatus
 import com.kitchenreceipts.core.BundleWizard
+import com.kitchenreceipts.core.InvoiceOutcome
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidLineItem
 import com.kitchenreceipts.core.VatBasis
@@ -130,8 +132,8 @@ class ScreenshotTest {
     }
 
     /**
-     * The import of a file of many invoices at its three steps (what the file holds, a new supplier, Read), and the
-     * page bar of a long file's viewer, in English and in Italian. Invented e-invoices only: ABC S.r.l. and VERDE
+     * The import of a file of many invoices at its three steps (what the file holds, a new supplier, Read), its list
+     * and home card while it is read, and the page bar of a long file's viewer, in English and in Italian. Invented e-invoices only: ABC S.r.l. and VERDE
      * FRESCO S.p.A., dates in 2031; the long file is TestPdfs' invented pages. Both imports are cancelled after.
      */
     @Test fun wizardScreens() {
@@ -165,7 +167,30 @@ class ScreenshotTest {
                     shot("31-bundle-supplier-$tag")
                     runBlocking { store.update(sha) { BundleWizard.useSuggestions(it).copy(step = BundleWizard.Step.READ) } }
                     shot("32-bundle-read-$tag")
+                    // Being read: the file's list by supplier (3 saved by the app, 2 to check, 1 saved by the operator,
+                    // the rest still to read), then its one card on the home screen. No job of its own: nothing is read.
+                    runBlocking {
+                        store.update(sha) { p ->
+                            var q = BundleWizard.confirm(p)
+                            val order = BundleWizard.planOrder(q)
+                            q = BundleWizard.queued(q, order.associateWith { "screens-job-$it" })
+                            order.forEachIndexed { k, i ->
+                                val o = when {
+                                    k < 3 -> InvoiceOutcome.SAVED_BY_APP
+                                    k < 5 -> InvoiceOutcome.READY
+                                    k == 5 -> InvoiceOutcome.SAVED_BY_YOU
+                                    else -> null
+                                }
+                                if (o != null) q = BundleWizard.record(q, "screens-job-$i", o, if (o == InvoiceOutcome.READY) null else 900L + i)
+                            }
+                            q
+                        }
+                    }
+                    shot("34-bundle-reading-$tag")
                     app.container.pendingRoute.value = "home"
+                    shot("35-home-bundle-$tag")
+                    // Not cancelled by a plain cancel (some are saved): put away as a cancelled import.
+                    runBlocking { store.update(sha) { BundleWizard.close(it, BundleStatus.CANCELLED) } }
                     Thread.sleep(500)
                     // The page bar of a long file (40 invented pages), at page 13.
                     app.container.pendingRoute.value = "viewer/-1?bundle=$longSha&page=12"
@@ -178,6 +203,8 @@ class ScreenshotTest {
             settings.language = language
             runBlocking {
                 store.cancel(sha)
+                // A cancel only stops an import with saved invoices: this invented one is put away all the same.
+                store.update(sha) { BundleWizard.close(it, BundleStatus.CANCELLED) }
                 store.cancel(longSha)
             }
         }

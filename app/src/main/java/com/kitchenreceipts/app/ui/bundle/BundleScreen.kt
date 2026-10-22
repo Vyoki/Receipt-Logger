@@ -36,10 +36,13 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -83,11 +86,13 @@ import kotlinx.coroutines.delay
  * file, the question on a long file, then the wizard's steps (what the file holds, where each invoice starts, the new
  * suppliers, Read), preparing, being read, and done. Only the steps with something to decide are shown and numbered.
  * Every choice is saved at once: leaving and coming back carries on where it was. Back goes one step back; on the
- * first step it asks whether to continue later or cancel the import.
+ * first step it asks whether to continue later or cancel the import. While the file is read, and once it is done, the
+ * page lists its invoices grouped by supplier ([pricesOnly]: only those whose prices changed).
  */
 @Composable
 fun BundleScreen(
     planId: String,
+    pricesOnly: Boolean = false,
     onBack: () -> Unit,
     onHome: () -> Unit,
     onReview: (String) -> Unit,
@@ -104,11 +109,25 @@ fun BundleScreen(
         }
     }
     BackHandler(onBack = back)
+    var onlyPrices by rememberSaveable { mutableStateOf(pricesOnly) }
+    val readingJob by vm.readingJob.collectAsStateWithLifecycle()
+    val rechecking by vm.rechecking.collectAsStateWithLifecycle()
+
+    // "5 more from this supplier saved by the app", once.
+    val snackbar = remember { SnackbarHostState() }
+    val rechecked by vm.rechecked.collectAsStateWithLifecycle()
+    val res = LocalContext.current.resources
+    LaunchedEffect(rechecked) {
+        val r = rechecked?.takeIf { it.planId == planId } ?: return@LaunchedEffect
+        vm.recheckedShown(r)
+        snackbar.showSnackbar(res.getQuantityString(R.plurals.bundle_rechecked, r.count, r.count))
+    }
 
     val plan = s.plan
     AppScaffold(
         title = stringResource(R.string.bundle_title),
         onBack = back,
+        snackbarHostState = snackbar,
         subBar = plan?.let { p -> stepLine(p, s.page)?.let { line -> { SubBarText(line) } } },
         bottomBar = { if (plan != null) StepButton(plan, s.page, vm) },
     ) { padding ->
@@ -127,6 +146,15 @@ fun BundleScreen(
             when (val page = st.page) {
                 BundlePage.Pages -> if (p != null) PageCheck(p, vm, onSeePages)
                 is BundlePage.Supplier -> if (p != null) SupplierStep(p, page.at, vm)
+                // Being read, or read: the file's invoices by supplier under the counts.
+                BundlePage.Reading, BundlePage.Done -> if (p != null) FileList(
+                    p, onlyPrices, readingJob, rechecking,
+                    onShowAll = { onlyPrices = false }, onReview = onReview, onOpenDocument = onOpenDocument, onRetry = vm::retry,
+                ) {
+                    st.error?.let { WarningCard(listOf(stringResource(it))) }
+                    if (page == BundlePage.Reading) Reading(p, st.seconds, vm, onReview, onHome, onStop = { asking = Ask.STOP_READING })
+                    else Done(p, vm, onClose = { vm.close(); onHome() }, onHome)
+                }
                 else -> Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
@@ -146,8 +174,6 @@ fun BundleScreen(
                             BundlePage.Found -> Found(p, vm, onOpenDocument, onCancel = { asking = Ask.CANCEL })
                             BundlePage.Read -> ReadStep(p, st.seconds)
                             BundlePage.Preparing -> Preparing(onHome)
-                            BundlePage.Reading -> Reading(p, onReview, onHome, onStop = { asking = Ask.STOP_READING })
-                            BundlePage.Done -> Done(p, vm, onClose = { vm.close(); onHome() }, onHome)
                             else -> Ended(p, vm, onHome)
                         }
                     }
@@ -391,14 +417,7 @@ private fun SameFileWarning(documentId: Long, vm: BundleViewModel, onOpenDocumen
 private fun ReadStep(plan: BundlePlan, seconds: Long) {
     val sum = BundleWizard.summary(plan)
     val est = BundleWizard.estimate(plan)
-    val context = LocalContext.current
-    // Looked at again now and then: the charger may be plugged in while the screen is open.
-    val charging by produceState<Boolean?>(null) {
-        while (true) {
-            value = ReadingTime.charging(context)
-            delay(10_000)
-        }
-    }
+    val charging = rememberCharging()
     Heading(stringResource(R.string.bundle_read_summary_title))
     Panel {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -428,6 +447,22 @@ private fun ReadStep(plan: BundlePlan, seconds: Long) {
     if (seconds > ReadingTime.LONG_SECONDS && charging == false) Annotation(stringResource(R.string.bundle_charge))
 }
 
+/**
+ * True when the phone is on a charger, false when not, null when Android does not say; looked at again now and then
+ * (the charger may be plugged in while the screen is open).
+ */
+@Composable
+private fun rememberCharging(): Boolean? {
+    val context = LocalContext.current
+    val charging by produceState<Boolean?>(null) {
+        while (true) {
+            value = ReadingTime.charging(context)
+            delay(10_000)
+        }
+    }
+    return charging
+}
+
 @Composable
 private fun Bullet(text: String) {
     Text("•  $text", style = MaterialTheme.typography.bodyLarge, modifier = Modifier.padding(start = 8.dp))
@@ -453,17 +488,25 @@ private fun Preparing(onHome: () -> Unit) {
     BigButton(stringResource(R.string.bundle_home), null, onClick = onHome, primary = false)
 }
 
-/** Being read (or paused by Android): the counts from the plan's outcomes, and the next invoice to check. */
+/**
+ * Being read (or paused by Android): the counts from the plan's outcomes, the time still to go (from what reading
+ * takes on this phone), and the next invoice to check.
+ */
 @Composable
-private fun Reading(plan: BundlePlan, onReview: (String) -> Unit, onHome: () -> Unit, onStop: () -> Unit) {
+private fun Reading(plan: BundlePlan, secondsLeft: Long, vm: BundleViewModel, onReview: (String) -> Unit, onHome: () -> Unit, onStop: () -> Unit) {
     val n = BundleWizard.counts(plan)
     Heading(pluralStringResource(R.plurals.bundle_queued_title, n.total, n.total))
     Text(stringResource(R.string.bundle_queued_body), style = MaterialTheme.typography.bodyLarge)
     LinearProgressIndicator(progress = { if (n.total <= 0) 1f else n.read.toFloat() / n.total }, modifier = Modifier.fillMaxWidth())
     Text(stringResource(R.string.bundle_card_progress, n.read, n.total), style = MaterialTheme.typography.titleMedium)
     if (plan.status == BundleStatus.PAUSED) Annotation(stringResource(R.string.bundle_paused))
-    // Greyed until the first invoice to check has been read; it lights up by itself.
-    val next = BundleWizard.nextToCheck(plan)?.let { plan.invoices[it].jobId }
+    if (n.reading > 0 && secondsLeft > 0) {
+        Text(stringResource(R.string.bundle_time_left, duration(secondsLeft)), style = MaterialTheme.typography.bodyLarge)
+        if (secondsLeft > ReadingTime.LONG_SECONDS && rememberCharging() == false) Annotation(stringResource(R.string.bundle_charge))
+    }
+    // Greyed until the first invoice to check has been read; it lights up by itself. In plan order, never one the app
+    // is checking again.
+    val next = if (n.toCheck > 0) vm.nextToCheck() else null
     BigButton(stringResource(R.string.bundle_check_next), null, onClick = { next?.let(onReview) }, enabled = next != null)
     if (n.toCheck > 0) {
         Text(pluralStringResource(R.plurals.bundle_card_to_check, n.toCheck, n.toCheck), style = MaterialTheme.typography.bodyMedium, color = Palette.Orange)

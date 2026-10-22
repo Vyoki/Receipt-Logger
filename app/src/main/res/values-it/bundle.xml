@@ -222,4 +222,38 @@
     <string name="viewer_prev">Pagina precedente</string>
     <string name="viewer_next">Pagina successiva</string>
     <string name="viewer_go">Vai</string>
+    <!-- Home card of a file of many invoices, review chain, recheck and the file's one notification -->
+    <string name="bundle_card_title">Fatture %1$s–%2$s · %3$d</string>
+    <string name="bundle_card_title_nodate">Fatture importate il %1$s · %2$d</string>
+    <string name="bundle_continue">Importazione in corso – continua</string>
+    <string name="bundle_position">Fattura %1$d di %2$d da controllare</string>
+    <plurals name="bundle_position_more">
+        <item quantity="one">+ %d ancora in lettura</item>
+        <item quantity="other">+ %d ancora in lettura</item>
+    </plurals>
+    <string name="bundle_check_later">Controlla dopo</string>
+    <string name="bundle_saved_next">Salvata ✓ · prossima: %1$s</string>
+    <plurals name="bundle_rechecked">
+        <item quantity="one">Un\'altra fattura di questo fornitore salvata dall\'app</item>
+        <item quantity="other">Altre %d fatture di questo fornitore salvate dall\'app</item>
+    </plurals>
+    <string name="bundle_preparing_one">Preparo questa fattura…</string>
+    <string name="notif_bundle_progress">Lettura %1$d di %2$d · %3$d da controllare</string>
+    <plurals name="notif_bundle_prices">
+        <item quantity="one">Prezzi cambiati in %d fattura</item>
+        <item quantity="other">Prezzi cambiati in %d fatture</item>
+    </plurals>
+    <!-- The file's list, grouped by supplier -->
+    <string name="bundle_list_title">Fatture per fornitore</string>
+    <string name="bundle_no_supplier">Fornitore non letto</string>
+    <string name="bundle_status_waiting">In attesa di lettura</string>
+    <string name="bundle_status_ready">Da controllare</string>
+    <string name="bundle_status_later">Da controllare dopo</string>
+    <string name="bundle_status_saved_app">Salvata dall\'app</string>
+    <string name="bundle_status_saved_you">Salvata da te</string>
+    <string name="bundle_status_stopped">Non ancora letta</string>
+    <string name="bundle_status_failed">Lettura non riuscita</string>
+    <string name="bundle_prices_only">Fatture con prezzi cambiati</string>
+    <string name="bundle_show_all">Mostra tutte le fatture</string>
+    <string name="bundle_time_left">Ancora circa %1$s</string>
 </resources>
