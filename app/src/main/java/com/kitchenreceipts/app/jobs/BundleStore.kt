@@ -251,6 +251,12 @@ class BundleStore(
             } catch (e: PdfText.Problem) {
                 log.event("BUNDLE_LOOK_FAILED", "why" to e.javaClass.simpleName)
                 null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Whatever went wrong, the file is still imported as today (read as one document).
+                log.error("bundleLook", e)
+                null
             }
         }
 
@@ -302,6 +308,12 @@ class BundleStore(
                 )
             } catch (e: PdfText.Problem) {
                 log.event("BUNDLE_SCAN_FAILED", "bundle" to id.take(8), "why" to e.javaClass.simpleName)
+                null
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Not looked through again at every start: the file goes on as one document (or with the question).
+                log.error("bundleScan", e)
                 null
             }
         }
