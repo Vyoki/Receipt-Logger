@@ -6,7 +6,17 @@ import android.content.ActivityNotFoundException
 import android.content.Intent
 import android.widget.Toast
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
+import com.kitchenreceipts.app.ui.components.FastScrollbar
+import com.kitchenreceipts.app.ui.components.FastScrollbarDefaults
+import com.kitchenreceipts.app.ui.components.JumpChip
+import com.kitchenreceipts.app.ui.components.JumpChips
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -21,7 +31,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.OpenInFull
-import androidx.compose.material.icons.filled.OpenInNew
+import androidx.compose.material.icons.automirrored.filled.OpenInNew
 import androidx.compose.material3.AssistChip
 import androidx.compose.material3.Card
 import androidx.compose.material3.Icon
@@ -121,6 +131,7 @@ fun DocumentDetailScreen(
     val scope = rememberCoroutineScope()
     var askDelete by remember { mutableStateOf(false) }
     val noViewer = stringResource(R.string.no_viewer_app)
+    val listState = rememberLazyListState()
 
     val doc = docResult?.getOrNull()
     AppScaffold(
@@ -142,78 +153,111 @@ fun DocumentDetailScreen(
             doc == null -> EmptyState(stringResource(R.string.document_not_found), Modifier.padding(padding))
             else -> {
                 val d = doc.document
-                LazyColumn(
-                    modifier = Modifier.padding(padding),
-                    contentPadding = PaddingValues(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(10.dp),
-                ) {
-                    if (autoSaved) {
-                        item("auto") {
-                            Surface(
-                                color = MaterialTheme.colorScheme.primaryContainer,
-                                contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
-                                shape = MaterialTheme.shapes.medium,
-                            ) {
-                                Row(Modifier.fillMaxWidth().padding(12.dp)) {
-                                    Icon(Icons.Filled.CheckCircle, contentDescription = null)
-                                    Spacer(Modifier.width(10.dp))
-                                    Text(stringResource(R.string.auto_saved_banner), style = MaterialTheme.typography.bodyMedium)
-                                }
-                            }
-                        }
+                val hasText = !d.ocrText.isNullOrBlank()
+                val parts = DetailParts(autoSaved, priceChanges.isNotEmpty(), items.size)
+                val jumpPages = stringResource(R.string.jump_pages)
+                val jumpSummary = stringResource(R.string.jump_summary)
+                val jumpLines = stringResource(R.string.jump_lines)
+                val recognised = stringResource(R.string.recognised_text)
+                val goTo: (Int) -> Unit = { i -> scope.launch { listState.animateScrollToItem(i) } }
+                val chips = listOf(JumpChip(jumpPages, parts.pages), JumpChip(jumpSummary, parts.summary), JumpChip(jumpLines, parts.title))
+                Column(Modifier.padding(padding)) {
+                    // Jumps to the parts of a long document; short ones need none.
+                    if (items.size >= JUMP_CHIPS_FROM_LINES) {
+                        JumpChips(chips, goTo, Modifier.padding(start = 16.dp, end = 16.dp, top = 12.dp))
                     }
-                    if (priceChanges.isNotEmpty()) {
-                        item("prices") { PriceChangesCard(priceChanges, onOpenProduct = onOpenProduct) }
-                    }
-                    item("pages") {
-                        Panel {
-                            DocumentPages(d.filePath, d.mimeType, d.pageCount, Modifier.fillMaxWidth().height(300.dp), onClick = onViewOriginal)
-                            Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                OutlinedButton(onClick = onViewOriginal, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
-                                    Icon(Icons.Filled.OpenInFull, contentDescription = null)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(stringResource(R.string.full_screen))
-                                }
-                                OutlinedButton(
-                                    onClick = {
-                                        val intent = Intent(Intent.ACTION_VIEW)
-                                            .setDataAndType(files.uriForSharing(d.filePath), d.mimeType)
-                                            .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                                        try {
-                                            context.startActivity(Intent.createChooser(intent, null))
-                                        } catch (_: ActivityNotFoundException) {
-                                            Toast.makeText(context, noViewer, Toast.LENGTH_LONG).show()
+                    Box(Modifier.weight(1f)) {
+                        LazyColumn(
+                            state = listState,
+                            modifier = Modifier.fillMaxSize(),
+                            contentPadding = PaddingValues(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 16.dp + FastScrollbarDefaults.EndGutter),
+                            verticalArrangement = Arrangement.spacedBy(10.dp),
+                        ) {
+                            if (autoSaved) {
+                                item("auto") {
+                                    Surface(
+                                        color = MaterialTheme.colorScheme.primaryContainer,
+                                        contentColor = MaterialTheme.colorScheme.onPrimaryContainer,
+                                        shape = MaterialTheme.shapes.medium,
+                                    ) {
+                                        Row(Modifier.fillMaxWidth().padding(12.dp)) {
+                                            Icon(Icons.Filled.CheckCircle, contentDescription = null)
+                                            Spacer(Modifier.width(10.dp))
+                                            Text(stringResource(R.string.auto_saved_banner), style = MaterialTheme.typography.bodyMedium)
                                         }
-                                    },
-                                    modifier = Modifier.weight(1f).heightIn(min = 48.dp),
-                                ) {
-                                    Icon(Icons.Filled.OpenInNew, contentDescription = null)
-                                    Spacer(Modifier.width(6.dp))
-                                    Text(stringResource(when (d.mimeType) { FileStore.MIME_PDF -> R.string.open_pdf; FileStore.MIME_XML -> R.string.open_xml; else -> R.string.open_image }))
+                                    }
                                 }
                             }
-                        }
-                    }
-                    item("summary") {
-                        Panel {
-                            Column(Modifier.padding(16.dp)) {
-                                KeyValue(stringResource(R.string.seller), doc.sellerName, emphasize = true)
-                                KeyValue(stringResource(R.string.date), fmtDate(d.documentDate))
-                                KeyValue(stringResource(R.string.document_number), d.documentNumber ?: "—")
-                                KeyValue(stringResource(R.string.prices_are), vatBasisLabel(d.vatBasis))
-                                KeyValue(stringResource(R.string.subtotal), fmtMoney(d.subtotalCents, d.currency))
-                                KeyValue(stringResource(R.string.vat_amount), fmtMoney(d.vatCents, d.currency))
-                                KeyValue(stringResource(R.string.total), fmtMoney(d.totalCents, d.currency), emphasize = true)
+                            if (priceChanges.isNotEmpty()) {
+                                item("prices") { PriceChangesCard(priceChanges, onOpenProduct = onOpenProduct) }
                             }
+                            item("pages") {
+                                Panel {
+                                    DocumentPages(d.filePath, d.mimeType, d.pageCount, Modifier.fillMaxWidth().height(300.dp), onClick = onViewOriginal)
+                                    Row(Modifier.fillMaxWidth().padding(8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                        OutlinedButton(onClick = onViewOriginal, modifier = Modifier.weight(1f).heightIn(min = 48.dp)) {
+                                            Icon(Icons.Filled.OpenInFull, contentDescription = null)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(stringResource(R.string.full_screen))
+                                        }
+                                        OutlinedButton(
+                                            onClick = {
+                                                val intent = Intent(Intent.ACTION_VIEW)
+                                                    .setDataAndType(files.uriForSharing(d.filePath), d.mimeType)
+                                                    .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                                                try {
+                                                    context.startActivity(Intent.createChooser(intent, null))
+                                                } catch (_: ActivityNotFoundException) {
+                                                    Toast.makeText(context, noViewer, Toast.LENGTH_LONG).show()
+                                                }
+                                            },
+                                            modifier = Modifier.weight(1f).heightIn(min = 48.dp),
+                                        ) {
+                                            Icon(Icons.AutoMirrored.Filled.OpenInNew, contentDescription = null)
+                                            Spacer(Modifier.width(6.dp))
+                                            Text(stringResource(when (d.mimeType) { FileStore.MIME_PDF -> R.string.open_pdf; FileStore.MIME_XML -> R.string.open_xml; else -> R.string.open_image }))
+                                        }
+                                    }
+                                }
+                            }
+                            item("summary") {
+                                Panel {
+                                    Column(Modifier.padding(16.dp)) {
+                                        KeyValue(stringResource(R.string.seller), doc.sellerName, emphasize = true)
+                                        KeyValue(stringResource(R.string.date), fmtDate(d.documentDate))
+                                        KeyValue(stringResource(R.string.document_number), d.documentNumber ?: "—")
+                                        KeyValue(stringResource(R.string.prices_are), vatBasisLabel(d.vatBasis))
+                                        KeyValue(stringResource(R.string.subtotal), fmtMoney(d.subtotalCents, d.currency))
+                                        KeyValue(stringResource(R.string.vat_amount), fmtMoney(d.vatCents, d.currency))
+                                        KeyValue(stringResource(R.string.total), fmtMoney(d.totalCents, d.currency), emphasize = true)
+                                    }
+                                }
+                            }
+                            item("kind") { com.kitchenreceipts.app.ui.checks.DocumentKindAndChecks(d, onOpenDocument) }
+                            item("itemsTitle") { SectionTitle(stringResource(R.string.line_items_count, items.size), Modifier.semantics { heading() }) }
+                            if (items.isEmpty()) item("noItems") { EmptyState(stringResource(R.string.no_line_items)) }
+                            // "Lot not recorded" only where the document prints lots (some line has one), never on a charge line.
+                            val lotsPrinted = items.any { it.item.lotNumber != null }
+                            items(items, key = { it.item.id }) { row -> SavedItemCard(row, d.currency, onOpenProduct, lotsPrinted) }
+                            d.ocrText?.takeIf { it.isNotBlank() }?.let { t -> item("recognised") { RecognisedTextCard(t) } }
                         }
+                        FastScrollbar(
+                            listState,
+                            label = { i ->
+                                when {
+                                    i < parts.summary -> jumpPages
+                                    i < parts.title -> jumpSummary
+                                    // No lines: the title, then "no line items".
+                                    parts.lines == 0 -> if (i <= parts.title + 1 || !hasText) jumpLines else recognised
+                                    i <= parts.lastLine ->
+                                        context.getString(R.string.scroll_line, (i - parts.firstLine).coerceAtLeast(0) + 1, parts.lines)
+                                    hasText -> recognised
+                                    else -> jumpLines
+                                }
+                            },
+                            actions = chips.map { c -> CustomAccessibilityAction(c.label) { goTo(c.index); true } },
+                        )
                     }
-                    item("kind") { com.kitchenreceipts.app.ui.checks.DocumentKindAndChecks(d, onOpenDocument) }
-                    item("itemsTitle") { SectionTitle(stringResource(R.string.line_items_count, items.size)) }
-                    if (items.isEmpty()) item("noItems") { EmptyState(stringResource(R.string.no_line_items)) }
-                    // "Lot not recorded" only where the document prints lots (some line has one), never on a charge line.
-                    val lotsPrinted = items.any { it.item.lotNumber != null }
-                    items(items, key = { it.item.id }) { row -> SavedItemCard(row, d.currency, onOpenProduct, lotsPrinted) }
-                    d.ocrText?.takeIf { it.isNotBlank() }?.let { t -> item("recognised") { RecognisedTextCard(t) } }
                 }
             }
         }
@@ -234,6 +278,18 @@ fun DocumentDetailScreen(
             onDismiss = { askDelete = false },
         )
     }
+}
+
+/** A document with this many lines or more gets the jump chips (with the header, about 4 screens). */
+private const val JUMP_CHIPS_FROM_LINES = 12
+
+/** Where the parts of the detail list are, by index (the order of the items above). */
+private class DetailParts(autoSaved: Boolean, prices: Boolean, val lines: Int) {
+    val pages = (if (autoSaved) 1 else 0) + (if (prices) 1 else 0)
+    val summary = pages + 1
+    val title = pages + 3 // after the summary and the kind card
+    val firstLine = title + 1
+    val lastLine = firstLine + lines - 1
 }
 
 @Composable
