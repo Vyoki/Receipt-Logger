@@ -27,6 +27,8 @@
     <string name="supcat_scope_one">Solo questa fattura</string>
     <string name="supcat_change_seller_note">Cambia come vengono raggruppate le fatture di questo fornitore e quali righe l\'app ti chiede di collegare. Nessun importo cambia.</string>
     <string name="supcat_forget">Dimentica la categoria di questo fornitore</string>
+    <!-- After a supplier's category was changed on Sellers: the supplier, then the category -->
+    <string name="supcat_saved_seller">Salvato: %1$s ora è in “%2$s”. Nessun importo cambia.</string>
     <!-- A section of a list: the category and how many are in it -->
     <string name="supcat_section">%1$s (%2$d)</string>
 
@@ -40,6 +42,9 @@
 
     <!-- Products and Sellers -->
     <string name="products_not_food">Non alimentari (%1$d)</string>
+    <!-- TalkBack: what tapping "Not food (N)" does -->
+    <string name="products_not_food_show">Mostrali</string>
+    <string name="products_not_food_hide">Nascondili</string>
     <string name="products_not_food_hint">Comprati solo da fornitori di luce, carburante, manutenzione o altre spese. Tutti i totali li contano come prima.</string>
     <string name="sellers_filter_all">Tutti</string>
     <string name="sellers_not_sorted_count">Da classificare (%1$d)</string>

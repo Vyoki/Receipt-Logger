@@ -27,6 +27,8 @@
     <string name="supcat_scope_one">Just this invoice</string>
     <string name="supcat_change_seller_note">Changes how this supplier\'s invoices are grouped and which lines the app asks you to link. No amounts change.</string>
     <string name="supcat_forget">Forget this supplier\'s category</string>
+    <!-- After a supplier's category was changed on Sellers: the supplier, then the category -->
+    <string name="supcat_saved_seller">Saved: %1$s is now in “%2$s”. No amounts change.</string>
     <!-- A section of a list: the category and how many are in it -->
     <string name="supcat_section">%1$s (%2$d)</string>
 
@@ -40,6 +42,9 @@
 
     <!-- Products and Sellers -->
     <string name="products_not_food">Not food (%1$d)</string>
+    <!-- TalkBack: what tapping "Not food (N)" does -->
+    <string name="products_not_food_show">Show them</string>
+    <string name="products_not_food_hide">Hide them</string>
     <string name="products_not_food_hint">Bought only from suppliers of electricity, fuel, repairs or other expenses. Every total still counts them as before.</string>
     <string name="sellers_filter_all">All</string>
     <string name="sellers_not_sorted_count">Not sorted (%1$d)</string>
