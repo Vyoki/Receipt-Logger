@@ -3,7 +3,6 @@
 package com.kitchenreceipts.app.ui.components
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.LocalIndication
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -19,7 +18,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -41,6 +39,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -101,11 +100,12 @@ private fun CategoryTile(
     modifier: Modifier = Modifier,
 ) {
     val source = remember { MutableInteractionSource() }
+    // Surface's own selectable keeps the ripple inside the rounded shape; the role makes it a radio button for TalkBack.
     Surface(
-        modifier = modifier
-            .heightIn(min = 64.dp)
-            .pressScale(source)
-            .selectable(selected = selected, interactionSource = source, indication = LocalIndication.current, role = Role.RadioButton, onClick = onClick),
+        selected = selected,
+        onClick = onClick,
+        modifier = modifier.heightIn(min = 64.dp).pressScale(source).semantics { role = Role.RadioButton },
+        interactionSource = source,
         shape = MaterialTheme.shapes.medium,
         color = if (selected) Palette.Phthalo else Palette.Panel,
         contentColor = MaterialTheme.colorScheme.onSurface,
