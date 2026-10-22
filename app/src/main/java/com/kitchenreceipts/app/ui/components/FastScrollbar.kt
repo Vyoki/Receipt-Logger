@@ -84,8 +84,12 @@ import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.theme.Motion
 import com.kitchenreceipts.app.ui.theme.Palette
 import com.kitchenreceipts.core.ScrollbarMath
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.channels.ReceiveChannel
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlin.math.abs
 import kotlin.math.max
 import kotlin.math.min
@@ -174,7 +178,7 @@ fun BoxScope.FastScrollbar(
     // Drag targets go to the list one at a time; a newer one replaces any not yet applied. No animation.
     val jumps = remember(state) { Channel<Pair<Int, Int>>(Channel.CONFLATED) }
     LaunchedEffect(state, jumps) {
-        for ((index, offset) in jumps) state.scrollToItem(index, offset)
+        jumps.applyEach { (index, offset) -> state.scrollToItem(index, offset) }
     }
 
     val context = LocalContext.current
@@ -231,7 +235,7 @@ fun BoxScope.FastScrollbar(
     val percent by remember(state) { derivedStateOf { (fraction() * 100).roundToInt() } }
     val jumps = remember(state) { Channel<Int>(Channel.CONFLATED) }
     LaunchedEffect(state, jumps) {
-        for (px in jumps) state.scrollTo(px)
+        jumps.applyEach { px -> state.scrollTo(px) }
     }
     val context = LocalContext.current
     val currentLabel by rememberUpdatedState(label)
@@ -253,6 +257,21 @@ fun BoxScope.FastScrollbar(
         onGrab = onGrab,
         actions = actions,
     )
+}
+
+/**
+ * Applies each jump in turn. A scroll the list refuses because the finger's own scroll still holds it (a higher
+ * priority) ends in a CancellationException: that jump is skipped and the next one is tried, instead of ending the
+ * loop for good. A real cancellation (the screen closed) still ends it.
+ */
+private suspend fun <T> ReceiveChannel<T>.applyEach(apply: suspend (T) -> Unit) {
+    for (jump in this) {
+        try {
+            apply(jump)
+        } catch (_: CancellationException) {
+            currentCoroutineContext().ensureActive()
+        }
+    }
 }
 
 /** The app's settings, or null where there is no app container (a preview). */

@@ -37,12 +37,12 @@ data class JumpChip(val label: String, val index: Int)
 fun JumpChips(chips: List<JumpChip>, goTo: (Int) -> Unit, modifier: Modifier = Modifier) {
     AnimatedVisibility(
         visible = chips.isNotEmpty() && !WindowInsets.isImeVisible,
-        modifier = modifier,
         enter = expandVertically(Motion.enter()) + fadeIn(Motion.enter()),
         exit = shrinkVertically(Motion.exit()) + fadeOut(Motion.exit()),
     ) {
+        // The caller's modifier (padding, mostly) is on the row, so its room goes away with the chips.
         FlowRow(
-            Modifier.fillMaxWidth(),
+            modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalArrangement = Arrangement.spacedBy(8.dp),
         ) {
