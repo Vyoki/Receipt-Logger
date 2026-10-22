@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Impostazioni ▸ Lettore AI: il controllo AI più breve dei PDF digitali (decide il titolare; spento di base) -->
+    <string name="ai_light_title">Controllo AI più rapido dei PDF digitali</string>
+    <string name="ai_light_hint">Quando ogni pagina di un PDF contiene il proprio testo esatto, l\'AI controlla solo il fornitore, la data e il numero, e i totali: al massimo 30 secondi per fattura. Le righe vengono comunque controllate con le somme. Lascialo spento finché il titolare non dice di sì.</string>
+</resources>

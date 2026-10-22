@@ -14,6 +14,8 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -31,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.data.ProductEntity
@@ -39,7 +42,8 @@ import com.kitchenreceipts.core.ProductRef
 
 /**
  * Assigns a receipt description to a canonical product. Similar products are only *suggested*;
- * the user taps one, or creates a new product. Nothing is merged automatically.
+ * the user taps one, or creates a new product. Nothing is merged automatically. Products bought only from
+ * electricity, fuel, repair and other-expenses suppliers ([notFood]) are folded at the end, in "Not food (N)".
  */
 @Composable
 fun ProductPickerSheet(
@@ -52,6 +56,7 @@ fun ProductPickerSheet(
     onDismiss: () -> Unit,
     /** What the "create" button says ("Create new product “%1$s”" by default). */
     createLabel: Int = R.string.create_product,
+    notFood: Set<Long> = emptySet(),
 ) {
     val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     var query by androidx.compose.runtime.saveable.rememberSaveable(description) { mutableStateOf(ProductMatching.proposeName(description)) }
@@ -66,6 +71,8 @@ fun ProductPickerSheet(
     val key = ProductMatching.aliasKey(query)
     val filtered = remember(keyed, key) { keyed.filter { (_, k) -> key.isBlank() || k.contains(key) }.map { it.first } }
     val exact = remember(keyed, key) { keyed.firstOrNull { (_, k) -> k == key }?.first }
+    val (goods, apart) = remember(filtered, notFood) { filtered.partition { it.id !in notFood } }
+    var showApart by remember { mutableStateOf(false) }
 
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.padding(horizontal = 16.dp).imePadding(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -90,7 +97,13 @@ fun ProductPickerSheet(
                     items(suggestions, key = { "s${it.id}" }) { p -> ProductRow(p, p.id == currentProductId) { onPick(p) } }
                     item { HorizontalDivider(Modifier.padding(vertical = 8.dp)) }
                 }
-                items(filtered, key = { "p${it.id}" }) { p -> ProductRow(p, p.id == currentProductId) { onPick(p) } }
+                items(goods, key = { "p${it.id}" }) { p -> ProductRow(p, p.id == currentProductId) { onPick(p) } }
+                // Shown at once when nothing else matches what was typed.
+                if (apart.isNotEmpty()) {
+                    val open = showApart || goods.isEmpty()
+                    item(key = "not-food") { NotFoodRow(apart.size, open) { showApart = !open } }
+                    if (open) items(apart, key = { "p${it.id}" }) { p -> ProductRow(p, p.id == currentProductId) { onPick(p) } }
+                }
                 if (currentProductId != null) {
                     item {
                         TextButton(onClick = onClear, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
@@ -101,6 +114,17 @@ fun ProductPickerSheet(
             }
         }
     }
+}
+
+/** "Not food (N)": shows or hides the products of non-food suppliers. */
+@Composable
+private fun NotFoodRow(count: Int, open: Boolean, onToggle: () -> Unit) {
+    val action = stringResource(if (open) R.string.products_not_food_hide else R.string.products_not_food_show)
+    ListItem(
+        headlineContent = { Text(stringResource(R.string.products_not_food, count), style = MaterialTheme.typography.titleMedium) },
+        trailingContent = { Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null) },
+        modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(onClickLabel = action, role = Role.Button, onClick = onToggle),
+    )
 }
 
 @Composable

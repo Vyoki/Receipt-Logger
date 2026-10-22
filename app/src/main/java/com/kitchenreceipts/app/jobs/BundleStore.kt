@@ -46,6 +46,10 @@ import java.io.File
  * operator taps Read, the file is cut into one PDF per invoice and each is queued in [ImportQueue]; what happens to
  * each job comes back through [onJobEvent] and is recorded in the plan, because the queue forgets saved jobs.
  *
+ * While the invoices are read, the operator gets one ongoing line and one result for the whole file (see [Notifier]),
+ * and a chain of the invoices to check in plan order ([next]). When the operator saves the first invoice of a supplier,
+ * its other invoices waiting to be checked are checked again (ImportQueue.recheck), with the same rules as always.
+ *
  * Nothing here changes how a document is read, checked or saved. Everything stays on the phone.
  */
 class BundleStore(
@@ -55,7 +59,7 @@ class BundleStore(
     private val queue: ImportQueue,
     private val settings: AppSettings,
     private val log: AppLog,
-    private val notifier: ReadingNotifier,
+    private val notifier: Notifier,
     /** The documents saved in the app: an invoice of the file already among them starts left out. */
     private val saved: suspend () -> List<BundleWizard.Saved> = { emptyList() },
     /** True when a saved document uses the file: it is then never deleted with a cancelled import. */
@@ -67,6 +71,11 @@ class BundleStore(
      * the invoices go to be read. Nothing is kept until it is set.
      */
     private val rememberChoices: suspend (List<SupplierChoice>) -> Unit = {},
+    /**
+     * The dishes check after documents were saved (the dishes their prices pushed over the food cost target): once for
+     * the invoices the app saved while the file was read, not once each.
+     */
+    private val dishesCheck: suspend (List<Long>) -> Unit = {},
     /** Where the plans are kept (a test uses its own folder). */
     private val dir: File = File(context.filesDir, DIR),
 ) {
@@ -91,6 +100,18 @@ class BundleStore(
     val preparing: StateFlow<Set<String>> = _preparing.asStateFlow()
 
     private val _missing = MutableStateFlow<Set<String>>(emptySet())
+
+    /** [count] more invoices of one supplier were saved by the app after the operator saved its first one ([seq]: which time). */
+    data class Rechecked(val planId: String, val count: Int, val seq: Long)
+
+    private val _rechecked = MutableStateFlow<Rechecked?>(null)
+
+    /** The last check again that saved something, until a screen has said so ([shown]). */
+    val rechecked: StateFlow<Rechecked?> = _rechecked.asStateFlow()
+    private val recheckSeq = java.util.concurrent.atomic.AtomicLong()
+
+    /** A screen said "5 more from this supplier saved by the app": not again. */
+    fun shown(r: Rechecked) = _rechecked.compareAndSet(r, null)
 
     /** Plans closed in this session because their file is no longer on the phone (the screen says so). */
     val missing: StateFlow<Set<String>> = _missing.asStateFlow()
@@ -419,9 +440,25 @@ class BundleStore(
         if (p.status != BundleStatus.SORTING) return Prepared.Queued(0)
         update(id) { BundleWizard.confirm(it) }
         log.event("BUNDLE_CONFIRMED", "bundle" to id.take(8), "toRead" to BundleWizard.toRead(p).size)
-        val chosen = BundleWizard.newSuppliers(p).filter { it.include && SupplierCategory.fromKey(it.category) != null }
+        // The categories chosen (new suppliers, and known ones changed here) are remembered for the next files. A
+        // supplier put off or left out is not.
+        val chosen = (BundleWizard.newSuppliers(p) + BundleWizard.knownSuppliers(p)).filter { it.include && SupplierCategory.fromKey(it.category) != null }
         if (chosen.isNotEmpty()) runCatching { rememberChoices(chosen) }.onFailure { log.error("bundleRemember", it) }
         return queueWaiting(id) { it.copy(status = BundleStatus.SORTING, step = BundleWizard.Step.READ) }
+    }
+
+    /**
+     * The operator changed the category of an invoice's supplier on its check ("For all invoices from this supplier",
+     * job [jobId]): the plan's choice for that supplier follows, and so do the jobs of its other invoices (shown and
+     * counted with the new one). Display only: no figure depends on it.
+     */
+    suspend fun supplierCategoryChanged(id: String, jobId: String, category: SupplierCategory) {
+        val p = plan(id) ?: return
+        val inv = p.invoices.firstOrNull { it.jobId == jobId }?.takeIf { it.isInvoice } ?: return
+        val key = BundleWizard.supplierKey(inv)
+        update(id) { BundleWizard.setCategory(it, key, category.key) }
+        p.invoices.filter { it.isInvoice && BundleWizard.supplierKey(it) == key }.mapNotNull { it.jobId }
+            .forEach { queue.setCategory(it, category.key) }
     }
 
     /** "Read the N not read yet": the invoices stopped before are cut from the kept file again and queued. */
@@ -485,6 +522,8 @@ class BundleStore(
             }
             persist(id)
             log.event("BUNDLE_QUEUED", "bundle" to id.take(8), "jobs" to jobs.size)
+            // Read already while they were being queued (a few quick e-invoices).
+            announceIfRead(id)
             return Prepared.Queued(jobs.size)
         } finally {
             _preparing.update { it - id }
@@ -502,6 +541,68 @@ class BundleStore(
         update(id) { BundleWizard.close(it.copy(invoices = emptyList())) }
         log.event("BUNDLE_READ_AS_ONE", "bundle" to id.take(8), "pages" to p.pageCount, "job" to job.id.take(8))
         return job
+    }
+
+    // ------------------------------------------------------------------ the chain of invoices to check
+
+    /**
+     * The next invoice to check (its job) after the one of job [afterJob], in plan order and going round, then the ones
+     * put off; never one the app is checking again right now. Null when none is ready.
+     */
+    fun next(id: String, afterJob: String? = null): String? {
+        val p = plan(id) ?: return null
+        return BundleWizard.nextJob(p, afterJob, skip = queue.rechecking.value)
+    }
+
+    /** "Check later": the invoice of job [jobId] goes to the end of the chain. */
+    suspend fun checkLater(id: String, jobId: String): BundlePlan? = update(id) { p ->
+        val i = p.invoices.indexOfFirst { it.jobId == jobId }
+        if (i < 0) p else BundleWizard.checkLater(p, i)
+    }
+
+    /** "Invoice n of N to check": n (from 1) and N for job [jobId], or null when it is not to check. */
+    fun position(id: String, jobId: String): Pair<Int, Int>? {
+        val p = plan(id) ?: return null
+        return BundleWizard.positionInChain(p, p.invoices.indexOfFirst { it.jobId == jobId })
+    }
+
+    /** Checks the supplier's other invoices again after the operator saved its first one (see BundleWizard.recheckAfterSave). */
+    private fun recheckSoon(id: String, jobs: List<String>) {
+        log.event("BUNDLE_RECHECK", "bundle" to id.take(8), "jobs" to jobs.size)
+        // At once: the chain does not open one of them while it waits to be checked again.
+        queue.holdForRecheck(jobs)
+        scope.launch {
+            try {
+                val saved = queue.recheck(jobs)
+                if (saved.isEmpty()) return@launch
+                _rechecked.value = Rechecked(id, saved.size, recheckSeq.incrementAndGet())
+                // Before the file's result, those are checked with it (once); after it, these alone, once.
+                if (plan(id)?.announced == true) runCatching { dishesCheck(saved) }.onFailure { log.error("dishAlerts", it) }
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.error("bundleRecheck", e)
+            }
+        }
+    }
+
+    /**
+     * Posts the file's one result once nothing is left to read (also when the app was closed in between, see
+     * [afterRestore]), and runs the dishes check once for the invoices the app saved.
+     */
+    private fun announceIfRead(id: String) {
+        val p = synchronized(lock) {
+            val p = byId[id]?.takeIf { BundleWizard.toAnnounce(it) } ?: return
+            set(BundleWizard.announce(p))
+            dirty.add(id)
+            p
+        }
+        writeSoon(id)
+        runCatching { notifier.bundleFinished(p) }.onFailure { log.error("bundleFinished", it) }
+        val n = BundleWizard.counts(p)
+        log.event("BUNDLE_READ", "bundle" to id.take(8), "read" to n.read, "saved" to n.saved, "toCheck" to n.toCheck, "failed" to n.failed, "prices" to p.invoices.count { it.pricesChanged })
+        val autoSaved = p.invoices.filter { it.outcome == InvoiceOutcome.SAVED_BY_APP }.mapNotNull { it.documentId }
+        if (autoSaved.isNotEmpty()) scope.launch { runCatching { dishesCheck(autoSaved) }.onFailure { log.error("dishAlerts", it) } }
     }
 
     /**
@@ -550,7 +651,24 @@ class BundleStore(
         val p = plan(id) ?: return
         if (BundleWizard.unsavedJobs(p).isNotEmpty()) stop(id)
         update(id) { BundleWizard.close(it) }
+        // Invoices that could not be read have no card of their own: their jobs go with the import (a part is cut
+        // again from the kept file; an e-invoice is the original and stays).
+        p.invoices.filter { it.outcome == InvoiceOutcome.FAILED }.mapNotNull { it.jobId }.forEach { queue.discard(it, deleteFile = p.file.isNotBlank()) }
         log.event("BUNDLE_CLOSED", "bundle" to id.take(8))
+    }
+
+    /** "Try again" on an invoice that could not be read (job [jobId]): it is read again, as a document on its own is. */
+    suspend fun retry(id: String, jobId: String) {
+        if (queue.job(jobId)?.status != JobStatus.FAILED) return
+        update(id) { p ->
+            if (p.invoices.none { it.jobId == jobId && it.outcome == InvoiceOutcome.FAILED }) return@update p
+            p.copy(
+                status = if (p.status == BundleStatus.DONE) BundleStatus.QUEUED else p.status,
+                invoices = p.invoices.map { if (it.jobId == jobId) it.copy(outcome = InvoiceOutcome.QUEUED) else it },
+            )
+        } ?: return
+        queue.retry(jobId)
+        log.event("BUNDLE_RETRY", "bundle" to id.take(8), "job" to jobId.take(8))
     }
 
     /** Closes a plan whose file is gone (it cannot be looked through or cut any more); the screen says so. */
@@ -580,6 +698,7 @@ class BundleStore(
         notifier.cancelPaused()
         plans.value.filter { it.status == BundleStatus.PAUSED }.forEach { p ->
             change(p.id) { if (it.status == BundleStatus.PAUSED) settle(it.copy(status = BundleStatus.QUEUED)) else it }
+            announceIfRead(p.id)
         }
         resumeScans()
     }
@@ -589,6 +708,7 @@ class BundleStore(
     /** A job of a plan moved on (see ImportQueue.listener). Called on any thread; quick. */
     fun onJobEvent(e: JobEvent) {
         val id = e.bundleId ?: return
+        var recheck = emptyList<String>()
         val launch = synchronized(lock) {
             val p = byId[id] ?: return
             val n = if (p.invoices.none { it.jobId == e.jobId }) {
@@ -611,9 +731,12 @@ class BundleStore(
             }
             if (n == p) return
             set(n)
+            if (e.kind == JobEvent.Kind.SAVED_BY_YOU) recheck = BundleWizard.recheckAfterSave(n, e.jobId)
             dirty.add(id)
         }
         if (launch) writeSoon(id)
+        if (recheck.isNotEmpty()) recheckSoon(id, recheck)
+        announceIfRead(id)
     }
 
     /** One event recorded in the plan. */
@@ -627,6 +750,7 @@ class BundleStore(
             JobEvent.Kind.FAILED -> record(InvoiceOutcome.FAILED)
             // A document the app saved, hidden from the list: still saved.
             JobEvent.Kind.DISMISSED -> p
+            JobEvent.Kind.PRICES_CHANGED -> BundleWizard.pricesChanged(p, e.jobId)
             // Thrown away by the operator, unsaved: left out of this import.
             JobEvent.Kind.DISCARDED -> record(InvoiceOutcome.LEFT_OUT)
             JobEvent.Kind.RESTORED -> when (e.status) {
@@ -674,6 +798,8 @@ class BundleStore(
                 settle(p)
             }
         }
+        // A file whose last invoice was read just before the app was closed: its result is posted now.
+        plans.value.forEach { announceIfRead(it.id) }
     }
 
     /** A plan being read with nothing left to read or check is done. */

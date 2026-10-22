@@ -47,11 +47,14 @@ object Routes {
     const val FOOD = "food"
     const val RECIPE = "recipe/{id}"
     const val ORDERS = "orders"
-    /** The import of a file of many invoices; id = its plan (the file's SHA-256, see BundleStore). */
-    const val BUNDLE = "bundle/{id}"
+    /**
+     * The import of a file of many invoices; id = its plan (the file's SHA-256, see BundleStore). [prices]: its list
+     * shows only the invoices whose prices changed (from the "Prices changed on N invoices" message).
+     */
+    const val BUNDLE = "bundle/{id}?prices={prices}"
 
     fun recipe(id: Long) = "recipe/$id"
-    fun bundle(planId: String) = "bundle/$planId"
+    fun bundle(planId: String, prices: Boolean = false) = if (prices) "bundle/$planId?prices=true" else "bundle/$planId"
 
     fun edit(id: Long) = "edit/$id"
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
@@ -114,6 +117,7 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onSettings = { go(Routes.SETTINGS) },
                 onInventory = { go(Routes.INVENTORY) },
                 onReviewJob = { go(Routes.review(it)) },
+                onOpenBundle = { go(Routes.bundle(it)) },
                 onBackup = { go(Routes.BACKUP) },
                 onChecks = { go(Routes.CHECKS) },
                 onLots = { go(Routes.LOTS) },
@@ -155,10 +159,17 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onBundle = { id -> goWith(Routes.bundle(id)) { popUpTo(Routes.HOME) } },
             )
         }
-        composable(Routes.BUNDLE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+        composable(
+            Routes.BUNDLE,
+            arguments = listOf(
+                navArgument("id") { type = NavType.StringType },
+                navArgument("prices") { type = NavType.BoolType; defaultValue = false },
+            ),
+        ) { entry ->
             val planId = entry.arguments!!.getString("id")!!
             com.kitchenreceipts.app.ui.bundle.BundleScreen(
                 planId = planId,
+                pricesOnly = entry.arguments!!.getBoolean("prices"),
                 onBack = back,
                 onHome = { if (!nav.popBackStack(Routes.HOME, inclusive = false)) nav.navigate(Routes.HOME) },
                 onReview = { go(Routes.review(it)) },
@@ -174,6 +185,18 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onBack = back,
                 onViewOriginal = { go(Routes.viewerForJob(jobId)) },
                 onSaved = { id, auto -> goWith(Routes.document(id, auto)) { popUpTo(Routes.HOME) } },
+                // An invoice of a file of many: the next one to check takes this one's place; after the last, the
+                // file's list (the one below when it is there, so Back never comes back to a saved invoice).
+                onChain = { next, planId ->
+                    if (nav.currentBackStackEntry === entry) {
+                        if (next != null) {
+                            nav.navigate(Routes.review(next)) { popUpTo(Routes.REVIEW_NEW) { inclusive = true } }
+                        } else {
+                            val listBelow = runCatching { nav.getBackStackEntry(Routes.BUNDLE) }.isSuccess
+                            nav.navigate(Routes.bundle(planId)) { popUpTo(if (listBelow) Routes.BUNDLE else Routes.REVIEW_NEW) { inclusive = true } }
+                        }
+                    }
+                },
             )
         }
         composable(Routes.EDIT, arguments = listOf(navArgument("id") { type = NavType.LongType })) { entry ->

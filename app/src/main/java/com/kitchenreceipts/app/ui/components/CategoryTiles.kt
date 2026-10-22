@@ -40,6 +40,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.heading
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -55,8 +56,8 @@ import com.kitchenreceipts.core.SupplierCategory
 /**
  * What a supplier mostly sells, as big tiles in two columns: a symbol, the name and a few example words each. A tap
  * calls [onPick]. [suggested] (from the invoices) has an orange outline and [chosenBefore] (found by the name alone) a
- * caption: both still need the tap. "Decide later" is a separate full-width button, shown when [onDecideLater] is set.
- * It does not scroll by itself, so it fits a dialog, a sheet or a screen.
+ * caption: both still need the tap. "Decide later" is a separate full-width button, shown when [onDecideLater] is set
+ * and marked when [decidedLater]. It does not scroll by itself, so it fits a dialog, a sheet or a screen.
  */
 @Composable
 fun CategoryTiles(
@@ -66,6 +67,7 @@ fun CategoryTiles(
     suggested: SupplierCategory? = null,
     chosenBefore: SupplierCategory? = null,
     onDecideLater: (() -> Unit)? = null,
+    decidedLater: Boolean = false,
 ) {
     Column(modifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
         Column(Modifier.selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -83,7 +85,14 @@ fun CategoryTiles(
             }
         }
         if (onDecideLater != null) {
-            OutlinedButton(onClick = onDecideLater, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+            OutlinedButton(
+                onClick = onDecideLater,
+                modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp).semantics { this.selected = decidedLater },
+            ) {
+                if (decidedLater) {
+                    Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Palette.PhthaloBright, modifier = Modifier.size(24.dp))
+                    Spacer(Modifier.width(8.dp))
+                }
                 Text(stringResource(R.string.supcat_decide_later), style = MaterialTheme.typography.titleMedium)
             }
         }

@@ -131,6 +131,26 @@ class DraftPreparer(
         repo.categoryOf(vat, sellerName)?.takeIf { it.known }?.category
     }.onFailure { log.error("supplierCategory", it) }.getOrNull()
 
+    /** The supplier's VAT number printed on [ocrText] (never the restaurant's own), or null. */
+    fun supplierVat(ocrText: String?): String? = ocrText?.takeIf { it.isNotBlank() }?.let {
+        runCatching { SellerProfiles.supplierVatNumber(it, settings.ownVatNumber.ifBlank { null }) }.getOrNull()
+    }
+
+    /**
+     * What is remembered for the supplier of [ocrText] (by its printed VAT number: known) or of [sellerName] (by the
+     * name's code only: a suggestion, "Chosen last time"). Null when nothing is.
+     */
+    suspend fun categoryMatch(ocrText: String?, sellerName: String?): com.kitchenreceipts.app.data.CategoryMatch? = runCatching {
+        repo.categoryOf(supplierVat(ocrText), sellerName?.ifBlank { null })
+    }.onFailure { log.error("categoryMatch", it) }.getOrNull()
+
+    /**
+     * The category chosen for the job itself ([key]: "Just this invoice", or the wizard's choice for an invoice of a
+     * file of many) goes before the one remembered for the supplier. "later" or none: [p] as it is.
+     */
+    fun withJobCategory(p: PreparedDraft, key: String?): PreparedDraft =
+        SupplierCategory.fromKey(key)?.let { p.copy(supplierCategory = it) } ?: p
+
     /**
      * The operator chose [category] on the check screen. [forSupplier]: for all of the supplier's invoices, remembered
      * by the VAT number printed on [ocrText] and the name. Otherwise "Just this invoice": only this draft carries it,

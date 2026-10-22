@@ -37,22 +37,25 @@ class ReadingService : Service() {
         val c = (application as KitchenReceiptsApp).container
         val type = if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0
         ServiceCompat.startForeground(
-            this, ReadingNotifier.PROGRESS_ID, c.notifier.progress(c.importQueue.jobs.value, c.bundleStore.scans.value.entries.firstOrNull()?.toPair()), type,
+            this, ReadingNotifier.PROGRESS_ID,
+            c.notifier.progress(c.importQueue.jobs.value, c.bundleStore.scans.value.entries.firstOrNull()?.toPair(), c.bundleStore.plans.value), type,
         )
         // Files being looked through when the app was closed carry on from their last saved page.
         c.bundleStore.resumeScans()
         scope.coroutineContext[kotlinx.coroutines.Job]?.children?.forEach { it.cancel() }
         scope.launch {
-            // At most one notification update per second (Android also rate-limits them).
-            combine(c.importQueue.jobs, c.bundleStore.scans) { jobs, scans -> jobs to scans }.sample(1000).collectLatest { (jobs, scans) ->
-                if (jobs.none { it.status == JobStatus.QUEUED || it.status == JobStatus.READING } && !c.bundleStore.busy) {
-                    ServiceCompat.stopForeground(this@ReadingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
-                    stopSelf()
-                } else if (NotificationManagerCompat.from(this@ReadingService).areNotificationsEnabled()) {
-                    val scan = scans.entries.firstOrNull()?.toPair()
-                    runCatching { NotificationManagerCompat.from(this@ReadingService).notify(ReadingNotifier.PROGRESS_ID, c.notifier.progress(jobs, scan)) }
+            // At most one notification update per second (Android also rate-limits them). A file of many invoices is
+            // counted from its plan ("Reading 120 of 173 · 12 ready to check").
+            combine(c.importQueue.jobs, c.bundleStore.scans, c.bundleStore.plans) { jobs, scans, plans -> Triple(jobs, scans, plans) }
+                .sample(1000).collectLatest { (jobs, scans, plans) ->
+                    if (jobs.none { it.status == JobStatus.QUEUED || it.status == JobStatus.READING } && !c.bundleStore.busy) {
+                        ServiceCompat.stopForeground(this@ReadingService, ServiceCompat.STOP_FOREGROUND_REMOVE)
+                        stopSelf()
+                    } else if (NotificationManagerCompat.from(this@ReadingService).areNotificationsEnabled()) {
+                        val scan = scans.entries.firstOrNull()?.toPair()
+                        runCatching { NotificationManagerCompat.from(this@ReadingService).notify(ReadingNotifier.PROGRESS_ID, c.notifier.progress(jobs, scan, plans)) }
+                    }
                 }
-            }
         }
         return START_NOT_STICKY
     }

@@ -27,6 +27,7 @@ import com.kitchenreceipts.core.ItalianDates
 import com.kitchenreceipts.core.ItalianNumbers
 import com.kitchenreceipts.core.LineItemDraft
 import com.kitchenreceipts.core.LineChoice
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.SupplierMemory
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidationResult
@@ -90,7 +91,28 @@ data class ReviewState(
     val replacements: Map<String, List<String>> = emptyMap(),
     /** A new document's kind, read from its title (null: not printed); shown and changed with one tap before saving. */
     val kind: com.kitchenreceipts.core.DocKind? = null,
+    /** An invoice of a file of many, saved or put off: where the chain goes now (see [ChainMove]). */
+    val chainMove: ChainMove? = null,
+    /**
+     * What the supplier sells: this invoice's own choice, else remembered by its VAT number (a saved document: by its
+     * name too, as on Sellers); null = not sorted. Where things are shown only: no figure depends on it.
+     */
+    val supplierCategory: SupplierCategory? = null,
+    /** The category chosen last time for a supplier of the same name (no VAT number to be sure): shown, never applied. */
+    val categoryChosenBefore: SupplierCategory? = null,
 )
+
+/**
+ * Where the review of an invoice of a file of many is in that file's chain of invoices to check: "Invoice 3 of 25 to
+ * check" ([position] of [of]; null when not known) and the invoices still being read.
+ */
+data class Chain(val planId: String, val position: Int?, val of: Int, val stillReading: Int)
+
+/**
+ * The chain moves on after a save or "Check later": to the invoice of job [next] (from [nextSupplier]), or back to the
+ * file's list when none is ready. [saved]: after a save ("Saved ✓ · next: …" first).
+ */
+data class ChainMove(val planId: String, val next: String?, val nextSupplier: String?, val saved: Boolean)
 
 data class SaveConfirmation(
     val duplicates: List<DuplicateInfo>,
@@ -175,11 +197,37 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         nextKey = maxOf(nextKey, (d.items.maxOfOrNull { it.key } ?: 0L) + 1)
     }
 
+    /** The file of many invoices this document was cut from; null for a document on its own (or a saved one). */
+    val bundleId: String? = if (documentId == null) jobId?.let { c.importQueue.job(it)?.bundleId } else null
+
+    private var lastPosition: Pair<Int, Int>? = null
+
+    /** "Invoice 3 of 25 to check (+ 40 still being read)", from the file's plan as it changes. */
+    val chain: StateFlow<Chain?> = bundleId?.let { id ->
+        c.bundleStore.plans.map { list -> list.firstOrNull { it.id == id }?.let(::chainOf) }
+            .stateIn(viewModelScope, SharingStarted.Eagerly, c.bundleStore.plan(id)?.let(::chainOf))
+    } ?: MutableStateFlow(null)
+
+    private fun chainOf(p: com.kitchenreceipts.core.BundlePlan): Chain {
+        // Once saved it is no longer in the chain: its place stays as it was while it shows.
+        val at = com.kitchenreceipts.core.BundleWizard.positionInChain(p, p.invoices.indexOfFirst { it.jobId == jobId })?.also { lastPosition = it } ?: lastPosition
+        return Chain(p.id, at?.first, at?.second ?: com.kitchenreceipts.core.BundleWizard.chain(p).size, com.kitchenreceipts.core.BundleWizard.counts(p).reading)
+    }
+
+    /** "5 more from this supplier saved by the app" (see BundleStore.rechecked). */
+    val rechecked: StateFlow<com.kitchenreceipts.app.jobs.BundleStore.Rechecked?> = c.bundleStore.rechecked
+
+    fun recheckedShown(r: com.kitchenreceipts.app.jobs.BundleStore.Rechecked) = c.bundleStore.shown(r)
+
     val products: StateFlow<List<ProductEntity>> = repo.products().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    /** Products bought only from non-food suppliers: folded at the end of the product picker. */
+    val notFoodProducts: StateFlow<Set<Long>> = repo.notFoodProductIds().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
     val sellerNames: StateFlow<List<String>> =
         repo.sellers().map { list -> list.map { it.name } }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     init {
+        // While it is open here, the app does not save this document by itself (see ImportQueue.recheck).
+        if (documentId == null) jobId?.let { c.importQueue.reviewing(it, true) }
         viewModelScope.launch { if (documentId == null) loadPending() else loadExisting(documentId) }
         // The suppliers saved on the phone come in a moment after opening: the supplier's replacements follow them.
         viewModelScope.launch { sellerNames.collect { if (!_state.value.loading) refreshChecks(0) } }
@@ -200,6 +248,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         val prepared = withContext(Dispatchers.Default) { c.preparer.prepare(pending, bundleFlags) }
         ocrSellerRaw = prepared.ocrSellerRaw
         supplierKey = prepared.supplierKey
+        // The job's own category ("Just this invoice", or the file's wizard) before the one remembered by VAT number.
+        val category = c.preparer.withJobCategory(prepared, job.category).supplierCategory
+        val match = if (category == null) withContext(Dispatchers.Default) { c.preparer.categoryMatch(pending.ocrText, prepared.draft.seller.text) } else null
         ocrPages = pending.rawLines
         readParsed = pending.parsed
         ocrWidths = pending.ocrWidths
@@ -221,8 +272,16 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             recognition = prepared.recognition,
             reviewReasons = if (kept != null) AutoAccept.reasons(draft, bundleFlags) else prepared.reasons,
             priceChanges = if (kept != null) priceChanges(draft) else prepared.priceChanges,
+            supplierCategory = category,
+            categoryChosenBefore = match?.takeIf { !it.known }?.category,
         )
         refreshChecks(0)
+        // The next invoice of the chain is made ready meanwhile (about a second), so it opens at once.
+        bundleId?.let { id -> c.bundleStore.next(id, afterJob = jobId)?.let(::prefetch) }
+    }
+
+    private fun prefetch(next: String) {
+        c.appScope.launch { runCatching { c.importQueue.load(next) }.onFailure { c.log.error("prefetch", it) } }
     }
 
     private suspend fun priceChanges(d: DocumentDraft): List<PriceChange> = c.preparer.priceChanges(d, documentId)
@@ -289,12 +348,15 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         val shown = kept ?: draft
         startKeys(shown)
         if (kept != null) c.log.event("DRAFT_RESTORED", "new" to false, "doc" to id)
+        // A saved supplier's category as Sellers shows it: by its VAT number, else by its name.
+        val match = withContext(Dispatchers.Default) { c.preparer.categoryMatch(doc.ocrText, sellerName) }
         _state.value = ReviewState(
             loading = false, isNew = false, draft = shown, restored = kept != null,
             filePath = doc.filePath, mimeType = doc.mimeType, pageCount = doc.pageCount,
             recognisedText = doc.ocrText?.takeIf { it.isNotBlank() },
             reviewReasons = AutoAccept.reasons(shown),
             priceChanges = priceChanges(shown),
+            supplierCategory = match?.category,
         )
         refreshChecks(0)
     }
@@ -357,6 +419,33 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun setKind(k: com.kitchenreceipts.core.DocKind?) {
         _state.update { it.copy(kind = k) }
         c.log.event("KIND_SET", "new" to true, "kind" to k)
+    }
+
+    /** A document read now (not a saved one) can keep a category for itself only: "Just this invoice". */
+    val canChooseJustThis: Boolean get() = documentId == null && jobId != null
+
+    /**
+     * The operator chose what the supplier sells. [forSupplier] ("For all invoices from this supplier", the default):
+     * remembered on this phone by the supplier's VAT number and name, as on Sellers; an invoice of a file of many
+     * also moves its supplier there in the file. Otherwise "Just this invoice": kept with this document's job only,
+     * the memory untouched. Display only: no amount changes.
+     */
+    fun chooseCategory(category: SupplierCategory, forSupplier: Boolean) {
+        val all = forSupplier || !canChooseJustThis
+        _state.update { it.copy(supplierCategory = category) }
+        c.log.event("CATEGORY_SET", "category" to category.key, "forSupplier" to all, "new" to (documentId == null))
+        val text = ocrText ?: docOcrText
+        val name = _state.value.draft.seller.text.ifBlank { null }
+        c.appScope.launch {
+            runCatching {
+                if (all) c.repository.rememberCategory(c.preparer.supplierVat(text), name, category)
+                if (documentId == null) jobId?.let { id ->
+                    c.importQueue.setCategory(id, category.key)
+                    val planId = bundleId
+                    if (all && planId != null) c.bundleStore.supplierCategoryChanged(planId, id, category)
+                }
+            }.onFailure { c.log.error("chooseCategory", it) }
+        }
     }
 
     fun setVatBasis(v: VatBasis) = editDraft { it.copy(vatBasis = v, vatBasisUncertain = false) }
@@ -448,6 +537,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     }
 
     override fun onCleared() {
+        if (documentId == null) jobId?.let { c.importQueue.reviewing(it, false) }
         peekPage?.second?.recycle()
         peekPage = null
         // The last corrections, if the short wait before keeping them had not passed yet (a small file).
@@ -517,7 +607,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             // Files on the phone (queue, readings, corrections, what was learned): not on the screen's thread.
             withContext(Dispatchers.IO) { afterSave(id, doc, own, auto) }
             c.checkDishes(id)
-            _state.update { it.copy(saving = false, savedId = id, autoSaved = auto) }
+            // An invoice of a file of many: on to the next one to check (its plan has just recorded this save).
+            val move = bundleId?.let { planId -> chainMove(planId, saved = true) }
+            _state.update { it.copy(saving = false, savedId = id, autoSaved = auto, chainMove = move) }
         } catch (e: Exception) {
             c.log.error("save", e)
             _state.update { it.copy(saving = false, saveError = com.kitchenreceipts.app.ui.friendlyError(com.kitchenreceipts.app.settings.AppSettings.wrapWithLanguage(c.appContext).resources, e)) }
@@ -552,6 +644,37 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             }
         }
     }
+
+    /** The next invoice of the chain after this one (made ready at once), or none: back to the file's list. */
+    private fun chainMove(planId: String, saved: Boolean): ChainMove {
+        val next = c.bundleStore.next(planId, afterJob = jobId)
+        next?.let(::prefetch)
+        val supplier = next?.let { n ->
+            c.bundleStore.plan(planId)?.invoices?.firstOrNull { it.jobId == n }?.supplierName ?: c.importQueue.job(n)?.sellerName
+        }
+        return ChainMove(planId, next, supplier, saved)
+    }
+
+    /**
+     * "Check later": this invoice goes to the end of the file's chain, with the corrections made so far kept, and the
+     * next one opens.
+     */
+    fun checkLater() {
+        val planId = bundleId ?: return
+        val job = jobId ?: return
+        // Once: a second tap while it moves on does nothing.
+        if (movingOn || _state.value.saving || _state.value.savedId != null) return
+        movingOn = true
+        c.log.event("CHECK_LATER", "job" to job.take(8))
+        viewModelScope.launch {
+            val draft = _state.value.draft
+            if (!_state.value.loading) withContext(Dispatchers.IO) { writeKept(draft) }
+            c.bundleStore.checkLater(planId, job)
+            _state.update { it.copy(chainMove = chainMove(planId, saved = false)) }
+        }
+    }
+
+    private var movingOn = false
 
     /** Throws away a document that was read but not saved, including its stored original. */
     fun discard() {

@@ -22,6 +22,7 @@ import com.kitchenreceipts.app.jobs.DraftPreparer
 import com.kitchenreceipts.app.jobs.ImportQueue
 import com.kitchenreceipts.app.jobs.ReadingNotifier
 import com.kitchenreceipts.app.learning.LearningStore
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.SupplierMemory
 
 /** Manual dependency container: small enough that a DI framework would add more than it saves. */
@@ -55,6 +56,7 @@ class AppContainer(context: Context) {
         return AiUse(
             reader = { AiPageReader.open(aiModels, nativeLibDir) },
             always = mode == AppSettings.AiMode.ALWAYS,
+            lightOnExactText = settings.aiLightOnExactText,
             style = if (trained) com.kitchenreceipts.core.AiTasks.Style.COMPACT else com.kitchenreceipts.core.AiTasks.Style.FULL,
             agent = trained,
             examples = { parsed, text ->
@@ -101,6 +103,13 @@ class AppContainer(context: Context) {
         context, appScope, fileStore, importQueue, settings, log, notifier,
         saved = { repository.savedForBundles() },
         fileInUse = { repository.fileInUse(it) },
+        // What each supplier sells, as remembered on this phone: a supplier known by its VAT number is not asked again.
+        memory = { learning.supplierCategoryMemory.value.mapValues { it.value.category.key } },
+        // The wizard's choices, for the next files and for Sellers (by VAT number, and the name only as a code).
+        rememberChoices = { list ->
+            list.forEach { s -> SupplierCategory.fromKey(s.category)?.let { repository.rememberCategory(s.vat, s.name, it) } }
+        },
+        dishesCheck = { ids -> checkDishesOnce(ids) },
     )
 
     /** Every file brought in, shared to the app or picked on Capture, goes through here (see ImportIntake). */
@@ -120,7 +129,11 @@ class AppContainer(context: Context) {
     val readingChecker = com.kitchenreceipts.app.diagnostics.ReadingChecker(context, repository, readings, settings, problems, log) { importQueue.busy }
 
     init {
-        importQueue.onAutoSaved = { id, pending -> readings.save(id, pending.rawLines, pending.ocrWidths, pending.ocrHeights); checkDishes(id) }
+        importQueue.onAutoSaved = { id, pending, bundle ->
+            readings.save(id, pending.rawLines, pending.ocrWidths, pending.ocrHeights)
+            // An invoice of a file of many: its dishes are checked once with the others (see BundleStore).
+            if (bundle == null) checkDishes(id)
+        }
         // A supplier already saved under a VAT number proves the supplier of a new document with that number. Read on
         // the reading's background thread; never on the main thread (the database refuses it, and nothing is lost).
         settings.supplierLookup = { vat ->
@@ -145,6 +158,19 @@ class AppContainer(context: Context) {
                 }
             }.onFailure { log.error("dishAlerts", it) }
         }
+    }
+
+    /** The same, once for several documents the app saved together (the invoices of one file): one message at most. */
+    suspend fun checkDishesOnce(documentIds: Collection<Long>) {
+        if (!settings.priceAlerts || documentIds.isEmpty()) return
+        runCatching {
+            val target = settings.foodCostTarget
+            val alerts = food.dishAlerts(documentIds.toSet(), target)
+            if (alerts.isNotEmpty()) {
+                log.event("DISH_ALERT", "docs" to documentIds.size, "dishes" to alerts.size)
+                notifier.dishesOverTarget(documentIds.first(), alerts, target)
+            }
+        }.onFailure { log.error("dishAlerts", it) }
     }
 
     /** Backup and restore of everything on this phone, to a file the operator keeps. */

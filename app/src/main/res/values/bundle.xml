@@ -141,8 +141,6 @@
         <item quantity="other">%1$d credit notes: %2$s</item>
     </plurals>
     <string name="bundle_question">What does this supplier mostly sell you?</string>
-    <string name="bundle_suggested">Suggested</string>
-    <string name="bundle_chosen_before">Chosen last time</string>
     <plurals name="bundle_use_suggestions">
         <item quantity="one">Use the suggestion for %d supplier</item>
         <item quantity="other">Use the suggestion for %d suppliers</item>
@@ -157,16 +155,7 @@
         <item quantity="one">Next: %d left for later</item>
         <item quantity="other">Next: %d left for later</item>
     </plurals>
-    <string name="bundle_decide_later">Decide later</string>
     <!-- The supplier categories of the plain list in the Suppliers step (until the category tiles take its place) -->
-    <string name="bundle_cat_food">Food</string>
-    <string name="bundle_cat_drinks">Drinks</string>
-    <string name="bundle_cat_supplies">Cleaning &amp; disposables</string>
-    <string name="bundle_cat_utilities">Electricity, gas, water, phone</string>
-    <string name="bundle_cat_fuel">Fuel &amp; transport</string>
-    <string name="bundle_cat_equipment">Repairs, hardware &amp; equipment</string>
-    <string name="bundle_cat_other">Other expenses</string>
-    <string name="bundle_cat_none">Not sorted yet</string>
     <!-- Step 3: what is read, and how long it takes -->
     <string name="bundle_read_summary_title">Ready to read</string>
     <plurals name="bundle_left_out">
@@ -222,4 +211,38 @@
     <string name="viewer_prev">Previous page</string>
     <string name="viewer_next">Next page</string>
     <string name="viewer_go">Go</string>
+    <!-- Home card of a file of many invoices, review chain, recheck and the file's one notification -->
+    <string name="bundle_card_title">Invoices %1$s–%2$s · %3$d</string>
+    <string name="bundle_card_title_nodate">Invoices imported on %1$s · %2$d</string>
+    <string name="bundle_continue">Import in progress – continue</string>
+    <string name="bundle_position">Invoice %1$d of %2$d to check</string>
+    <plurals name="bundle_position_more">
+        <item quantity="one">+ %d still being read</item>
+        <item quantity="other">+ %d still being read</item>
+    </plurals>
+    <string name="bundle_check_later">Check later</string>
+    <string name="bundle_saved_next">Saved ✓ · next: %1$s</string>
+    <plurals name="bundle_rechecked">
+        <item quantity="one">%d more from this supplier saved by the app</item>
+        <item quantity="other">%d more from this supplier saved by the app</item>
+    </plurals>
+    <string name="bundle_preparing_one">Preparing this invoice…</string>
+    <string name="notif_bundle_progress">Reading %1$d of %2$d · %3$d ready to check</string>
+    <plurals name="notif_bundle_prices">
+        <item quantity="one">Prices changed on %d invoice</item>
+        <item quantity="other">Prices changed on %d invoices</item>
+    </plurals>
+    <!-- The file's list, grouped by supplier -->
+    <string name="bundle_list_title">Invoices by supplier</string>
+    <string name="bundle_no_supplier">Supplier not read</string>
+    <string name="bundle_status_waiting">Waiting to be read</string>
+    <string name="bundle_status_ready">To check</string>
+    <string name="bundle_status_later">To check later</string>
+    <string name="bundle_status_saved_app">Saved by the app</string>
+    <string name="bundle_status_saved_you">Saved by you</string>
+    <string name="bundle_status_stopped">Not read yet</string>
+    <string name="bundle_status_failed">Could not be read</string>
+    <string name="bundle_prices_only">Invoices whose prices changed</string>
+    <string name="bundle_show_all">Show all invoices</string>
+    <string name="bundle_time_left">About %1$s to go</string>
 </resources>

@@ -6,14 +6,19 @@ import com.kitchenreceipts.app.ui.components.OutlinedButton
 import com.kitchenreceipts.app.ui.theme.Palette
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyListScope
+import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ErrorOutline
+import androidx.compose.material.icons.filled.FolderCopy
 import androidx.compose.material.icons.filled.HourglassTop
 import androidx.compose.material.icons.filled.RateReview
 import androidx.compose.material3.Card
@@ -24,53 +29,154 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kitchenreceipts.app.R
+import com.kitchenreceipts.app.jobs.BundleStore
 import com.kitchenreceipts.app.jobs.ImportJob
 import com.kitchenreceipts.app.jobs.JobStatus
+import com.kitchenreceipts.app.jobs.bundleTitle
 import com.kitchenreceipts.app.ui.appContainer
 import com.kitchenreceipts.app.ui.fmtMoney
+import com.kitchenreceipts.app.ui.theme.Motion
+import com.kitchenreceipts.app.ui.theme.pressScale
+import com.kitchenreceipts.core.BundlePlan
+import com.kitchenreceipts.core.BundleStatus
+import com.kitchenreceipts.core.BundleWizard
 
-/** Documents being read in the background, and those ready to check or saved by themselves. */
-@Composable
-fun JobsSection(onReview: (String) -> Unit, onOpenDocument: (Long) -> Unit) {
-    val queue = appContainer().importQueue
-    val jobs by queue.jobs.collectAsStateWithLifecycle()
-    if (jobs.isEmpty()) return
-    // Discarding deletes the photo: asked first, as on the review screen (a wet finger hits the button next to it).
-    var discarding by remember { mutableStateOf<String?>(null) }
-    discarding?.let { id ->
-        com.kitchenreceipts.app.ui.components.ConfirmDialog(
-            title = stringResource(R.string.discard_title),
-            text = stringResource(R.string.discard_text),
-            confirmLabel = stringResource(R.string.discard),
-            onConfirm = { discarding = null; queue.discard(id) },
-            onDismiss = { discarding = null },
-            dismissLabel = stringResource(R.string.keep),
-        )
+/**
+ * Work in the background on the home screen, as items of its list (keyed: a change moves only its own card): one card
+ * per document read on its own (as always), and one card per file of many invoices instead of one per invoice. A
+ * file's counts come from its plan's outcomes, never from the job list. [onDiscard] asks before throwing a document
+ * away (see [DiscardJobDialog]).
+ */
+fun LazyListScope.jobItems(
+    jobs: List<ImportJob>,
+    plans: List<BundlePlan>,
+    scans: Map<String, BundleStore.ScanProgress>,
+    onReview: (String) -> Unit,
+    onOpenDocument: (Long) -> Unit,
+    onOpenBundle: (String) -> Unit,
+    onDiscard: (String) -> Unit,
+) {
+    items(plans.filter { it.status in ON_HOME }, key = { "plan-" + it.id }) { plan ->
+        Box(Modifier.animateItem(placementSpec = Motion.place)) {
+            BundleCard(plan, scans[plan.id], onOpen = { onOpenBundle(plan.id) }, onReview = onReview)
+        }
     }
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        jobs.forEach { job ->
+    // The invoices of a file of many are on their file's card.
+    items(jobs.filter { it.bundleId == null }, key = { "job-" + it.id }) { job ->
+        val queue = appContainer().importQueue
+        Box(Modifier.animateItem(placementSpec = Motion.place)) {
             JobCard(
                 job,
                 onReview = { onReview(job.id) },
                 onOpen = { job.savedDocumentId?.let(onOpenDocument); queue.dismiss(job.id) },
                 onDismiss = { queue.dismiss(job.id) },
                 onRetry = { queue.retry(job.id) },
-                onDiscard = { discarding = job.id },
+                onDiscard = { onDiscard(job.id) },
             )
         }
     }
 }
+
+/** The files of many invoices with a card on the home screen: until the operator closes the import. */
+private val ON_HOME = setOf(
+    BundleStatus.SCANNING, BundleStatus.NOT_SPLITTABLE, BundleStatus.SORTING, BundleStatus.PREPARING,
+    BundleStatus.QUEUED, BundleStatus.PAUSED, BundleStatus.DONE,
+)
+
+/** Discarding deletes the photo: asked first, as on the review screen (a wet finger hits the button next to it). */
+@Composable
+fun DiscardJobDialog(jobId: String?, onClose: () -> Unit) {
+    val id = jobId ?: return
+    val queue = appContainer().importQueue
+    com.kitchenreceipts.app.ui.components.ConfirmDialog(
+        title = stringResource(R.string.discard_title),
+        text = stringResource(R.string.discard_text),
+        confirmLabel = stringResource(R.string.discard),
+        onConfirm = { onClose(); queue.discard(id) },
+        onDismiss = onClose,
+        dismissLabel = stringResource(R.string.keep),
+    )
+}
+
+/**
+ * One file of many invoices: "Invoices 01/09–30/09 · 173", a progress bar and one action: carry on with the import,
+ * "25 to check →" (the next invoice of the chain), or a word that Android paused the reading. A tap on the card opens
+ * the file's list.
+ */
+@Composable
+private fun BundleCard(plan: BundlePlan, scan: BundleStore.ScanProgress?, onOpen: () -> Unit, onReview: (String) -> Unit) {
+    val store = appContainer().bundleStore
+    val res = LocalContext.current.resources
+    val n = BundleWizard.counts(plan)
+    val wizard = plan.status in WIZARD
+    val accent = when {
+        plan.status == BundleStatus.DONE -> Palette.Ok
+        n.toCheck > 0 || wizard -> Palette.Orange
+        else -> Palette.PhthaloBorder
+    }
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Card(
+        onClick = onOpen,
+        interactionSource = source,
+        modifier = Modifier.pressScale(source).fillMaxWidth(),
+        shape = MaterialTheme.shapes.medium,
+        colors = CardDefaults.cardColors(containerColor = Palette.Panel, contentColor = MaterialTheme.colorScheme.onSurface),
+        border = BorderStroke(1.dp, accent),
+    ) {
+        Column(Modifier.fillMaxWidth().padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    when {
+                        plan.status == BundleStatus.DONE -> Icons.Filled.CheckCircle
+                        n.toCheck > 0 -> Icons.Filled.RateReview
+                        else -> Icons.Filled.FolderCopy
+                    },
+                    contentDescription = null,
+                    tint = accent,
+                )
+                Column(Modifier.weight(1f).padding(start = 12.dp)) {
+                    Text(bundleTitle(res, plan, scan?.found), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+                    val line = when {
+                        wizard -> stringResource(R.string.bundle_continue)
+                        plan.status == BundleStatus.PAUSED -> stringResource(R.string.bundle_paused)
+                        plan.status == BundleStatus.DONE -> stringResource(R.string.bundle_all_done)
+                        else -> stringResource(R.string.bundle_card_progress, n.read, n.total)
+                    }
+                    Text(line, style = MaterialTheme.typography.bodySmall, color = if (wizard || plan.status == BundleStatus.PAUSED) Palette.Orange else Palette.TextDim)
+                }
+                Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
+            }
+            when {
+                plan.status == BundleStatus.SCANNING && scan != null && scan.of > 0 ->
+                    LinearProgressIndicator(progress = { scan.page.toFloat() / scan.of }, modifier = Modifier.fillMaxWidth())
+                plan.status == BundleStatus.SCANNING || plan.status == BundleStatus.PREPARING -> LinearProgressIndicator(Modifier.fillMaxWidth())
+                (plan.status == BundleStatus.QUEUED || plan.status == BundleStatus.PAUSED) && n.total > 0 ->
+                    LinearProgressIndicator(progress = { n.read.toFloat() / n.total }, modifier = Modifier.fillMaxWidth())
+            }
+            // One action: the next invoice to check (the chain), in plan order.
+            if (!wizard && n.toCheck > 0) {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    Button(
+                        onClick = { store.next(plan.id)?.let(onReview) ?: onOpen() },
+                        modifier = Modifier.heightIn(min = 56.dp),
+                    ) { Text(pluralStringResource(R.plurals.bundle_card_to_check, n.toCheck, n.toCheck)) }
+                }
+            }
+        }
+    }
+}
+
+/** The import is still in the wizard: looked through, asked, sorted or cut. */
+private val WIZARD = setOf(BundleStatus.SCANNING, BundleStatus.NOT_SPLITTABLE, BundleStatus.SORTING, BundleStatus.PREPARING)
 
 @Composable
 private fun JobCard(job: ImportJob, onReview: () -> Unit, onOpen: () -> Unit, onDismiss: () -> Unit, onRetry: () -> Unit, onDiscard: () -> Unit) {

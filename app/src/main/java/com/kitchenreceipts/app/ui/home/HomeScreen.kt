@@ -36,6 +36,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -79,6 +82,8 @@ fun HomeScreen(
     onSettings: () -> Unit,
     onInventory: () -> Unit,
     onReviewJob: (String) -> Unit,
+    /** The import of a file of many invoices (its plan id). */
+    onOpenBundle: (String) -> Unit = {},
     onBackup: () -> Unit = {},
     onChecks: () -> Unit = {},
     onLots: () -> Unit = {},
@@ -89,6 +94,12 @@ fun HomeScreen(
     val recent by vm.recent.collectAsStateWithLifecycle()
     val attention by vm.attention.collectAsStateWithLifecycle()
     val expiring by vm.expiring.collectAsStateWithLifecycle()
+    val c = com.kitchenreceipts.app.ui.appContainer()
+    val jobs by c.importQueue.jobs.collectAsStateWithLifecycle()
+    val plans by c.bundleStore.plans.collectAsStateWithLifecycle()
+    val scans by c.bundleStore.scans.collectAsStateWithLifecycle()
+    var discarding by remember { mutableStateOf<String?>(null) }
+    DiscardJobDialog(discarding) { discarding = null }
 
     AppScaffold(
         title = stringResource(R.string.app_name),
@@ -104,7 +115,7 @@ fun HomeScreen(
             contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 16.dp, vertical = 16.dp),
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
-            item("jobs") { JobsSection(onReview = onReviewJob, onOpenDocument = onOpenDocument) }
+            jobItems(jobs, plans, scans, onReviewJob, onOpenDocument, onOpenBundle, onDiscard = { discarding = it })
             item("scan") { Box(Modifier.glideIn(0)) { ScanButton(onScan) } }
             if (!recent.isNullOrEmpty()) item("backup") { BackupReminder(onBackup) }
             if (expiring.isNotEmpty()) item("expiring") { ExpiringCard(expiring, onLots) }

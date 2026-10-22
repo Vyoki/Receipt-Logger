@@ -20,6 +20,7 @@ import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import com.kitchenreceipts.app.ui.components.OutlinedButton
 import androidx.compose.material3.RadioButton
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -54,6 +55,7 @@ fun AiSettingsSection(c: AppContainer) {
     var name by remember { mutableStateOf(store.installedName) }
     var option by remember { mutableStateOf(AiModelStore.OPTIONS.first()) }
     var mode by remember { mutableStateOf(c.settings.aiMode) }
+    var light by remember { mutableStateOf(c.settings.aiLightOnExactText) }
     var copying by remember { mutableStateOf<Float?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var askRemove by remember { mutableStateOf(false) }
@@ -124,6 +126,24 @@ fun AiSettingsSection(c: AppContainer) {
                     ) {
                         RadioButton(selected = mode == m, onClick = null)
                         Text(stringResource(label), modifier = Modifier.padding(start = 12.dp))
+                    }
+                }
+                // The owner's choice (question 1): off until the owner says yes. Only when the AI helps "when needed".
+                if (mode == AppSettings.AiMode.WHEN_NEEDED) {
+                    val setLight: (Boolean) -> Unit = { v ->
+                        light = v
+                        c.settings.aiLightOnExactText = v
+                        c.log.event("SETTINGS", "aiLightOnExactText" to v)
+                    }
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 64.dp).selectable(selected = light, role = Role.Switch, onClick = { setLight(!light) }),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(stringResource(R.string.ai_light_title), style = MaterialTheme.typography.bodyLarge)
+                            Text(stringResource(R.string.ai_light_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.TextDim)
+                        }
+                        Switch(checked = light, onCheckedChange = setLight)
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {

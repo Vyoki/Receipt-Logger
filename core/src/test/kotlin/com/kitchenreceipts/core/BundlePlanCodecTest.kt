@@ -23,7 +23,7 @@ class BundlePlanCodecTest {
                 printedTotalCents = -1234L, totalProven = true, creditNote = true,
                 flags = setOf(InvoiceBundle.Flag.START_UNSURE, InvoiceBundle.Flag.NO_TOTAL), suggestion = SupplierCategory.FUEL,
                 alreadySavedId = 7, alreadySavedOn = 1_900_000_000_000L, maybeSavedId = 8, include = false, leftOut = LeftOut.ALREADY_SAVED,
-                checked = true, jobId = "job-1", outcome = InvoiceOutcome.CHECK_LATER, documentId = 42,
+                checked = true, jobId = "job-1", outcome = InvoiceOutcome.CHECK_LATER, documentId = 42, pricesChanged = true,
             ),
             PlannedInvoice(first = 1, last = 1, kind = InvoiceBundle.Kind.UNKNOWN, start = InvoiceBundle.Start.NONE),
         ),
@@ -31,7 +31,7 @@ class BundlePlanCodecTest {
             SupplierChoice("01234567897", "ABC S.r.l. | a\\b\nc", "01234567897", "fuel", known = true, lastTime = "food", suggestion = "fuel", include = false),
             SupplierChoice(BundleWizard.NO_SUPPLIER, null, null),
         ),
-        step = BundleWizard.Step.SUPPLIERS, createdAt = 1234L, sameFileDocumentId = 5L,
+        step = BundleWizard.Step.SUPPLIERS, createdAt = 1234L, sameFileDocumentId = 5L, announced = true,
     )
 
     @Test fun everyFieldRoundTrips() {

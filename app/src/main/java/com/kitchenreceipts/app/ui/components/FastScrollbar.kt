@@ -139,7 +139,8 @@ private val IdleColor = Palette.TextDim.copy(alpha = 0.7f)
  *
  * [label] names the item at an index for the bubble shown while dragging and for TalkBack (null: "n / N"); it is
  * called often, so it must be quick. [topInset] and [bottomInset] keep the thumb clear of bars over the list.
- * [onGrab] runs when a drag of the thumb starts. [actions] are added to the TalkBack actions Top and End.
+ * [onGrab] runs when a drag of the thumb starts, [onRelease] when the finger lets go. [actions] are added to the
+ * TalkBack actions Top and End.
  */
 @Composable
 fun BoxScope.FastScrollbar(
@@ -150,6 +151,7 @@ fun BoxScope.FastScrollbar(
     bottomInset: Dp = 0.dp,
     onGrab: () -> Unit = {},
     actions: List<CustomAccessibilityAction> = emptyList(),
+    onRelease: () -> Unit = {},
 ) {
     // The list is read only here (derived) and while laying out the thumb, so scrolling recomposes nothing else.
     val metrics = remember(state) { derivedStateOf { listMetrics(state) } }
@@ -208,6 +210,7 @@ fun BoxScope.FastScrollbar(
         bottomInset = bottomInset,
         onGrab = onGrab,
         actions = actions,
+        onRelease = onRelease,
     )
 }
 
@@ -338,6 +341,7 @@ private fun BoxScope.ScrollbarFrame(
     bottomInset: Dp,
     onGrab: () -> Unit,
     actions: List<CustomAccessibilityAction>,
+    onRelease: () -> Unit = {},
 ) {
     val view = LocalView.current
     val thumbPx = with(LocalDensity.current) { ThumbLength.toPx() }
@@ -378,6 +382,7 @@ private fun BoxScope.ScrollbarFrame(
     val currentDragTo by rememberUpdatedState(dragTo)
     val currentTextAt by rememberUpdatedState(textAt)
     val currentOnGrab by rememberUpdatedState(onGrab)
+    val currentOnRelease by rememberUpdatedState(onRelease)
     val currentThumbPx by rememberUpdatedState(thumbPx)
     val drag = remember {
         var lastText: String? = null
@@ -400,7 +405,10 @@ private fun BoxScope.ScrollbarFrame(
                 moveBy(dy)
             },
             onDrag = ::moveBy,
-            onEnd = { dragging = false },
+            onEnd = {
+                dragging = false
+                currentOnRelease()
+            },
         )
     }
 

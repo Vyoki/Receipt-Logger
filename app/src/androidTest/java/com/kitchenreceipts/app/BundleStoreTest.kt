@@ -9,7 +9,9 @@ import com.kitchenreceipts.app.backup.BackupManager
 import com.kitchenreceipts.app.data.AppDatabase
 import com.kitchenreceipts.app.data.ReceiptRepository
 import com.kitchenreceipts.app.diagnostics.AppLog
+import com.kitchenreceipts.app.files.EInvoiceEntry
 import com.kitchenreceipts.app.files.FileStore
+import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.files.PageRenderer
 import com.kitchenreceipts.app.jobs.BundleStore
 import com.kitchenreceipts.app.jobs.DraftPreparer
@@ -24,6 +26,9 @@ import com.kitchenreceipts.core.BundlePlan
 import com.kitchenreceipts.core.BundlePlanCodec
 import com.kitchenreceipts.core.BundleStatus
 import com.kitchenreceipts.core.BundleWizard
+import com.kitchenreceipts.core.SupplierCategories
+import com.kitchenreceipts.core.SupplierCategory
+import com.kitchenreceipts.core.SupplierChoice
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -43,6 +48,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.time.LocalDate
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -307,6 +313,62 @@ class BundleStoreTest {
         assertEquals(1, BackupManager.copyBack(previous, context.filesDir, kept))
         assertTrue(original.isFile)
         previous.deleteRecursively()
+    }
+
+    // ------------------------------------------------------------------ supplier categories
+
+    /** An invented e-invoice stored as the app stores one (its content is never read here). */
+    private fun storedXml(name: String): StoredFile {
+        val path = "${FileStore.DOCUMENTS_DIR}/$name.xml"
+        files.file(path).apply { parentFile?.mkdirs() }.writeText(einvoice(name))
+        return StoredFile(path, FileStore.MIME_XML, 1, name)
+    }
+
+    @Test fun theWizardsCategoriesAreRememberedAtReadAndGoWithTheJobs() = runBlocking<Unit> {
+        val remembered = mutableListOf<SupplierChoice>()
+        // ABC S.r.l. is known by its VAT number; the other two are new (no VAT number: asked every time).
+        val abcKey = SupplierCategories.memoryKeys("01234567897", "ABC S.r.l.").first()
+        store = BundleStore(
+            context, scope, files, queue, settings, log, ReadingNotifier(context), fileInUse = { false },
+            memory = { mapOf(abcKey to SupplierCategory.DRINKS.key) }, rememberChoices = { remembered += it }, dir = plansDir,
+        )
+        fun entry(n: Int, vat: String?, name: String) =
+            EInvoiceEntry(storedXml("cat-$n"), vat, name, "09876543217", "$n/2031", LocalDate.of(2031, 3, n), 1_000L + n, false)
+        val sha = "7e".repeat(32)
+        store.planFromEInvoices(
+            sha,
+            listOf(
+                entry(1, "01234567897", "ABC S.r.l."), entry(2, null, "VERDE FRESCO S.p.A."), entry(3, null, "VERDE FRESCO S.p.A."),
+                entry(4, null, "Bravo Esempio S.r.l."),
+            ),
+        )
+        var p = store.plan(sha)!!
+        assertTrue(p.suppliers.single { it.vat == "01234567897" }.known)
+        val news = BundleWizard.newSuppliers(p)
+        val verde = news.single { it.name == "VERDE FRESCO S.p.A." }.key
+        val bravo = news.single { it.name == "Bravo Esempio S.r.l." }.key
+        store.update(sha) { BundleWizard.setCategory(BundleWizard.setCategory(it, verde, SupplierCategory.UTILITIES.key), bravo, SupplierChoice.LATER) }
+        assertEquals(BundleStore.Prepared.Queued(4), store.confirm(sha))
+        // Remembered at Read: the new supplier's choice and the known one's, not the one put off.
+        assertEquals(
+            setOf("VERDE FRESCO S.p.A." to "utilities", "ABC S.r.l." to "drinks"),
+            remembered.map { it.name to it.category }.toSet(),
+        )
+        // Each invoice's job carries its supplier's choice.
+        p = store.plan(sha)!!
+        val jobs = queue.jobs.value.filter { it.bundleId == sha }
+        fun jobOf(n: Int) = jobs.single { j -> p.invoices[j.order!!].number == "$n/2031" }
+        assertEquals("drinks", jobOf(1).category)
+        assertEquals("utilities", jobOf(2).category)
+        assertEquals(SupplierChoice.LATER, jobOf(4).category)
+        // Changed on one invoice's check "for all invoices from this supplier": the plan and its other invoice follow,
+        // and the job keeps it after a restart.
+        store.supplierCategoryChanged(sha, jobOf(2).id, SupplierCategory.EQUIPMENT)
+        assertEquals("equipment", store.plan(sha)!!.suppliers.single { it.key == verde }.category)
+        assertEquals("equipment", queue.job(jobOf(3).id)!!.category)
+        assertEquals("drinks", queue.job(jobOf(1).id)!!.category)
+        assertEquals("equipment", idleQueue().apply { restore() }.job(jobOf(3).id)!!.category)
+        (1..4).forEach { files.delete("${FileStore.DOCUMENTS_DIR}/cat-$it.xml") }
     }
 
     @Test fun aClosedPlanKeepsNoSupplierNameOrVatNumber() = runBlocking<Unit> {

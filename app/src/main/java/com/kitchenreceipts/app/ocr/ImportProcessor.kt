@@ -125,6 +125,8 @@ class AiUse(
     val style: com.kitchenreceipts.core.AiTasks.Style = com.kitchenreceipts.core.AiTasks.Style.FULL,
     /** The model chooses which open question comes next (the trained model); otherwise the app's order. */
     val agent: Boolean = false,
+    /** On exact text only the supplier, header and totals are double-checked (AppSettings.aiLightOnExactText). */
+    val lightOnExactText: Boolean = false,
 )
 
 /**
@@ -270,15 +272,18 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
         val aiPicks = mutableListOf<Int>()
         val aiKeys = mutableListOf<String>()
         var aiSpot = false
-        // Every question, as before (the owner's question 1 may later allow fewer on exact text: see AiScope).
-        val scope = AiScope.ALL
+        // Every question, as before; unless the owner allowed fewer on exact text (question 1, off by default): every
+        // page is the PDF's own text, agreeing with the OCR, so only the supplier, header and totals are asked about,
+        // for at most 30 s. The lines are still proven by the arithmetic. Not in "always" mode, nor on photos or scans.
+        val light = ai != null && !ai.always && ai.lightOnExactText && best.lines.isNotEmpty() && best.textPages == best.lines.size
+        val scope = if (light) AiScope.HEADER_TOTALS else AiScope.ALL
         if (ai != null && shared != null && best.error == null && best.lines.isNotEmpty()) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
             // totals and key lines of every document before the operator sees it. Whole pages only when the regular
             // reading failed too broadly for that, or when the operator asked the AI to read everything.
             // Column headings the app does not know, of a supplier not seen before: one short question first, so the
             // rest of the reading (and the AI's other questions) use the answer. Kept only if it reads the document better.
-            if (!ai.always) {
+            if (!ai.always && !light) {
                 val q = withContext(cpu) { AiTargets.layoutQuestion(best.lines, parsed) }
                 if (q != null) {
                     val (raw, note) = askLayout(images, best, shared, q, onProgress, ai.style)
@@ -295,10 +300,14 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
             // aiSpot marks the question loop (the answers are replayed through it after a restart).
             aiSpot = planned != null
             aiNote = when {
-                planned == null -> runAi(images, best, ai, shared, opts, onProgress, aiRaw, parsed)
+                // On exact text, never whole pages: nothing to ask is nothing to ask.
+                planned == null -> if (light) "nothing to ask (exact text)" else runAi(images, best, ai, shared, opts, onProgress, aiRaw, parsed)
                 // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
                 planned.isEmpty() -> "nothing to ask"
-                else -> runLoop(images, best, shared, parsed, opts, onProgress, aiTargeted, aiPicks, aiKeys, ai, scope, ai.examples(parsed, best.text)).second
+                else -> runLoop(
+                    images, best, shared, parsed, opts, onProgress, aiTargeted, aiPicks, aiKeys, ai, scope, ai.examples(parsed, best.text),
+                    limitMs = if (light) AI_EXACT_TEXT_LIMIT_MS else AI_TIME_LIMIT_MS,
+                ).second
             }
             layoutNote?.let { aiNote = "$it; $aiNote" }
         }
@@ -345,7 +354,7 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
 
     /**
      * Asks the AI one question at a time (see core AiLoop): each chosen from the document as the previous answer left
-     * it, until nothing is left to prove, [AiLoop.MAX_QUESTIONS], or [AI_TIME_LIMIT_MS]. The answers, in order, go to
+     * it, until nothing is left to prove, [AiLoop.MAX_QUESTIONS], or [limitMs]. The answers, in order, go to
      * [answers]; returns the document as the answers left it and a note for the log.
      */
     private suspend fun runLoop(
@@ -361,16 +370,20 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
         ai: AiUse,
         scope: AiScope,
         examples: List<AiReader.RowExample> = emptyList(),
+        limitMs: Long = AI_TIME_LIMIT_MS,
     ): Pair<ParsedDocument, String> {
         val loop = AiLoop(best.lines, best.text, options, start, scope = scope)
         val reader = shared.get().getOrElse { return start to "not started: ${it.message}" }
         // The agent's choice has no picture to look at: the smallest blank image keeps it fast.
         val blank = android.graphics.Bitmap.createBitmap(28, 28, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.WHITE) }
         val started = System.currentTimeMillis()
-        val notes = mutableListOf("loop ${ai.style.name.lowercase()}${if (ai.agent) " agent" else ""} lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo)
+        val notes = mutableListOf(
+            "loop ${ai.style.name.lowercase()}${if (ai.agent) " agent" else ""}${if (scope != AiScope.ALL) " scope=${scope.name}" else ""} " +
+                "lang=${AiReader.defaultLang} examples=${examples.size} " + reader.systemInfo,
+        )
         var stopped = "nothing left to prove"
         while (true) {
-            if (System.currentTimeMillis() - started > AI_TIME_LIMIT_MS) { stopped = "time limit"; break }
+            if (System.currentTimeMillis() - started > limitMs) { stopped = "time limit"; break }
             val open = withContext(cpu) { loop.candidates() }
             if (open.isEmpty()) {
                 if (loop.answers.size >= loop.maxQuestions) stopped = "question limit"
@@ -612,6 +625,8 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
         const val MAX_OCR_PAGES = 20
         /** The AI's questions stop after this long on one document, on any phone (a slow one asks fewer). */
         const val AI_TIME_LIMIT_MS = 150_000L
+        /** The same on exact text, when only the supplier, header and totals are asked about (AiScope.HEADER_TOTALS). */
+        const val AI_EXACT_TEXT_LIMIT_MS = 30_000L
         /** Whole pages read by the AI, all pages together (a page takes 2 to 5 minutes on a phone). */
         const val AI_PAGES_LIMIT_MS = 10 * 60_000L
         const val OCR_LONG_SIDE = 2400

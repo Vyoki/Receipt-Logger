@@ -122,6 +122,14 @@ class AppSettings(context: Context) {
         get() = AiMode.entries.firstOrNull { it.name == prefs.getString("ai_mode", null) } ?: AiMode.WHEN_NEEDED
         set(v) = prefs.edit().putString("ai_mode", v.name).apply()
 
+    /**
+     * On a PDF whose every page is its own exact text, the AI double-checks only the supplier, the header and the
+     * totals (at most 30 s), not every line (see core AiScope). Off until the owner agrees (design question 1).
+     */
+    var aiLightOnExactText: Boolean
+        get() = prefs.getBoolean("ai_light_exact_text", false)
+        set(v) = prefs.edit().putBoolean("ai_light_exact_text", v).apply()
+
     /** Language of the reports sent to others (the boss may read Italian while the app is in English). */
     var reportLanguage: Language
         get() = readLanguage(prefs.getString("report_language", null)).takeIf { it != Language.SYSTEM } ?: Language.ITALIAN
