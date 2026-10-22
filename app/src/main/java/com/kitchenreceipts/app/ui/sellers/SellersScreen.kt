@@ -1,6 +1,9 @@
 package com.kitchenreceipts.app.ui.sellers
 
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -28,6 +31,9 @@ import com.kitchenreceipts.app.ui.appViewModel
 import com.kitchenreceipts.app.ui.components.AppScaffold
 import com.kitchenreceipts.app.ui.components.ClickCard
 import com.kitchenreceipts.app.ui.components.EmptyState
+import com.kitchenreceipts.app.ui.components.FastScrollbar
+import com.kitchenreceipts.app.ui.components.FastScrollbarDefaults
+import com.kitchenreceipts.app.ui.components.scrollInitial
 import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.fmtMoney
 import kotlinx.coroutines.flow.SharingStarted
@@ -42,26 +48,36 @@ class SellersViewModel(repo: ReceiptRepository) : ViewModel() {
 fun SellersScreen(onBack: () -> Unit, onOpenSeller: (Long) -> Unit) {
     val vm = appViewModel { SellersViewModel(it.repository) }
     val sellers by vm.sellers.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
     AppScaffold(title = stringResource(R.string.sellers), onBack = onBack) { padding ->
-        LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-            val rows = sellers
-            if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_sellers)) }
-            items(rows.orEmpty(), key = { it.id }) { s ->
-                ClickCard(onClick = { onOpenSeller(s.id) }) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(Modifier.weight(1f)) {
-                            Text(s.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
-                            Text(
-                                pluralStringResource(R.plurals.documents_count, s.documentCount, s.documentCount) +
-                                    " · " + stringResource(R.string.last_document, fmtDate(s.lastDate)),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
+        val rows = sellers
+        Box(Modifier.padding(padding)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 16.dp + FastScrollbarDefaults.EndGutter),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_sellers)) }
+                items(rows.orEmpty(), key = { it.id }) { s ->
+                    ClickCard(onClick = { onOpenSeller(s.id) }) {
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(s.name, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                                Text(
+                                    pluralStringResource(R.plurals.documents_count, s.documentCount, s.documentCount) +
+                                        " · " + stringResource(R.string.last_document, fmtDate(s.lastDate)),
+                                    style = MaterialTheme.typography.bodyMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                            Text(fmtMoney(s.totalCents), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                         }
-                        Text(fmtMoney(s.totalCents), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
                     }
                 }
             }
+            // Sorted by name: the bubble shows the first letter.
+            FastScrollbar(listState, label = { i -> scrollInitial(rows?.getOrNull(i)?.name) })
         }
     }
 }

@@ -7,11 +7,13 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
@@ -47,6 +49,8 @@ import com.kitchenreceipts.app.data.SellerEntity
 import com.kitchenreceipts.app.ui.appViewModel
 import com.kitchenreceipts.app.ui.components.AppScaffold
 import com.kitchenreceipts.app.ui.components.EmptyState
+import com.kitchenreceipts.app.ui.components.FastScrollbar
+import com.kitchenreceipts.app.ui.components.FastScrollbarDefaults
 import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.fmtMonth
 import com.kitchenreceipts.app.ui.home.DocumentRow
@@ -95,6 +99,7 @@ fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -
     val sellers by vm.sellers.collectAsStateWithLifecycle()
     val months by vm.months.collectAsStateWithLifecycle()
     var showDate by remember { mutableStateOf(false) }
+    val listState = rememberLazyListState()
 
     AppScaffold(
         title = stringResource(R.string.documents),
@@ -106,59 +111,63 @@ fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -
             }
         },
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier.padding(padding),
-            contentPadding = PaddingValues(16.dp),
-            verticalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            item {
-                OutlinedTextField(
-                    value = filters.query,
-                    onValueChange = { q -> vm.update { it.copy(query = q) } },
-                    leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
-                    trailingIcon = {
-                        if (filters.query.isNotEmpty()) {
-                            IconButton(onClick = { vm.update { it.copy(query = "") } }) {
-                                Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.clear))
+        Box(Modifier.padding(padding)) {
+            LazyColumn(
+                state = listState,
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 16.dp + FastScrollbarDefaults.EndGutter),
+                verticalArrangement = Arrangement.spacedBy(10.dp),
+            ) {
+                item {
+                    OutlinedTextField(
+                        value = filters.query,
+                        onValueChange = { q -> vm.update { it.copy(query = q) } },
+                        leadingIcon = { Icon(Icons.Filled.Search, contentDescription = null) },
+                        trailingIcon = {
+                            if (filters.query.isNotEmpty()) {
+                                IconButton(onClick = { vm.update { it.copy(query = "") } }) {
+                                    Icon(Icons.Filled.Clear, contentDescription = stringResource(R.string.clear))
+                                }
                             }
-                        }
-                    },
-                    placeholder = { Text(stringResource(R.string.search_documents_hint)) },
-                    singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    val sellerName = sellers.firstOrNull { it.id == filters.sellerId }?.name
-                    DropdownChip(
-                        label = sellerName ?: stringResource(R.string.all_sellers),
-                        selected = sellerName != null,
-                        options = listOf<Pair<Long?, String>>(null to stringResource(R.string.all_sellers)) + sellers.map { it.id to it.name },
-                        onSelect = { id -> vm.update { it.copy(sellerId = id) } },
+                        },
+                        placeholder = { Text(stringResource(R.string.search_documents_hint)) },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
                     )
-                    DropdownChip(
-                        label = filters.month?.let { fmtMonth(it) } ?: stringResource(R.string.all_months),
-                        selected = filters.month != null,
-                        options = listOf<Pair<YearMonth?, String>>(null to stringResource(R.string.all_months)) + months.map { it to fmtMonth(it) },
-                        onSelect = { m -> vm.update { it.copy(month = m, date = null) } },
-                    )
-                    FilterChip(
-                        selected = filters.date != null,
-                        onClick = { showDate = true },
-                        label = { Text(filters.date?.let { fmtDate(it) } ?: stringResource(R.string.any_day)) },
-                        modifier = Modifier.heightIn(min = 48.dp),
-                    )
-                    if (filters != DocumentFilters()) {
-                        TextButton(onClick = { vm.update { DocumentFilters() } }, modifier = Modifier.heightIn(min = 48.dp)) {
-                            Text(stringResource(R.string.clear_filters))
+                }
+                item {
+                    Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        val sellerName = sellers.firstOrNull { it.id == filters.sellerId }?.name
+                        DropdownChip(
+                            label = sellerName ?: stringResource(R.string.all_sellers),
+                            selected = sellerName != null,
+                            options = listOf<Pair<Long?, String>>(null to stringResource(R.string.all_sellers)) + sellers.map { it.id to it.name },
+                            onSelect = { id -> vm.update { it.copy(sellerId = id) } },
+                        )
+                        DropdownChip(
+                            label = filters.month?.let { fmtMonth(it) } ?: stringResource(R.string.all_months),
+                            selected = filters.month != null,
+                            options = listOf<Pair<YearMonth?, String>>(null to stringResource(R.string.all_months)) + months.map { it to fmtMonth(it) },
+                            onSelect = { m -> vm.update { it.copy(month = m, date = null) } },
+                        )
+                        FilterChip(
+                            selected = filters.date != null,
+                            onClick = { showDate = true },
+                            label = { Text(filters.date?.let { fmtDate(it) } ?: stringResource(R.string.any_day)) },
+                            modifier = Modifier.heightIn(min = 48.dp),
+                        )
+                        if (filters != DocumentFilters()) {
+                            TextButton(onClick = { vm.update { DocumentFilters() } }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.clear_filters))
+                            }
                         }
                     }
                 }
+                val rows = results
+                if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_matching_documents)) }
+                items(rows.orEmpty(), key = { it.id }) { row -> Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { DocumentRow(row) { onOpen(row.id) } } }
             }
-            val rows = results
-            if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_matching_documents)) }
-            items(rows.orEmpty(), key = { it.id }) { row -> Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { DocumentRow(row) { onOpen(row.id) } } }
+            FastScrollbar(listState, label = { i -> monthLabel(results, i) })
         }
     }
 
@@ -179,6 +188,13 @@ fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -
         ) { DatePicker(state = state) }
     }
 }
+
+/** The month of the document at list position [i] (after the search field and the filters), for the scroller. */
+private fun monthLabel(rows: List<DocumentListRow>?, i: Int): String? =
+    rows?.getOrNull((i - LIST_HEAD).coerceAtLeast(0))?.documentDate?.let { fmtMonth(YearMonth.from(it)) }
+
+/** Items above the documents: the search field and the filter chips. */
+private const val LIST_HEAD = 2
 
 @Composable
 fun <T> DropdownChip(label: String, selected: Boolean, options: List<Pair<T, String>>, onSelect: (T) -> Unit) {
