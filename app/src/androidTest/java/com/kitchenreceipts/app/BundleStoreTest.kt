@@ -141,7 +141,7 @@ class BundleStoreTest {
 
     // ------------------------------------------------------------------ PDFs
 
-    @Test fun aPdfOfThreeInvoicesBecomesAPlanThatSurvivesANewStore() = runBlocking {
+    @Test fun aPdfOfThreeInvoicesBecomesAPlanThatSurvivesANewStore() = runBlocking<Unit> {
         val r = intake.take(pdf("bundle-3.pdf", invoices(3)), "test")
         assertTrue("$r", r is Intake.Bundle)
         val id = (r as Intake.Bundle).planId
@@ -157,7 +157,7 @@ class BundleStoreTest {
     }
 
     /** The page check: joining by page twice joins once (the list changed under the second tap); a split undoes it. */
-    @Test fun joinAndSplitGoByPage() = runBlocking {
+    @Test fun joinAndSplitGoByPage() = runBlocking<Unit> {
         val id = (intake.take(pdf("bundle-join.pdf", invoices(3)), "test") as Intake.Bundle).planId
         val second = store.plan(id)!!.invoices.filter { it.isInvoice }[1].first
         store.join(id, second)
@@ -175,7 +175,7 @@ class BundleStoreTest {
         assertEquals(split, newStore().plan(id))
     }
 
-    @Test fun aPdfOfOneInvoiceIsQueuedAsToday() = runBlocking {
+    @Test fun aPdfOfOneInvoiceIsQueuedAsToday() = runBlocking<Unit> {
         val r = intake.take(pdf("bundle-1.pdf", listOf(TestPdfs.invoicePage(1, ends = false), TestPdfs.lastPage())), "test")
         assertEquals(Intake.Queued(1), r)
         val job = queue.jobs.value.single()
@@ -184,7 +184,7 @@ class BundleStoreTest {
         assertTrue(store.plans.value.isEmpty())
     }
 
-    @Test fun aLongScannedPdfAsksFirstAndQueuesNothingUntilAnswered() = runBlocking {
+    @Test fun aLongScannedPdfAsksFirstAndQueuesNothingUntilAnswered() = runBlocking<Unit> {
         val src = TestPdfs.writeScanned(File(context.cacheDir, "scanned-30.pdf"), 30)
         val r = intake.take(Uri.fromFile(src), "test")
         assertTrue("$r", r is Intake.AskLong)
@@ -200,7 +200,7 @@ class BundleStoreTest {
         assertEquals(BundleStatus.CLOSED, store.plan(r.planId)!!.status)
     }
 
-    @Test fun aPasswordProtectedPdfIsRefusedAsLocked() = runBlocking {
+    @Test fun aPasswordProtectedPdfIsRefusedAsLocked() = runBlocking<Unit> {
         val r = intake.take(pdf("locked.pdf", invoices(3), password = "prova"), "test")
         assertTrue("$r", r is Intake.Failed)
         assertEquals(R.string.bundle_error_locked, (r as Intake.Failed).messageRes)
@@ -208,7 +208,7 @@ class BundleStoreTest {
         assertTrue(store.plans.value.isEmpty())
     }
 
-    @Test fun theSameFileAgainReopensItsPlan() = runBlocking {
+    @Test fun theSameFileAgainReopensItsPlan() = runBlocking<Unit> {
         val uri = pdf("bundle-again.pdf", invoices(3))
         val first = intake.take(uri, "test") as Intake.Bundle
         val before = documents()
@@ -219,7 +219,7 @@ class BundleStoreTest {
         assertEquals(1, store.plans.value.size)
     }
 
-    @Test fun theFileIsKeptWhileItsImportIsOpenAndGoesWithACancel() = runBlocking {
+    @Test fun theFileIsKeptWhileItsImportIsOpenAndGoesWithACancel() = runBlocking<Unit> {
         val r = intake.take(pdf("bundle-keep.pdf", invoices(3)), "test") as Intake.Bundle
         val p = store.plan(r.planId)!!
         assertTrue(p.file in store.filePaths())
@@ -230,7 +230,7 @@ class BundleStoreTest {
         assertFalse(files.file(p.file).exists())
     }
 
-    @Test fun aLongPdfIsLookedThroughInTheBackground() = runBlocking {
+    @Test fun aLongPdfIsLookedThroughInTheBackground() = runBlocking<Unit> {
         val r = intake.take(pdf("bundle-15.pdf", invoices(15)), "test")
         assertTrue("$r", r is Intake.Bundle)
         val id = (r as Intake.Bundle).planId
@@ -241,7 +241,7 @@ class BundleStoreTest {
         assertEquals(15, store.plan(id)!!.scanned)
     }
 
-    @Test fun aScanningPlanCarriesOnFromItsCheckpoint() = runBlocking {
+    @Test fun aScanningPlanCarriesOnFromItsCheckpoint() = runBlocking<Unit> {
         val stored = files.importUri(pdf("bundle-resume.pdf", invoices(15))).files.single()
         // The first 10 pages, as a scan stopped by Android saved them; the first is marked, to see it is not looked at again.
         val first = store.look(stored, 10)!!
@@ -264,7 +264,7 @@ class BundleStoreTest {
 
     // ------------------------------------------------------------------ e-invoice files
 
-    @Test fun aZipOfThreeInvoicesAndACreditNoteBecomesAPlanAndIsQueuedInPlanOrder() = runBlocking {
+    @Test fun aZipOfThreeInvoicesAndACreditNoteBecomesAPlanAndIsQueuedInPlanOrder() = runBlocking<Unit> {
         val r = intake.take(zip("einvoices-3.zip", listOf("1/2031", "2/2031", "3/2031"), listOf("4/2031")), "test")
         assertTrue("$r", r is Intake.Bundle)
         r as Intake.Bundle
@@ -285,7 +285,7 @@ class BundleStoreTest {
         assertEquals(3, store.plan(r.planId)!!.invoices.count { it.jobId != null })
     }
 
-    @Test fun aZipOfOneInvoiceAndACreditNoteIsQueuedWithTheCreditNoteCounted() = runBlocking {
+    @Test fun aZipOfOneInvoiceAndACreditNoteIsQueuedWithTheCreditNoteCounted() = runBlocking<Unit> {
         val r = intake.take(zip("einvoices-1.zip", listOf("5/2031"), listOf("6/2031")), "test")
         assertEquals(Intake.Queued(1, skippedCreditNotes = 1), r)
         assertEquals(FileStore.MIME_XML, queue.jobs.value.single().file.mimeType)
@@ -294,7 +294,7 @@ class BundleStoreTest {
 
     // ------------------------------------------------------------------ restore and retention
 
-    @Test fun aRestorePutsBackAWaitingBundleFile() = runBlocking {
+    @Test fun aRestorePutsBackAWaitingBundleFile() = runBlocking<Unit> {
         val r = intake.take(pdf("bundle-restore.pdf", invoices(3)), "test") as Intake.Bundle
         val p = store.plan(r.planId)!!
         val kept = BackupManager.keptAcrossRestore(queue, store)
@@ -309,7 +309,7 @@ class BundleStoreTest {
         previous.deleteRecursively()
     }
 
-    @Test fun aClosedPlanKeepsNoSupplierNameOrVatNumber() = runBlocking {
+    @Test fun aClosedPlanKeepsNoSupplierNameOrVatNumber() = runBlocking<Unit> {
         val r = intake.take(zip("einvoices-close.zip", listOf("7/2031", "8/2031"), emptyList()), "test") as Intake.Bundle
         val before = File(plansDir, "${r.planId}/plan.txt").readText()
         assertTrue(before.contains("ABC S.r.l.") && before.contains("01234567897"))

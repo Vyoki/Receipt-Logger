@@ -109,7 +109,7 @@ class PdfTextTest {
         broken.delete()
     }
 
-    @Test fun theScanStopsWhenCancelledAndResumesFromItsCheckpoint() = runBlocking {
+    @Test fun theScanStopsWhenCancelledAndResumesFromItsCheckpoint() = runBlocking<Unit> {
         val f = TestPdfs.write(File(app.cacheDir, "scan-resume.pdf"), 3)
         var saved: List<InvoiceBundle.PageSignals> = emptyList()
         var cancelled = false

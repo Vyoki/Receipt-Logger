@@ -61,7 +61,7 @@ class RepositoryTest {
         assertEquals("30", repo.purchasesForProduct(meat.id).first().single().discount)
     }
 
-    @Test fun saveLinksItemsRemembersAssignmentsAndAverages() = runBlocking {
+    @Test fun saveLinksItemsRemembersAssignmentsAndAverages() = runBlocking<Unit> {
         val mozz = repo.createProduct("Mozzarella fior di latte")
         val file = StoredFile("documents/test.jpg", "image/jpeg", 1, "sha-1")
         val id = repo.saveDocument(doc("Caseificio Valverde S.r.l.", "145", listOf(item("MZ01 Mozzarella", mozz.id, "2", "kg", 2000))), file, "ocr", null)
@@ -79,7 +79,7 @@ class RepositoryTest {
         assertEquals(1, repo.sellerStats().first().size) // same seller despite different spelling
     }
 
-    @Test fun productGroupsSuggestConfirmAndCompare() = runBlocking {
+    @Test fun productGroupsSuggestConfirmAndCompare() = runBlocking<Unit> {
         val a = repo.createProduct("PASSATA VALLEVERDE 700G")
         val b = repo.createProduct("PASSATA COLLINA ROSSA 5KG")
         val file = StoredFile("documents/fam.jpg", "image/jpeg", 1, "sha-fam")
@@ -113,7 +113,7 @@ class RepositoryTest {
         assertEquals(2, repo.productsOnce().size)
     }
 
-    @Test fun duplicateWarningAndDeleteCascade() = runBlocking {
+    @Test fun duplicateWarningAndDeleteCascade() = runBlocking<Unit> {
         val file = StoredFile("documents/test2.jpg", "image/jpeg", 1, "sha-x")
         val d = doc("Mercato Fresco", "42", listOf(item("Limoni", null, "2", "pz", 240)))
         val id = repo.saveDocument(d, file, null, null)
@@ -128,7 +128,7 @@ class RepositoryTest {
         assertTrue(repo.sellerStats().first().isEmpty())
     }
 
-    @Test fun learnsSupplierAndRecognisesItNextTime() = runBlocking {
+    @Test fun learnsSupplierAndRecognisesItNextTime() = runBlocking<Unit> {
         val text = "CASEIFICIO VALVERDE S.R.L.\nLatticini freschi\nP.IVA IT01234567897\nSpett.le RISTORANTE P.IVA 09876543217\nFattura n. 1"
         val file = StoredFile("documents/l.jpg", "image/jpeg", 1, "sha-l")
         repo.saveDocument(
@@ -145,7 +145,7 @@ class RepositoryTest {
         assertEquals(SellerMatchReason.NAME_ALIAS, byAlias.match.reason)
     }
 
-    @Test fun operatorsOwnVatNumberIsNeverLearnedAsASuppliers() = runBlocking {
+    @Test fun operatorsOwnVatNumberIsNeverLearnedAsASuppliers() = runBlocking<Unit> {
         var detected: String? = null
         repo.onSharedVatNumber = { detected = it }
         // Two different suppliers whose documents only show the customer's (operator's) VAT number.
@@ -160,7 +160,7 @@ class RepositoryTest {
         assertTrue(r == null || r.match.reason != SellerMatchReason.VAT_NUMBER)
     }
 
-    @Test fun aVatFromTheSuppliersOwnBoxMovesToTheCleanNameAndNeverBecomesTheRestaurants() = runBlocking {
+    @Test fun aVatFromTheSuppliersOwnBoxMovesToTheCleanNameAndNeverBecomesTheRestaurants() = runBlocking<Unit> {
         var detected: String? = null
         repo.onSharedVatNumber = { detected = it }
         val vat = "01234567897"
@@ -180,7 +180,7 @@ class RepositoryTest {
         assertEquals(SellerMatchReason.VAT_NUMBER, r.match.reason)
     }
 
-    @Test fun withoutTheRoleBoxAVatOnTwoSuppliersIsStillTheRestaurants() = runBlocking {
+    @Test fun withoutTheRoleBoxAVatOnTwoSuppliersIsStillTheRestaurants() = runBlocking<Unit> {
         var detected: String? = null
         repo.onSharedVatNumber = { detected = it }
         val vat = "01234567897"
@@ -193,7 +193,7 @@ class RepositoryTest {
         assertEquals(null, db.sellerDao().byVatNumber(vat))
     }
 
-    @Test fun aVatFromTheSuppliersOwnBoxIsNotForgottenWhenTheNameDisagrees() = runBlocking {
+    @Test fun aVatFromTheSuppliersOwnBoxIsNotForgottenWhenTheNameDisagrees() = runBlocking<Unit> {
         var detected: String? = null
         repo.onSharedVatNumber = { detected = it }
         val vat = "01234567897"
@@ -211,14 +211,14 @@ class RepositoryTest {
         assertEquals(vat, detected)
     }
 
-    @Test fun productRememberedByArticleCodeEvenIfDescriptionIsMisread() = runBlocking {
+    @Test fun productRememberedByArticleCodeEvenIfDescriptionIsMisread() = runBlocking<Unit> {
         val galletti = repo.createProduct("Biscotti Galletti")
         val line = ValidLineItem("BISCOTTI M.BIANCO GALLETTI 800", galletti.id, BigDecimal.ONE, "pz", null, 345, null, null, null, "2046225")
         repo.saveDocument(doc("Cash and Carry Esempio", "7", listOf(line)), StoredFile("documents/c.jpg", "image/jpeg", 1, "sha-c"), null, null)
         assertEquals(galletti.id, repo.rememberedProduct("Cash and Carry Esempio", "BISC0TTI M.BIANC0 GALLETT1 800", "2046225"))
     }
 
-    @Test fun newProductsAreCreatedOnSaveAndTyposFindThemAgain() = runBlocking {
+    @Test fun newProductsAreCreatedOnSaveAndTyposFindThemAgain() = runBlocking<Unit> {
         val first = ValidLineItem("SALE MARINO GROSSO GR.1000", null, BigDecimal("10"), "pz", null, 422, null, null, null, newProductName = "Sale marino grosso gr.1000")
         repo.saveDocument(doc("Grossista Uno", "1", listOf(first)), StoredFile("documents/n1.jpg", "image/jpeg", 1, "sha-n1"), null, null)
         val created = repo.productsOnce().single()
@@ -244,7 +244,7 @@ class RepositoryTest {
         assertEquals(ProductSource.NEW, other.productSource)
     }
 
-    @Test fun mergeMovesPurchasesAndDeletesTheDuplicate() = runBlocking {
+    @Test fun mergeMovesPurchasesAndDeletesTheDuplicate() = runBlocking<Unit> {
         val a = repo.createProduct("Mozzarella")
         val b = repo.createProduct("Mozarella")
         repo.saveDocument(doc("Caseificio", "1", listOf(item("Mozzarella", a.id, "1", "kg", 900))), StoredFile("documents/m1.jpg", "image/jpeg", 1, "sha-m1"), null, null)
