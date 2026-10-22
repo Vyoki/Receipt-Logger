@@ -91,8 +91,7 @@ fun BundleScreen(planId: String, onBack: () -> Unit, onHome: () -> Unit, onRevie
                 plan.status == BundleStatus.NOT_SPLITTABLE -> AskLong(
                     plan.pageCount,
                     onRead = {
-                        act { readAsOne(planId) }
-                        ReadingService.ensureRunning(context)
+                        act { readAsOne(planId); ReadingService.ensureRunning(c.appContext) }
                         onHome()
                     },
                     onDont = { act { cancel(planId) }; onHome() },
@@ -101,7 +100,7 @@ fun BundleScreen(planId: String, onBack: () -> Unit, onHome: () -> Unit, onRevie
                     error = null
                     c.appScope.launch {
                         when (val r = store.confirm(planId)) {
-                            is BundleStore.Prepared.Queued -> ReadingService.ensureRunning(context)
+                            is BundleStore.Prepared.Queued -> ReadingService.ensureRunning(c.appContext)
                             is BundleStore.Prepared.Failed -> error = context.getString(r.reason.text)
                         }
                     }
