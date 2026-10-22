@@ -79,6 +79,9 @@ data class BundlePlan(
     val signals: List<InvoiceBundle.PageSignals> = emptyList(),
     val invoices: List<PlannedInvoice> = emptyList(),
     val suppliers: List<SupplierChoice> = emptyList(),
+    /** Choices made for suppliers that have no invoice right now (their pages were joined to another): a split that
+     * brings them back brings back the choice. */
+    val retired: List<SupplierChoice> = emptyList(),
     val step: BundleWizard.Step = BundleWizard.Step.FOUND,
     val createdAt: Long = 0L,
     /** A document saved earlier from this very file (read as one document): reading it again counts its invoices twice. */
@@ -274,26 +277,29 @@ object BundleWizard {
         (inv.flags - InvoiceBundle.Flag.OTHER_BUYER).isNotEmpty() && (inv.include || inv.leftOut == LeftOut.SEVERAL_IN_ONE)
 
     /** "These pages belong to the invoice before": every field worked out again from the pages' signals. */
-    fun joinWithPrevious(plan: BundlePlan, index: Int, ownVat: String? = null): BundlePlan {
+    fun joinWithPrevious(plan: BundlePlan, index: Int, ownVat: String? = null, memory: Map<String, String> = emptyMap()): BundlePlan {
         if (index <= 0 || index >= plan.invoices.size || plan.signals.isEmpty()) return plan
         val starts = plan.invoices.filterIndexed { i, _ -> i != index }.map { it.first to it.start }
-        return replan(plan, InvoiceBundle.rebuild(plan.signals, starts, ownVat))
+        return replan(plan, InvoiceBundle.rebuild(plan.signals, starts, ownVat), memory)
     }
 
     /** "A new invoice starts here" on [page]: every field worked out again from the pages' signals. */
-    fun splitAt(plan: BundlePlan, page: Int, ownVat: String? = null): BundlePlan {
+    fun splitAt(plan: BundlePlan, page: Int, ownVat: String? = null, memory: Map<String, String> = emptyMap()): BundlePlan {
         if (plan.signals.isEmpty() || page <= 0 || plan.invoices.any { it.first == page } || plan.invoices.none { page in it.first..it.last }) return plan
         val starts = plan.invoices.map { it.first to it.start } + (page to InvoiceBundle.Start.BY_HAND)
-        return replan(plan, InvoiceBundle.rebuild(plan.signals, starts, ownVat))
+        return replan(plan, InvoiceBundle.rebuild(plan.signals, starts, ownVat), memory)
     }
 
     /** Invoices whose pages did not change keep everything the operator did; the others start again. */
-    private fun replan(plan: BundlePlan, segments: List<InvoiceBundle.Segment>): BundlePlan {
+    private fun replan(plan: BundlePlan, segments: List<InvoiceBundle.Segment>, memory: Map<String, String>): BundlePlan {
         val invoices = segments.map { s ->
             plan.invoices.firstOrNull { it.first == s.first && it.last == s.last && it.kind == s.kind && it.start == s.start }
                 ?: withDefaultTick(invoiceOf(s, plan.signals))
         }
-        return plan.copy(invoices = invoices, suppliers = choices(invoices, emptyMap(), plan.suppliers))
+        // A supplier whose invoices are joined away keeps its choice aside, and gets it back when they come back.
+        val previous = plan.suppliers + plan.retired.filter { r -> plan.suppliers.none { it.key == r.key } }
+        val suppliers = choices(invoices, memory, previous)
+        return plan.copy(invoices = invoices, suppliers = suppliers, retired = previous.filter { p -> suppliers.none { it.key == p.key } })
     }
 
     // ------------------------------------------------------------------ what the screens show
@@ -541,7 +547,7 @@ object BundleWizard {
      * document numbers, dates, totals and the pages' signals are dropped.
      */
     fun close(plan: BundlePlan, status: BundleStatus = BundleStatus.CLOSED): BundlePlan = plan.copy(
-        status = status, signals = emptyList(), suppliers = emptyList(),
+        status = status, signals = emptyList(), suppliers = emptyList(), retired = emptyList(),
         invoices = plan.invoices.map {
             PlannedInvoice(
                 first = it.first, last = it.last, kind = it.kind, start = it.start, file = it.file, include = it.include, leftOut = it.leftOut,
@@ -583,7 +589,7 @@ object BundlePlanCodec {
             "in" to if (i.include) null else "0", "lo" to i.leftOut?.name, "ck" to flag(i.checked),
             "j" to i.jobId, "o" to i.outcome.takeIf { it != InvoiceOutcome.WAITING }?.name, "doc" to i.documentId?.toString(),
         ))
-        for (s in p.suppliers) record("sup", BundleText.record(
+        for ((k, list) in listOf("sup" to p.suppliers, "ret" to p.retired)) for (s in list) record(k, BundleText.record(
             "k" to s.key, "n" to s.name, "v" to s.vat, "c" to s.category, "kn" to flag(s.known), "lt" to s.lastTime,
             "sg" to s.suggestion, "in" to if (s.include) null else "0",
         ))
@@ -594,6 +600,7 @@ object BundlePlanCodec {
         val signals = mutableListOf<InvoiceBundle.PageSignals>()
         val invoices = mutableListOf<PlannedInvoice>()
         val suppliers = mutableListOf<SupplierChoice>()
+        val retired = mutableListOf<SupplierChoice>()
         for (raw in text.lines()) {
             val eq = raw.indexOf('=')
             if (raw.isBlank() || eq <= 0) continue
@@ -603,14 +610,16 @@ object BundlePlanCodec {
                 "sig" -> InvoiceBundle.decode(value)?.let { signals += it }
                 "inv" -> invoice(BundleText.fields(value))?.let { invoices += it }
                 "sup" -> supplier(BundleText.fields(value))?.let { suppliers += it }
+                "ret" -> supplier(BundleText.fields(value))?.let { retired += it }
                 else -> single[key] = BundleText.unesc(value)
             }
         }
         BundlePlan(
             id = single.getValue("id"), file = single.getValue("file"),
             pageCount = single["pages"]?.toIntOrNull() ?: 0,
-            status = enumOr(single["status"], BundleStatus.CANCELLED),
-            scanned = single["scanned"]?.toIntOrNull() ?: 0, signals = signals, invoices = invoices, suppliers = suppliers,
+            // A status this version does not know (a newer app's): DONE reads nothing more and keeps the file.
+            status = enumOr(single["status"], BundleStatus.DONE),
+            scanned = single["scanned"]?.toIntOrNull() ?: 0, signals = signals, invoices = invoices, suppliers = suppliers, retired = retired,
             step = enumOr(single["step"], BundleWizard.Step.FOUND),
             createdAt = single["created"]?.toLongOrNull() ?: 0L, sameFileDocumentId = single["samefile"]?.toLongOrNull(),
         )

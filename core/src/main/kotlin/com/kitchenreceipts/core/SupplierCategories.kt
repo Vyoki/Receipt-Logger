@@ -38,7 +38,8 @@ object SupplierCategories {
 
     /**
      * The signs found on a page or a supplier's pages. [utility] and [fuel] are bit sets (one bit per kind of sign, so
-     * two pages with the same sign count it once); [kinds] counts product rows by the kind of product they name.
+     * two pages with the same sign count it once); [kinds] counts product rows by the kind of product they name
+     * (Category.OTHER for rows of no known kind).
      */
     data class Hints(val utility: Int = 0, val fuel: Int = 0, val kinds: Map<Category, Int> = emptyMap()) {
         operator fun plus(o: Hints) = Hints(
@@ -55,7 +56,8 @@ object SupplierCategories {
     private val FIXED_FEE = rx("(?i)\\bquota\\s+fissa\\b")
     private val POWER = rx("(?i)\\bpotenza\\b")
     private val FUEL_WORD = rx("(?i)\\b(gasolio|benzina|gpl|metano|carburant[ei]|rifornimento)\\b")
-    private val LITRES = rx("(?i)(?<![\\p{L}'])(lt|litri|l)(?![\\p{L}'])")
+    /** Litres next to a number ("40,00 LT", "LT 40", "12L"); never the L of "S.R.L.". */
+    private val LITRES = rx("(?i)(\\d\\s*(lt|litri|l)(?![\\p{L}'])|(?<![\\p{L}'.])(lt|litri|l)\\.?\\s*\\d)")
     /** The code kind fuel is invoiced with: "( CARB )". */
     private val FUEL_CODE_KIND = rx("(?i)\\(\\s*carb\\s*\\)")
     /** A combined-nomenclature code for mineral oils (2710xxxx) or fuel gases (2711xxxx), in the code column. */
@@ -84,7 +86,7 @@ object SupplierCategories {
         }
         val kinds = rows.map { r -> SPACED.replace(r) { m -> m.value.replace(" ", "") } }
             .filter { PRODUCT_LINE.containsMatchIn(it) && !FOOT_ROW.containsMatchIn(it) }
-            .map { Categories.guess(it) }.filter { it != Category.OTHER }
+            .map { Categories.guess(it) }
             .groupingBy { it }.eachCount()
         return Hints(utility, fuel, kinds)
     }
@@ -96,8 +98,9 @@ object SupplierCategories {
     fun suggest(h: Hints): SupplierCategory? {
         if (Integer.bitCount(h.utility) >= 2) return SupplierCategory.UTILITIES
         if (h.fuel != 0) return SupplierCategory.FUEL
-        val total = h.kinds.filterKeys { it != Category.OTHER }.values.sum()
-        if (total < 2) return null
+        // Every product row counts, the ones of no known kind too: a hardware supplier with two misread rows is no food one.
+        val total = h.kinds.values.sum()
+        if (h.kinds.filterKeys { it != Category.OTHER }.values.sum() < 2) return null
         fun atLeast60(set: Set<Category>) = h.kinds.filterKeys { it in set }.values.sum() * 100 >= 60 * total
         return when {
             atLeast60(setOf(Category.BEVERAGES)) -> SupplierCategory.DRINKS

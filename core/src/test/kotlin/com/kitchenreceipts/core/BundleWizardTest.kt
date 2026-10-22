@@ -9,6 +9,7 @@ import com.kitchenreceipts.core.EInvoicePrintoutFixture.MEAT
 import com.kitchenreceipts.core.EInvoicePrintoutFixture.WHOLESALER
 import com.kitchenreceipts.core.InvoiceBundle.Flag
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -305,6 +306,23 @@ class BundleWizardTest {
         // Nothing to join before the first, and no split where an invoice already starts.
         assertEquals(p, BundleWizard.joinWithPrevious(p, 0))
         assertEquals(p, BundleWizard.splitAt(p, 2))
+    }
+
+    @Test fun aChoiceComesBackWhenAJoinIsUndone() {
+        var p = plan()
+        // The electricity supplier has one invoice only (the third).
+        val energy = BundleWizard.supplierKey(p.invoices[2])
+        assertEquals(1, p.invoices.count { BundleWizard.supplierKey(it) == energy })
+        p = BundleWizard.setCategory(p, energy, "utilities")
+        // Its invoice is joined to the one before (a mis-tap): the supplier leaves the list...
+        val joined = BundleWizard.joinWithPrevious(p, 2)
+        assertTrue(joined.suppliers.none { it.key == energy })
+        // ...and the split that undoes it brings the choice back, not a new supplier to sort.
+        val split = BundleWizard.splitAt(joined, p.invoices[2].first)
+        assertEquals("utilities", split.suppliers.single { it.key == energy }.category)
+        assertTrue(split.retired.isEmpty())
+        assertEquals(split, BundlePlanCodec.decode(BundlePlanCodec.encode(split)))
+        assertEquals(joined.retired, BundlePlanCodec.decode(BundlePlanCodec.encode(joined))!!.retired)
     }
 
     @Test fun atMost300InvoicesAtOnce() {

@@ -203,6 +203,34 @@ class TableReaderTest {
         assertEquals(listOf("ORE", "CAD", "MQ", "KWH", "kg"), TableReader.read(listOf(LayoutRows.layout(page)))!!.map { it.unit?.value })
     }
 
+    @Test fun unitColumnRightAfterTheNameKeepsItsUnits() {
+        // DESCRIZIONE | U.M. | QUANTITA: the unit stands apart in its own column, so it is no part of the name.
+        val hdr = listOf(Cell("DESCRIZIONE", 40), Cell("U.M.", 380), Cell("QUANTITA", 460), Cell("PREZZO", 560), Cell("IMPORTO", 680))
+        fun r(d: String, u: String, q: String, p: String, a: String) = listOf(Cell(d, 40), Cell(u, 380), Cell(q, 520, true), Cell(p, 640, true), Cell(a, 760, true))
+        val page = page(listOf(
+            listOf(Cell("ABC S.R.L.", 40)), hdr,
+            r("MANODOPERA TECNICO", "ORE", "2", "30,00", "60,00"),
+            r("GUARNIZIONE RUBINETTO", "CAD", "3", "1,50", "4,50"),
+            listOf(Cell("TOTALE IMPONIBILE", 400), Cell("64,50", 760, true)),
+        ))
+        val items = TableReader.read(listOf(LayoutRows.layout(page)))!!
+        assertEquals(listOf("ORE", "CAD"), items.map { it.unit?.value })
+        assertEquals(listOf("MANODOPERA TECNICO", "GUARNIZIONE RUBINETTO"), items.map { it.originalDescription })
+    }
+
+    @Test fun aWordRunningOnFromTheNameIntoTheUnitColumnStaysInTheName() {
+        // The last word of a long name reaches under U.M. at word spacing: it is the name, not a unit.
+        val hdr = listOf(Cell("DESCRIZIONE", 40), Cell("U.M.", 300), Cell("QUANTITA", 460), Cell("PREZZO", 560), Cell("IMPORTO", 680))
+        val page = page(listOf(
+            listOf(Cell("ABC S.R.L.", 40)), hdr,
+            listOf(Cell("FORMAGGIO GRATTUGIATO STAGIONATO", 40), Cell("KG", 380), Cell("2", 520, true), Cell("9,00", 640, true), Cell("18,00", 760, true)),
+            listOf(Cell("TOTALE IMPONIBILE", 400), Cell("18,00", 760, true)),
+        ))
+        val item = TableReader.read(listOf(LayoutRows.layout(page)))!!.single()
+        assertEquals("FORMAGGIO GRATTUGIATO STAGIONATO", item.originalDescription)
+        assertEquals("kg", item.unit?.value)
+    }
+
     @Test fun aLineWithNoUnitPrintedStillCountsPieces() {
         val hdr = listOf(Cell("DESCRIZIONE", 40), Cell("QUANTITA", 380), Cell("PREZZO", 520), Cell("IMPORTO", 640))
         fun r(d: String, q: String, p: String, a: String) = listOf(Cell(d, 40), Cell(q, 450, true), Cell(p, 600, true), Cell(a, 720, true))

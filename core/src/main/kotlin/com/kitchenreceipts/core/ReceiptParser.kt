@@ -149,10 +149,13 @@ object ReceiptParser {
             "elettronico|non\\s+riscosso|operatore|transazione|" +
             // E-invoice line notes ("Rif. numero: 12,00", "Valore numerico: 3,00", "Quantità del suddetto lotto: 4,00"):
             // numbers that are no item.
-            "rif\\.?\\s*numero|rif\\.?\\s*data|valore\\s+(?:testo|numerico|data)|quantit\\S*\\s+del\\s+suddett\\S*\\s+lott\\S*)\\b",
+            // The totals heading of the stylesheet ("Importo bollo | Sconto/Maggiorazione | Arr. | Totale documento").
+            "totale\\s+documento|importo\\s+bollo|" +
+            "tipo\\s+dato|rif\\.?\\s*testo|rif\\.?\\s*numero|rif\\.?\\s*data|valore\\s+(?:testo|numerico|data)|quantit\\S*\\s+del\\s+suddett\\S*\\s+lott\\S*)\\b",
     )
     /** The VAT summary's own rows ("RIEPILOGHI IVA E TOTALI", "Esigibilità IVA ..."): never items. */
-    private val SUMMARY_ROW = Regex("(?i)^\\W*(riepiloghi|esigibilit)")
+    /** "Riepiloghi IVA", "Esigibilità immediata" and the stylesheet's own row label "I (esigibilità immediata)" (also D, S). */
+    private val SUMMARY_ROW = Regex("(?i)^\\W*(?:[IDS]\\s*\\(\\s*)?(riepiloghi|esigibilit)")
     /**
      * Notes printed under fresh produce: origin, class and size ("Prov ITALIA Cat II Cal 40-45", "Origine: Spagna",
      * "Categoria I Calibro 70/80"). They are never items and never the name of the numbers next to them.
@@ -253,6 +256,7 @@ object ReceiptParser {
             val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o) }.getOrDefault(withParties)
                 .let { d -> runCatching { ReadingSanity.apply(d, text, o.ownVatNumber) }.getOrDefault(d) }
                 .let { d -> runCatching { NumberSlips.apply(d, layouts.map { it.text }) }.getOrDefault(d) }
+                .let { d -> runCatching { otherBuyer(d, pages, o.ownVatNumber) }.getOrDefault(d) }
             // Codes the page explains (storage letters, row types) and group lines over the items (see PageCodes).
             val coded = runCatching { PageCodes.apply(proven, pages, o.ownVatNumber) }.getOrDefault(proven)
                 // An amount one cent off on a document whose other lines are rounded: a misread digit (see CentSlips).
@@ -275,12 +279,29 @@ object ReceiptParser {
     }
 
     /** A row that ends the item table: totals, VAT summary, carry-over to the next page. */
+    /** "Riporto", "A riportare", "Totale pagina": an amount carried from one page to the next. */
+    internal fun isCarryOverRow(line: String): Boolean = CARRY_OVER.containsMatchIn(line)
+
     internal fun isFooterRow(line: String): Boolean =
         CARRY_OVER.containsMatchIn(line) || TOTALS_ROW.containsMatchIn(line) || TOTAL_STRONG.containsMatchIn(line) ||
             SUBTOTAL.containsMatchIn(line) || VAT_TOTAL.containsMatchIn(line) || TOTAL_WEAK.containsMatchIn(line) ||
             VAT_SUMMARY_WORD.findAll(line).count() >= 3
 
     /** Payment, address, VAT-number rows inside the table area. */
+    private val BUYER_BOX = Regex("(?i)(cessionario\\s*/\\s*committente|dati\\s+del\\s+cessionario)")
+
+    /**
+     * An e-invoice printout addressed to another business: the buyer's box prints a VAT number that is not this
+     * restaurant's (as the e-invoice file itself says it, see EInvoice). Never saved without the operator seeing it.
+     */
+    private fun otherBuyer(d: ParsedDocument, pages: List<List<OcrLine>>, ownVat: String?): ParsedDocument {
+        val own = ownVat?.filter(Char::isDigit)?.takeIf { it.length >= 11 }?.takeLast(11) ?: return d
+        if (ParseWarning.OTHER_BUYER in d.warnings) return d
+        val page = pages.firstOrNull { p -> p.any { BUYER_BOX.containsMatchIn(it.text) } } ?: return d
+        val buyer = InvoiceBundle.signals(0, page, own).customerVat ?: return d
+        return if (buyer != own) d.copy(warnings = d.warnings + ParseWarning.OTHER_BUYER) else d
+    }
+
     internal fun isNotAnItemRow(line: String): Boolean =
         NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line) || SUMMARY_ROW.containsMatchIn(line)
 
@@ -728,8 +749,17 @@ object ReceiptParser {
     }
 
     /** The printed row holds a unit only bills print ("KWH", "120KWH", "€/KWH", "KW*MESE"): see [Units.PRINTED_ONLY]. */
-    private fun printsUnitOfItsOwn(row: String): Boolean = row.split(' ', '\t').any { w ->
-        Units.isPrintedOnly(w.trim('|', '¦', ':', ',', ';', '(', ')').replace(LEADING_NUMBER, "").removePrefix("€").removePrefix("/"))
+    /** A bill's own unit ("KWH", "MESE") printed next to a number of the row ("100 KWH", "1,5KW"), not inside the name. */
+    private fun printsUnitOfItsOwn(row: String): Boolean {
+        val words = row.split(' ', '\t').filter { it.isNotBlank() }
+        fun clean(w: String) = w.trim('|', '¦', ':', ',', ';', '(', ')')
+        fun number(w: String) = LEADING_NUMBER.matches(clean(w))
+        return words.withIndex().any { (i, w) ->
+            val c = clean(w)
+            val glued = LEADING_NUMBER.find(c)?.range?.first == 0 && c.replace(LEADING_NUMBER, "").isNotEmpty()
+            i > 0 && Units.isPrintedOnly(c.replace(LEADING_NUMBER, "").removePrefix("€").removePrefix("/")) &&
+                (glued || number(words[i - 1]) || words.getOrNull(i + 1)?.let(::number) == true)
+        }
     }
     private val LEADING_NUMBER = Regex("^-?[\\d.,]+")
 

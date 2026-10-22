@@ -67,8 +67,8 @@ class BundlePlanCodecTest {
             .replace("\nstatus=QUEUED\n", "\nstatus=SOMETHING_NEW\nfuture=1\n") + "another=line\n"
         val back = BundlePlanCodec.decode(text)!!
         assertEquals(full.invoices, back.invoices)
-        // An unknown status reads as cancelled: nothing is read by mistake.
-        assertEquals(BundleStatus.CANCELLED, back.status)
+        // An unknown status reads as done: nothing is read by mistake, and the file is kept.
+        assertEquals(BundleStatus.DONE, back.status)
         // Fields left out take their defaults.
         val minimal = BundlePlanCodec.decode("v=2\nid=abc\nfile=f.pdf\ninv=f:0|l:3\nsup=k:x\n")!!
         assertEquals(PlannedInvoice(first = 0, last = 3), minimal.invoices.single())

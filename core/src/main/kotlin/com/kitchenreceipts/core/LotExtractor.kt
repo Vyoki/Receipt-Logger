@@ -89,7 +89,10 @@ object LotExtractor {
     private val MONTH_YEAR = Regex("^(0?[1-9]|1[0-2])[/.\\-](19|20)\\d{2}$")
 
     /** A code that is never offered as a lot when nothing labels it: a pack size ("KG9X7", "ML.333") or a month and year. */
-    fun neverALot(token: String): Boolean = packSizeLike(token) || MONTH_YEAR.matches(token.trim())
+    fun neverALot(token: String): Boolean = packSizeLike(token) || monthYear(token)
+
+    /** "03/2031": a month and year (a best-before), never a lot even when labelled. */
+    fun monthYear(token: String): Boolean = MONTH_YEAR.matches(token.trim())
 
     private val DELIVERY_NOTE = Regex("(?i)(\\bd\\.?\\s?d\\.?\\s?t\\b\\.?|\\bdoc(?:umento|\\.)?\\s+di\\s+trasporto\\b)")
 

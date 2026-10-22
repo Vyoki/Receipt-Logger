@@ -61,6 +61,21 @@ class SupplierCategoriesTest {
         assertNull(suggest("VITE AUTOFILETTANTE M6 100,00 0,05 PZ 22,00 5,00", "TRAPANO A BATTERIA 1,00 89,00 PZ 22,00 89,00", "MANODOPERA TECNICO 2,00 35,00 ORE 22,00 70,00"))
     }
 
+    @Test fun aFewMisreadRowsDoNotMakeAHardwareSupplierFood() {
+        // Mostly rows of no known kind, two that the product guesser reads as food: no majority, no suggestion.
+        assertNull(suggest(
+            "VITE AUTOFILETTANTE M6 100,00 0,05 PZ 22,00 5,00", "TASSELLO NYLON 8MM 50,00 0,10 PZ 22,00 5,00",
+            "SILICONE SIGILLANTE 2,00 6,00 PZ 22,00 12,00", "NASTRO ISOLANTE 3,00 1,50 PZ 22,00 4,50",
+            "PANE 1,00 2,00 PZ 4,00 2,00", "LATTE 1,00 1,50 PZ 4,00 1,50",
+        ))
+    }
+
+    @Test fun theLOfACompanyFormIsNoLitre() {
+        // "S.R.L." next to a fuel word is no fuel sale.
+        assertNull(SupplierCategories.suggest(SupplierCategories.hints(listOf("METANO ESEMPIO S.R.L. VIA PROVA 1"))))
+        assertEquals(SupplierCategory.FUEL, SupplierCategories.suggest(SupplierCategories.hints(listOf("GASOLIO AUTOTRAZIONE 40,00 LT 1,60 64,00"))))
+    }
+
     @Test fun fromThePagesOfABundle() {
         val pages = EInvoicePrintoutFixture.bundle(
             listOf(EInvoicePrintoutFixture.ENERGY, EInvoicePrintoutFixture.MEAT, EInvoicePrintoutFixture.WHOLESALER, EInvoicePrintoutFixture.HOUSEHOLD),

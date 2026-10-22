@@ -30,6 +30,7 @@ object DocumentKinds {
 
     // OCR-tolerant spellings: 0 for O, 1 or I for T, missing dots and spaces.
     private val CREDIT = rx("(?i)\\bnota\\s+(?:di\\s+)?(?:ac)?credito\\b|\\bcredit\\s+note\\b|\\bgutschrift\\b|\\bnota\\s+de\\s+cr[eé]dito\\b|\\bavoir\\b|\\bfactura\\s+rectificativa\\b|\\(TD0[48]\\)")
+    private val E_INVOICE_CREDIT = rx("(?<![A-Za-z0-9])TD0[48](?![0-9])\\s*\\(?\\s*(nota|$)")
     private val INVOICE = rx("(?i)\\bfattur[ae]\\b|\\bfatt\\.\\s|\\binvoice\\b|\\brechnung\\b|\\bfactura\\b|\\bfacture\\b|\\bfatura\\b")
     private val DELIVERY = rx(
         "(?i)\\bdoc(?:umento|\\.)?\\s*(?:di\\s*)?traspor[t1i][o0]\\b|\\bd\\.?\\s?d\\.?\\s?t\\b\\.?|\\bbolla\\s+(?:di\\s+)?(?:consegna|accompagnamento)\\b|" +
@@ -45,6 +46,9 @@ object DocumentKinds {
      * "la fattura seguirà" at the bottom stays a delivery note, and an invoice listing "Rif. DDT 88" stays an invoice.
      */
     fun detect(lines: List<String>): DocKind? {
+        // The e-invoice document type printed in the identity row ("TD04 nota di credito", "TD08"): a credit note,
+        // whatever other words ("Servizi Fatture S.r.l." as the intermediary) are printed above it.
+        if (lines.any { E_INVOICE_CREDIT.containsMatchIn(it) }) return DocKind.CREDIT_NOTE
         var best: Pair<Int, DocKind>? = null
         fun offer(index: Int, kind: DocKind) {
             if (best == null || index < best!!.first) best = index to kind

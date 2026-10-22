@@ -214,31 +214,12 @@ class BenchTest {
         const val PRINTOUT = "e-invoice printout"
 
         /**
-         * TODO (reading): printouts with a wrong value not highlighted today. Take a name off once it reads right;
-         * never add one.
+         * Printouts with a wrong value not highlighted, kept for a reading change that cannot fix one at once. Empty:
+         * every printout is right or highlighted. Never add one without the owner's OK.
          */
-        val PRINTOUT_TODO_SILENT = setOf(
-            // The item table is read as text, not by columns: the VAT summary rows, the "Importo bollo ... Totale
-            // documento" row (with the total) and the payment rows become lines, the last ones not highlighted; a line
-            // of 4 pieces at 4% VAT can come out with quantity and price swapped (4 x 17,2082 as 17,2082 x 4).
-            // Two fuel lines:
-            "printout-115-fuel",
-            // A utility bill whose rows are a few units out of line:
-            "printout-106-utility",
-            // "Totale pagina" / "A riportare" / "Riporto" rows on a multi-page invoice (pages-10 also without them):
-            "printout-pages-1-asso", "printout-pages-2-asso", "printout-pages-3-asso", "printout-pages-5-asso",
-            "printout-pages-6-asso", "printout-pages-7-asso", "printout-pages-8-asso", "printout-pages-9-asso",
-            "printout-pages-10-asso", "printout-pages-11-asso", "printout-pages-12-asso",
-            // Names printed letter by letter: quantity and price swapped (4 x 7,7501 as 7,7501 x 4).
-            "printout-64-goods",
-        )
+        val PRINTOUT_TODO_SILENT = emptySet<String>()
 
-        /** TODO (reading): printouts the app would save by itself although it must not. Never add one. */
-        val PRINTOUT_TODO_SAVED = setOf(
-            // Addressed to another business (the customer's VAT is not the restaurant's): no hold on printouts.
-            "printout-4-goods", "printout-54-goods", "printout-92-goods",
-            // A credit note (TD04) whose intermediary's name has the word "FATTURE" above it: taken for an invoice.
-            "printout-94-goods",
-        )
+        /** Printouts the app would save by itself although it must not. Empty, and never add one. */
+        val PRINTOUT_TODO_SAVED = emptySet<String>()
     }
 }

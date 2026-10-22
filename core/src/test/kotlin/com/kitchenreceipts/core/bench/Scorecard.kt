@@ -65,7 +65,10 @@ class Scorecard {
     }
 
     fun score(doc: BenchDoc): List<String> {
-        val options = ParseOptions(null, doc.ownVat, supplierByVat = doc.known.takeIf { it.isNotEmpty() }?.let { k -> { vat: String -> k[vat] } })
+        val options = ParseOptions(
+            null, doc.ownVat, supplierByVat = doc.known.takeIf { it.isNotEmpty() }?.let { k -> { vat: String -> k[vat] } },
+            textLayerPages = if (doc.textLayer) doc.pages.indices.toSet() else emptySet(),
+        )
         val parsed = if (doc.text != null) ReceiptParser.parse(doc.text, options) else ReceiptParser.parsePages(doc.pages, options)
         var draft = DocumentDraft.fromParsed(parsed)
         if (draft.vatBasis == VatBasis.UNKNOWN || draft.vatBasisUncertain) {

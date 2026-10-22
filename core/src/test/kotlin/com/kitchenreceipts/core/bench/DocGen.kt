@@ -43,6 +43,8 @@ data class BenchDoc(
     val text: String? = null,
     val mustReview: String? = null,
     val known: Map<String, String> = emptyMap(),
+    /** The pages are a PDF's own text (as the app reads a digital PDF), not a photo. */
+    val textLayer: Boolean = false,
 )
 
 /**

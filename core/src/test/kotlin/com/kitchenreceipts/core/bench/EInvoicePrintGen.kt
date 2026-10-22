@@ -152,6 +152,8 @@ object EInvoicePrintGen {
                 else -> null
             },
             known = if (knownSupplier) mapOf(invoice.supplierVat to invoice.sellerName) else emptyMap(),
+            // A printout is a digital PDF: the app reads it from the PDF's own text.
+            textLayer = true,
         )
     }
 

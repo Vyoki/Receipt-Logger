@@ -334,6 +334,13 @@ object TableReader {
             // brackets after an article code is no part of the code or the name. Never guessed on a photo.
             val textLayer = p in textLayerPages
             val body = rows.drop(start).map { if (textLayer) codeTypeOut(letterSpaced(it, header), header) else it }.toMutableList()
+            // A continuation page opens with the amount carried over under the headings ("Riporto 833,99", the amount
+            // sometimes on a row of its own): before the first item it is no item and does not end the table.
+            while (body.isNotEmpty() && ReceiptParser.isCarryOverRow(body.first().joinToString(" ") { it.text })) {
+                val labelOnly = body.first().none { isMoney(it.text) }
+                body.removeAt(0)
+                if (labelOnly && body.firstOrNull()?.let { r -> r.size == 1 && isMoney(r[0].text) } == true) body.removeAt(0)
+            }
             if (stray.isNotEmpty()) {
                 val firstItem = body.indexOfFirst { r -> r.any { it.text.count(Char::isDigit) >= 5 } }
                 if (firstItem >= 0 && body[firstItem].none { isMoney(it.text) && it.left > (header.columns.lastOrNull { c -> c.kind == Kind.PRICE }?.right ?: Double.MAX_VALUE) }) {
@@ -504,6 +511,8 @@ object TableReader {
         if (open !in 1..2) return row
         val code = row[open - 1]
         if (!code.text.any(Char::isDigit) || cols[columnIndex(code.center, cols)].kind != Kind.CODE) return row
+        // The bracket itself is printed in the code cell, not at the start of the name.
+        if (cols[columnIndex(row[open].center, cols)].kind != Kind.CODE) return row
         val close = (open until minOf(row.size, open + 5)).firstOrNull { row[it].text == ")" || row[it].text.endsWith(")") } ?: return row
         val inside = row.subList(open, close + 1).joinToString(" ") { it.text }.trim('(', ')', ' ')
         if (inside.isEmpty() || inside.length > 24 || inside.count(Char::isLetter) < 2 || inside.any(Char::isDigit)) return row
@@ -604,11 +613,12 @@ object TableReader {
         fun noteLot(value: String, source: String, inDescriptionCell: Boolean) {
             val i = items.lastIndex
             val lot = value.trim()
-            if (i < 0 || lot.isEmpty() || lot.length > 30 || LotExtractor.neverALot(lot) || ItalianDates.findDates(lot).isNotEmpty()) return
+            if (i < 0 || lot.isEmpty() || lot.length > 30 || LotExtractor.monthYear(lot) || ItalianDates.findDates(lot).isNotEmpty()) return
             val prev = items[i]
             val cur = prev.lotNumber
-            // Sure only under the item it belongs to: in its description cell, no priced row in between.
-            val conf = if (inDescriptionCell && !pricedSinceItem) Confidence.HIGH else Confidence.LOW
+            // Sure only under the item it belongs to: in its description cell, no priced row in between. A labelled
+            // lot shaped like a pack size ("RT550") is kept, for a check.
+            val conf = if (inDescriptionCell && !pricedSinceItem && !LotExtractor.packSizeLike(lot)) Confidence.HIGH else Confidence.LOW
             val listed = when {
                 cur == null -> emptyList()
                 cur.source.startsWith(SEVERAL_LOTS) -> cur.source.removePrefix(SEVERAL_LOTS).split(", ")
@@ -776,7 +786,10 @@ object TableReader {
         val mapped = mapRow(row, header)
         val out = linkedMapOf<Kind, MutableList<Word>>()
         var lastKind: Kind? = null
+        var prev: Word? = null
         for ((w, x) in mapped) {
+            // A gap as wide as a column (not a space between words) separates this word from the one before.
+            val columnGap = prev?.let { p -> w.left - p.right > 3.0 * (p.right - p.left) / p.text.length.coerceAtLeast(1) } ?: true
             val idx = columnIndex(x, cols)
             var kind = cols[idx].kind
             val t = w.text
@@ -796,9 +809,10 @@ object TableReader {
                     if (lastKind == Kind.DESCRIPTION || x < cols[idx].left) Kind.DESCRIPTION else Kind.PACK_TYPE
                 !numeric && kind == Kind.PACK_TYPE && letters >= 4 && Units.normalizeKnown(t) == null && lastKind == Kind.DESCRIPTION -> Kind.DESCRIPTION
                 !numeric && kind == Kind.PACK_SIZE && letters >= 4 && Units.normalizeKnown(t.trimEnd('.')) == null && lastKind == Kind.DESCRIPTION -> Kind.DESCRIPTION
-                // A word the app has no unit for, right after the name, is the name running on; a bill's own unit
-                // ("KWH", "MESE") stays the unit.
-                !numeric && kind == Kind.UNIT && Units.normalizeKnown(t) == null && !Units.isPrintedOnly(t) && letters >= 3 && lastKind == Kind.DESCRIPTION -> Kind.DESCRIPTION
+                // A word the app has no unit for, right after the name at word spacing, is the name running on; a
+                // bill's own unit ("KWH", "MESE") and a word printed apart in the U.M. column ("ORE", "CAD") stay the unit.
+                !numeric && kind == Kind.UNIT && Units.normalizeKnown(t) == null && !Units.isPrintedOnly(t) && letters >= 3 && lastKind == Kind.DESCRIPTION &&
+                    !columnGap -> Kind.DESCRIPTION
                 !numeric && kind == Kind.CODE && letters >= 3 && !t.any(Char::isDigit) -> Kind.DESCRIPTION
                 else -> kind
             }
@@ -815,6 +829,7 @@ object TableReader {
             if (lastKind == null && t.length == 1 && (t == "0" || t == "O") && !w.spaced) continue
             out.getOrPut(kind) { mutableListOf() } += w
             lastKind = kind
+            prev = w
         }
         overflowLeft(out, cols)
         return out

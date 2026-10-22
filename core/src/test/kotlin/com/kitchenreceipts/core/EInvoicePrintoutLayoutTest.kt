@@ -176,11 +176,19 @@ class EInvoicePrintoutLayoutTest {
 
     @Test fun aLotNoteAfterAPricedRowThatIsNoItemIsUncertain() {
         // Two priced rows above the note: the item, then a row of numbers with no name. The note may be either's.
-        val numbersOnly = EInvoicePrintoutFixture.Line("", "2,00", "5,00", "kg", "10,00", "10,00", code = null, codeType = null,
-            notes = listOf(EInvoicePrintoutFixture.Note("LOTTO", "RT550")))
-        val d = read(meat.copy(lines = listOf(meat.lines[0].copy(notes = emptyList()), numbersOnly) + meat.lines.drop(1)))
-        val lot = d.lineItems.firstOrNull { it.lotNumber?.value == "RT550" }?.lotNumber
-        assertTrue(lot == null || lot.confidence == Confidence.LOW)
+        // Read by columns (the reading this rule belongs to), with a lot that has no pack-size shape.
+        fun lotRead(lines: List<EInvoicePrintoutFixture.Line>): Extracted<String>? {
+            val pages = EInvoicePrintoutFixture.pages(meat.copy(lines = lines)).map { LayoutRows.layout(it) }
+            return TableReader.read(pages, textLayerPages = pages.indices.toSet())!!.firstNotNullOfOrNull { it.lotNumber?.takeIf { l -> l.value == "QZ771" } }
+        }
+        val note = listOf(EInvoicePrintoutFixture.Note("LOTTO", "QZ771"))
+        val numbersOnly = EInvoicePrintoutFixture.Line("", "2,00", "5,00", "kg", "10,00", "10,00", code = null, codeType = null, notes = note)
+        val doubted = lotRead(listOf(meat.lines[0].copy(notes = emptyList()), numbersOnly) + meat.lines.drop(1))
+        assertEquals("QZ771", doubted?.value)
+        assertEquals(Confidence.LOW, doubted?.confidence)
+        // The same note right under the item, with no priced row in between: the item's lot, sure.
+        val sure = lotRead(listOf(meat.lines[0].copy(notes = note)) + meat.lines.drop(1))
+        assertEquals(Confidence.HIGH, sure?.confidence)
     }
 
     @Test fun aLotNoteOutsideTheDescriptionCellIsUncertain() {

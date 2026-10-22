@@ -151,6 +151,10 @@ class AiTargetsTest {
         val light = AiTargets.plan(listOf(bad), doc, spotCheck = true, scope = AiScope.HEADER_TOTALS)!!
         assertTrue(light.isNotEmpty())
         assertTrue(light.all(::supplierHeaderOrTotals))
+        // The loop asks the same: its candidates come from a plan made with its own scope.
+        val loop = AiLoop(listOf(bad), LayoutRows.toText(bad), ParseOptions(), doc, scope = AiScope.HEADER_TOTALS).candidates()
+        assertTrue(loop.isNotEmpty())
+        assertTrue(loop.all(::supplierHeaderOrTotals))
     }
 
     @Test fun grammarsAreWellFormed() {

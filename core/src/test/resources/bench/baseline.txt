@@ -19,6 +19,6 @@ group invented: receipt / clean | fields 293 right 275 silent 0 | documents 17 a
 group invented: receipt / heavy noise | fields 336 right 309 silent 1 | documents 21 autoWrong 0
 group invented: receipt / light noise | fields 863 right 814 silent 2 | documents 56 autoWrong 0
 group real documents (invented copies) | fields 93 right 91 silent 1 | documents 3 autoWrong 0
-# The invented e-invoice printouts (EInvoicePrintGen), outside the headline. Its target is silent 0 and autoWrong 0:
-# the documents still wrong today are the TODO lists in BenchTest.
-group e-invoice printout | fields 6324 right 4838 silent 51 | documents 154 autoWrong 4
+# The invented e-invoice printouts (EInvoicePrintGen), read as a PDF's own text, outside the headline: silent 0 and
+# autoWrong 0, and they must stay so.
+group e-invoice printout | fields 6324 right 5242 silent 0 | documents 154 autoWrong 0
