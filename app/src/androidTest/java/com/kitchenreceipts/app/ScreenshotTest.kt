@@ -1,16 +1,23 @@
 package com.kitchenreceipts.app
 
+import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
+import android.graphics.Rect
+import android.os.SystemClock
+import android.view.MotionEvent
+import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.kitchenreceipts.app.data.SellerLearning
 import com.kitchenreceipts.app.files.EInvoiceEntry
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.settings.AppSettings
 import com.kitchenreceipts.core.BundleStatus
 import com.kitchenreceipts.core.BundleWizard
 import com.kitchenreceipts.core.InvoiceOutcome
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidLineItem
 import com.kitchenreceipts.core.VatBasis
@@ -42,6 +49,16 @@ class ScreenshotTest {
         @BeforeClass @JvmStatic fun clearScreens() {
             File(ApplicationProvider.getApplicationContext<KitchenReceiptsApp>().filesDir, "screens").deleteRecursively()
         }
+
+        // Invented suppliers for the long lists: two per letter of the radio alphabet.
+        private val WORDS = listOf(
+            "Alfa", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot", "Golf", "Hotel", "India", "Juliett", "Kilo", "Lima", "Mike",
+            "November", "Oscar", "Papa", "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "Xray", "Yankee", "Zulu",
+        )
+        private const val LONG_SELLER = "ABC S.r.l."
+        // An invented electricity supplier (valid check digit).
+        private const val UTILITY_SELLER = "VERDE FRESCO S.p.A."
+        private const val UTILITY_VAT = "09876543217"
     }
 
     private fun shot(name: String) {
@@ -207,6 +224,195 @@ class ScreenshotTest {
                 store.update(sha) { BundleWizard.close(it, BundleStatus.CANCELLED) }
                 store.cancel(longSha)
             }
+        }
+    }
+
+    /** The fast scroller and the jump chips on long screens (invented data), in English and in Italian. */
+    @Test fun scrollScreens() {
+        seed()
+        val docId = seedLong()
+        val settings = app.container.settings
+        val language = settings.language
+        try {
+            for ((lang, tag) in listOf(AppSettings.Language.ENGLISH to "en", AppSettings.Language.ITALIAN to "it")) {
+                settings.language = lang
+                // The one-time "Drag here" hint shows on the first long list of each run.
+                settings.scrollHintShown = false
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                    var desc = ""
+                    scenario.onActivity { desc = it.getString(R.string.scrollbar_desc) }
+                    app.container.pendingRoute.value = "document/$docId"
+                    shot("20-scroll-document-$tag")
+                    dragThumb(desc) { shot("21-scroll-document-drag-$tag") }
+                    shot("22-scroll-document-after-$tag")
+                    for ((name, route) in listOf("23-scroll-sellers" to "sellers", "24-scroll-documents" to "documents")) {
+                        app.container.pendingRoute.value = "home"
+                        Thread.sleep(500)
+                        app.container.pendingRoute.value = route
+                        shot("$name-$tag")
+                        dragThumb(desc) { shot("$name-drag-$tag") }
+                    }
+                }
+            }
+        } finally {
+            settings.language = language
+        }
+    }
+
+    /**
+     * Suppliers sorted by what they sell (invented data), in English and in Italian: Sellers in sections with filter
+     * chips, the folded "Not food" products, the labels on Documents, and the tiles. The categories are forgotten after.
+     */
+    @Test fun sortedScreens() {
+        seed()
+        seedLong()
+        seedUtilityBill()
+        val repo = app.container.repository
+        // By VAT number for the bill; by name for the others, which have none.
+        val sorted = listOf(
+            Triple(UTILITY_VAT, UTILITY_SELLER, SupplierCategory.UTILITIES),
+            Triple(null, "Alfa Ingrosso S.r.l.", SupplierCategory.FOOD),
+            Triple(null, "Beta Ortofrutta S.r.l.", SupplierCategory.FOOD),
+            Triple(null, "Alfa Esempio S.r.l.", SupplierCategory.DRINKS),
+            Triple(null, "Bravo Prova S.r.l.", SupplierCategory.SUPPLIES),
+            Triple(null, "Charlie Esempio S.r.l.", SupplierCategory.EQUIPMENT),
+        )
+        val settings = app.container.settings
+        val language = settings.language
+        try {
+            runBlocking { sorted.forEach { (vat, name, c) -> repo.rememberCategory(vat, name, c) } }
+            for ((lang, tag) in listOf(AppSettings.Language.ENGLISH to "en", AppSettings.Language.ITALIAN to "it")) {
+                settings.language = lang
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                    var food = ""
+                    scenario.onActivity { food = it.getString(R.string.supcat_food) }
+                    for ((name, route) in listOf("25-sorted-sellers" to "sellers", "26-sorted-products" to "products", "27-sorted-documents" to "documents")) {
+                        app.container.pendingRoute.value = "home"
+                        Thread.sleep(500)
+                        app.container.pendingRoute.value = route
+                        // Products: down to the folded "Not food" section at the end.
+                        if (route == "products") { Thread.sleep(1500); scrollToEnd() }
+                        shot("$name-$tag")
+                    }
+                    // The tiles, opened from the first supplier's "Food" pill.
+                    app.container.pendingRoute.value = "home"
+                    Thread.sleep(500)
+                    app.container.pendingRoute.value = "sellers"
+                    Thread.sleep(1500)
+                    if (clickText(food)) {
+                        shot("28-sorted-tiles-$tag")
+                        InstrumentationRegistry.getInstrumentation().uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+                    }
+                }
+            }
+        } finally {
+            settings.language = language
+            runBlocking { sorted.forEach { (vat, name, _) -> repo.forgetCategory(vat, name) } }
+        }
+    }
+
+    /** An invented electricity bill with one product line: the supplier's product is "Not food" once it is sorted. */
+    private fun seedUtilityBill() = runBlocking {
+        val repo = app.container.repository
+        if (repo.searchDocuments("", null, null, null).first().any { it.sellerName == UTILITY_SELLER }) return@runBlocking
+        val text = "$UTILITY_SELLER\nP.IVA $UTILITY_VAT\nFATTURA N. E-12/2031"
+        File(app.filesDir, "documents/screens-utility.jpg").writeBytes(ByteArray(13))
+        val line = ValidLineItem("QUOTA FISSA", null, BigDecimal.ONE, "pz", BigDecimal("50.00"), 5000, BigDecimal(10), null, null, newProductName = "Quota fissa")
+        repo.saveDocument(
+            ValidDocument(UTILITY_SELLER, LocalDate.of(2031, 12, 18), "E-12/2031", "EUR", 5000, 500, 5500, VatBasis.EXCLUSIVE, listOf(line)),
+            StoredFile("documents/screens-utility.jpg", "image/jpeg", 1, "screens-utility"), text, null, SellerLearning(text, null, null),
+        )
+    }
+
+    /**
+     * A 60-line invoice, and enough suppliers with one invoice each for the Sellers and Documents lists to be long.
+     * All invented, dated 2031. Returns the long invoice.
+     */
+    private fun seedLong(): Long = runBlocking {
+        val repo = app.container.repository
+        repo.searchDocuments("", null, null, null).first().firstOrNull { it.sellerName == LONG_SELLER }?.let { return@runBlocking it.id }
+        val last = LocalDate.of(2031, 12, 20)
+        var n = 0
+        for (word in WORDS) for (kind in listOf("Esempio", "Prova")) {
+            n++
+            val path = "documents/screens-long-$n.jpg"
+            File(app.filesDir, path).writeBytes(ByteArray(20 + n))
+            val line = ValidLineItem("Articolo di prova $n", null, BigDecimal.ONE, "pz", BigDecimal("10.00"), 1000, BigDecimal(10), null, null)
+            repo.saveDocument(
+                ValidDocument("$word $kind S.r.l.", last.minusDays(n * 6L), "P-$n", "EUR", 1000, 100, 1100, VatBasis.EXCLUSIVE, listOf(line)),
+                StoredFile(path, "image/jpeg", 1, "screens-long-$n"), null, null,
+            )
+        }
+        val lines = (1..60).map { i ->
+            ValidLineItem("Articolo di prova %02d".format(i), null, BigDecimal(2), "pz", BigDecimal("1.50"), 300, BigDecimal(10), null, null)
+        }
+        File(app.filesDir, "documents/screens-long.jpg").writeBytes(ByteArray(19))
+        repo.saveDocument(
+            ValidDocument(LONG_SELLER, LocalDate.of(2031, 3, 14), "60/2031", "EUR", 18000, 1800, 19800, VatBasis.EXCLUSIVE, lines),
+            StoredFile("documents/screens-long.jpg", "image/jpeg", 1, "screens-long"), "$LONG_SELLER\nFATTURA N. 60/2031", null,
+        )
+    }
+
+    /**
+     * Holds the fast scroller's thumb (found by its TalkBack description [desc]) dragged half-way down the screen
+     * while [whileHeld] runs, so the bubble shows; then lets go. Does nothing if no thumb is on screen.
+     */
+    private fun dragThumb(desc: String, whileHeld: () -> Unit) {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        val thumb = (1..10).firstNotNullOfOrNull {
+            inst.uiAutomation.rootInActiveWindow?.let { findByDescription(it, desc) } ?: run { Thread.sleep(300); null }
+        } ?: return
+        val r = Rect().also { thumb.getBoundsInScreen(it) }
+        val x = r.exactCenterX()
+        val from = r.exactCenterY()
+        val to = app.resources.displayMetrics.heightPixels * 0.55f
+        val down = SystemClock.uptimeMillis()
+        fun send(action: Int, y: Float) {
+            val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, x, y, 0)
+            inst.sendPointerSync(e)
+            e.recycle()
+        }
+        send(MotionEvent.ACTION_DOWN, from)
+        for (k in 1..12) {
+            send(MotionEvent.ACTION_MOVE, from + (to - from) * k / 12)
+            Thread.sleep(16)
+        }
+        try {
+            whileHeld()
+        } finally {
+            send(MotionEvent.ACTION_UP, to)
+        }
+    }
+
+    private fun findByDescription(node: AccessibilityNodeInfo, desc: String): AccessibilityNodeInfo? =
+        findNode(node) { it.contentDescription?.toString() == desc }
+
+    private fun findNode(node: AccessibilityNodeInfo, test: (AccessibilityNodeInfo) -> Boolean): AccessibilityNodeInfo? {
+        if (test(node)) return node
+        for (i in 0 until node.childCount) {
+            val found = node.getChild(i)?.let { findNode(it, test) }
+            if (found != null) return found
+        }
+        return null
+    }
+
+    /** Taps the first thing on screen that reads exactly [text], as TalkBack would. False when none is shown. */
+    private fun clickText(text: String): Boolean {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        val node = (1..10).firstNotNullOfOrNull {
+            inst.uiAutomation.rootInActiveWindow?.let { root -> findNode(root) { n -> n.isClickable && n.text?.toString() == text } }
+                ?: run { Thread.sleep(300); null }
+        } ?: return false
+        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    /** Scrolls the screen's list to its end with TalkBack's scroll action (at most [pages] pages). */
+    private fun scrollToEnd(pages: Int = 20) {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        repeat(pages) {
+            val list = inst.uiAutomation.rootInActiveWindow?.let { root -> findNode(root) { it.isScrollable } } ?: return
+            if (!list.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) return
+            Thread.sleep(250)
         }
     }
 }

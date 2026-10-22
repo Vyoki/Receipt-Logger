@@ -92,7 +92,12 @@ data class SellerStatsRow(
     val documentCount: Int,
     val totalCents: Long?,
     val lastDate: LocalDate?,
+    /** Where the supplier's category is remembered (see ReceiptRepository.categoryOf). */
+    val vatNumber: String? = null,
 )
+
+/** A product and a supplier it was bought from. */
+data class ProductSellerRow(val productId: Long, val sellerId: Long)
 
 data class SellerAliasRow(val aliasKey: String, val sellerId: Long)
 
@@ -245,6 +250,13 @@ interface DocumentDao {
 
     @Query("$PURCHASE_SELECT AND li.product_id = :productId ORDER BY (d.document_date IS NULL), d.document_date DESC, li.id DESC")
     fun purchasesForProduct(productId: Long): Flow<List<PurchaseRow>>
+
+    /** Which suppliers each linked product was bought from (one row per pair). */
+    @Query(
+        "SELECT DISTINCT li.product_id AS productId, d.seller_id AS sellerId FROM line_items li " +
+            "JOIN documents d ON d.id = li.document_id WHERE li.product_id IS NOT NULL",
+    )
+    fun productSellers(): Flow<List<ProductSellerRow>>
 }
 
 @Dao
@@ -263,7 +275,7 @@ interface SellerDao {
 
     @Query(
         """
-        SELECT s.id AS id, s.name AS name, COUNT(d.id) AS documentCount,
+        SELECT s.id AS id, s.name AS name, s.vat_number AS vatNumber, COUNT(d.id) AS documentCount,
                SUM(CASE WHEN d.covered_by IS NOT NULL THEN 0 WHEN d.kind = 'CREDIT_NOTE' THEN -d.total_cents ELSE d.total_cents END) AS totalCents,
                MAX(d.document_date) AS lastDate
         FROM sellers s LEFT JOIN documents d ON d.seller_id = s.id

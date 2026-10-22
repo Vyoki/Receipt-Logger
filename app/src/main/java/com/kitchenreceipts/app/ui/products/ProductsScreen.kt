@@ -7,7 +7,9 @@ import androidx.compose.foundation.layout.Spacer
 import com.kitchenreceipts.core.Categories
 import com.kitchenreceipts.core.Category
 import com.kitchenreceipts.app.ui.components.CategoryIcon
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +18,8 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -31,8 +35,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -47,9 +55,11 @@ import com.kitchenreceipts.app.data.ProductWithSummary
 import com.kitchenreceipts.app.data.ReceiptRepository
 import com.kitchenreceipts.app.data.UnassignedGroup
 import com.kitchenreceipts.app.ui.appViewModel
+import com.kitchenreceipts.app.ui.components.Annotation
 import com.kitchenreceipts.app.ui.components.AppScaffold
 import com.kitchenreceipts.app.ui.components.ClickCard
 import com.kitchenreceipts.app.ui.components.EmptyState
+import com.kitchenreceipts.app.ui.components.Panel
 import com.kitchenreceipts.app.ui.components.SectionTitle
 import com.kitchenreceipts.app.ui.review.ProductPickerSheet
 import com.kitchenreceipts.app.ui.theme.LocalStatusColors
@@ -65,6 +75,8 @@ class ProductsViewModel(private val repo: ReceiptRepository) : ViewModel() {
     val summaries: StateFlow<List<ProductWithSummary>?> = repo.productSummaries().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
     val unassigned: StateFlow<List<UnassignedGroup>> = repo.unassignedGroups().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val products: StateFlow<List<ProductEntity>> = repo.products().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
+    /** Products bought only from electricity, fuel, repairs or other-expenses suppliers: listed apart, folded. */
+    val notFood: StateFlow<Set<Long>> = repo.notFoodProductIds().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
     val families: StateFlow<List<ProductFamilyEntity>> = repo.families().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val suggestions: StateFlow<List<ProductFamilies.Suggestion>> =
         repo.familySuggestions().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -95,6 +107,8 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
     val products by vm.products.collectAsStateWithLifecycle()
     val families by vm.families.collectAsStateWithLifecycle()
     val suggestions by vm.suggestions.collectAsStateWithLifecycle()
+    val notFood by vm.notFood.collectAsStateWithLifecycle()
+    var showNotFood by rememberSaveable { mutableStateOf(false) }
     var assigning by remember { mutableStateOf<UnassignedGroup?>(null) }
     var creating by remember { mutableStateOf(false) }
     var showAllUnassigned by remember { mutableStateOf(false) }
@@ -160,27 +174,14 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
             item { SectionTitle(stringResource(R.string.products)) }
             val rows = summaries
             if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_products)) }
-            items(rows.orEmpty(), key = { it.product.id }) { p ->
-                ClickCard(onClick = { onOpen(p.product.id) }) {
-                    Column {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            CategoryIcon(Category.fromKey(p.product.category) ?: Categories.guess(p.product.name))
-                            Spacer(Modifier.width(8.dp))
-                            Text(p.product.name, style = MaterialTheme.typography.titleMedium)
-                        }
-                        p.product.familyId?.let { fid -> families.firstOrNull { it.id == fid } }?.let { f ->
-                            Text(stringResource(R.string.family_value, f.name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
-                        }
-                        if (p.summary.averages.isEmpty()) {
-                            Text(
-                                if (p.purchaseCount == 0) stringResource(R.string.no_purchases) else stringResource(R.string.no_average_yet),
-                                style = MaterialTheme.typography.bodyMedium,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                        p.summary.averages.take(2).forEach { a -> Text(averageLine(a), style = MaterialTheme.typography.bodyMedium) }
-                        if (p.summary.averages.size > 2) Text("…", style = MaterialTheme.typography.bodyMedium)
-                    }
+            // Every figure still counts the products of non-food suppliers: they are only listed apart, at the end.
+            val (food, other) = rows.orEmpty().partition { it.product.id !in notFood }
+            items(food, key = { it.product.id }) { p -> ProductCard(p, families) { onOpen(p.product.id) } }
+            if (other.isNotEmpty()) {
+                item(key = "not-food") { NotFoodHeader(other.size, showNotFood) { showNotFood = !showNotFood } }
+                if (showNotFood) {
+                    item(key = "not-food-hint") { Annotation(stringResource(R.string.products_not_food_hint)) }
+                    items(other, key = { it.product.id }) { p -> ProductCard(p, families) { onOpen(p.product.id) } }
                 }
             }
             item { androidx.compose.foundation.layout.Spacer(Modifier.padding(40.dp)) }
@@ -209,6 +210,49 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
                 vm.createAndAssign(null, name) { scope.launch { snackbar.showSnackbar(takenMsg.format(it)) } }
             },
         )
+    }
+}
+
+@Composable
+private fun ProductCard(p: ProductWithSummary, families: List<ProductFamilyEntity>, onOpen: () -> Unit) {
+    ClickCard(onClick = onOpen) {
+        Column {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                CategoryIcon(Category.fromKey(p.product.category) ?: Categories.guess(p.product.name))
+                Spacer(Modifier.width(8.dp))
+                Text(p.product.name, style = MaterialTheme.typography.titleMedium)
+            }
+            p.product.familyId?.let { fid -> families.firstOrNull { it.id == fid } }?.let { f ->
+                Text(stringResource(R.string.family_value, f.name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)
+            }
+            if (p.summary.averages.isEmpty()) {
+                Text(
+                    if (p.purchaseCount == 0) stringResource(R.string.no_purchases) else stringResource(R.string.no_average_yet),
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            p.summary.averages.take(2).forEach { a -> Text(averageLine(a), style = MaterialTheme.typography.bodyMedium) }
+            if (p.summary.averages.size > 2) Text("…", style = MaterialTheme.typography.bodyMedium)
+        }
+    }
+}
+
+/** "Not food (N)": one big row that shows or hides the products of non-food suppliers. */
+@Composable
+private fun NotFoodHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
+    val action = stringResource(if (open) R.string.products_not_food_hide else R.string.products_not_food_show)
+    Panel(Modifier.padding(top = 12.dp)) {
+        Row(
+            Modifier.fillMaxWidth().heightIn(min = 64.dp)
+                .clickable(onClickLabel = action, role = Role.Button, onClick = onToggle)
+                .semantics { heading() }
+                .padding(horizontal = 16.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(stringResource(R.string.products_not_food, count), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
+        }
     }
 }
 

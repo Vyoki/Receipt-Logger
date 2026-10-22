@@ -5,11 +5,19 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.kitchenreceipts.app.data.AppDatabase
+import com.kitchenreceipts.app.data.CategoryMatch
+import com.kitchenreceipts.app.data.FoodRepository
 import com.kitchenreceipts.app.data.ReceiptRepository
 import com.kitchenreceipts.app.data.SellerLearning
+import com.kitchenreceipts.app.diagnostics.AppLog
 import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.app.jobs.DraftPreparer
+import com.kitchenreceipts.app.jobs.PreparedDraft
+import com.kitchenreceipts.app.learning.LearningStore
+import com.kitchenreceipts.app.settings.AppSettings
 import com.kitchenreceipts.core.Category
+import com.kitchenreceipts.core.DocumentDraft
 import com.kitchenreceipts.core.DraftField
 import com.kitchenreceipts.core.DuplicateReason
 import com.kitchenreceipts.core.LineItemDraft
@@ -17,17 +25,24 @@ import com.kitchenreceipts.core.Period
 import com.kitchenreceipts.core.PeriodKind
 import com.kitchenreceipts.core.ProductSource
 import com.kitchenreceipts.core.SellerMatchReason
+import com.kitchenreceipts.core.SupplierCategories
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidLineItem
 import com.kitchenreceipts.core.VatBasis
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import org.junit.After
+import org.json.JSONArray
+import org.json.JSONObject
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.File
 import java.math.BigDecimal
 import java.time.LocalDate
 
@@ -43,10 +58,13 @@ class RepositoryTest {
         repo = ReceiptRepository(db, FileStore(context))
     }
 
-    @After fun tearDown() = db.close()
+    @After fun tearDown() {
+        db.close()
+        memoryFiles.forEach { it.delete(); File(it.path + ".tmp").delete() }
+    }
 
-    private fun doc(seller: String, number: String, items: List<ValidLineItem>, total: Long = 7106) = ValidDocument(
-        sellerName = seller, date = LocalDate.of(2025, 3, 14), number = number, currency = "EUR",
+    private fun doc(seller: String, number: String, items: List<ValidLineItem>, total: Long = 7106, date: LocalDate = LocalDate.of(2025, 3, 14)) = ValidDocument(
+        sellerName = seller, date = date, number = number, currency = "EUR",
         subtotalCents = null, vatCents = null, totalCents = total, vatBasis = VatBasis.EXCLUSIVE, items = items,
     )
 
@@ -255,5 +273,266 @@ class RepositoryTest {
         assertEquals(2, repo.productSummaries().first().single().purchaseCount)
         val inv = repo.inventory(Period.of(LocalDate.of(2025, 3, 14), PeriodKind.MONTH)).first()
         assertEquals(0, BigDecimal("3").compareTo(inv.lines.single().quantities.single().amount))
+    }
+
+    // ------------------------------------------------------------ supplier categories
+    // Invented suppliers and numbers only (valid check digits), dated 2031.
+
+    private val context: Context get() = ApplicationProvider.getApplicationContext()
+    private val memoryFiles = mutableListOf<File>()
+
+    /** A file for the remembered supplier categories, deleted after the test. */
+    private fun memoryFile(): File = File(context.cacheDir, "learning-test-${System.nanoTime()}.json").also { memoryFiles += it }
+
+    private val settings: AppSettings get() = AppSettings(context)
+
+    /** Runs [block] with no own VAT number set and price notifications on, then puts both back. */
+    private fun withSettings(block: suspend () -> Unit) = runBlocking {
+        val s = settings
+        val own = s.ownVatNumber
+        val alerts = s.priceAlerts
+        s.ownVatNumber = ""
+        s.priceAlerts = true
+        try { block() } finally { s.ownVatNumber = own; s.priceAlerts = alerts }
+    }
+
+    private fun preparer(repo: ReceiptRepository, learning: LearningStore?) = DraftPreparer(repo, settings, AppLog(context, settings), learning)
+
+    private fun prepared(seller: String, category: SupplierCategory?) =
+        PreparedDraft(DocumentDraft(seller = DraftField(seller)), DocumentDraft(), null, emptyList(), emptyList(), null, supplierCategory = category)
+
+    @Test fun aCategoryRememberedByVatOutlivesTheSupplierAndAppliesToItsNextInvoice() = withSettings {
+        val learning = LearningStore(memoryFile())
+        val repo = ReceiptRepository(db, FileStore(context), learning)
+        val text = "ABC S.R.L.\nVia Prova 1\nP.IVA $ABC_VAT\nFattura n. 1 del 03/03/2031"
+        val id = repo.saveDocument(
+            doc(ABC, "1", emptyList(), 1000, MARCH), StoredFile("documents/k1.jpg", "image/jpeg", 1, "sha-k1"), text, null, SellerLearning(text, null, null),
+        )
+        val seller = repo.sellerStats().first().single()
+        assertEquals(ABC_VAT, seller.vatNumber)
+        repo.rememberCategory(seller.vatNumber, seller.name, SupplierCategory.UTILITIES)
+        assertEquals(mapOf(seller.id to SupplierCategory.UTILITIES), repo.sellerCategories().first())
+
+        // Its only document goes, and with it the supplier's row: the memory stays.
+        repo.deleteDocument(id)
+        assertTrue(repo.sellerStats().first().isEmpty())
+        assertEquals(CategoryMatch(SupplierCategory.UTILITIES, known = true), repo.categoryOf(ABC_VAT, "A name read differently"))
+
+        // The next invoice printing that VAT number has it, whatever the name was read as.
+        assertEquals(SupplierCategory.UTILITIES, preparer(repo, learning).supplierCategory("A8C 5RL\nP.IVA $ABC_VAT\nFattura n. 2", "A8C 5RL"))
+    }
+
+    @Test fun aCategoryFoundByTheNameAloneIsOnlyASuggestion() = withSettings {
+        val file = memoryFile()
+        val learning = LearningStore(file)
+        val repo = ReceiptRepository(db, FileStore(context), learning)
+        // Chosen for a supplier whose VAT number was not read.
+        repo.rememberCategory(null, VERDE, SupplierCategory.FOOD)
+        // Case and legal form do not matter, but it is not known: shown as "Chosen last time", never applied.
+        assertEquals(CategoryMatch(SupplierCategory.FOOD, known = false), repo.categoryOf(null, "Verde Fresco SpA"))
+        assertEquals(CategoryMatch(SupplierCategory.FOOD, known = false), repo.categoryOf(VERDE_VAT, "VERDE FRESCO S.P.A."))
+        val preparer = preparer(repo, learning)
+        assertNull(preparer.supplierCategory("VERDE FRESCO S.P.A.\nFattura n. 7", VERDE))
+        assertNull(preparer.supplierCategory("VERDE FRESCO S.P.A.\nP.IVA $VERDE_VAT\nFattura n. 8", VERDE))
+        // No readable name is stored.
+        assertFalse(file.readText().contains("verde", ignoreCase = true))
+    }
+
+    @Test fun forgetRemovesBothKeys() = withSettings {
+        val file = memoryFile()
+        val learning = LearningStore(file)
+        val repo = ReceiptRepository(db, FileStore(context), learning)
+        repo.rememberCategory(ABC_VAT, ABC, SupplierCategory.FUEL)
+        assertEquals(SupplierCategories.memoryKeys(ABC_VAT, ABC).toSet(), learning.supplierCategoryMemory.value.keys)
+
+        repo.forgetCategory(ABC_VAT, ABC)
+        assertNull(repo.categoryOf(ABC_VAT, null))
+        assertNull(repo.categoryOf(null, ABC))
+        assertTrue(learning.supplierCategoryMemory.value.isEmpty())
+        // Gone from the file too.
+        assertTrue(LearningStore(file).supplierCategoryMemory.value.isEmpty())
+    }
+
+    @Test fun theLearningFileStillReadsAsOlderVersionsReadIt() = withSettings {
+        val file = memoryFile()
+        // A file as older versions wrote it: one supplier's entry, words of product names and their categories.
+        file.writeText(
+            JSONObject()
+                .put("vat:$ABC_VAT", JSONObject().put("rules", JSONArray()).put("examples", JSONArray().put(JSONObject().put("row", "MOZZARELLA 2,00 9,00 18,00").put("description", "Mozzarella"))))
+                .put("#categories", JSONObject().put("mozzarella", "dairy_eggs"))
+                .put("#names", JSONObject().put("fdl", "fior di latte"))
+                .toString(),
+        )
+        val before = olderReader(JSONObject(file.readText()))
+
+        LearningStore(file).rememberSupplierCategory(SupplierCategories.memoryKeys(ABC_VAT, ABC), SupplierCategory.DRINKS)
+
+        val root = JSONObject(file.readText())
+        // What an older version reads is unchanged: the new key is a list, which it does not take for a supplier.
+        assertEquals(before, olderReader(root))
+        assertTrue(root.get("supplier_categories") is JSONArray)
+        // And this version reads both.
+        val again = LearningStore(file)
+        assertEquals(Triple(1, 0, 1), again.stats())
+        assertEquals(SupplierCategory.DRINKS, again.supplierCategory("vat:$ABC_VAT")?.category)
+    }
+
+    /** learning.json as LearningStore read it before supplier categories: every object at the top is a supplier's entry. */
+    private fun olderReader(root: JSONObject): List<Any> {
+        val entries = root.keys().asSequence().filter { it != "#categories" && it != "#names" }.mapNotNull { k ->
+            val o = root.optJSONObject(k) ?: return@mapNotNull null
+            val rows = o.optJSONArray("examples")?.let { a -> (0 until a.length()).map { a.getJSONObject(it).optString("row") } }.orEmpty()
+            Triple(k, o.optJSONArray("rules")?.length() ?: 0, rows)
+        }.sortedBy { it.first }.toList()
+        fun map(o: JSONObject?) = o?.keys()?.asSequence()?.associateWith { o.optString(it) }.orEmpty()
+        return listOf(entries, map(root.optJSONObject("#categories")), map(root.optJSONObject("#names")))
+    }
+
+    @Test fun justThisInvoiceLeavesTheMemoryAlone() = withSettings {
+        val file = memoryFile()
+        val learning = LearningStore(file)
+        val repo = ReceiptRepository(db, FileStore(context), learning)
+        val preparer = preparer(repo, learning)
+        val text = "ABC S.R.L.\nP.IVA $ABC_VAT\nFattura n. 3 del 05/03/2031"
+
+        val one = preparer.chooseCategory(prepared(ABC, null), text, SupplierCategory.EQUIPMENT, forSupplier = false)
+        assertEquals(SupplierCategory.EQUIPMENT, one.supplierCategory)
+        assertTrue(learning.supplierCategoryMemory.value.isEmpty())
+        assertNull(repo.categoryOf(ABC_VAT, ABC))
+        assertFalse(file.exists())
+
+        // For all of the supplier's invoices: remembered by VAT number.
+        preparer.chooseCategory(prepared(ABC, null), text, SupplierCategory.EQUIPMENT, forSupplier = true)
+        assertEquals(CategoryMatch(SupplierCategory.EQUIPMENT, known = true), repo.categoryOf(ABC_VAT, null))
+    }
+
+    /** Everything the app computes from the documents, for comparing two phones field by field. */
+    private data class Figures(
+        val months: List<com.kitchenreceipts.core.FoodCost.Month>,
+        val prices: Map<Long, com.kitchenreceipts.core.IngredientPrice>,
+        val inventory: List<com.kitchenreceipts.core.InventoryReport>,
+        val boss: List<com.kitchenreceipts.core.BossReport>,
+        val sellers: List<List<Any?>>,
+        val products: List<List<Any?>>,
+        val aliases: List<List<Any?>>,
+        val linked: List<List<Any?>>,
+        val foodAlerts: List<com.kitchenreceipts.core.PriceChange>,
+    )
+
+    /** One phone: its own database, and the memory of supplier categories when [learning] is set. */
+    private inner class Phone(val db: AppDatabase, val learning: LearningStore?) {
+        val repo = ReceiptRepository(db, FileStore(context), learning)
+        val preparer = preparer(repo, learning)
+        var verdeAlerts: List<com.kitchenreceipts.core.PriceChange> = emptyList()
+
+        private fun line(desc: String, productId: Long?, qty: String, cents: Long, newName: String? = null) =
+            ValidLineItem(desc, productId, BigDecimal(qty), "pz", null, cents, null, null, null, newProductName = newName)
+
+        private fun draftLine(key: Long, desc: String, qty: String, total: String) =
+            LineItemDraft(key, DraftField(desc), quantity = DraftField(qty), unit = DraftField("pz"), lineTotal = DraftField(total))
+
+        private fun ValidLineItem.from(d: LineItemDraft) = copy(productId = d.productId, newProductName = d.newProductName)
+
+        /** The same invented documents on every phone: a food supplier, and an electricity supplier. */
+        suspend fun fill(): Figures {
+            val abcText = "ABC S.R.L.\nP.IVA $ABC_VAT\nFattura n. A1 del 03/03/2031"
+            val verdeText = "VERDE FRESCO S.P.A.\nP.IVA $VERDE_VAT\nFattura n. E1 del 10/03/2031"
+            repo.saveDocument(
+                doc(ABC, "A1", listOf(
+                    line("MOZZARELLA FIOR DI LATTE", null, "2", 1800, "Mozzarella fior di latte"),
+                    line("POMODORO PELATO", null, "6", 900, "Pomodoro pelato"),
+                    line("BASILICO FRESCO", null, "1", 150),
+                ), 2850, MARCH),
+                StoredFile("documents/f1.pdf", "application/pdf", 1, "sha-f1"), abcText, null, SellerLearning(abcText, null, null),
+            )
+            repo.saveDocument(
+                doc(VERDE, "E1", listOf(
+                    line("QUOTA FISSA", null, "1", 2000, "Quota fissa"),
+                    line("ONERI DI SISTEMA", null, "1", 1500),
+                ), 3500, MARCH.plusDays(7)),
+                StoredFile("documents/e1.pdf", "application/pdf", 1, "sha-e1"), verdeText, null, SellerLearning(verdeText, null, null),
+            )
+            // April: the same lines again, linked by the app, at new prices.
+            val verdeLinks = repo.autoAssign(VERDE, listOf(draftLine(1, "QUOTA FISSA", "1", "22,00"), draftLine(2, "CONSUMO DEL MESE", "1", "30,00")), createNew = true)
+            val verde2Text = verdeText.replace("E1 del 10/03", "E2 del 10/04")
+            val verde2 = repo.saveDocument(
+                doc(VERDE, "E2", listOf(line("QUOTA FISSA", null, "1", 2200).from(verdeLinks[0]), line("CONSUMO DEL MESE", null, "1", 3000).from(verdeLinks[1])), 5200, APRIL),
+                StoredFile("documents/e2.pdf", "application/pdf", 1, "sha-e2"), verde2Text, null, SellerLearning(verde2Text, null, null),
+            )
+            val abcLinks = repo.autoAssign(ABC, listOf(draftLine(1, "MOZZARELLA FIOR DI LATTE", "2", "20,00")), createNew = true)
+            val abc2Text = abcText.replace("A1 del 03/03", "A2 del 12/04")
+            val abc2 = repo.saveDocument(
+                doc(ABC, "A2", listOf(line("MOZZARELLA FIOR DI LATTE", null, "2", 2000).from(abcLinks[0])), 2000, APRIL.plusDays(2)),
+                StoredFile("documents/f2.pdf", "application/pdf", 1, "sha-f2"), abc2Text, null, SellerLearning(abc2Text, null, null),
+            )
+            // The price notifications the background reader would send for the April documents.
+            verdeAlerts = preparer.priceAlerts(verde2, prepared(VERDE, preparer.supplierCategory(verde2Text, VERDE)))
+            val foodAlerts = preparer.priceAlerts(abc2, prepared(ABC, preparer.supplierCategory(abc2Text, ABC)))
+
+            val food = FoodRepository(db)
+            val periods = listOf(MARCH, APRIL).map { Period.of(it, PeriodKind.MONTH) }
+            val products = repo.productsOnce()
+            return Figures(
+                months = food.months(3, today = APRIL.plusDays(20)).first(),
+                prices = food.prices().first(),
+                inventory = periods.map { repo.inventory(it).first() },
+                boss = periods.map { repo.bossReport(it) },
+                sellers = repo.sellerStats().first().map { listOf(it.id, it.name, it.vatNumber, it.documentCount, it.totalCents, it.lastDate) },
+                products = products.map { listOf(it.id, it.name, it.normalizedName, it.category, it.brand, it.familyId) },
+                aliases = products.flatMap { p -> repo.aliasesForProduct(p.id).first().map { listOf(p.id, it.id, it.sellerName, it.aliasKey) } },
+                linked = (verdeLinks + abcLinks).map { listOf(it.productId, it.newProductName, it.productSource) },
+                foodAlerts = foodAlerts,
+            )
+        }
+    }
+
+    @Test fun aNonFoodSupplierChangesNoFigureOnlyTheLists() = withSettings {
+        val sortedDb = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            val plain = Phone(db, learning = null)
+            val sorted = Phone(sortedDb, LearningStore(memoryFile()))
+            // On the second phone the electricity supplier was sorted before any of its documents was saved.
+            sorted.repo.rememberCategory(VERDE_VAT, VERDE, SupplierCategory.UTILITIES)
+
+            val a = plain.fill()
+            val b = sorted.fill()
+            // Food cost, prices, inventory, the boss report, supplier totals, products, aliases and links: all the same.
+            assertEquals(a, b)
+            assertTrue(a.foodAlerts.isNotEmpty())
+            assertTrue(a.products.size >= 3)
+
+            val verdeId = sorted.repo.sellerStats().first().single { it.name == VERDE }.id
+            val quota = sorted.repo.productsOnce().single { it.name == "Quota fissa" }.id
+            val mozzarella = sorted.repo.productsOnce().single { it.name == "Mozzarella fior di latte" }.id
+            // Without a category: everything is listed as before.
+            assertEquals(setOf("BASILICO FRESCO", "ONERI DI SISTEMA"), plain.repo.unassignedGroups().first().map { it.description }.toSet())
+            assertTrue(plain.repo.notFoodProductIds().first().isEmpty())
+            assertTrue(plain.verdeAlerts.isNotEmpty())
+            // With it: the bill's lines are not asked about, its products are listed apart, no price notification, and
+            // the supplier is not in the usual-order list.
+            assertEquals(setOf("BASILICO FRESCO"), sorted.repo.unassignedGroups().first().map { it.description }.toSet())
+            val notFood = sorted.repo.notFoodProductIds().first()
+            assertTrue(quota in notFood)
+            assertFalse(mozzarella in notFood)
+            assertTrue(sorted.verdeAlerts.isEmpty())
+            assertFalse(sorted.repo.goodsOnly(FoodRepository(sortedDb).suppliers()) { it.id }.first().any { it.id == verdeId })
+            assertTrue(plain.repo.goodsOnly(FoodRepository(db).suppliers()) { it.id }.first().any { it.name == VERDE })
+
+            // Moved to Food: its lines come back to the to-link list, and its products to the main list.
+            sorted.repo.rememberCategory(VERDE_VAT, VERDE, SupplierCategory.FOOD)
+            assertEquals(setOf("BASILICO FRESCO", "ONERI DI SISTEMA"), sorted.repo.unassignedGroups().first().map { it.description }.toSet())
+            assertTrue(sorted.repo.notFoodProductIds().first().isEmpty())
+        } finally {
+            sortedDb.close()
+        }
+    }
+
+    private companion object {
+        const val ABC = "ABC S.r.l."
+        const val ABC_VAT = "01234567897"
+        const val VERDE = "VERDE FRESCO S.p.A."
+        const val VERDE_VAT = "09876543217"
+        val MARCH: LocalDate = LocalDate.of(2031, 3, 3)
+        val APRIL: LocalDate = LocalDate.of(2031, 4, 10)
     }
 }

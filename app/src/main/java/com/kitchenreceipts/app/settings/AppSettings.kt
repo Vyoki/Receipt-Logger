@@ -42,6 +42,11 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("categories_regrouped_v2", false)
         set(v) = prefs.edit().putBoolean("categories_regrouped_v2", v).apply()
 
+    /** The "Drag here to move fast" hint next to a long list's scroller was shown (once on this phone). */
+    var scrollHintShown: Boolean
+        get() = prefs.getBoolean("scroll_hint_shown", false)
+        set(v) = prefs.edit().putBoolean("scroll_hint_shown", v).apply()
+
     var logEnabled: Boolean
         get() = prefs.getBoolean("log_enabled", true)
         set(v) = prefs.edit().putBoolean("log_enabled", v).apply()
