@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings ▸ AI reader: the shorter AI check of digital PDFs (the owner decides; off by default) -->
+    <string name="ai_light_title">Quicker AI check of digital PDFs</string>
+    <string name="ai_light_hint">When every page of a PDF holds its own exact text, the AI checks only the supplier, the date and number, and the totals: at most 30 seconds per invoice. The lines are still checked by their sums. Leave it off until the owner says yes.</string>
+</resources>

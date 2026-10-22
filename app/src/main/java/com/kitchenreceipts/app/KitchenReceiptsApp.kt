@@ -56,6 +56,7 @@ class AppContainer(context: Context) {
         return AiUse(
             reader = { AiPageReader.open(aiModels, nativeLibDir) },
             always = mode == AppSettings.AiMode.ALWAYS,
+            lightOnExactText = settings.aiLightOnExactText,
             style = if (trained) com.kitchenreceipts.core.AiTasks.Style.COMPACT else com.kitchenreceipts.core.AiTasks.Style.FULL,
             agent = trained,
             examples = { parsed, text ->
