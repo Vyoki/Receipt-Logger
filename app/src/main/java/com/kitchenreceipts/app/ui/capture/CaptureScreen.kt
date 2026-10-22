@@ -65,6 +65,7 @@ import androidx.lifecycle.viewModelScope
 import com.kitchenreceipts.app.AppContainer
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.app.jobs.ImportIntake.Intake
 import com.kitchenreceipts.app.files.UnsupportedFileException
 import com.kitchenreceipts.app.ui.appContainer
 import com.kitchenreceipts.app.ui.appViewModel
@@ -87,14 +88,39 @@ data class CaptureState(
     val error: String? = null,
     /** The document was handed to the background reader. */
     val queued: Boolean = false,
+    /** A file of many invoices, or a long one with a question first: its import opens. */
+    val bundleId: String? = null,
+    /** Said once the file is in (credit notes left out, the same file carried on); the screen stays until read. */
+    val notice: String? = null,
+    /** How many documents were queued, for the notice. */
+    val queuedCount: Int = 0,
 )
 
 class CaptureViewModel(private val c: AppContainer) : ViewModel() {
     private val _state = MutableStateFlow(CaptureState())
     val state: StateFlow<CaptureState> = _state.asStateFlow()
 
-    /** A PDF (it has all its pages already) goes straight to the reader. */
-    fun importPdf(uri: Uri) = queueAll("file") { c.fileStore.importUri(uri) }
+    /**
+     * A PDF or an e-invoice file (it has all its pages already): read as one document, or opened as a file of many
+     * invoices (see ImportIntake).
+     */
+    fun importPdf(uri: Uri) {
+        if (_state.value.busy) return
+        c.log.event("IMPORT_START", "source" to "file")
+        viewModelScope.launch {
+            _state.value = CaptureState(busy = true)
+            val res = com.kitchenreceipts.app.settings.AppSettings.wrapWithLanguage(c.appContext).resources
+            _state.value = when (val r = c.intake.take(uri, "file")) {
+                is Intake.Queued -> CaptureState(
+                    queued = true, queuedCount = r.count,
+                    notice = r.skippedCreditNotes.takeIf { it > 0 }?.let { res.getQuantityString(R.plurals.import_credit_notes_skipped, it, it) },
+                )
+                is Intake.Bundle -> CaptureState(bundleId = r.planId, notice = if (r.reopened) res.getString(R.string.bundle_reopened) else null)
+                is Intake.AskLong -> CaptureState(bundleId = r.planId)
+                is Intake.Failed -> CaptureState(error = r.message)
+            }
+        }
+    }
 
     /** All the pages collected in the tray become one document, read once they are all there. */
     fun usePages(paths: List<String>) = queue("pages:${paths.size}") {
@@ -114,16 +140,13 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
         }
     }
 
-    private fun queue(source: String, store: suspend () -> StoredFile) = queueAll(source) { listOf(store()) }
-
-    private fun queueAll(source: String, store: suspend () -> List<StoredFile>) {
+    private fun queue(source: String, store: suspend () -> StoredFile) {
         if (_state.value.busy) return
         c.log.event("IMPORT_START", "source" to source)
         viewModelScope.launch {
             _state.value = CaptureState(busy = true)
             try {
-                val stored = store()
-                stored.forEach { c.importQueue.enqueue(it, if (it.mimeType == com.kitchenreceipts.app.files.FileStore.MIME_XML) "e-invoice" else source) }
+                c.importQueue.enqueue(store(), source)
                 withContext(Dispatchers.IO) { c.fileStore.deleteCaptures() }
                 _state.value = CaptureState(queued = true)
             } catch (e: CancellationException) {
@@ -136,11 +159,12 @@ class CaptureViewModel(private val c: AppContainer) : ViewModel() {
     }
 
     fun consumeQueued() = _state.update { it.copy(queued = false) }
+    fun consumeBundle() = _state.update { it.copy(bundleId = null, notice = null) }
     fun clearError() = _state.update { it.copy(error = null) }
 }
 
 @Composable
-fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
+fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit, onBundle: (String) -> Unit) {
     val container = appContainer()
     val context = LocalContext.current
     val vm = appViewModel { CaptureViewModel(it) }
@@ -201,8 +225,16 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
             vm.consumeQueued()
             photos = emptyList()
             ReadingService.ensureRunning(context)
-            onQueued()
+            // A notice (credit notes left out) stays on screen until the operator goes on.
+            if (state.notice == null) onQueued()
         }
+    }
+    LaunchedEffect(state.bundleId) {
+        val id = state.bundleId ?: return@LaunchedEffect
+        state.notice?.let { android.widget.Toast.makeText(context, it, android.widget.Toast.LENGTH_LONG).show() }
+        vm.consumeBundle()
+        ReadingService.ensureRunning(context)
+        onBundle(id)
     }
 
     AppScaffold(title = stringResource(R.string.scan_document), onBack = if (state.busy) null else onBack) { padding ->
@@ -225,6 +257,15 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit) {
         ) {
             val error = state.error ?: launchError
             if (error != null) WarningCard(listOf(error))
+
+            val notice = state.notice
+            if (notice != null && state.bundleId == null) {
+                // The file is being read; what was left out of it is said before going on.
+                Text(pluralStringResource(R.plurals.shared_queued, state.queuedCount, state.queuedCount), style = MaterialTheme.typography.titleMedium)
+                WarningCard(listOf(notice))
+                BigButton(stringResource(R.string.bundle_home), null, onClick = { vm.consumeBundle(); onQueued() })
+                return@Column
+            }
 
             if (photos.isEmpty()) {
                 BigButton(stringResource(R.string.take_photo), Icons.Filled.CameraAlt, onClick = { launchError = null; vm.clearError(); launchCamera() })

@@ -46,8 +46,11 @@ object Routes {
     const val FOOD = "food"
     const val RECIPE = "recipe/{id}"
     const val ORDERS = "orders"
+    /** The import of a file of many invoices; id = its plan (the file's SHA-256, see BundleStore). */
+    const val BUNDLE = "bundle/{id}"
 
     fun recipe(id: Long) = "recipe/$id"
+    fun bundle(planId: String) = "bundle/$planId"
 
     fun edit(id: Long) = "edit/$id"
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
@@ -146,6 +149,16 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onBack = back,
                 // The document is read in the background: straight back to the home screen, where its progress shows.
                 onQueued = { nav.popBackStack(Routes.HOME, inclusive = false) },
+                // A file of many invoices: its import, in place of Capture (Back goes home).
+                onBundle = { id -> goWith(Routes.bundle(id)) { popUpTo(Routes.HOME) } },
+            )
+        }
+        composable(Routes.BUNDLE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            com.kitchenreceipts.app.ui.bundle.BundleScreen(
+                planId = entry.arguments!!.getString("id")!!,
+                onBack = back,
+                onHome = { if (!nav.popBackStack(Routes.HOME, inclusive = false)) nav.navigate(Routes.HOME) },
+                onReview = { go(Routes.review(it)) },
             )
         }
         composable(Routes.REVIEW_NEW, arguments = listOf(navArgument("jobId") { type = NavType.StringType })) { entry ->

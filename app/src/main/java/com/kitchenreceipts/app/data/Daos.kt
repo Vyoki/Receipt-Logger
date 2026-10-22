@@ -45,6 +45,17 @@ data class FingerprintRow(
     val fileSha256: String,
 )
 
+/** A saved document as a file of many invoices checks against it: is this invoice in the app already? */
+data class SavedInvoiceRow(
+    val id: Long,
+    val sellerName: String,
+    val sellerVat: String?,
+    val documentNumber: String?,
+    val documentDate: LocalDate?,
+    val fileSha256: String,
+    val createdAt: Long,
+)
+
 data class ReportRow(
     val id: Long,
     val sellerName: String,
@@ -185,6 +196,13 @@ interface DocumentDao {
             "d.total_cents AS totalCents, d.file_sha256 AS fileSha256 FROM documents d JOIN sellers s ON s.id = d.seller_id",
     )
     suspend fun fingerprints(): List<FingerprintRow>
+
+    @Query(
+        "SELECT d.id AS id, s.name AS sellerName, s.vat_number AS sellerVat, d.document_number AS documentNumber, " +
+            "d.document_date AS documentDate, d.file_sha256 AS fileSha256, d.created_at AS createdAt " +
+            "FROM documents d JOIN sellers s ON s.id = d.seller_id",
+    )
+    suspend fun savedInvoices(): List<SavedInvoiceRow>
 
     @Query(
         "SELECT d.id AS id, s.name AS sellerName, d.document_date AS documentDate, d.document_number AS documentNumber, " +

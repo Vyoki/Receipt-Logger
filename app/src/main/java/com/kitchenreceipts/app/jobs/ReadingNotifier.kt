@@ -59,11 +59,15 @@ class ReadingNotifier(private val context: Context) {
         return PendingIntent.getActivity(context, requestCode, intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     }
 
-    /** The ongoing notification of the reading service. */
-    fun progress(jobs: List<ImportJob>): Notification {
+    /**
+     * The ongoing notification of the reading service: the document being read, or else the file of many invoices
+     * being looked through ([scan]: its plan and where the look is).
+     */
+    fun progress(jobs: List<ImportJob>, scan: Pair<String, BundleStore.ScanProgress>? = null): Notification {
         val c = localized()
         val reading = jobs.firstOrNull { it.status == JobStatus.READING }
         val waiting = jobs.count { it.status == JobStatus.QUEUED }
+        if (reading == null && waiting == 0 && scan != null) return scanning(c, scan.first, scan.second)
         val p = reading?.progress
         val text = when {
             p == null -> c.getString(R.string.notif_starting)
@@ -90,6 +94,66 @@ class ReadingNotifier(private val context: Context) {
         }
         return b.build()
     }
+
+    /** "Looking through the file: page 120 of 344", with the invoices found so far; a tap opens the file's import. */
+    private fun scanning(c: Context, planId: String, s: BundleStore.ScanProgress): Notification =
+        NotificationCompat.Builder(context, CHANNEL_PROGRESS)
+            .setSmallIcon(R.drawable.ic_stat_reading)
+            .setContentTitle(c.getString(R.string.notif_bundle_scanning, s.page, s.of))
+            .setContentText(c.getString(R.string.bundle_scan_found, s.found))
+            .setOngoing(true)
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setCategory(NotificationCompat.CATEGORY_PROGRESS)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openIntent(bundleRoute(planId), 0))
+            .setProgress(s.of.coerceAtLeast(1), s.page.coerceIn(0, s.of.coerceAtLeast(1)), s.of <= 0)
+            .build()
+
+    /** A long file was looked through: its invoices are ready to be sorted (a tap opens the file's import). */
+    fun bundleScanned(planId: String) {
+        if (!canPost()) return
+        val c = localized()
+        result(BUNDLE_PREFIX + planId, c.getString(R.string.notif_bundle_scanned), "", bundleRoute(planId))
+    }
+
+    /** A long file holds no invoices the app can cut apart: the question waits in the app ("Read the first 20 pages"). */
+    fun bundleLong(planId: String, pages: Int) {
+        if (!canPost()) return
+        val c = localized()
+        result(BUNDLE_PREFIX + planId, c.getString(R.string.import_long_title, pages), c.getString(R.string.import_long_body), bundleRoute(planId))
+    }
+
+    /** Android stopped the background work for today: one quiet message, and opening the app carries on. */
+    fun bundlePaused() {
+        if (!canPost()) return
+        val c = localized()
+        val n = NotificationCompat.Builder(context, CHANNEL_PROGRESS)
+            .setSmallIcon(R.drawable.ic_stat_reading)
+            .setContentTitle(c.getString(R.string.notif_bundle_paused))
+            .setSilent(true)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openIntent(null, PAUSED_ID))
+            .build()
+        manager.notify(PAUSED_ID, n)
+    }
+
+    /** The paused message goes once the work carries on. */
+    fun cancelPaused() = manager.cancel(PAUSED_ID)
+
+    private fun result(tag: String, title: String, text: String, route: String?) {
+        val b = NotificationCompat.Builder(context, CHANNEL_RESULTS)
+            .setSmallIcon(R.drawable.ic_stat_reading)
+            .setContentTitle(title)
+            .setAutoCancel(true)
+            .setVisibility(NotificationCompat.VISIBILITY_PRIVATE)
+            .setContentIntent(openIntent(route, tag.hashCode()))
+        if (text.isNotEmpty()) b.setContentText(text).setStyle(NotificationCompat.BigTextStyle().bigText(text))
+        manager.notify(tag.hashCode(), b.build())
+    }
+
+    private fun bundleRoute(planId: String) = "bundle/$planId"
 
     fun finished(job: ImportJob) {
         if (!canPost()) return
@@ -199,5 +263,7 @@ class ReadingNotifier(private val context: Context) {
         const val CHANNEL_RESULTS = "results"
         const val CHANNEL_PRICES = "prices"
         const val PROGRESS_ID = 4711
+        const val PAUSED_ID = 4712
+        private const val BUNDLE_PREFIX = "bundle:"
     }
 }

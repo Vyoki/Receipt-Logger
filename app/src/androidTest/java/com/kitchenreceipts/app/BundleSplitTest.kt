@@ -33,7 +33,7 @@ class BundleSplitTest {
 
     private suspend fun stored(name: String, pages: Int): StoredFile {
         val src = TestPdfs.write(File(app.cacheDir, name), pages)
-        return files.importUri(Uri.fromFile(src)).single().also { src.delete() }
+        return files.importUri(Uri.fromFile(src)).files.single().also { src.delete() }
     }
 
     private fun sha(f: File): String =

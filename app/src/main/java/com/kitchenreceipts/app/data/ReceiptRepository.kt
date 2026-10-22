@@ -235,6 +235,11 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     /** True when a saved document uses this original file. */
     suspend fun fileInUse(relativePath: String): Boolean = documents.countWithFile(relativePath) > 0
 
+    /** The saved documents, for a file of many invoices: which of its invoices are in the app already. */
+    suspend fun savedForBundles(): List<com.kitchenreceipts.core.BundleWizard.Saved> = documents.savedInvoices().map {
+        com.kitchenreceipts.core.BundleWizard.Saved(it.id, it.sellerVat, it.sellerName, it.documentNumber, it.documentDate, it.fileSha256, it.createdAt)
+    }
+
     /** Stores the supplier's VAT number, letterhead words and the OCR's spelling of their name. */
     private fun learnSeller(seller: SellerEntity, l: SellerLearning, countLayout: Boolean, previousSellerId: Long? = null) {
         var vat = SellerProfiles.supplierVatNumber(l.documentText, l.ownVatNumber)

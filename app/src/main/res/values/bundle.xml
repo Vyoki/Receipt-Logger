@@ -6,4 +6,79 @@
     <string name="bundle_error_damaged">This PDF is damaged and cannot be opened.</string>
     <string name="bundle_error_storage">The phone is out of space. Free some space and try again.</string>
     <string name="bundle_error_split">The invoices could not be prepared. Nothing was imported: try again.</string>
+    <!-- Bringing a file in, looking through it, and the plan of its invoices (see BundleStore, ImportIntake) -->
+    <string name="bundle_scan_title">Looking through the file</string>
+    <string name="bundle_scan_progress">Page %1$d of %2$d</string>
+    <string name="bundle_scan_found">Invoices found so far: %1$d</string>
+    <string name="bundle_scan_leave_ok">You can leave the app: it keeps looking and tells you when it\'s done.</string>
+    <string name="notif_bundle_scanning">Looking through the file: page %1$d of %2$d</string>
+    <string name="notif_bundle_scanned">The file is ready: tap to sort its invoices</string>
+    <string name="bundle_stop">Stop</string>
+    <string name="bundle_stop_title">Stop looking through the file?</string>
+    <string name="bundle_stop_body">Nothing from this file will be imported. Nothing already saved changes.</string>
+    <string name="bundle_stop_confirm">Stop and don\'t import</string>
+    <string name="bundle_keep_looking">Keep looking</string>
+    <string name="bundle_one_document">This file is one document. It is being read.</string>
+    <string name="bundle_reopened">You already started importing this file. Carrying on where you left off.</string>
+    <string name="bundle_too_many">This file holds %1$d invoices. The app reads the first %2$d now. Import the same file again later for the rest: those already saved are left out.</string>
+    <string name="import_long_title">This file has %1$d pages</string>
+    <string name="import_long_body">The app can only read the first 20 pages, as one document. If the file holds many invoices, ask your accountant for the e-invoice files (.xml or .zip).</string>
+    <string name="import_long_read">Read the first 20 pages</string>
+    <string name="import_dont">Don\'t import</string>
+    <string name="bundle_xml_tip">Tip: ask your accountant for the e-invoice files (.xml or .zip). The app reads them exactly, already one per invoice.</string>
+    <string name="bundle_share_tip">Share this tip</string>
+    <string name="bundle_tip_share_text">Please send me the month\'s purchase e-invoices as the original files (.xml or .p7m, or the portal\'s .zip), not as a PDF printout. Thank you.</string>
+    <string name="bundle_found_title">This file holds %1$s from %2$s</string>
+    <plurals name="bundle_invoices">
+        <item quantity="one">%d invoice</item>
+        <item quantity="other">%d invoices</item>
+    </plurals>
+    <plurals name="bundle_suppliers">
+        <item quantity="one">%d supplier</item>
+        <item quantity="other">%d suppliers</item>
+    </plurals>
+    <string name="bundle_dates">Dated %1$s to %2$s</string>
+    <plurals name="bundle_already_saved">
+        <item quantity="one">%d already saved: left out</item>
+        <item quantity="other">%d already saved: left out</item>
+    </plurals>
+    <plurals name="bundle_credit_notes_left">
+        <item quantity="one">%d credit note: not imported (money back, not a purchase)</item>
+        <item quantity="other">%d credit notes: not imported (money back, not a purchase)</item>
+    </plurals>
+    <plurals name="bundle_read_button">
+        <item quantity="one">Read %d invoice</item>
+        <item quantity="other">Read %d invoices</item>
+    </plurals>
+    <string name="bundle_splitting">Preparing the invoices…</string>
+    <plurals name="bundle_queued_title">
+        <item quantity="one">Reading %d invoice</item>
+        <item quantity="other">Reading %d invoices</item>
+    </plurals>
+    <string name="bundle_queued_body">They are read one by one in the background. You\'ll get one message when all are read.</string>
+    <string name="bundle_home">Back to home</string>
+    <string name="bundle_cancel_import">Cancel the import</string>
+    <string name="bundle_cancel_title">Cancel the import?</string>
+    <string name="bundle_cancel_body">Nothing from this file will be read, and the file is removed from the app. Nothing already saved changes.</string>
+    <string name="bundle_cancel_keep">Keep importing</string>
+    <plurals name="bundle_card_to_check">
+        <item quantity="one">%d to check →</item>
+        <item quantity="other">%d to check →</item>
+    </plurals>
+    <string name="bundle_card_progress">%1$d of %2$d done</string>
+    <string name="bundle_paused">Reading paused – open to continue</string>
+    <string name="bundle_all_done">All invoices from this file are done</string>
+    <string name="bundle_close_note">The original file stays on this phone.</string>
+    <string name="bundle_close">Close</string>
+    <string name="notif_bundle_paused">Reading paused: open the app to continue</string>
+    <plurals name="import_credit_notes_skipped">
+        <item quantity="one">%d credit note was not imported (money back, not a purchase)</item>
+        <item quantity="other">%d credit notes were not imported (money back, not a purchase)</item>
+    </plurals>
+    <plurals name="backup_busy_reading">
+        <item quantity="one">Restore is not possible while %d invoice is still being read. Stop reading or wait.</item>
+        <item quantity="other">Restore is not possible while %d invoices are still being read. Stop reading or wait.</item>
+    </plurals>
+    <string name="bundle_title">Invoices from a file</string>
+    <string name="bundle_file_missing">The file is no longer on this phone, so this import was closed. Nothing already saved changes.</string>
 </resources>

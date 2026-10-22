@@ -6,4 +6,79 @@
     <string name="bundle_error_damaged">Questo PDF è danneggiato e non si può aprire.</string>
     <string name="bundle_error_storage">Il telefono non ha più spazio. Libera spazio e riprova.</string>
     <string name="bundle_error_split">Non è stato possibile preparare le fatture. Non è stato importato nulla: riprova.</string>
+    <!-- Importare un file, esaminarlo, e il piano delle sue fatture (vedi BundleStore, ImportIntake) -->
+    <string name="bundle_scan_title">Sto esaminando il file</string>
+    <string name="bundle_scan_progress">Pagina %1$d di %2$d</string>
+    <string name="bundle_scan_found">Fatture trovate finora: %1$d</string>
+    <string name="bundle_scan_leave_ok">Puoi uscire dall\'app: continua a cercare e ti avvisa quando ha finito.</string>
+    <string name="notif_bundle_scanning">Esame del file: pagina %1$d di %2$d</string>
+    <string name="notif_bundle_scanned">Il file è pronto: tocca per sistemare le fatture</string>
+    <string name="bundle_stop">Interrompi</string>
+    <string name="bundle_stop_title">Interrompere l\'esame del file?</string>
+    <string name="bundle_stop_body">Non verrà importato nulla da questo file. Niente di già salvato viene modificato.</string>
+    <string name="bundle_stop_confirm">Interrompi e non importare</string>
+    <string name="bundle_keep_looking">Continua a cercare</string>
+    <string name="bundle_one_document">Questo file è un solo documento. È in lettura.</string>
+    <string name="bundle_reopened">Hai già iniziato a importare questo file. Riprendi da dove eri rimasto.</string>
+    <string name="bundle_too_many">Questo file contiene %1$d fatture. L\'app ora legge le prime %2$d. Importa di nuovo lo stesso file più tardi per le altre: quelle già salvate vengono escluse.</string>
+    <string name="import_long_title">Questo file ha %1$d pagine</string>
+    <string name="import_long_body">L\'app può leggere solo le prime 20 pagine, come un unico documento. Se il file contiene molte fatture, chiedi al commercialista i file delle fatture elettroniche (.xml o .zip).</string>
+    <string name="import_long_read">Leggi le prime 20 pagine</string>
+    <string name="import_dont">Non importare</string>
+    <string name="bundle_xml_tip">Consiglio: chiedi al commercialista i file delle fatture elettroniche (.xml o .zip). L\'app li legge senza errori, già divisi per fattura.</string>
+    <string name="bundle_share_tip">Condividi questo consiglio</string>
+    <string name="bundle_tip_share_text">Per favore mandami le fatture elettroniche di acquisto del mese come file originali (.xml o .p7m, oppure lo .zip del portale), non come PDF stampato. Grazie.</string>
+    <string name="bundle_found_title">Questo file contiene %1$s di %2$s</string>
+    <plurals name="bundle_invoices">
+        <item quantity="one">%d fattura</item>
+        <item quantity="other">%d fatture</item>
+    </plurals>
+    <plurals name="bundle_suppliers">
+        <item quantity="one">%d fornitore</item>
+        <item quantity="other">%d fornitori</item>
+    </plurals>
+    <string name="bundle_dates">Datate dal %1$s al %2$s</string>
+    <plurals name="bundle_already_saved">
+        <item quantity="one">%d già salvata: esclusa</item>
+        <item quantity="other">%d già salvate: escluse</item>
+    </plurals>
+    <plurals name="bundle_credit_notes_left">
+        <item quantity="one">%d nota di credito: non importata (rimborso, non acquisto)</item>
+        <item quantity="other">%d note di credito: non importate (rimborsi, non acquisti)</item>
+    </plurals>
+    <plurals name="bundle_read_button">
+        <item quantity="one">Leggi %d fattura</item>
+        <item quantity="other">Leggi %d fatture</item>
+    </plurals>
+    <string name="bundle_splitting">Preparo le fatture…</string>
+    <plurals name="bundle_queued_title">
+        <item quantity="one">Lettura di %d fattura</item>
+        <item quantity="other">Lettura di %d fatture</item>
+    </plurals>
+    <string name="bundle_queued_body">Vengono lette una alla volta in sottofondo. Riceverai un solo messaggio quando saranno tutte lette.</string>
+    <string name="bundle_home">Torna alla schermata iniziale</string>
+    <string name="bundle_cancel_import">Annulla l\'importazione</string>
+    <string name="bundle_cancel_title">Annullare l\'importazione?</string>
+    <string name="bundle_cancel_body">Non verrà letto nulla da questo file e il file verrà tolto dall\'app. Niente di già salvato viene modificato.</string>
+    <string name="bundle_cancel_keep">Continua l\'importazione</string>
+    <plurals name="bundle_card_to_check">
+        <item quantity="one">%d da controllare →</item>
+        <item quantity="other">%d da controllare →</item>
+    </plurals>
+    <string name="bundle_card_progress">%1$d di %2$d completate</string>
+    <string name="bundle_paused">Lettura in pausa – apri per continuare</string>
+    <string name="bundle_all_done">Tutte le fatture di questo file sono completate</string>
+    <string name="bundle_close_note">Il file originale resta su questo telefono.</string>
+    <string name="bundle_close">Chiudi</string>
+    <string name="notif_bundle_paused">Lettura in pausa: apri l\'app per continuare</string>
+    <plurals name="import_credit_notes_skipped">
+        <item quantity="one">%d nota di credito non importata (rimborso, non acquisto)</item>
+        <item quantity="other">%d note di credito non importate (rimborsi, non acquisti)</item>
+    </plurals>
+    <plurals name="backup_busy_reading">
+        <item quantity="one">Non si può ripristinare mentre %d fattura è ancora in lettura. Interrompi la lettura o attendi.</item>
+        <item quantity="other">Non si può ripristinare mentre %d fatture sono ancora in lettura. Interrompi la lettura o attendi.</item>
+    </plurals>
+    <string name="bundle_title">Fatture da un file</string>
+    <string name="bundle_file_missing">Il file non è più su questo telefono, quindi questa importazione è stata chiusa. Niente di già salvato viene modificato.</string>
 </resources>
