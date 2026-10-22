@@ -220,6 +220,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun recheckedShown(r: com.kitchenreceipts.app.jobs.BundleStore.Rechecked) = c.bundleStore.shown(r)
 
     val products: StateFlow<List<ProductEntity>> = repo.products().stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    /** Products bought only from non-food suppliers: folded at the end of the product picker. */
+    val notFoodProducts: StateFlow<Set<Long>> = repo.notFoodProductIds().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
     val sellerNames: StateFlow<List<String>> =
         repo.sellers().map { list -> list.map { it.name } }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 

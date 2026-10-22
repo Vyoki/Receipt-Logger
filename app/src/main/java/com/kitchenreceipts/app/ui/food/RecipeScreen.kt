@@ -107,10 +107,9 @@ private val COURSES = listOf(
 fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
     val c = appContainer()
     val scope = rememberCoroutineScope()
-    val allProducts by remember { c.repository.products() }.collectAsState(initial = emptyList())
+    val products by remember { c.repository.products() }.collectAsState(initial = emptyList())
+    // Products of electricity, fuel, repairs and other-expenses suppliers: folded at the end of the picker (still there).
     val notFood by remember { c.repository.notFoodProductIds() }.collectAsState(initial = emptySet())
-    // Products of electricity, fuel, repairs and other-expenses suppliers come last in the picker (still there).
-    val products = remember(allProducts, notFood) { if (notFood.isEmpty()) allProducts else allProducts.sortedBy { it.id in notFood } }
     val prices by remember { c.food.prices() }.collectAsState(initial = emptyMap())
     val conversionRows by remember { c.database.productDao().allConversions() }.collectAsState(initial = emptyList())
     // Kept across a rotation: a dish half typed is not lost when the phone is turned.
@@ -307,6 +306,7 @@ fun RecipeScreen(recipeId: Long, onBack: () -> Unit) {
             onClear = { ing.productId = null; ing.productName = null; picking = null },
             onDismiss = { if (ing.name.isBlank() && ing.productId == null) ingredients.remove(ing); picking = null },
             createLabel = R.string.recipe_free_ingredient,
+            notFood = notFood,
         )
     }
 

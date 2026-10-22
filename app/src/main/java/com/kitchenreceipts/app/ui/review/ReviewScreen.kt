@@ -162,6 +162,7 @@ fun ReviewScreen(
     val vm = appViewModel(key = "review-${documentId ?: jobId}") { ReviewViewModel(it, documentId, jobId) }
     val state by vm.state.collectAsStateWithLifecycle()
     val products by vm.products.collectAsStateWithLifecycle()
+    val notFoodProducts by vm.notFoodProducts.collectAsStateWithLifecycle()
     val sellerNames by vm.sellerNames.collectAsStateWithLifecycle()
     val chain by vm.chain.collectAsStateWithLifecycle()
 
@@ -674,6 +675,7 @@ fun ReviewScreen(
                 onCreate = { name -> vm.createProductAndAssign(key, name); pickerFor = null },
                 onClear = { vm.assignProduct(key, null); pickerFor = null },
                 onDismiss = { pickerFor = null },
+                notFood = notFoodProducts,
             )
         }
     }
