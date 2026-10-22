@@ -45,7 +45,7 @@ class AiNativeTest {
         assertTrue("libreceipt_ai.so did not load", NativeAi.available)
     }
 
-    @Test fun readsAPageWithATinyModel() = runBlocking {
+    @Test fun readsAPageWithATinyModel() = runBlocking<Unit> {
         val store = AiModelStore(context)
         val ok = fromShell("/data/local/tmp/ai-test/model.gguf", store.modelFile) &&
             fromShell("/data/local/tmp/ai-test/mmproj.gguf", store.mmprojFile)

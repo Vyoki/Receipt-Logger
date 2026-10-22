@@ -8,9 +8,8 @@ import android.os.Bundle
 import android.widget.Toast
 import androidx.core.content.IntentCompat
 import kotlinx.coroutines.Dispatchers
-import com.kitchenreceipts.app.files.FileStore
+import com.kitchenreceipts.app.jobs.ImportIntake.Intake
 import kotlinx.coroutines.launch
-import kotlin.coroutines.cancellation.CancellationException
 import android.os.SystemClock
 import android.view.WindowManager
 import androidx.activity.compose.setContent
@@ -69,7 +68,8 @@ class MainActivity : FragmentActivity() {
 
     /**
      * Files opened with or shared to the app (a PDF from mail, an e-invoice .xml/.p7m/.zip, a photo): copied in while
-     * the sender's permission lasts, then read in the background like any import.
+     * the sender's permission lasts, then read in the background like any import (see ImportIntake). A file of many
+     * invoices, or a long one that needs an answer first, opens its import screen.
      */
     private fun importShared(intent: Intent?) {
         intent ?: return
@@ -86,23 +86,28 @@ class MainActivity : FragmentActivity() {
         val res = resources // in the operator's chosen language
         c.appScope.launch(Dispatchers.Main) {
             var queued = 0
+            var creditNotes = 0
+            var open: String? = null
+            val notes = mutableListOf<String>()
             val errors = mutableListOf<String>()
             for (uri in uris) {
-                try {
-                    val stored = c.fileStore.importUri(uri)
-                    stored.forEach { c.importQueue.enqueue(it, if (it.mimeType == FileStore.MIME_XML) "e-invoice" else "shared") }
-                    queued += stored.size
-                } catch (e: CancellationException) {
-                    throw e
-                } catch (e: Exception) {
-                    c.log.error("importShared", e)
-                    errors += com.kitchenreceipts.app.ui.friendlyError(res, e)
+                when (val r = c.intake.take(uri, "shared")) {
+                    is Intake.Queued -> { queued += r.count; creditNotes += r.skippedCreditNotes }
+                    is Intake.Bundle -> {
+                        open = r.planId
+                        if (r.reopened) notes += res.getString(R.string.bundle_reopened)
+                    }
+                    is Intake.AskLong -> open = r.planId
+                    is Intake.Failed -> errors += r.message
                 }
             }
-            c.log.event("IMPORT_SHARED", "files" to uris.size, "queued" to queued, "errors" to errors.size)
-            if (queued > 0) com.kitchenreceipts.app.jobs.ReadingService.ensureRunning(app)
+            c.log.event("IMPORT_SHARED", "files" to uris.size, "queued" to queued, "bundle" to (open != null), "errors" to errors.size)
+            if (queued > 0 || open != null) com.kitchenreceipts.app.jobs.ReadingService.ensureRunning(app)
+            open?.let { c.pendingRoute.value = com.kitchenreceipts.app.ui.Routes.bundle(it) }
             val msg = buildList {
                 if (queued > 0) add(res.getQuantityString(R.plurals.shared_queued, queued, queued))
+                if (creditNotes > 0) add(res.getQuantityString(R.plurals.import_credit_notes_skipped, creditNotes, creditNotes))
+                addAll(notes.distinct())
                 addAll(errors.distinct())
             }.joinToString("\n")
             if (msg.isNotEmpty()) Toast.makeText(app, msg, Toast.LENGTH_LONG).show()

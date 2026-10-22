@@ -33,7 +33,8 @@ object Routes {
     const val DOCUMENTS = "documents?sellerId={sellerId}"
     const val DOCUMENT = "document/{id}?auto={auto}"
     const val INVENTORY = "inventory"
-    const val VIEWER = "viewer/{id}?job={job}" // id = -1: a document being read ([job]), not saved yet
+    /** id = -1: a document being read ([job]), not saved yet, or the file of an import of many invoices ([bundle]); [page] from 0. */
+    const val VIEWER = "viewer/{id}?job={job}&bundle={bundle}&page={page}"
     const val PRODUCTS = "products"
     const val PRODUCT = "product/{id}"
     const val FAMILY = "family/{id}"
@@ -46,14 +47,18 @@ object Routes {
     const val FOOD = "food"
     const val RECIPE = "recipe/{id}"
     const val ORDERS = "orders"
+    /** The import of a file of many invoices; id = its plan (the file's SHA-256, see BundleStore). */
+    const val BUNDLE = "bundle/{id}"
 
     fun recipe(id: Long) = "recipe/$id"
+    fun bundle(planId: String) = "bundle/$planId"
 
     fun edit(id: Long) = "edit/$id"
     fun documents(sellerId: Long? = null) = if (sellerId == null) "documents" else "documents?sellerId=$sellerId"
     fun document(id: Long, auto: Boolean = false) = if (auto) "document/$id?auto=true" else "document/$id"
     fun viewer(id: Long) = "viewer/$id"
     fun viewerForJob(jobId: String) = "viewer/-1?job=$jobId"
+    fun viewerForBundle(planId: String, page: Int) = "viewer/-1?bundle=$planId&page=$page"
     fun review(jobId: String) = "review/$jobId"
     fun product(id: Long) = "product/$id"
     fun family(id: Long) = "family/$id"
@@ -146,6 +151,19 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onBack = back,
                 // The document is read in the background: straight back to the home screen, where its progress shows.
                 onQueued = { nav.popBackStack(Routes.HOME, inclusive = false) },
+                // A file of many invoices: its import, in place of Capture (Back goes home).
+                onBundle = { id -> goWith(Routes.bundle(id)) { popUpTo(Routes.HOME) } },
+            )
+        }
+        composable(Routes.BUNDLE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val planId = entry.arguments!!.getString("id")!!
+            com.kitchenreceipts.app.ui.bundle.BundleScreen(
+                planId = planId,
+                onBack = back,
+                onHome = { if (!nav.popBackStack(Routes.HOME, inclusive = false)) nav.navigate(Routes.HOME) },
+                onReview = { go(Routes.review(it)) },
+                onOpenDocument = { go(Routes.document(it)) },
+                onSeePages = { page -> go(Routes.viewerForBundle(planId, page)) },
             )
         }
         composable(Routes.REVIEW_NEW, arguments = listOf(navArgument("jobId") { type = NavType.StringType })) { entry ->
@@ -201,9 +219,18 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             arguments = listOf(
                 navArgument("id") { type = NavType.LongType },
                 navArgument("job") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("bundle") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("page") { type = NavType.IntType; defaultValue = 0 },
             ),
         ) { entry ->
-            ViewerScreen(documentId = entry.arguments!!.getLong("id").takeIf { it > 0 }, jobId = entry.arguments!!.getString("job"), onBack = back)
+            val args = entry.arguments!!
+            ViewerScreen(
+                documentId = args.getLong("id").takeIf { it > 0 },
+                jobId = args.getString("job"),
+                bundleId = args.getString("bundle"),
+                initialPage = args.getInt("page"),
+                onBack = back,
+            )
         }
         composable(Routes.PRODUCTS) {
             ProductsScreen(onBack = back, onOpen = { go(Routes.product(it)) }, onOpenFamily = { go(Routes.family(it)) })

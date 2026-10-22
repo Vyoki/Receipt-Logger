@@ -6,6 +6,9 @@ import android.database.sqlite.SQLiteDatabase
 import android.net.Uri
 import com.kitchenreceipts.app.AppContainer
 import com.kitchenreceipts.app.data.AppDatabase
+import com.kitchenreceipts.app.jobs.BundleStore
+import com.kitchenreceipts.app.jobs.ImportQueue
+import com.kitchenreceipts.app.jobs.JobStatus
 import com.kitchenreceipts.app.settings.AppSettings
 import com.kitchenreceipts.core.Backup
 import kotlinx.coroutines.Dispatchers
@@ -34,7 +37,11 @@ class BackupManager(private val c: AppContainer) {
 
     data class Inside(val created: String, val documents: Int, val business: String, val appVersion: String)
 
-    class Busy : Exception("Documents are being read")
+    /** A restore waits while documents are read or a file of many invoices is looked through or cut. */
+    class Busy(
+        /** Documents still to be read (0 when only a file is being looked through or cut). */
+        val reading: Int = 0,
+    ) : Exception("Documents are being read")
     class TooNew : Exception("The backup was made by a newer version of the app")
 
     /** Writes a backup to [uri] (from the system "Save as" picker). */
@@ -81,7 +88,7 @@ class BackupManager(private val c: AppContainer) {
      * Nothing on the phone is changed. Returns what is inside; then [replaceAndRestart] puts it in place.
      */
     suspend fun prepare(uri: Uri, password: CharArray): Inside = withContext(Dispatchers.IO) {
-        if (c.importQueue.busy || c.readingChecker.running.value) throw Busy()
+        refuseWhileBusy()
         val stage = File(files, STAGE).apply { deleteRecursively(); mkdirs() }
         try {
             val input = context.contentResolver.openInputStream(uri) ?: throw IOException("Cannot open the backup file")
@@ -118,7 +125,7 @@ class BackupManager(private val c: AppContainer) {
     fun replaceAndRestart() {
         val stage = File(files, STAGE)
         check(File(stage, "$DB_DIR/${AppDatabase.NAME}").isFile) { "Nothing prepared" }
-        if (c.importQueue.busy || c.readingChecker.running.value) throw Busy()
+        refuseWhileBusy()
         // A restore not yet confirmed by a start-up keeps the data set aside before it: never thrown away here.
         check(!File(files, RESTORED_FLAG).exists()) { "The last restore has not opened yet: restart the app first" }
         val previous = File(files, PREVIOUS).apply { deleteRecursively(); mkdirs() }
@@ -139,12 +146,9 @@ class BackupManager(private val c: AppContainer) {
             File(stage, DB_DIR).listFiles()?.forEach { f -> move(f, File(dbPath.parentFile, f.name)) }
             KEPT.forEach { name -> File(stage, name).takeIf { it.exists() }?.let { move(it, File(files, name)) } }
             // 3. Documents read and still waiting to be checked are not in the backup: their photos come along, so
-            //    they are still there to check after the restore.
-            c.importQueue.filePaths().forEach { path ->
-                val kept = File(previous, path)
-                val target = File(files, path)
-                if (kept.isFile && !target.exists()) { target.parentFile?.mkdirs(); kept.copyTo(target) }
-            }
+            //    they are still there to check after the restore. So does each file of many invoices still being
+            //    imported (its plan stays on the phone, outside the backup).
+            copyBack(previous, files, keptAcrossRestore(c.importQueue, c.bundleStore))
             File(stage, SETTINGS).takeIf { it.isFile }?.let { applySettings(Backup.readProperties(it.readText())) }
             stage.deleteRecursively()
             File(files, RESTORED_FLAG).writeText(System.currentTimeMillis().toString())
@@ -161,6 +165,11 @@ class BackupManager(private val c: AppContainer) {
             throw e
         }
         restart()
+    }
+
+    private fun refuseWhileBusy() {
+        val reading = c.importQueue.jobs.value.count { it.status == JobStatus.QUEUED || it.status == JobStatus.READING }
+        if (reading > 0 || c.bundleStore.busy || c.readingChecker.running.value) throw Busy(reading)
     }
 
     /** At start-up after a restore: the restored database opened, so the old data set aside can go. */
@@ -339,6 +348,20 @@ class BackupManager(private val c: AppContainer) {
             File(files, STAGE).deleteRecursively()
             journal.delete()
             return true
+        }
+
+        /** The files a restore puts back from what was on the phone: those of documents still to check and of imports still open. */
+        fun keptAcrossRestore(queue: ImportQueue, bundles: BundleStore): Set<String> = queue.filePaths() + bundles.filePaths()
+
+        /** Copies [paths] (relative to [files]) back from the folder set aside, where the backup did not bring them. */
+        fun copyBack(previous: File, files: File, paths: Set<String>): Int {
+            var n = 0
+            paths.forEach { path ->
+                val kept = File(previous, path)
+                val target = File(files, path)
+                if (kept.isFile && !target.exists()) { target.parentFile?.mkdirs(); kept.copyTo(target); n++ }
+            }
+            return n
         }
 
         /** Settings that belong to this phone or this app version, not to the data. */

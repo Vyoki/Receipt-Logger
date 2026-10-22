@@ -93,6 +93,26 @@ class AppContainer(context: Context) {
         fileInUse = { repository.fileInUse(it) },
     )
 
+    /**
+     * Imports of files of many invoices, one plan each, kept on the phone: looked through, sorted, cut and queued, and
+     * what became of each invoice (see BundleStore).
+     */
+    val bundleStore = com.kitchenreceipts.app.jobs.BundleStore(
+        context, appScope, fileStore, importQueue, settings, log, notifier,
+        saved = { repository.savedForBundles() },
+        fileInUse = { repository.fileInUse(it) },
+    )
+
+    /** Every file brought in, shared to the app or picked on Capture, goes through here (see ImportIntake). */
+    val intake = com.kitchenreceipts.app.jobs.ImportIntake(appContext, fileStore, importQueue, bundleStore, log)
+
+    init {
+        // Before the queue is loaded (KitchenReceiptsApp.onCreate): each plan hears what becomes of its jobs, and keeps
+        // the saved ones it still counts.
+        importQueue.listener = { e -> bundleStore.onJobEvent(e) }
+        importQueue.bundleOpen = { id -> bundleStore.isOpen(id) }
+    }
+
     /** The OCR reading of every saved document, and the re-check of all of them after each update. */
     val readings = com.kitchenreceipts.app.diagnostics.ReadingArchive(context)
     /** Saved documents as training examples for the app's own AI, shared only by the operator (see TrainingExport). */
@@ -174,8 +194,13 @@ class KitchenReceiptsApp : Application() {
                 .onFailure { c.log.error("kindsBackfill", it) }
         }
         runCatching { c.importQueue.restore() }.onFailure { c.log.error("restoreQueue", it) }
-        container.appScope.launch {
-            runCatching { container.repository.cleanupOrphanFiles(c.importQueue.filePaths()) }
+        // Each file of many invoices being read is set right from its jobs as they are now (after a crash, say).
+        runCatching { c.bundleStore.afterRestore(c.importQueue.jobs.value) }.onFailure { c.log.error("restoreBundles", it) }
+        container.appScope.launch(kotlinx.coroutines.Dispatchers.IO) {
+            // The PDF reader's temporary files of a look or a cut that was stopped (none is running yet).
+            runCatching { c.bundleStore.cleanTempIfIdle() }
+            // The files of imports still open are kept, as those of documents still to check.
+            runCatching { container.repository.cleanupOrphanFiles(c.importQueue.filePaths() + c.bundleStore.filePaths()) }
         }
         // A new version reads every saved document again and compares (on the phone; see ReadingChecker).
         if (c.readingChecker.due()) container.appScope.launch {

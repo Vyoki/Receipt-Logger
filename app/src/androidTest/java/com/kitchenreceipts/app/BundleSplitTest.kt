@@ -33,7 +33,7 @@ class BundleSplitTest {
 
     private suspend fun stored(name: String, pages: Int): StoredFile {
         val src = TestPdfs.write(File(app.cacheDir, name), pages)
-        return files.importUri(Uri.fromFile(src)).single().also { src.delete() }
+        return files.importUri(Uri.fromFile(src)).files.single().also { src.delete() }
     }
 
     private fun sha(f: File): String =
@@ -44,7 +44,7 @@ class BundleSplitTest {
         return TextLayer.lines(PdfText.scaled(glyphs, 2400, 3394)).joinToString("\n") { it.text }.replace(" ", "")
     }
 
-    @Test fun sixPagesCutInThreeComeOutTheSameEveryTime() = runBlocking {
+    @Test fun sixPagesCutInThreeComeOutTheSameEveryTime() = runBlocking<Unit> {
         val bundle = stored("split-6.pdf", 6)
         val ranges = listOf(0..1, 2..4, 5..5)
         val first = files.splitPdf(bundle, ranges)
@@ -73,7 +73,7 @@ class BundleSplitTest {
         files.delete(bundle.relativePath)
     }
 
-    @Test fun aFailureKeepsNoPart() = runBlocking {
+    @Test fun aFailureKeepsNoPart() = runBlocking<Unit> {
         val bundle = stored("split-fail.pdf", 6)
         val before = documents()
         // The second range runs past the end: the first part, already written, is deleted too.

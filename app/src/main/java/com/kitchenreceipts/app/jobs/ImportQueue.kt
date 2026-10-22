@@ -164,9 +164,10 @@ class ImportQueue(
     /** Files still needed by the queue (not to be cleaned up as orphans). */
     fun filePaths(): Set<String> = _jobs.value.filter { it.status != JobStatus.SAVED }.map { it.file.relativePath }.toSet()
 
-    fun enqueue(file: StoredFile, source: String): ImportJob {
+    /** Queues one document. Its details are written to the phone off the main thread (each write waits for the disk). */
+    suspend fun enqueue(file: StoredFile, source: String): ImportJob {
         val job = ImportJob(UUID.randomUUID().toString(), System.currentTimeMillis(), source, file, JobStatus.QUEUED)
-        writeMeta(job)
+        withContext(Dispatchers.IO) { writeMeta(job) }
         _jobs.update { it + job }
         log.event("JOB_QUEUED", "job" to job.id.take(8), "source" to source, "pages" to file.pageCount)
         startWorker()
@@ -231,8 +232,11 @@ class ImportQueue(
 
     private fun keep(id: String, pending: PendingImport) = synchronized(kept) { kept[id] = pending }
 
-    /** Stops a reading or drops a document that was not saved; its file is deleted. */
-    fun discard(id: String) {
+    /**
+     * Stops a reading or drops a document that was not saved; its file is deleted, unless [deleteFile] is false (the
+     * e-invoice of a file of many stays, to be read again later).
+     */
+    fun discard(id: String, deleteFile: Boolean = true) {
         val job = job(id) ?: return
         val running = current.takeIf { currentId == id }
         remove(id)
@@ -241,7 +245,7 @@ class ImportQueue(
         // document uses it: the app may have saved it by itself just before being closed, without marking the job.
         scope.launch(Dispatchers.IO) {
             running?.cancelAndJoin()
-            if (job.status != JobStatus.SAVED && !runCatching { fileInUse(job.file.relativePath) }.getOrDefault(true)) {
+            if (deleteFile && job.status != JobStatus.SAVED && !runCatching { fileInUse(job.file.relativePath) }.getOrDefault(true)) {
                 fileStore.delete(job.file.relativePath)
             }
         }
@@ -348,6 +352,10 @@ class ImportQueue(
                 "ms" to (System.currentTimeMillis() - t0), "ocrLines" to pending.rawLines.sumOf { it.size },
                 "ocrError" to pending.ocrError, "reading" to pending.readingNote, "ai" to pending.aiNote,
             )
+            // How long reading takes on this phone, for the estimate before a file of many invoices is read.
+            if (j.file.mimeType != FileStore.MIME_XML) {
+                runCatching { ReadingTime.record(settings, pending.pagesRead, System.currentTimeMillis() - t0, ai != null) }
+            }
             val prepared = preparer.prepare(pending, j.flags)
             val d = prepared.draft
             // Discarded while it was being read: nothing is saved.
@@ -356,6 +364,8 @@ class ImportQueue(
             savedId?.let { id -> runCatching { onAutoSaved(id, pending) } }
             // An invoice of a file of many waits on the phone, not in memory: it is rebuilt when opened (see load).
             val lazy = savedId == null && j.bundleId != null
+            // Dropped while it was being saved: the document is in the app all the same, and its file's plan says so.
+            if (job(j.id) == null && savedId != null) emit(JobEvent(JobEvent.Kind.SAVED_BY_APP, j.id, j.bundleId, j.order, savedId))
             j = (job(j.id) ?: return).copy(
                 status = if (savedId != null) JobStatus.SAVED else JobStatus.READY,
                 pending = if (savedId != null || lazy) null else pending,

@@ -127,6 +127,16 @@ class AppSettings(context: Context) {
         get() = readLanguage(prefs.getString("report_language", null)).takeIf { it != Language.SYSTEM } ?: Language.ITALIAN
         set(v) = prefs.edit().putString("report_language", v.name).apply()
 
+    /** Seconds the reader takes per page on this phone, measured as documents are read (see ReadingTime). */
+    var readSecondsPerPage: Float
+        get() = prefs.getFloat("read_seconds_per_page", com.kitchenreceipts.app.jobs.ReadingTime.START_PER_PAGE)
+        set(v) = prefs.edit().putFloat("read_seconds_per_page", v).apply()
+
+    /** Seconds the AI reader adds to each document it helps with, measured the same way. */
+    var aiSecondsPerJob: Float
+        get() = prefs.getFloat("ai_seconds_per_job", com.kitchenreceipts.app.jobs.ReadingTime.START_AI_PER_JOB)
+        set(v) = prefs.edit().putFloat("ai_seconds_per_job", v).apply()
+
     /** Finds what was learned about a supplier's documents (set by the app container; see LearningStore). */
     @Volatile var layoutLookup: ((String) -> com.kitchenreceipts.core.SupplierLayout?)? = null
 

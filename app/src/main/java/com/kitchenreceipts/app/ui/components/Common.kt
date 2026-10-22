@@ -69,6 +69,8 @@ fun AppScaffold(
     snackbarHostState: SnackbarHostState = remember { SnackbarHostState() },
     bottomBar: @Composable () -> Unit = {},
     floatingActionButton: @Composable () -> Unit = {},
+    /** A line under the top bar (where the operator is, e.g. "Step 2 of 3 · Suppliers"); none when null. */
+    subBar: (@Composable () -> Unit)? = null,
     content: @Composable (PaddingValues) -> Unit,
 ) {
     Scaffold(
@@ -93,6 +95,7 @@ fun AppScaffold(
                         titleContentColor = MaterialTheme.colorScheme.onBackground,
                     ),
                 )
+                subBar?.invoke()
                 HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
             }
         },
@@ -100,6 +103,19 @@ fun AppScaffold(
         bottomBar = bottomBar,
         floatingActionButton = floatingActionButton,
         content = content,
+    )
+}
+
+/** The line in [AppScaffold]'s subBar: where the operator is ("Step 2 of 3 · Suppliers"). */
+@Composable
+fun SubBarText(text: String, modifier: Modifier = Modifier) {
+    Text(
+        text,
+        style = MaterialTheme.typography.titleSmall,
+        color = Palette.PhthaloBright,
+        maxLines = 2,
+        overflow = TextOverflow.Ellipsis,
+        modifier = modifier.fillMaxWidth().padding(start = 16.dp, end = 16.dp, bottom = 10.dp),
     )
 }
 
@@ -359,9 +375,11 @@ fun ConfirmDialog(
     body: (@Composable () -> Unit)? = null,
     /** False while what was typed cannot be saved yet (the button says so instead of doing nothing). */
     confirmEnabled: Boolean = true,
+    /** A tap outside or Back; [onDismiss] when null. Set it when the dismiss button does something of its own. */
+    onDismissRequest: (() -> Unit)? = null,
 ) {
     AlertDialog(
-        onDismissRequest = onDismiss,
+        onDismissRequest = onDismissRequest ?: onDismiss,
         title = { Text(title) },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {

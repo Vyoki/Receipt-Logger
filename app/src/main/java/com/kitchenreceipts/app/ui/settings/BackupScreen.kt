@@ -84,6 +84,8 @@ fun BackupScreen(onBack: () -> Unit) {
     val tooNew = stringResource(R.string.backup_too_new)
     val retype = stringResource(R.string.backup_retype_password)
     val res = androidx.compose.ui.platform.LocalContext.current.resources
+    // "Restore is not possible while N invoices are still being read" (or the general message while a file is looked through).
+    fun busyText(e: BackupManager.Busy) = if (e.reading > 0) res.getQuantityString(R.plurals.backup_busy_reading, e.reading, e.reading) else busyMsg
 
     val save = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("application/octet-stream")) { uri ->
         if (uri == null) return@rememberLauncherForActivityResult
@@ -139,7 +141,7 @@ fun BackupScreen(onBack: () -> Unit) {
                     is Backup.NotABackup -> notBackup
                     is Backup.Damaged -> damaged
                     is BackupManager.TooNew -> tooNew
-                    is BackupManager.Busy -> busyMsg
+                    is BackupManager.Busy -> busyText(e)
                     else -> failed
                 }
                 if (e !is Backup.WrongPassword) c.log.error("restorePrepare", e)
@@ -225,7 +227,7 @@ fun BackupScreen(onBack: () -> Unit) {
                     c.backup.replaceAndRestart()
                 } catch (e: Exception) {
                     prepared = null
-                    error = if (e is BackupManager.Busy) busyMsg else failed
+                    error = if (e is BackupManager.Busy) busyText(e) else failed
                 }
             },
             onDismiss = { prepared = null; c.backup.discard() },

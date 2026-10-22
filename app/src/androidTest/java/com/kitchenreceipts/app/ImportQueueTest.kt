@@ -49,7 +49,7 @@ class ImportQueueTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    @Test fun readsInTheBackgroundAndSurvivesARestart() = runBlocking {
+    @Test fun readsInTheBackgroundAndSurvivesARestart() = runBlocking<Unit> {
         File(context.filesDir, "jobs").deleteRecursively()
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         val files = FileStore(context)
@@ -162,7 +162,7 @@ class ImportQueueTest {
         File(d, "reading.properties").outputStream().use { p.store(it, null) }
     }
 
-    @Test fun invoicesOfAFileAreQueuedInOrderAndKeepItAfterARestart() = runBlocking {
+    @Test fun invoicesOfAFileAreQueuedInOrderAndKeepItAfterARestart() = runBlocking<Unit> {
         jobsDir.deleteRecursively()
         val files = (0 until 50).map { part("bundle-order-$it.pdf") }
         val q = idleQueue()
@@ -224,7 +224,7 @@ class ImportQueueTest {
         File(context.filesDir, file.relativePath).delete()
     }
 
-    @Test fun manyReadyInvoicesRestoreQuicklyAndAreRebuiltOnlyWhenOpened() = runBlocking {
+    @Test fun manyReadyInvoicesRestoreQuicklyAndAreRebuiltOnlyWhenOpened() = runBlocking<Unit> {
         jobsDir.deleteRecursively()
         val file = part("ready-many.pdf")
         val now = System.currentTimeMillis()
@@ -260,7 +260,7 @@ class ImportQueueTest {
         File(context.filesDir, file.relativePath).delete()
     }
 
-    @Test fun aFlaggedInvoiceIsHeldForACheck() = runBlocking {
+    @Test fun aFlaggedInvoiceIsHeldForACheck() = runBlocking<Unit> {
         jobsDir.deleteRecursively()
         val file = part("flagged.pdf")
         writeMeta("flagged", JobStatus.READY, System.currentTimeMillis(), file, mapOf("bundle" to "plan-c", "order" to "0", "flags" to "NO_TOTAL,START_UNSURE"))
@@ -278,7 +278,7 @@ class ImportQueueTest {
         File(context.filesDir, file.relativePath).delete()
     }
 
-    @Test fun theListenerHearsWhatHappensToEachJob() = runBlocking {
+    @Test fun theListenerHearsWhatHappensToEachJob() = runBlocking<Unit> {
         jobsDir.deleteRecursively()
         val files = (0 until 3).map { part("events-$it.pdf") }
         val events = mutableListOf<JobEvent>()

@@ -45,6 +45,34 @@ sealed interface SplitResult {
     data class Failed(val reason: SplitFailure) : SplitResult
 }
 
+/** What an import copied in (see FileStore.importUri). */
+data class ImportResult(
+    /** The documents to read: the photo or PDF, or each purchase invoice of an e-invoice file. */
+    val files: List<StoredFile>,
+    /** Credit notes in an e-invoice file: never imported (money back, not a purchase), only counted. */
+    val skippedCreditNotes: Int = 0,
+    /** For an e-invoice file: what each invoice in it says, credit notes too (with no file), in the file's order. */
+    val einvoices: List<EInvoiceEntry> = emptyList(),
+    /** The SHA-256 of the file as it came in (the same file shared again has the same one). */
+    val sha256: String,
+)
+
+/** One invoice of an e-invoice file, its values exact from the XML. */
+data class EInvoiceEntry(
+    /** Its stored XML; null for a credit note (not stored). */
+    val file: StoredFile?,
+    val sellerVat: String?,
+    val sellerName: String?,
+    /** The buyer's VAT number or tax code, as written. */
+    val buyerId: String?,
+    val number: String?,
+    val date: java.time.LocalDate?,
+    val totalCents: Long?,
+    val creditNote: Boolean,
+    /** Its lines as "description amount" rows, for a category suggestion. */
+    val rows: List<String> = emptyList(),
+)
+
 /** Why a file could not be cut; [text] says it in the operator's words. */
 enum class SplitFailure(val text: Int) {
     STORAGE(com.kitchenreceipts.app.R.string.bundle_error_storage),
@@ -80,27 +108,32 @@ class FileStore(private val context: Context) {
      * Copies a picked or shared file (content:// Uri) into private storage: an image, a PDF, or e-invoices
      * (FatturaPA .xml, signed .p7m, or a .zip of several), each invoice stored as its own XML document.
      */
-    suspend fun importUri(uri: Uri, resolver: ContentResolver = context.contentResolver): List<StoredFile> = withContext(Dispatchers.IO) {
+    suspend fun importUri(uri: Uri, resolver: ContentResolver = context.contentResolver): ImportResult = withContext(Dispatchers.IO) {
         val declared = resolver.getType(uri)
         val tmp = File(documentsDir, "import_${UUID.randomUUID()}.tmp")
         try {
             val input = resolver.openInputStream(uri) ?: throw IOException("Cannot open the selected file")
             val sha = input.use { copyWithHash(it, tmp) }
             if (!isPhotoOrPdf(tmp)) {
-                val stored = storeEInvoices(tmp.readBytes())
+                val entries = storeEInvoices(tmp.readBytes())
                 tmp.delete()
-                return@withContext stored
+                return@withContext ImportResult(
+                    files = entries.mapNotNull { it.file }, skippedCreditNotes = entries.count { it.creditNote }, einvoices = entries, sha256 = sha,
+                )
             }
             val mime = detectMime(tmp, declared)
-            listOf(finish(tmp, mime, sha))
+            ImportResult(listOf(finish(tmp, mime, sha)), sha256 = sha)
         } catch (e: Throwable) {
             tmp.delete()
             throw e
         }
     }
 
-    /** The invoices in an e-invoice file, one stored XML each. Credit notes are refunds, not purchases: left out. */
-    private fun storeEInvoices(bytes: ByteArray): List<StoredFile> {
+    /**
+     * The invoices in an e-invoice file, one stored XML each. Credit notes are refunds, not purchases: left out (not
+     * stored), but listed, so the operator is told how many.
+     */
+    private fun storeEInvoices(bytes: ByteArray): List<EInvoiceEntry> {
         val xmls = try {
             EInvoice.invoices(bytes)
         } catch (_: Exception) {
@@ -109,13 +142,28 @@ class FileStore(private val context: Context) {
         if (xmls.isEmpty()) throw UnsupportedFileException("No e-invoice found in this file.", com.kitchenreceipts.app.R.string.file_no_einvoice)
         val reads = xmls.mapNotNull { x -> runCatching { x to EInvoice.read(x) }.getOrNull() }
         if (reads.isEmpty()) throw UnsupportedFileException("The e-invoice could not be read (it may be damaged).", com.kitchenreceipts.app.R.string.file_einvoice_damaged)
-        val purchases = reads.filter { !it.second.creditNote }
-        if (purchases.isEmpty()) throw UnsupportedFileException("This is a credit note (money back). Credit notes are not imported as purchases.", com.kitchenreceipts.app.R.string.file_credit_note)
-        return purchases.map { (xml, read) ->
-            val target = File(documentsDir, "${UUID.randomUUID()}.xml")
-            target.writeBytes(xml)
-            val sha = target.inputStream().use { sha256(it) }
-            StoredFile("$DOCUMENTS_DIR/${target.name}", MIME_XML, textPages(read.text).size, sha)
+        if (reads.none { !it.second.creditNote }) throw UnsupportedFileException("This is a credit note (money back). Credit notes are not imported as purchases.", com.kitchenreceipts.app.R.string.file_credit_note)
+        val written = mutableListOf<File>()
+        try {
+            return reads.map { (xml, read) ->
+                val stored = if (read.creditNote) null else {
+                    val target = File(documentsDir, "${UUID.randomUUID()}.xml")
+                    written += target
+                    target.writeBytes(xml)
+                    val sha = target.inputStream().use { sha256(it) }
+                    StoredFile("$DOCUMENTS_DIR/${target.name}", MIME_XML, textPages(read.text).size, sha)
+                }
+                val p = read.parsed
+                EInvoiceEntry(
+                    file = stored, sellerVat = read.sellerVat, sellerName = p.sellerName?.value, buyerId = read.buyerId,
+                    number = p.documentNumber?.value, date = p.documentDate?.value, totalCents = p.totalCents?.value, creditNote = read.creditNote,
+                    rows = p.lineItems.mapNotNull { li -> li.lineTotalCents?.value?.let { "${li.originalDescription} ${com.kitchenreceipts.core.ItalianNumbers.formatCents(it)}" } },
+                )
+            }
+        } catch (e: Throwable) {
+            // All or nothing: a phone that fills up half-way keeps no part of the file.
+            written.forEach { it.delete() }
+            throw e
         }
     }
 
@@ -213,6 +261,17 @@ class FileStore(private val context: Context) {
         }
     }
 
+    /**
+     * An e-invoice already stored by [importUri] (one invoice of a file of many), as a document to read: null when it
+     * is gone or cannot be read any more.
+     */
+    suspend fun storedXml(relativePath: String): StoredFile? = withContext(Dispatchers.IO) {
+        runCatching {
+            val bytes = file(relativePath).takeIf { it.isFile }?.readBytes() ?: return@runCatching null
+            StoredFile(relativePath, MIME_XML, textPages(EInvoice.read(bytes).text).size, bytes.inputStream().use { sha256(it) })
+        }.getOrNull()
+    }
+
     /** Where the PDF reader keeps its temporary files while a large file is open (cleared by the caller when idle). */
     fun pdfboxTempDir(): File = File(context.cacheDir, PDFBOX_TEMP_DIR).apply { mkdirs() }
 
@@ -245,6 +304,8 @@ class FileStore(private val context: Context) {
             if (mime == MIME_PDF) pdfPageCount(target) else 1
         } catch (e: Exception) {
             target.delete()
+            // Android's PDF reader says so when the file needs a password to open.
+            if (e is SecurityException) throw UnsupportedFileException("The PDF is protected by a password.", com.kitchenreceipts.app.R.string.bundle_error_locked)
             throw UnsupportedFileException("The PDF could not be opened (it may be damaged or password-protected).", com.kitchenreceipts.app.R.string.file_pdf_damaged)
         }
         if (pages < 1) {
