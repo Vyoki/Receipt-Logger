@@ -42,6 +42,8 @@ data class PlannedInvoice(
     val jobId: String? = null,
     val outcome: InvoiceOutcome = InvoiceOutcome.WAITING,
     val documentId: Long? = null,
+    /** Its prices changed by 5% or more against the last purchase (one message for the whole file, not one each). */
+    val pricesChanged: Boolean = false,
 ) {
     val pageCount: Int get() = last - first + 1
     val isInvoice: Boolean get() = kind == InvoiceBundle.Kind.INVOICE
@@ -86,6 +88,8 @@ data class BundlePlan(
     val createdAt: Long = 0L,
     /** A document saved earlier from this very file (read as one document): reading it again counts its invoices twice. */
     val sameFileDocumentId: Long? = null,
+    /** The one message "Invoices read: N · Saved: N…" was posted for this reading (not again after a restart). */
+    val announced: Boolean = false,
 ) {
     val sameFileWarning: Boolean get() = sameFileDocumentId != null
 
@@ -476,13 +480,14 @@ object BundleWizard {
 
     /** Stop reading this file: what is not saved yet is stopped; saved invoices are untouched. */
     fun stop(plan: BundlePlan): BundlePlan = plan.copy(
-        status = BundleStatus.DONE,
+        // The operator stopped it: no "all read" message follows.
+        status = BundleStatus.DONE, announced = true,
         invoices = plan.invoices.map { if (it.outcome in OPEN) it.copy(outcome = InvoiceOutcome.STOPPED, jobId = null) else it },
     )
 
     /** "Read the N not read yet": the stopped invoices go to be read again. */
     fun readRest(plan: BundlePlan): BundlePlan = plan.copy(
-        status = BundleStatus.PREPARING,
+        status = BundleStatus.PREPARING, announced = false,
         invoices = plan.invoices.map { if (it.outcome == InvoiceOutcome.STOPPED) it.copy(outcome = InvoiceOutcome.WAITING, jobId = null) else it },
     )
 
@@ -529,13 +534,52 @@ object BundleWizard {
         return if (at < 0) null else (at + 1) to c.size
     }
 
-    /** The next invoice to check after [after] (an index), going round; null when nothing is ready. */
-    fun nextToCheck(plan: BundlePlan, after: Int? = null): Int? {
+    /**
+     * The next invoice to check after [after] (an index), going round; null when nothing is ready. [skip]: invoices not
+     * to open now (the app is checking them again).
+     */
+    fun nextToCheck(plan: BundlePlan, after: Int? = null, skip: (Int) -> Boolean = { false }): Int? {
         val order = planOrder(plan)
         val pos = after?.let { order.indexOf(it) } ?: -1
-        val ready = order.filter { it != after && plan.invoices[it].outcome == InvoiceOutcome.READY }
+        val ready = order.filter { it != after && !skip(it) && plan.invoices[it].outcome == InvoiceOutcome.READY }
         return ready.firstOrNull { order.indexOf(it) > pos } ?: ready.firstOrNull()
-            ?: order.firstOrNull { it != after && plan.invoices[it].outcome == InvoiceOutcome.CHECK_LATER }
+            ?: order.firstOrNull { it != after && !skip(it) && plan.invoices[it].outcome == InvoiceOutcome.CHECK_LATER }
+    }
+
+    /** [nextToCheck] by job: after the invoice of job [afterJob] (from the start when null), skipping the jobs [skip]. */
+    fun nextJob(plan: BundlePlan, afterJob: String? = null, skip: Set<String> = emptySet()): String? {
+        val after = afterJob?.let { j -> plan.invoices.indexOfFirst { it.jobId == j } }?.takeIf { it >= 0 }
+        return nextToCheck(plan, after) { plan.invoices[it].jobId.let { j -> j == null || j in skip } }?.let { plan.invoices[it].jobId }
+    }
+
+    /** The prices of the invoice of job [jobId] changed (see [PlannedInvoice.pricesChanged]). */
+    fun pricesChanged(plan: BundlePlan, jobId: String): BundlePlan =
+        plan.copy(invoices = plan.invoices.map { if (it.jobId == jobId && it.isInvoice) it.copy(pricesChanged = true) else it })
+
+    /**
+     * The file was read: nothing waits to be read any more, at least one invoice was read, and its one message was not
+     * posted yet. Invoices still to check do not hold it back (the message counts them).
+     */
+    fun toAnnounce(plan: BundlePlan): Boolean {
+        if (plan.announced || plan.status !in setOf(BundleStatus.QUEUED, BundleStatus.PAUSED, BundleStatus.DONE)) return false
+        val read = setOf(InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER, InvoiceOutcome.SAVED_BY_APP, InvoiceOutcome.SAVED_BY_YOU, InvoiceOutcome.FAILED)
+        return plan.invoices.none { it.outcome == InvoiceOutcome.WAITING || it.outcome == InvoiceOutcome.QUEUED } && plan.invoices.any { it.outcome in read }
+    }
+
+    fun announce(plan: BundlePlan): BundlePlan = plan.copy(announced = true)
+
+    /**
+     * The operator just saved the invoice of job [savedJob]. When it is the first of its supplier they saved in this
+     * file, that supplier is now known (by its VAT number), so its other invoices waiting to be checked are worth
+     * checking again: their jobs, in plan order. Only by VAT number, the proof the registry gives.
+     */
+    fun recheckAfterSave(plan: BundlePlan, savedJob: String): List<String> {
+        val at = plan.invoices.indexOfFirst { it.jobId == savedJob }.takeIf { it >= 0 } ?: return emptyList()
+        val vat = digits(plan.invoices[at].supplierVat) ?: return emptyList()
+        val same = plan.invoices.indices.filter { it != at && plan.invoices[it].isInvoice && digits(plan.invoices[it].supplierVat) == vat }
+        if (same.any { plan.invoices[it].outcome == InvoiceOutcome.SAVED_BY_YOU }) return emptyList()
+        val waiting = setOf(InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER)
+        return planOrder(plan).filter { it in same && plan.invoices[it].outcome in waiting }.mapNotNull { plan.invoices[it].jobId }
     }
 
     /** The Done screen: saved invoices by category key (null: not sorted). */
@@ -578,6 +622,7 @@ object BundlePlanCodec {
         line("created", p.createdAt)
         line("step", p.step.name)
         line("samefile", p.sameFileDocumentId)
+        line("ann", flag(p.announced))
         for (s in p.signals) record("sig", InvoiceBundle.encode(s))
         for (i in p.invoices) record("inv", BundleText.record(
             "f" to i.first.toString(), "l" to i.last.toString(),
@@ -588,6 +633,7 @@ object BundlePlanCodec {
             "as" to i.alreadySavedId?.toString(), "ao" to i.alreadySavedOn?.toString(), "ms" to i.maybeSavedId?.toString(),
             "in" to if (i.include) null else "0", "lo" to i.leftOut?.name, "ck" to flag(i.checked),
             "j" to i.jobId, "o" to i.outcome.takeIf { it != InvoiceOutcome.WAITING }?.name, "doc" to i.documentId?.toString(),
+            "pc" to flag(i.pricesChanged),
         ))
         for ((k, list) in listOf("sup" to p.suppliers, "ret" to p.retired)) for (s in list) record(k, BundleText.record(
             "k" to s.key, "n" to s.name, "v" to s.vat, "c" to s.category, "kn" to flag(s.known), "lt" to s.lastTime,
@@ -622,6 +668,7 @@ object BundlePlanCodec {
             scanned = single["scanned"]?.toIntOrNull() ?: 0, signals = signals, invoices = invoices, suppliers = suppliers, retired = retired,
             step = enumOr(single["step"], BundleWizard.Step.FOUND),
             createdAt = single["created"]?.toLongOrNull() ?: 0L, sameFileDocumentId = single["samefile"]?.toLongOrNull(),
+            announced = single["ann"] == "1",
         )
     }.getOrNull()
 
@@ -636,6 +683,7 @@ object BundlePlanCodec {
             alreadySavedId = f["as"]?.toLong(), alreadySavedOn = f["ao"]?.toLong(), maybeSavedId = f["ms"]?.toLong(),
             include = f["in"] != "0", leftOut = f["lo"]?.let { n -> LeftOut.entries.firstOrNull { it.name == n } }, checked = f["ck"] == "1",
             jobId = f["j"], outcome = enumOr(f["o"], InvoiceOutcome.WAITING), documentId = f["doc"]?.toLong(),
+            pricesChanged = f["pc"] == "1",
         )
     }.getOrNull()
 

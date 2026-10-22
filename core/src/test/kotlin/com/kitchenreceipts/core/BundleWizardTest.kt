@@ -284,6 +284,77 @@ class BundleWizardTest {
         assertEquals(InvoiceOutcome.SAVED_BY_APP, p.invoices[0].outcome)
     }
 
+    @Test fun oneMessageWhenTheFileIsRead() {
+        var p = BundleWizard.queued(BundleWizard.confirm(plan()), BundleWizard.planOrder(plan()).associateWith { "job$it" })
+        assertFalse(BundleWizard.toAnnounce(p))
+        p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_APP, 1)
+        p = BundleWizard.record(p, "job1", InvoiceOutcome.READY)
+        p = BundleWizard.record(p, "job2", InvoiceOutcome.FAILED)
+        p = BundleWizard.record(p, "job4", InvoiceOutcome.READY)
+        // One invoice is still to be read.
+        assertFalse(BundleWizard.toAnnounce(p))
+        p = BundleWizard.record(p, "job3", InvoiceOutcome.SAVED_BY_APP, 3)
+        // All read; two still to check do not hold the message back.
+        assertEquals(BundleStatus.QUEUED, p.status)
+        assertTrue(BundleWizard.toAnnounce(p))
+        p = BundleWizard.announce(p)
+        assertFalse(BundleWizard.toAnnounce(p))
+        // Not again after a restart.
+        assertFalse(BundleWizard.toAnnounce(BundlePlanCodec.decode(BundlePlanCodec.encode(p))!!))
+        // Stopped by the operator: no message; read the rest: one more when that is read.
+        p = BundleWizard.readRest(BundleWizard.stop(p))
+        assertFalse(p.announced)
+        assertFalse(BundleWizard.toAnnounce(BundleWizard.stop(p)))
+        // Nothing read at all (everything left out): no message.
+        val none = BundleWizard.queued(BundleWizard.confirm(plan()), emptyMap()).copy(status = BundleStatus.DONE, invoices = plan().invoices.map { it.copy(outcome = InvoiceOutcome.LEFT_OUT) })
+        assertFalse(BundleWizard.toAnnounce(none))
+    }
+
+    @Test fun pricesChangedAreKeptPerInvoice() {
+        var p = BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" })
+        p = BundleWizard.pricesChanged(p, "job3")
+        p = BundleWizard.pricesChanged(p, "nobody")
+        assertEquals(listOf(3), p.invoices.indices.filter { p.invoices[it].pricesChanged })
+        assertEquals(p, BundlePlanCodec.decode(BundlePlanCodec.encode(p)))
+    }
+
+    @Test fun theFirstSaveOfASupplierChecksItsOtherInvoicesAgain() {
+        // MEAT prints invoices 0 and 3; every invoice was read and waits to be checked.
+        var p = BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" })
+        for (i in 0..4) p = BundleWizard.record(p, "job$i", InvoiceOutcome.READY)
+        p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_YOU, 10)
+        assertEquals(listOf("job3"), BundleWizard.recheckAfterSave(p, "job0"))
+        // An invoice put off with "Check later" is checked again too.
+        assertEquals(listOf("job3"), BundleWizard.recheckAfterSave(BundleWizard.checkLater(p, 3), "job0"))
+        // A supplier with one invoice: nothing else to check.
+        p = BundleWizard.record(p, "job1", InvoiceOutcome.SAVED_BY_YOU, 11)
+        assertEquals(emptyList<String>(), BundleWizard.recheckAfterSave(p, "job1"))
+        // The second save of the same supplier: it was known already.
+        p = BundleWizard.record(p, "job3", InvoiceOutcome.SAVED_BY_YOU, 13)
+        assertEquals(emptyList<String>(), BundleWizard.recheckAfterSave(p, "job3"))
+        // No VAT number: no proof to give.
+        val noVat = p.copy(invoices = p.invoices.map { it.copy(supplierVat = null) })
+        assertEquals(emptyList<String>(), BundleWizard.recheckAfterSave(noVat.copy(invoices = noVat.invoices.mapIndexed { i, inv -> if (i == 3) inv.copy(outcome = InvoiceOutcome.READY) else inv }), "job0"))
+    }
+
+    @Test fun theNextJobGoesInPlanOrderAndSkipsTheOnesBeingChecked() {
+        var p = BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" })
+        for (i in 0..4) p = BundleWizard.record(p, "job$i", InvoiceOutcome.READY)
+        // Plan order: 0, 1, 2, 4, 3.
+        assertEquals("job0", BundleWizard.nextJob(p))
+        assertEquals("job4", BundleWizard.nextJob(p, afterJob = "job2"))
+        assertEquals("job0", BundleWizard.nextJob(p, afterJob = "job3"))
+        assertEquals("job2", BundleWizard.nextJob(p, afterJob = "job0", skip = setOf("job1")))
+        assertEquals("job0", BundleWizard.nextJob(p, afterJob = "nobody"))
+        p = BundleWizard.checkLater(p, 1)
+        assertEquals("job2", BundleWizard.nextJob(p, afterJob = "job0"))
+        for (i in listOf(0, 2, 3, 4)) p = BundleWizard.record(p, "job$i", InvoiceOutcome.SAVED_BY_YOU, i.toLong())
+        // Only the one put off is left; nothing once that one is skipped.
+        assertEquals("job1", BundleWizard.nextJob(p, afterJob = "job4"))
+        assertNull(BundleWizard.nextJob(p, afterJob = "job1"))
+        assertNull(BundleWizard.nextJob(p, skip = setOf("job1")))
+    }
+
     @Test fun joinAndSplitRoundTrip() {
         var p = plan()
         p = BundleWizard.setCategory(p, keyOf(p, HOUSEHOLD.supplierVat), "supplies")
