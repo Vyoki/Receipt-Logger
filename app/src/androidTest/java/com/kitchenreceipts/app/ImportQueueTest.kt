@@ -42,7 +42,7 @@ class ImportQueueTest {
 
     private val context: Context = ApplicationProvider.getApplicationContext()
 
-    @Test fun readsInTheBackgroundAndSurvivesARestart() = runBlocking {
+    @Test fun readsInTheBackgroundAndSurvivesARestart() = runBlocking<Unit> {
         File(context.filesDir, "jobs").deleteRecursively()
         val db = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
         val files = FileStore(context)
