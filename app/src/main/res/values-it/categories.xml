@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- What a supplier sells (supplier categories): the tiles, their example words and their notes -->
+    <string name="supcat_label">Categoria</string>
+    <string name="supcat_question">Cosa ti vende soprattutto questo fornitore?</string>
+    <string name="supcat_food">Alimentari</string>
+    <string name="supcat_food_ex">carne, pesce, frutta e verdura, formaggi, pasta</string>
+    <string name="supcat_drinks">Bevande</string>
+    <string name="supcat_drinks_ex">vino, birra, acqua, bibite, caffè</string>
+    <string name="supcat_supplies">Pulizia e monouso</string>
+    <string name="supcat_supplies_ex">detersivi, guanti, pellicola, vaschette</string>
+    <string name="supcat_utilities">Luce, gas, acqua, telefono</string>
+    <string name="supcat_utilities_ex">le bollette</string>
+    <string name="supcat_fuel">Carburante e trasporti</string>
+    <string name="supcat_fuel_ex">gasolio, benzina, trasporti</string>
+    <string name="supcat_equipment">Manutenzione, ferramenta e attrezzature</string>
+    <string name="supcat_equipment_ex">lampadine, attrezzi, riparazioni, macchinari</string>
+    <string name="supcat_other">Altre spese</string>
+    <string name="supcat_other_ex">commercialista, software, lavanderia, affitto</string>
+    <string name="supcat_none">Da classificare</string>
+    <string name="supcat_decide_later">Decidi dopo</string>
+    <string name="supcat_suggested">Suggerito</string>
+    <string name="supcat_chosen_before">Scelto l\'ultima volta</string>
+    <!-- TalkBack: what tapping a supplier's category does -->
+    <string name="supcat_change">Cambia categoria</string>
+    <string name="supcat_scope_all">Per tutte le fatture di questo fornitore</string>
+    <string name="supcat_scope_one">Solo questa fattura</string>
+    <string name="supcat_change_seller_note">Cambia come vengono raggruppate le fatture di questo fornitore e quali righe l\'app ti chiede di collegare. Nessun importo cambia.</string>
+    <string name="supcat_forget">Dimentica la categoria di questo fornitore</string>
+    <!-- A section of a list: the category and how many are in it -->
+    <string name="supcat_section">%1$s (%2$d)</string>
+
+    <!-- Lines of electricity, fuel and other non-food bills, folded on the check screen -->
+    <plurals name="supcat_not_food_lines">
+        <item quantity="one">%d riga: tenuta separata dai prodotti alimentari</item>
+        <item quantity="other">%d righe: tenute separate dai prodotti alimentari</item>
+    </plurals>
+    <string name="supcat_lines_sum_ok">Tornano con il totale ✓</string>
+    <string name="supcat_lines_sum_off">Differiscono dal totale di %1$s</string>
+
+    <!-- Products and Sellers -->
+    <string name="products_not_food">Non alimentari (%1$d)</string>
+    <string name="products_not_food_hint">Comprati solo da fornitori di luce, carburante, manutenzione o altre spese. Tutti i totali li contano come prima.</string>
+    <string name="sellers_filter_all">Tutti</string>
+    <string name="sellers_not_sorted_count">Da classificare (%1$d)</string>
+</resources>
