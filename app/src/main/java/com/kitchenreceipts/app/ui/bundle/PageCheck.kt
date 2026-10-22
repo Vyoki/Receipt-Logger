@@ -46,6 +46,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -54,6 +55,8 @@ import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.components.Annotation
 import com.kitchenreceipts.app.ui.components.BigButton
+import com.kitchenreceipts.app.ui.components.FastScrollbar
+import com.kitchenreceipts.app.ui.components.FastScrollbarDefaults
 import com.kitchenreceipts.app.ui.components.OutlinedButton
 import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.fmtMoney
@@ -77,9 +80,21 @@ internal fun PageCheck(plan: BundlePlan, vm: BundleViewModel, onSeePages: (Int) 
     val firstLook = invoices.indexOfFirst(BundleWizard::needsLook)
     val list = rememberLazyListState(initialFirstVisibleItemIndex = firstLook.coerceAtLeast(0))
     var opened by remember { mutableStateOf(emptySet<Int>()) }
+    // The fast scroller's bubble: each invoice's supplier (its pages when it is none), worked out once per list.
+    val context = LocalContext.current
+    val labels = remember(invoices, context) {
+        invoices.map { inv ->
+            when {
+                !inv.isInvoice -> if (inv.first == inv.last) context.getString(R.string.bundle_page, inv.first + 1)
+                    else context.getString(R.string.bundle_pages, inv.first + 1, inv.last + 1)
+                else -> inv.supplierName ?: context.getString(R.string.bundle_flag_no_supplier)
+            }
+        }
+    }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
         state = list,
-        contentPadding = PaddingValues(16.dp),
+        contentPadding = PaddingValues(start = 16.dp, top = 16.dp, bottom = 16.dp, end = 16.dp + FastScrollbarDefaults.EndGutter),
         verticalArrangement = Arrangement.spacedBy(12.dp),
         modifier = Modifier.fillMaxSize(),
     ) {
@@ -97,6 +112,9 @@ internal fun PageCheck(plan: BundlePlan, vm: BundleViewModel, onSeePages: (Int) 
                 onToggle = { opened = if (inv.first in opened) opened - inv.first else opened + inv.first },
             )
         }
+    }
+    // Item 0 is the heading; item i + 1 is invoice i.
+    FastScrollbar(list, label = { i -> labels.getOrNull(i - 1) ?: labels.firstOrNull() })
     }
 }
 

@@ -2,6 +2,7 @@ package com.kitchenreceipts.app.ui.bundle
 
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -15,6 +16,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import androidx.compose.material.icons.filled.CheckCircle
@@ -30,6 +32,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -43,6 +46,8 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
+import com.kitchenreceipts.app.ui.components.FastScrollbar
+import com.kitchenreceipts.app.ui.components.FastScrollbarDefaults
 import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.fmtMoney
 import com.kitchenreceipts.app.ui.supplierCategoryLabel
@@ -88,10 +93,16 @@ internal fun FileList(
     onRetry: (String) -> Unit,
     head: @Composable () -> Unit,
 ) {
-    val groups = groupsOf(plan, pricesOnly)
+    val groups = remember(plan, pricesOnly) { groupsOf(plan, pricesOnly) }
+    val state = rememberLazyListState()
+    // The fast scroller's bubble: the supplier of each row (its heading, then its invoices), worked out once per list.
+    val noSupplier = stringResource(R.string.bundle_no_supplier)
+    val labels = remember(groups, noSupplier) { groups.flatMap { g -> List(1 + g.invoices.size) { g.name ?: noSupplier } } }
+    Box(Modifier.fillMaxSize()) {
     LazyColumn(
+        state = state,
         modifier = Modifier.fillMaxSize(),
-        contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 32.dp),
+        contentPadding = PaddingValues(start = 16.dp, end = 16.dp + FastScrollbarDefaults.EndGutter, top = 16.dp, bottom = 32.dp),
     ) {
         item("head") {
             Column(verticalArrangement = Arrangement.spacedBy(16.dp), modifier = Modifier.padding(bottom = 16.dp)) { head() }
@@ -106,7 +117,13 @@ internal fun FileList(
         }
         invoiceItems(groups, readingJob, rechecking, onReview, onOpenDocument, onRetry)
     }
+    // Items 0 and 1 are the counts and the list's title.
+    FastScrollbar(state, label = { i -> labels.getOrNull(i - LIST_HEAD) ?: labels.firstOrNull() })
+    }
 }
+
+/** Items before the first supplier in [FileList]: the head and the list's title. */
+private const val LIST_HEAD = 2
 
 private fun LazyListScope.invoiceItems(
     groups: List<SupplierGroup>,
