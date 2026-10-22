@@ -13,7 +13,8 @@ package com.kitchenreceipts.core
  *  5. stop when nothing is left to ask, after [maxQuestions], or when the caller stops (time limit, cancel).
  *
  * The app drives it ([next], then [answer]); no question is asked twice. The answers, in order, are all that is
- * needed to get the same document again ([replay]), e.g. after the app restarts.
+ * needed to get the same document again ([replay] with the same [scope]), e.g. after the app restarts.
+ * [scope] HEADER_TOTALS: only the supplier, header and totals are asked (see [AiScope]).
  */
 class AiLoop(
     private val lines: List<List<OcrLine>>,
@@ -21,6 +22,7 @@ class AiLoop(
     private val options: ParseOptions,
     start: ParsedDocument,
     val maxQuestions: Int = MAX_QUESTIONS,
+    val scope: AiScope = AiScope.ALL,
 ) {
     var doc: ParsedDocument = start
         private set
@@ -45,9 +47,9 @@ class AiLoop(
     /** What is still open, the planner's choice first (what settles most). Empty: nothing more to ask. */
     fun candidates(): List<AiTarget> {
         if (answers.size >= maxQuestions) return emptyList()
-        val planned = AiTargets.plan(lines, doc, spotCheck = true).orEmpty()
+        val planned = AiTargets.plan(lines, doc, spotCheck = true, scope = scope).orEmpty()
         // The last questions are kept for doubts: double-checks of values that look right never use them up.
-        val open = (planned + followUps(planned)).filter { key(it) !in asked }.distinctBy { key(it) }
+        val open = (planned + followUps(planned)).filter { scope.keeps(it) && key(it) !in asked }.distinctBy { key(it) }
             .filter { answers.size < maxQuestions - RESERVED || priority(it) < 6 }
         // A question on the same picture as the last one comes next when it is about that line or its numbers: the
         // picture is already processed (the phone keeps it), and the line is finished before moving on.
@@ -84,7 +86,7 @@ class AiLoop(
     }
 
     /** The same loop at the same point, to try a question without changing this one (to learn which pays most). */
-    fun copy(): AiLoop = AiLoop(lines, text, options, doc, maxQuestions).also { c ->
+    fun copy(): AiLoop = AiLoop(lines, text, options, doc, maxQuestions, scope).also { c ->
         c.answers += answers; c.picks += picks; c.keys += keys; c.asked += asked; c.rowsRead += rowsRead; c.rowAnswers += rowAnswers
         c.lastPicture = lastPicture
     }
@@ -131,14 +133,15 @@ class AiLoop(
          * may plan the questions differently (a supplier now known needs no question, so every later answer would
          * shift by one). An answer whose question is not open any more is left out: nothing is applied to a
          * question it did not answer. Older readings without keys use [picks] (which one was asked each time).
+         * [scope] must be the one the questions were asked with.
          */
         fun replay(
             lines: List<List<OcrLine>>, text: String, options: ParseOptions, start: ParsedDocument, answers: List<String>,
-            picks: List<Int> = emptyList(), keys: List<String> = emptyList(),
+            picks: List<Int> = emptyList(), keys: List<String> = emptyList(), scope: AiScope = AiScope.ALL,
         ): ParsedDocument {
             // The same limit as when the questions were asked (it decides which questions were open), then stop at
             // the last answer.
-            val loop = AiLoop(lines, text, options, start, maxQuestions = maxOf(MAX_QUESTIONS, answers.size))
+            val loop = AiLoop(lines, text, options, start, maxQuestions = maxOf(MAX_QUESTIONS, answers.size), scope = scope)
             for ((i, raw) in answers.withIndex()) {
                 val c = loop.candidates()
                 val k = keys.getOrNull(i)

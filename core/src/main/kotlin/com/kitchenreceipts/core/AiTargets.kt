@@ -76,6 +76,20 @@ sealed interface AiTarget {
     data class Supplier(override val page: Int, override val boxes: List<PageBox>, val boxText: String) : AiTarget
 }
 
+/** Which questions the AI is asked (see [AiTargets.plan] and [AiLoop]). */
+enum class AiScope {
+    /** Every question: lines, missed lines, numbers, supplier, header and totals. */
+    ALL,
+
+    /**
+     * Only the supplier, the header and the totals: for pages whose text is exact (the PDF's own text, agreeing with
+     * the OCR). The lines are still checked by the arithmetic.
+     */
+    HEADER_TOTALS;
+
+    fun keeps(t: AiTarget): Boolean = this == ALL || t is AiTarget.Supplier || t is AiTarget.Header || t is AiTarget.Totals
+}
+
 /**
  * Decides what the AI should look at. Instead of re-reading whole pages (minutes), it is shown only the parts the
  * regular reading could not prove: each line where quantity x price does not give the amount (or the amount is
@@ -124,9 +138,12 @@ object AiTargets {
      * [spotCheck]: the AI also double-checks what was read with confidence, before the operator is involved: the
      * header (supplier, number, date), the totals, and up to 8 lines (quantities worked out by arithmetic first, then
      * the largest amounts). Each is a short question; a value the AI reads differently is highlighted with both.
+     * [scope] HEADER_TOTALS: only the supplier, header and totals questions. Lines read too poorly for small questions
+     * do not stop these, so it returns null only when there are no pages.
      */
-    fun plan(pages: List<List<OcrLine>>, doc: ParsedDocument, spotCheck: Boolean = false): List<AiTarget>? {
-        if (pages.isEmpty() || doc.lineItems.isEmpty()) return null
+    fun plan(pages: List<List<OcrLine>>, doc: ParsedDocument, spotCheck: Boolean = false, scope: AiScope = AiScope.ALL): List<AiTarget>? {
+        val askLines = scope == AiScope.ALL
+        if (pages.isEmpty() || (askLines && doc.lineItems.isEmpty())) return null
         val layouts = pages.map { LayoutRows.layout(it) }
         data class RowInfo(val page: Int, val index: Int, val text: String, val box: PageBox)
         val allRows = mutableListOf<RowInfo>()
@@ -159,7 +176,7 @@ object AiTargets {
         // the table's limits, so there it is limited to the rows between the first and last line found.
         val headless = layouts.indices.filter { headerRows[it] == null }.toSet()
         val tableRows = allRows.filter { inTable(it) || it.page in headless }
-        if (tableRows.isEmpty()) return null
+        if (askLines && tableRows.isEmpty()) return null
 
         // Which row each line of the document came from (best word overlap with its source text), each row used once:
         // ten identical "IMPASTO SALSICCIA" lines are ten rows, not one row and nine "missed" lines.
@@ -179,14 +196,15 @@ object AiTargets {
             best?.takeIf { bestScore >= 0.5 }?.also { taken += it }
         }
         // Too few lines found on the page: the page is not understood well enough for small questions.
-        if (headless.isNotEmpty() && itemRow.count { it != null } < (doc.lineItems.size + 1) / 2) return null
+        if (askLines && headless.isNotEmpty() && itemRow.count { it != null } < (doc.lineItems.size + 1) / 2) return null
         val headlessSpan = headless.associateWith { p ->
             val found = itemRow.filterNotNull().filter { it.page == p }.map { it.index }
             if (found.isEmpty()) IntRange.EMPTY else found.min()..found.max()
         }
         // Quantities worked out as amount / price are proven when every VAT group of the summary adds up: nothing to ask.
         val provenByVat = doc.vatChecks.isNotEmpty() && doc.vatChecks.all { it.ok }
-        val doubtful = doc.lineItems.indices.filter { i ->
+        // HEADER_TOTALS: no line is asked about (none doubtful, none missed).
+        val doubtful = if (!askLines) emptyList() else doc.lineItems.indices.filter { i ->
             val it = doc.lineItems[i]
             if (it.adjustment) return@filter false // a discount or charge: no goods to check
             if (it.nameDoubt) return@filter true // numbers proven or not, the name needs a look
@@ -205,7 +223,7 @@ object AiTargets {
                 row != null && row.page == r.page && kotlin.math.abs(row.index - r.index) == 1 && doc.lineItems[i].lineTotalCents?.value == amount
             }
         }
-        val missed = tableRows.filter { r ->
+        val missed = if (!askLines) emptyList() else tableRows.filter { r ->
             r !in usedRows && (r.page !in headless || r.index in headlessSpan.getValue(r.page)) && r.text.count(Char::isLetter) >= 3 && hasMoney(r.text) &&
                 !ReceiptParser.isNotAnItemRow(r.text) && LotExtractor.scan(r.text).lot == null && !continuation(r)
         }
@@ -316,7 +334,7 @@ object AiTargets {
         }
         if (totalsDoubt || (spotCheck && !totalsProven)) totalsArea()?.let { (p, box) -> targets += AiTarget.Totals(p, listOf(box), verify = !totalsDoubt) }
 
-        if (spotCheck) {
+        if (spotCheck && askLines) {
             val asked = targets.mapNotNull { t ->
                 when (t) { is AiTarget.Row -> t.itemIndex; is AiTarget.Choice -> t.itemIndex; is AiTarget.Number -> t.itemIndex; else -> null }
             }.toSet()
