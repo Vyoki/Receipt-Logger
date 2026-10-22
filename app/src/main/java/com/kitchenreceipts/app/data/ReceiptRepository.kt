@@ -2,6 +2,7 @@ package com.kitchenreceipts.app.data
 
 import androidx.room.withTransaction
 import com.kitchenreceipts.app.files.FileStore
+import com.kitchenreceipts.app.learning.LearningStore
 import com.kitchenreceipts.core.ItemMark
 import com.kitchenreceipts.core.OfficeExport
 import com.kitchenreceipts.app.files.StoredFile
@@ -32,6 +33,8 @@ import com.kitchenreceipts.core.SearchQuery
 import com.kitchenreceipts.core.SellerCandidate
 import com.kitchenreceipts.core.SellerMatch
 import com.kitchenreceipts.core.SellerProfiles
+import com.kitchenreceipts.core.SupplierCategories
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.VatBasis
 import com.kitchenreceipts.core.UnitConversion
 import com.kitchenreceipts.core.ValidDocument
@@ -40,6 +43,9 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.emitAll
+import kotlinx.coroutines.flow.flow
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
@@ -72,9 +78,20 @@ data class SellerLearning(
 /** A supplier recognised on a new scan, with what the app learned about them. */
 data class SellerRecognition(val match: SellerMatch, val usualVatBasis: VatBasis?, val documentCount: Int)
 
+/**
+ * A supplier's remembered category. [known]: remembered under its VAT number. Otherwise it was found by the name alone,
+ * and is only shown as "Chosen last time": never applied without a tap.
+ */
+data class CategoryMatch(val category: SupplierCategory, val known: Boolean)
+
 class ProductNameTakenException(val existing: ProductEntity) : Exception("Product name already exists")
 
-class ReceiptRepository(private val db: AppDatabase, private val files: FileStore) {
+class ReceiptRepository(
+    private val db: AppDatabase,
+    private val files: FileStore,
+    /** Where the suppliers' categories are remembered (null: none are, as in tests that do not need them). */
+    private val learning: LearningStore? = null,
+) {
 
     /**
      * Called when one VAT number appears on documents of two different suppliers: it must be the
@@ -351,6 +368,60 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
     fun sellers() = sellers.all()
     fun sellerStats() = sellers.stats()
 
+    // ------------------------------------------------------------ supplier categories
+    // Where things are shown, and nothing else: no amount, link, product or hold depends on them.
+
+    /** What this supplier sells, as remembered on this phone: by its VAT number (known), else by its name (a suggestion). */
+    suspend fun categoryOf(vat: String?, name: String?): CategoryMatch? = withContext(Dispatchers.IO) {
+        val store = learning ?: return@withContext null
+        val keys = SupplierCategories.memoryKeys(vat, name)
+        keys.firstOrNull { it.startsWith(SupplierCategories.VAT_PREFIX) }?.let(store::supplierCategory)
+            ?.let { return@withContext CategoryMatch(it.category, known = true) }
+        keys.firstOrNull { it.startsWith(SupplierCategories.NAME_PREFIX) }?.let(store::supplierCategory)
+            ?.let { CategoryMatch(it.category, known = false) }
+    }
+
+    /** The operator chose [category] for all of this supplier's invoices: remembered by VAT number and by name code. */
+    suspend fun rememberCategory(vat: String?, name: String?, category: SupplierCategory) = withContext(Dispatchers.IO) {
+        learning?.rememberSupplierCategory(SupplierCategories.memoryKeys(vat, name), category)
+        Unit
+    }
+
+    /** "Forget this supplier's category": both of its keys go. */
+    suspend fun forgetCategory(vat: String?, name: String?) = withContext(Dispatchers.IO) {
+        learning?.forgetSupplierCategory(SupplierCategories.memoryKeys(vat, name))
+        Unit
+    }
+
+    private fun categoryMemory(): Flow<Map<String, LearningStore.RememberedCategory>> =
+        learning?.let { store -> flow { emitAll(store.supplierCategoryMemory) }.flowOn(Dispatchers.IO) } ?: flowOf(emptyMap())
+
+    /**
+     * The category of each saved supplier that has one. By its VAT number, else by its name: a saved supplier is one
+     * name in this app's records, so a choice made for it on Sellers holds without a VAT number too.
+     */
+    fun sellerCategories(): Flow<Map<Long, SupplierCategory>> =
+        combine(sellers.all(), categoryMemory()) { list, memory ->
+            if (memory.isEmpty()) return@combine emptyMap()
+            list.mapNotNull { s ->
+                SupplierCategories.memoryKeys(s.vatNumber, s.name).firstNotNullOfOrNull { memory[it] }?.let { s.id to it.category }
+            }.toMap()
+        }.distinctUntilChanged().flowOn(Dispatchers.Default)
+
+    /** Saved suppliers sorted as no kitchen goods (electricity, fuel, repairs, other expenses). */
+    fun notGoodsSellerIds(): Flow<Set<Long>> = sellerCategories().map { m -> m.filterValues { !it.goods }.keys }.distinctUntilChanged()
+
+    /** [rows] without the ones of suppliers sorted as no kitchen goods. For lists only: every figure still counts them. */
+    fun <T> goodsOnly(rows: Flow<List<T>>, sellerId: (T) -> Long): Flow<List<T>> =
+        combine(rows, notGoodsSellerIds()) { list, out -> if (out.isEmpty()) list else list.filterNot { sellerId(it) in out } }
+
+    /** Products bought only from suppliers sorted as no kitchen goods: listed apart, as "Not food". */
+    fun notFoodProductIds(): Flow<Set<Long>> =
+        combine(documents.productSellers(), notGoodsSellerIds()) { pairs, out ->
+            if (out.isEmpty()) return@combine emptySet()
+            pairs.groupBy({ it.productId }, { it.sellerId }).filterValues { ids -> ids.all { it in out } }.keys
+        }.distinctUntilChanged().flowOn(Dispatchers.Default)
+
     // ------------------------------------------------------------ products
 
     fun products() = products.all()
@@ -453,8 +524,11 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
 
     suspend fun deleteConversion(id: Long) = products.deleteConversion(id)
 
-    /** Unassigned line items grouped by seller + exact description, for bulk assignment. */
-    fun unassignedGroups(): Flow<List<UnassignedGroup>> = products.unassigned().map { rows ->
+    /**
+     * Unassigned line items grouped by seller + exact description, for bulk assignment. Lines of suppliers sorted as no
+     * kitchen goods are not asked about (they stay as they are).
+     */
+    fun unassignedGroups(): Flow<List<UnassignedGroup>> = goodsOnly(products.unassigned()) { it.sellerId }.map { rows ->
         rows.groupBy { it.sellerId to ProductMatching.aliasKey(it.originalDescription) }
             .map { (key, g) -> UnassignedGroup(key.first, g.first().sellerName, g.first().originalDescription, key.second, g.map { it.lineItemId }) }
             .sortedWith(compareByDescending<UnassignedGroup> { it.lineItemIds.size }.thenBy { it.sellerName })

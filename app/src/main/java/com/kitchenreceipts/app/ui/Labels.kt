@@ -1,9 +1,20 @@
 package com.kitchenreceipts.app.ui
 
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.outlined.Bolt
+import androidx.compose.material.icons.outlined.CleaningServices
+import androidx.compose.material.icons.outlined.Handyman
+import androidx.compose.material.icons.outlined.LocalBar
+import androidx.compose.material.icons.outlined.LocalGasStation
+import androidx.compose.material.icons.outlined.Payments
+import androidx.compose.material.icons.outlined.QuestionMark
+import androidx.compose.material.icons.outlined.Restaurant
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.core.Category
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.DuplicateReason
 import com.kitchenreceipts.core.Period
 import com.kitchenreceipts.core.PeriodKind
@@ -102,6 +113,48 @@ fun categoryLabel(c: Category): String = stringResource(
         Category.OTHER -> R.string.cat_other
     },
 )
+
+/** What a supplier sells, in the operator's words; null = "Not sorted yet". */
+@Composable
+fun supplierCategoryLabel(c: SupplierCategory?): String = stringResource(supplierCategoryLabelRes(c))
+
+/** The same label as a resource, for code that is not composable (the fast scroller's bubble). */
+fun supplierCategoryLabelRes(c: SupplierCategory?): Int = when (c) {
+    SupplierCategory.FOOD -> R.string.supcat_food
+    SupplierCategory.DRINKS -> R.string.supcat_drinks
+    SupplierCategory.SUPPLIES -> R.string.supcat_supplies
+    SupplierCategory.UTILITIES -> R.string.supcat_utilities
+    SupplierCategory.FUEL -> R.string.supcat_fuel
+    SupplierCategory.EQUIPMENT -> R.string.supcat_equipment
+    SupplierCategory.OTHER -> R.string.supcat_other
+    null -> R.string.supcat_none
+}
+
+/** Two or three example words under a category's name ("meat, fish, fruit & veg…"). */
+@Composable
+fun supplierCategoryHint(c: SupplierCategory): String = stringResource(
+    when (c) {
+        SupplierCategory.FOOD -> R.string.supcat_food_ex
+        SupplierCategory.DRINKS -> R.string.supcat_drinks_ex
+        SupplierCategory.SUPPLIES -> R.string.supcat_supplies_ex
+        SupplierCategory.UTILITIES -> R.string.supcat_utilities_ex
+        SupplierCategory.FUEL -> R.string.supcat_fuel_ex
+        SupplierCategory.EQUIPMENT -> R.string.supcat_equipment_ex
+        SupplierCategory.OTHER -> R.string.supcat_other_ex
+    },
+)
+
+/** One line-drawn symbol per supplier category (a question mark when not sorted yet). The label says the name. */
+fun supplierCategoryIcon(c: SupplierCategory?): ImageVector = when (c) {
+    SupplierCategory.FOOD -> Icons.Outlined.Restaurant
+    SupplierCategory.DRINKS -> Icons.Outlined.LocalBar
+    SupplierCategory.SUPPLIES -> Icons.Outlined.CleaningServices
+    SupplierCategory.UTILITIES -> Icons.Outlined.Bolt
+    SupplierCategory.FUEL -> Icons.Outlined.LocalGasStation
+    SupplierCategory.EQUIPMENT -> Icons.Outlined.Handyman
+    SupplierCategory.OTHER -> Icons.Outlined.Payments
+    null -> Icons.Outlined.QuestionMark
+}
 
 @Composable
 fun reviewReasonText(r: ReviewReason): String = stringResource(

@@ -34,7 +34,9 @@ class AppContainer(context: Context) {
     /** Documents corrected by hand, kept on the phone to be shared in one go (see ProblemReports). */
     val problems = com.kitchenreceipts.app.diagnostics.ProblemReports(context)
     val pageRenderer = PageRenderer(fileStore)
-    val repository = ReceiptRepository(database, fileStore)
+    /** What the app learned from the operator's choices and confirmed lines, per supplier (phone only). */
+    val learning = LearningStore(context)
+    val repository = ReceiptRepository(database, fileStore, learning)
     /** Delivery notes against invoices, agreed prices, credits owed, expiry dates and lots. */
     val checks = com.kitchenreceipts.app.data.ChecksRepository(database)
     /** Food cost of dishes and months, and the usual order to each supplier. */
@@ -42,8 +44,6 @@ class AppContainer(context: Context) {
     /** Reads documents in the background, at background priority (see ReadingThreads). */
     val importProcessor = ImportProcessor(pageRenderer, com.kitchenreceipts.app.jobs.ReadingThreads.dispatcher)
     val aiModels = AiModelStore(context)
-    /** What the app learned from the operator's choices and confirmed lines, per supplier (phone only). */
-    val learning = LearningStore(context)
     private val nativeLibDir: String = context.applicationInfo.nativeLibraryDir
 
     /** How the AI reader should help with the next import, from the settings and the installed model (null = not at all). */

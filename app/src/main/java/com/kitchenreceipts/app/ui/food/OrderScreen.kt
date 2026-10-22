@@ -50,7 +50,9 @@ import java.time.LocalDate
 @Composable
 fun OrderScreen(onBack: () -> Unit) {
     val c = appContainer()
-    val suppliers by remember { c.food.suppliers() }.collectAsState(initial = null as List<com.kitchenreceipts.app.data.SellerLastRow>?)
+    // Suppliers sorted as electricity, fuel, repairs or other expenses take no usual order: left out of the list.
+    val suppliers by remember { c.repository.goodsOnly(c.food.suppliers()) { it.id } }
+        .collectAsState(initial = null as List<com.kitchenreceipts.app.data.SellerLastRow>?)
     var chosen by remember { mutableStateOf<Pair<Long, String>?>(null) }
 
     val pick = chosen

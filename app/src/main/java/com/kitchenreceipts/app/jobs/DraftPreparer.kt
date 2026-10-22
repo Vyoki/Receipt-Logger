@@ -17,6 +17,8 @@ import com.kitchenreceipts.core.PriceChange
 import com.kitchenreceipts.core.PriceWatch
 import com.kitchenreceipts.core.ReviewReason
 import com.kitchenreceipts.core.SellerMatchReason
+import com.kitchenreceipts.core.SellerProfiles
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.ValidationResult
 import com.kitchenreceipts.core.VatBasis
 import com.kitchenreceipts.core.LineSolver
@@ -35,6 +37,11 @@ data class PreparedDraft(
     val ocrSellerRaw: String?,
     /** The supplier's key in what the app learned (see LearningStore). */
     val supplierKey: String? = null,
+    /**
+     * What the supplier sells, when known by its VAT number (ReceiptRepository.categoryOf); null = not sorted. Only
+     * where things are shown and which notifications go out: no figure depends on it. "Just this invoice" sets it here.
+     */
+    val supplierCategory: SupplierCategory? = null,
 )
 
 /**
@@ -114,7 +121,29 @@ class DraftPreparer(
         val reasons = AutoAccept.reasons(draft, bundleFlags) +
             (if (PriceWatch.unusual(changes).isNotEmpty()) listOf(ReviewReason.UNUSUAL_PRICE) else emptyList())
         logParsed(pending, draft, recognition, reasons, changes)
-        return PreparedDraft(draft, initial, recognition, reasons, changes, ocrSellerRaw, supplierKey)
+        val category = supplierCategory(pending.ocrText, draft.seller.text)
+        return PreparedDraft(draft, initial, recognition, reasons, changes, ocrSellerRaw, supplierKey, category)
+    }
+
+    /** The category remembered under the supplier VAT number printed on [ocrText]; a match by name alone is not used. */
+    suspend fun supplierCategory(ocrText: String, sellerName: String?): SupplierCategory? = runCatching {
+        val vat = SellerProfiles.supplierVatNumber(ocrText, settings.ownVatNumber.ifBlank { null })
+        repo.categoryOf(vat, sellerName)?.takeIf { it.known }?.category
+    }.onFailure { log.error("supplierCategory", it) }.getOrNull()
+
+    /**
+     * The operator chose [category] on the check screen. [forSupplier]: for all of the supplier's invoices, remembered
+     * by the VAT number printed on [ocrText] and the name. Otherwise "Just this invoice": only this draft carries it,
+     * and the memory is not touched.
+     */
+    suspend fun chooseCategory(p: PreparedDraft, ocrText: String, category: SupplierCategory, forSupplier: Boolean): PreparedDraft {
+        if (forSupplier) {
+            runCatching {
+                val vat = SellerProfiles.supplierVatNumber(ocrText, settings.ownVatNumber.ifBlank { null })
+                repo.rememberCategory(vat, p.draft.seller.text, category)
+            }.onFailure { log.error("rememberCategory", it) }
+        }
+        return p.copy(supplierCategory = category)
     }
 
     suspend fun priceChanges(d: DocumentDraft, excludeDocumentId: Long?): List<PriceChange> = runCatching {
@@ -151,6 +180,8 @@ class DraftPreparer(
      */
     suspend fun priceAlerts(savedDocumentId: Long?, p: PreparedDraft): List<PriceChange> {
         if (!settings.priceAlerts) return emptyList()
+        // Electricity, fuel, repairs and other expenses: no price notification (their prices are kept as always).
+        if (p.supplierCategory?.goods == false) return emptyList()
         val changes = if (savedDocumentId != null) {
             runCatching { repo.priceChangesForDocument(savedDocumentId) }.getOrDefault(emptyList())
         } else {

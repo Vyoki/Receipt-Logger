@@ -5,8 +5,11 @@ package com.kitchenreceipts.app.ui.documents
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
@@ -18,6 +21,8 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowDropDown
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.Description
+import androidx.compose.material.icons.filled.PictureAsPdf
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -27,6 +32,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -36,8 +42,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -47,13 +57,18 @@ import com.kitchenreceipts.app.data.DocumentListRow
 import com.kitchenreceipts.app.data.ReceiptRepository
 import com.kitchenreceipts.app.data.SellerEntity
 import com.kitchenreceipts.app.ui.appViewModel
+import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.ui.components.AppScaffold
+import com.kitchenreceipts.app.ui.components.CategoryTag
+import com.kitchenreceipts.app.ui.components.ClickCard
 import com.kitchenreceipts.app.ui.components.EmptyState
 import com.kitchenreceipts.app.ui.components.FastScrollbar
 import com.kitchenreceipts.app.ui.components.FastScrollbarDefaults
 import com.kitchenreceipts.app.ui.fmtDate
+import com.kitchenreceipts.app.ui.fmtMoney
 import com.kitchenreceipts.app.ui.fmtMonth
-import com.kitchenreceipts.app.ui.home.DocumentRow
+import com.kitchenreceipts.app.ui.theme.Palette
+import com.kitchenreceipts.core.SupplierCategory
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -84,6 +99,10 @@ class DocumentsViewModel(private val repo: ReceiptRepository, initialSellerId: L
 
     val sellers: StateFlow<List<SellerEntity>> = repo.sellers().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
+    /** What each supplier sells, for the small label on its documents (read at display time). */
+    val categories: StateFlow<Map<Long, SupplierCategory>> =
+        repo.sellerCategories().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyMap())
+
     val months: StateFlow<List<YearMonth>> = repo.documentDates()
         .map { dates -> dates.map(YearMonth::from).distinct().sortedDescending() }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -98,6 +117,7 @@ fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -
     val results by vm.results.collectAsStateWithLifecycle()
     val sellers by vm.sellers.collectAsStateWithLifecycle()
     val months by vm.months.collectAsStateWithLifecycle()
+    val categories by vm.categories.collectAsStateWithLifecycle()
     var showDate by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
 
@@ -165,7 +185,11 @@ fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -
                 }
                 val rows = results
                 if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_matching_documents)) }
-                items(rows.orEmpty(), key = { it.id }) { row -> Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) { DocumentRow(row) { onOpen(row.id) } } }
+                items(rows.orEmpty(), key = { it.id }) { row ->
+                    Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) {
+                        DocumentListItem(row, categories[row.sellerId]) { onOpen(row.id) }
+                    }
+                }
             }
             FastScrollbar(listState, label = { i -> monthLabel(results, i) })
         }
@@ -186,6 +210,32 @@ fun DocumentsScreen(initialSellerId: Long?, onBack: () -> Unit, onOpen: (Long) -
                 TextButton(onClick = { vm.update { it.copy(date = null) }; showDate = false }) { Text(stringResource(R.string.any_day)) }
             },
         ) { DatePicker(state = state) }
+    }
+}
+
+/** A document in the list, as on Home, with its supplier's category in small letters when it has one. */
+@Composable
+private fun DocumentListItem(row: DocumentListRow, category: SupplierCategory?, onClick: () -> Unit) {
+    ClickCard(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                if (row.mimeType == FileStore.MIME_PDF) Icons.Filled.PictureAsPdf else Icons.Filled.Description,
+                contentDescription = null,
+                tint = Palette.PhthaloBright,
+            )
+            Spacer(Modifier.size(12.dp))
+            Column(Modifier.weight(1f)) {
+                Text(row.sellerName, style = MaterialTheme.typography.titleMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                val details = buildList {
+                    add(fmtDate(row.documentDate))
+                    row.documentNumber?.let { add("n. $it") }
+                    add(pluralStringResource(R.plurals.item_count, row.itemCount, row.itemCount))
+                }.joinToString(" · ")
+                Text(details, style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                category?.let { CategoryTag(it, Modifier.padding(top = 2.dp)) }
+            }
+            Text(fmtMoney(row.totalCents, row.currency), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+        }
     }
 }
 
