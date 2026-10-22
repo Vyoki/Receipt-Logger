@@ -311,6 +311,50 @@ class ScreenshotTest {
         }
     }
 
+    /**
+     * The check screen of long and non-food documents (invented data), in English and in Italian: the 60-line invoice
+     * with its jump chips and fast scroller (its lines opened, then the bubble while dragging), and the electricity
+     * bill with its lines folded into one row. Named to run after scrollScreens, so its lists stay as they were.
+     */
+    @Test fun sortedReviewScreens() {
+        seed()
+        val longId = seedLong()
+        seedUtilityBill()
+        val repo = app.container.repository
+        val billId = runBlocking { repo.searchDocuments("", null, null, null).first().first { it.sellerName == UTILITY_SELLER }.id }
+        val settings = app.container.settings
+        val language = settings.language
+        try {
+            runBlocking { repo.rememberCategory(UTILITY_VAT, UTILITY_SELLER, SupplierCategory.UTILITIES) }
+            for ((lang, tag) in listOf(AppSettings.Language.ENGLISH to "en", AppSettings.Language.ITALIAN to "it")) {
+                settings.language = lang
+                ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                    var desc = ""
+                    var fine = ""
+                    scenario.onActivity {
+                        desc = it.getString(R.string.scrollbar_desc)
+                        fine = it.resources.getQuantityString(R.plurals.lines_check_out, 60, 60)
+                    }
+                    app.container.pendingRoute.value = "edit/$longId"
+                    Thread.sleep(1500)
+                    // The 60 lines check out, so they start folded into one row: opened, the list is long.
+                    clickTextIn(fine)
+                    shot("36-review-long-$tag")
+                    dragThumb(desc) { shot("37-review-long-drag-$tag") }
+                    app.container.pendingRoute.value = "home"
+                    Thread.sleep(500)
+                    app.container.pendingRoute.value = "edit/$billId"
+                    shot("38-review-not-food-$tag")
+                    app.container.pendingRoute.value = "home"
+                    Thread.sleep(500)
+                }
+            }
+        } finally {
+            settings.language = language
+            runBlocking { repo.forgetCategory(UTILITY_VAT, UTILITY_SELLER) }
+        }
+    }
+
     /** An invented electricity bill with one product line: the supplier's product is "Not food" once it is sorted. */
     private fun seedUtilityBill() = runBlocking {
         val repo = app.container.repository
@@ -403,6 +447,20 @@ class ScreenshotTest {
             inst.uiAutomation.rootInActiveWindow?.let { root -> findNode(root) { n -> n.isClickable && n.text?.toString() == text } }
                 ?: run { Thread.sleep(300); null }
         } ?: return false
+        return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+    }
+
+    /**
+     * Taps what holds the text [text] (the nearest tappable row or button around it), as TalkBack would. False when
+     * the text is not shown.
+     */
+    private fun clickTextIn(text: String): Boolean {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        var node = (1..10).firstNotNullOfOrNull {
+            inst.uiAutomation.rootInActiveWindow?.let { root -> findNode(root) { n -> n.text?.toString() == text } }
+                ?: run { Thread.sleep(300); null }
+        } ?: return false
+        while (!node.isClickable) node = node.parent ?: return false
         return node.performAction(AccessibilityNodeInfo.ACTION_CLICK)
     }
 
