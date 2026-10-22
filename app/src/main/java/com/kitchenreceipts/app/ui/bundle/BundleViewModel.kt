@@ -1,6 +1,7 @@
 package com.kitchenreceipts.app.ui.bundle
 
 import android.graphics.Bitmap
+import android.os.SystemClock
 import android.util.LruCache
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -57,6 +58,8 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
 
     /** The supplier shown in the Suppliers step; null = the first one not sorted yet. Not saved: coming back starts there. */
     private val supplierAt = MutableStateFlow<Int?>(null)
+    /** When the wizard last moved (uptime millis): see [settled]. */
+    private var movedAt = 0L
     private val error = MutableStateFlow<Int?>(null)
 
     data class State(
@@ -135,16 +138,33 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
 
     private fun step(to: BundleWizard.Step) = change { update(planId) { if (it.status == BundleStatus.SORTING) it.copy(step = to) else it } }
 
+    /**
+     * True when the wizard may move on now. A double tap (a wet finger) would otherwise also hit what slid into the
+     * same place: the next supplier's category, or the next step's button ("Read 173 invoices"). So right after a
+     * move, the screen settles first and a second tap does nothing.
+     */
+    private fun settled(): Boolean {
+        val now = SystemClock.uptimeMillis()
+        if (now - movedAt < SETTLE_MS) return false
+        movedAt = now
+        return true
+    }
+
     /** From the first step: the suppliers to sort, or straight to Read when there is none. */
     fun next() {
         val plan = state.value.plan ?: return
+        if (!settled()) return
         supplierAt.value = null
         step(if (BundleWizard.toSort(plan).isNotEmpty()) BundleWizard.Step.SUPPLIERS else BundleWizard.Step.READ)
     }
 
-    fun openPages() = step(BundleWizard.Step.PAGES)
+    fun openPages() {
+        if (settled()) step(BundleWizard.Step.PAGES)
+    }
 
-    fun toRead() = step(BundleWizard.Step.READ)
+    fun toRead() {
+        if (settled()) step(BundleWizard.Step.READ)
+    }
 
     /**
      * One step back inside the wizard (a supplier back, the page check back to the first step). False when there is
@@ -152,7 +172,10 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
      */
     fun back(): Boolean {
         val plan = state.value.plan ?: return false
-        when (val p = state.value.page) {
+        val page = state.value.page
+        if (page != BundlePage.Pages && page !is BundlePage.Supplier && page != BundlePage.Read) return false
+        if (!settled()) return true
+        when (val p = page) {
             BundlePage.Pages -> step(BundleWizard.Step.FOUND)
             is BundlePage.Supplier -> if (p.at > 0) supplierAt.value = p.at - 1 else step(BundleWizard.Step.FOUND)
             BundlePage.Read -> {
@@ -183,6 +206,7 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
     private fun choose(f: (BundlePlan) -> BundlePlan) {
         val plan = state.value.plan ?: return
         val at = (state.value.page as? BundlePage.Supplier)?.at ?: return
+        if (!settled()) return
         val last = at + 1 >= BundleWizard.newSuppliers(plan).size
         if (!last) supplierAt.value = at + 1
         change { update(planId) { p -> f(p).let { if (last) it.copy(step = BundleWizard.Step.READ) else it } } }
@@ -191,6 +215,7 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
     /** "Use the suggestion for N suppliers": then the first supplier still to sort, or Read when none is left. */
     fun useSuggestions() {
         val plan = state.value.plan ?: return
+        if (!settled()) return
         val after = BundleWizard.useSuggestions(plan)
         val first = BundleWizard.newSuppliers(after).indexOfFirst { it.include && it.category == null }
         if (first >= 0) supplierAt.value = first
@@ -204,16 +229,24 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
         }
     }
 
-    fun setIncluded(index: Int, include: Boolean) = change { update(planId) { BundleWizard.setInvoiceIncluded(it, index, include) } }
+    /** Tick or untick the invoice that starts on page [first] (by page: the list may have changed meanwhile). */
+    fun setIncluded(first: Int, include: Boolean) = onInvoice(first) { p, i -> BundleWizard.setInvoiceIncluded(p, i, include) }
 
-    fun keep(index: Int) = change { update(planId) { BundleWizard.keep(it, index) } }
+    /** "This invoice is right": the invoice that starts on page [first] needs no more look. */
+    fun keep(first: Int) = onInvoice(first) { p, i -> BundleWizard.keep(p, i) }
 
-    fun join(index: Int) = change { join(planId, index) }
+    private fun onInvoice(first: Int, f: (BundlePlan, Int) -> BundlePlan) = change {
+        update(planId) { p -> p.invoices.indexOfFirst { it.first == first }.let { i -> if (i < 0) p else f(p, i) } }
+    }
+
+    /** "These pages belong to the invoice before", for the invoice that starts on page [first]. */
+    fun join(first: Int) = change { join(planId, first) }
 
     fun split(page: Int) = change { splitAt(planId, page) }
 
     /** Read: the invoices are cut out of the file and queued (a few seconds), then read in the background. */
     fun read() {
+        if (!settled()) return
         error.value = null
         c.appScope.launch {
             runCatching {
@@ -291,6 +324,8 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
 
     companion object {
         const val THUMB_WIDTH = 300
+        /** About the time the next supplier takes to slide in. */
+        private const val SETTLE_MS = 600L
         private const val THUMB_CACHE_BYTES = 24 * 1024 * 1024
     }
 }

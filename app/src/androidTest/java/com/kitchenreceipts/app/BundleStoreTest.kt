@@ -156,6 +156,25 @@ class BundleStoreTest {
         assertEquals(p, again)
     }
 
+    /** The page check: joining by page twice joins once (the list changed under the second tap); a split undoes it. */
+    @Test fun joinAndSplitGoByPage() = runBlocking {
+        val id = (intake.take(pdf("bundle-join.pdf", invoices(3)), "test") as Intake.Bundle).planId
+        val second = store.plan(id)!!.invoices.filter { it.isInvoice }[1].first
+        store.join(id, second)
+        val joined = store.plan(id)!!
+        assertEquals(2, joined.invoices.count { it.isInvoice })
+        assertTrue(joined.invoices.none { it.first == second })
+        // The same tap again: no invoice starts there any more, nothing changes.
+        store.join(id, second)
+        assertEquals(joined, store.plan(id))
+        store.splitAt(id, second)
+        val split = store.plan(id)!!
+        assertEquals(3, split.invoices.count { it.isInvoice })
+        assertTrue(split.invoices.any { it.first == second })
+        store.flush()
+        assertEquals(split, newStore().plan(id))
+    }
+
     @Test fun aPdfOfOneInvoiceIsQueuedAsToday() = runBlocking {
         val r = intake.take(pdf("bundle-1.pdf", listOf(TestPdfs.invoicePage(1, ends = false), TestPdfs.lastPage())), "test")
         assertEquals(Intake.Queued(1), r)

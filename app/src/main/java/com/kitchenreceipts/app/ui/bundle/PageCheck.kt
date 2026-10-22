@@ -143,7 +143,7 @@ private fun InvoiceCard(
                     }
                 }
                 if (index > 0) {
-                    OutlinedButton(onClick = { vm.join(index) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
+                    OutlinedButton(onClick = { vm.join(inv.first) }, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp)) {
                         Text(stringResource(R.string.bundle_belongs_before), textAlign = TextAlign.Center)
                     }
                 }
@@ -151,7 +151,7 @@ private fun InvoiceCard(
                 if (!inv.creditNote) {
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 56.dp)
-                            .toggleable(value = inv.include, role = Role.Checkbox, onValueChange = { vm.setIncluded(index, it) }),
+                            .toggleable(value = inv.include, role = Role.Checkbox, onValueChange = { vm.setIncluded(inv.first, it) }),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Checkbox(checked = inv.include, onCheckedChange = null)
@@ -159,7 +159,7 @@ private fun InvoiceCard(
                         Text(stringResource(R.string.bundle_include), style = MaterialTheme.typography.bodyLarge)
                     }
                 }
-                if (look) BigButton(stringResource(R.string.bundle_looks_right), null, onClick = { vm.keep(index) }, primary = false)
+                if (look) BigButton(stringResource(R.string.bundle_looks_right), null, onClick = { vm.keep(inv.first) }, primary = false)
                 TextButton(onClick = { onSeePages(inv.first) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.bundle_see_pages)) }
             }
         }

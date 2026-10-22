@@ -379,11 +379,15 @@ class BundleStore(
     }
 
     /**
-     * "These pages belong to the invoice before" ([index] joins the invoice before it) and "A new invoice starts here"
-     * ([page] opens a new invoice): the invoices around are worked out again from the pages, and checked again against
-     * the documents already saved.
+     * "These pages belong to the invoice before" (the invoice that starts on page [first] joins the one before it) and
+     * "A new invoice starts here" ([page] opens a new invoice): the invoices around are worked out again from the
+     * pages, and checked again against the documents already saved. By page, not by place in the list: a second tap
+     * after the list changed does nothing.
      */
-    suspend fun join(id: String, index: Int): BundlePlan? = replan(id) { BundleWizard.joinWithPrevious(it, index, ownVat(), memory()) }
+    suspend fun join(id: String, first: Int): BundlePlan? = replan(id) { p ->
+        val index = p.invoices.indexOfFirst { it.first == first }
+        if (index <= 0) p else BundleWizard.joinWithPrevious(p, index, ownVat(), memory())
+    }
 
     suspend fun splitAt(id: String, page: Int): BundlePlan? = replan(id) { BundleWizard.splitAt(it, page, ownVat(), memory()) }
 

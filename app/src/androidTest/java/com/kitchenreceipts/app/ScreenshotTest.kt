@@ -130,8 +130,9 @@ class ScreenshotTest {
     }
 
     /**
-     * The import of a file of many invoices at its three steps (what the file holds, a new supplier, Read), in English
-     * and in Italian. Invented e-invoices only: ABC S.r.l. and VERDE FRESCO S.p.A., dates in 2031. Cancelled after.
+     * The import of a file of many invoices at its three steps (what the file holds, a new supplier, Read), and the
+     * page bar of a long file's viewer, in English and in Italian. Invented e-invoices only: ABC S.r.l. and VERDE
+     * FRESCO S.p.A., dates in 2031; the long file is TestPdfs' invented pages. Both imports are cancelled after.
      */
     @Test fun wizardScreens() {
         val store = app.container.bundleStore
@@ -146,6 +147,10 @@ class ScreenshotTest {
             entry("ABC S.r.l.", "01234567897", 107, 26, null, food) +
             entry("VERDE FRESCO S.p.A.", "09876543217", 31, 5, 18_814, power) +
             entry("VERDE FRESCO S.p.A.", "09876543217", 32, 28, 2_200, power, credit = true)
+        // A long file the app only reads as one document: its plan opens the viewer on the file.
+        val longSha = "6d".repeat(32)
+        val longPdf = TestPdfs.write(File(app.filesDir, "documents/screens-long.pdf").apply { parentFile?.mkdirs() }, 40)
+        runBlocking { store.notSplittable(StoredFile("documents/${longPdf.name}", "application/pdf", 40, longSha)) }
         try {
             for ((lang, tag) in listOf(AppSettings.Language.ENGLISH to "en", AppSettings.Language.ITALIAN to "it")) {
                 settings.language = lang
@@ -162,11 +167,19 @@ class ScreenshotTest {
                     shot("32-bundle-read-$tag")
                     app.container.pendingRoute.value = "home"
                     Thread.sleep(500)
+                    // The page bar of a long file (40 invented pages), at page 13.
+                    app.container.pendingRoute.value = "viewer/-1?bundle=$longSha&page=12"
+                    shot("33-viewer-pages-$tag")
+                    app.container.pendingRoute.value = "home"
+                    Thread.sleep(500)
                 }
             }
         } finally {
             settings.language = language
-            runBlocking { store.cancel(sha) }
+            runBlocking {
+                store.cancel(sha)
+                store.cancel(longSha)
+            }
         }
     }
 }

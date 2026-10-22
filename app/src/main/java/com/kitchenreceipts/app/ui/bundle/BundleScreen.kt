@@ -462,12 +462,13 @@ private fun Reading(plan: BundlePlan, onReview: (String) -> Unit, onHome: () -> 
     LinearProgressIndicator(progress = { if (n.total <= 0) 1f else n.read.toFloat() / n.total }, modifier = Modifier.fillMaxWidth())
     Text(stringResource(R.string.bundle_card_progress, n.read, n.total), style = MaterialTheme.typography.titleMedium)
     if (plan.status == BundleStatus.PAUSED) Annotation(stringResource(R.string.bundle_paused))
+    // Greyed until the first invoice to check has been read; it lights up by itself.
     val next = BundleWizard.nextToCheck(plan)?.let { plan.invoices[it].jobId }
-    if (n.toCheck > 0 && next != null) {
-        BigButton(stringResource(R.string.bundle_check_next), null, onClick = { onReview(next) })
+    BigButton(stringResource(R.string.bundle_check_next), null, onClick = { next?.let(onReview) }, enabled = next != null)
+    if (n.toCheck > 0) {
         Text(pluralStringResource(R.plurals.bundle_card_to_check, n.toCheck, n.toCheck), style = MaterialTheme.typography.bodyMedium, color = Palette.Orange)
     }
-    BigButton(stringResource(R.string.bundle_home), null, onClick = onHome, primary = n.toCheck == 0 || next == null)
+    BigButton(stringResource(R.string.bundle_home), null, onClick = onHome, primary = false)
     if (BundleWizard.unsavedJobs(plan).isNotEmpty()) {
         TextButton(onClick = onStop, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.bundle_stop_reading)) }
     }
