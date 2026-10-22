@@ -81,4 +81,145 @@
     </plurals>
     <string name="bundle_title">Fatture da un file</string>
     <string name="bundle_file_missing">Il file non è più su questo telefono, quindi questa importazione è stata chiusa. Niente di già salvato viene modificato.</string>
+    <!-- I passi della procedura: sotto la barra in alto -->
+    <string name="bundle_step">Passo %1$d di %2$d · %3$s</string>
+    <string name="bundle_step_found">Contenuto</string>
+    <string name="bundle_step_suppliers">Fornitori</string>
+    <string name="bundle_step_read">Lettura</string>
+    <!-- Passo 1: cosa contiene il file -->
+    <plurals name="bundle_other_buyer">
+        <item quantity="one">%d intestata a un\'altra azienda: esclusa</item>
+        <item quantity="other">%d intestate a un\'altra azienda: escluse</item>
+    </plurals>
+    <plurals name="bundle_unknown_pages">
+        <item quantity="one">%d pagina non è una fattura riconosciuta</item>
+        <item quantity="other">%d pagine non sono fatture riconosciute</item>
+    </plurals>
+    <string name="bundle_unknown_read_one">Leggi come un solo documento</string>
+    <string name="bundle_unknown_leave">Escludi</string>
+    <plurals name="bundle_need_look">
+        <item quantity="one">%d da controllare</item>
+        <item quantity="other">%d da controllare</item>
+    </plurals>
+    <string name="bundle_same_file_saved">Questo stesso file è stato salvato il %1$s come un unico documento (%2$d righe). Rileggerlo conta quelle fatture due volte. Chiedi al titolare cosa fare del vecchio documento.</string>
+    <string name="bundle_open_old">Apri il vecchio documento</string>
+    <plurals name="bundle_next_sort">
+        <item quantity="one">Avanti: classifica %d nuovo fornitore</item>
+        <item quantity="other">Avanti: classifica %d nuovi fornitori</item>
+    </plurals>
+    <string name="bundle_next_read">Avanti: lettura</string>
+    <!-- Dove inizia ogni fattura: le immagini delle pagine, unire o dividere fatture -->
+    <string name="bundle_check_starts">Controlla dove inizia ogni fattura</string>
+    <string name="bundle_belongs_before">Queste pagine fanno parte della fattura precedente</string>
+    <string name="bundle_new_starts_here">Qui inizia una nuova fattura</string>
+    <string name="bundle_flag_no_total">Nessun “Totale documento”: potrebbero mancare pagine</string>
+    <string name="bundle_flag_several">Sembrano più fatture sulle stesse pagine: esclusa se non la selezioni</string>
+    <string name="bundle_flag_long">Fattura lunga: verranno lette solo le prime 20 pagine su %1$d</string>
+    <string name="bundle_flag_no_supplier">Fornitore non trovato nella pagina</string>
+    <string name="bundle_flag_start_unsure">Non è sicuro che la fattura inizi qui</string>
+    <string name="bundle_maybe_saved">Forse già salvata</string>
+    <string name="tag_already_saved">Già salvata</string>
+    <string name="tag_left_out">Esclusa</string>
+    <string name="tag_credit_note">Nota di credito: non importata</string>
+    <string name="bundle_not_found">non trovato</string>
+    <string name="bundle_pages">Pagine %1$d–%2$d</string>
+    <string name="bundle_page">Pagina %1$d</string>
+    <string name="bundle_see_pages">Vedi pagine</string>
+    <string name="bundle_looks_right">Questa fattura è giusta</string>
+    <string name="bundle_include">Leggi questa fattura</string>
+    <!-- Passo 2: una schermata per ogni nuovo fornitore -->
+    <string name="bundle_supplier_of">Fornitore %1$d di %2$d</string>
+    <string name="bundle_vat">P.IVA %1$s</string>
+    <string name="bundle_supplier_line">%1$s · %2$s · %3$s</string>
+    <string name="bundle_as_printed">%1$s come stampato</string>
+    <plurals name="bundle_plus_not_found">
+        <item quantity="one">%1$s + %2$d non trovato</item>
+        <item quantity="other">%1$s + %2$d non trovati</item>
+    </plurals>
+    <plurals name="bundle_credit_sum">
+        <item quantity="one">%1$d nota di credito: %2$s</item>
+        <item quantity="other">%1$d note di credito: %2$s</item>
+    </plurals>
+    <string name="bundle_question">Cosa ti vende soprattutto questo fornitore?</string>
+    <string name="bundle_suggested">Suggerito</string>
+    <string name="bundle_chosen_before">Scelto l\'ultima volta</string>
+    <plurals name="bundle_use_suggestions">
+        <item quantity="one">Usa il suggerimento per %d fornitore</item>
+        <item quantity="other">Usa il suggerimento per %d fornitori</item>
+    </plurals>
+    <string name="bundle_leave_out_supplier">Escludi queste fatture</string>
+    <string name="bundle_remember_line">Le tue scelte vengono ricordate su questo telefono per i prossimi file.</string>
+    <plurals name="bundle_known_sorted">
+        <item quantity="one">%d fornitore già classificato ✓</item>
+        <item quantity="other">%d fornitori già classificati ✓</item>
+    </plurals>
+    <plurals name="bundle_next_later">
+        <item quantity="one">Avanti: %d da decidere dopo</item>
+        <item quantity="other">Avanti: %d da decidere dopo</item>
+    </plurals>
+    <string name="bundle_decide_later">Decidi dopo</string>
+    <!-- Le categorie dei fornitori nell'elenco semplice del passo Fornitori (finché non arrivano i riquadri) -->
+    <string name="bundle_cat_food">Alimentari</string>
+    <string name="bundle_cat_drinks">Bevande</string>
+    <string name="bundle_cat_supplies">Pulizia e monouso</string>
+    <string name="bundle_cat_utilities">Luce, gas, acqua, telefono</string>
+    <string name="bundle_cat_fuel">Carburante e trasporti</string>
+    <string name="bundle_cat_equipment">Manutenzione, ferramenta e attrezzature</string>
+    <string name="bundle_cat_other">Altre spese</string>
+    <string name="bundle_cat_none">Da classificare</string>
+    <!-- Passo 3: cosa viene letto e quanto tempo ci vuole -->
+    <string name="bundle_read_summary_title">Pronto per la lettura</string>
+    <plurals name="bundle_left_out">
+        <item quantity="one">%d esclusa</item>
+        <item quantity="other">%d escluse</item>
+    </plurals>
+    <plurals name="bundle_estimate_checks">
+        <item quantity="one">Almeno %d da controllare da te</item>
+        <item quantity="other">Almeno %d da controllare da te</item>
+    </plurals>
+    <plurals name="bundle_est_new_suppliers">
+        <item quantity="one">%d nuovo fornitore: la sua prima fattura viene letta per prima</item>
+        <item quantity="other">%d nuovi fornitori: la loro prima fattura viene letta per prima</item>
+    </plurals>
+    <plurals name="bundle_est_bills">
+        <item quantity="one">%d bolletta o fattura di carburante</item>
+        <item quantity="other">%d bollette o fatture di carburante</item>
+    </plurals>
+    <plurals name="bundle_est_flagged">
+        <item quantity="one">%d segnata “da controllare”</item>
+        <item quantity="other">%d segnate “da controllare”</item>
+    </plurals>
+    <string name="bundle_estimate_rest">Le altre vengono salvate dall\'app quando ogni valore torna.</string>
+    <string name="bundle_time">Circa %1$s</string>
+    <string name="bundle_duration_min">%1$d min</string>
+    <string name="bundle_duration_h_min">%1$d h %2$d min</string>
+    <string name="bundle_charge">Collega il caricatore: la lettura richiede un po\' di tempo.</string>
+    <string name="bundle_done_line">%1$s: %2$d</string>
+    <!-- In lettura, e completato -->
+    <string name="bundle_check_next">Controlla la prossima fattura</string>
+    <string name="bundle_stop_reading">Interrompi la lettura di questo file</string>
+    <string name="bundle_stop_reading_title">Interrompere la lettura di questo file?</string>
+    <string name="bundle_stop_reading_body">Le fatture già salvate restano come sono. Quelle non ancora lette non vengono lette ora: apri questo file più tardi per leggerle.</string>
+    <plurals name="bundle_stop_reading_confirm">
+        <item quantity="one">Interrompi: %d non ancora letta</item>
+        <item quantity="other">Interrompi: %d non ancora lette</item>
+    </plurals>
+    <string name="bundle_keep_reading">Continua a leggere</string>
+    <plurals name="bundle_read_rest">
+        <item quantity="one">Leggi la %d non ancora letta</item>
+        <item quantity="other">Leggi le %d non ancora lette</item>
+    </plurals>
+    <string name="notif_bundle_done">Fatture lette: %1$d · Salvate: %2$d · Da controllare: %3$d · Non leggibili: %4$d</string>
+    <!-- Uscire dalla procedura al primo passo -->
+    <string name="bundle_leave_title">Uscire dall\'importazione?</string>
+    <string name="bundle_leave_body">Le tue scelte restano. Puoi continuare quando vuoi dalla schermata iniziale.</string>
+    <string name="bundle_leave_later">Continua dopo</string>
+    <!-- Il visore delle pagine di un file lungo: barra delle pagine e Vai alla pagina -->
+    <string name="scroll_page">pag. %1$d</string>
+    <string name="viewer_go_to_page">Vai alla pagina</string>
+    <string name="viewer_page_number">Numero di pagina (1–%1$d)</string>
+    <string name="viewer_page_out_of_range">Scegli una pagina da 1 a %1$d</string>
+    <string name="viewer_prev">Pagina precedente</string>
+    <string name="viewer_next">Pagina successiva</string>
+    <string name="viewer_go">Vai</string>
 </resources>

@@ -352,6 +352,10 @@ class ImportQueue(
                 "ms" to (System.currentTimeMillis() - t0), "ocrLines" to pending.rawLines.sumOf { it.size },
                 "ocrError" to pending.ocrError, "reading" to pending.readingNote, "ai" to pending.aiNote,
             )
+            // How long reading takes on this phone, for the estimate before a file of many invoices is read.
+            if (j.file.mimeType != FileStore.MIME_XML) {
+                runCatching { ReadingTime.record(settings, pending.pagesRead, System.currentTimeMillis() - t0, ai != null) }
+            }
             val prepared = preparer.prepare(pending, j.flags)
             val d = prepared.draft
             // Discarded while it was being read: nothing is saved.

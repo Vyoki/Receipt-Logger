@@ -33,7 +33,8 @@ object Routes {
     const val DOCUMENTS = "documents?sellerId={sellerId}"
     const val DOCUMENT = "document/{id}?auto={auto}"
     const val INVENTORY = "inventory"
-    const val VIEWER = "viewer/{id}?job={job}" // id = -1: a document being read ([job]), not saved yet
+    /** id = -1: a document being read ([job]), not saved yet, or the file of an import of many invoices ([bundle]); [page] from 0. */
+    const val VIEWER = "viewer/{id}?job={job}&bundle={bundle}&page={page}"
     const val PRODUCTS = "products"
     const val PRODUCT = "product/{id}"
     const val FAMILY = "family/{id}"
@@ -57,6 +58,7 @@ object Routes {
     fun document(id: Long, auto: Boolean = false) = if (auto) "document/$id?auto=true" else "document/$id"
     fun viewer(id: Long) = "viewer/$id"
     fun viewerForJob(jobId: String) = "viewer/-1?job=$jobId"
+    fun viewerForBundle(planId: String, page: Int) = "viewer/-1?bundle=$planId&page=$page"
     fun review(jobId: String) = "review/$jobId"
     fun product(id: Long) = "product/$id"
     fun family(id: Long) = "family/$id"
@@ -154,11 +156,14 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             )
         }
         composable(Routes.BUNDLE, arguments = listOf(navArgument("id") { type = NavType.StringType })) { entry ->
+            val planId = entry.arguments!!.getString("id")!!
             com.kitchenreceipts.app.ui.bundle.BundleScreen(
-                planId = entry.arguments!!.getString("id")!!,
+                planId = planId,
                 onBack = back,
                 onHome = { if (!nav.popBackStack(Routes.HOME, inclusive = false)) nav.navigate(Routes.HOME) },
                 onReview = { go(Routes.review(it)) },
+                onOpenDocument = { go(Routes.document(it)) },
+                onSeePages = { page -> go(Routes.viewerForBundle(planId, page)) },
             )
         }
         composable(Routes.REVIEW_NEW, arguments = listOf(navArgument("jobId") { type = NavType.StringType })) { entry ->
@@ -214,9 +219,18 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
             arguments = listOf(
                 navArgument("id") { type = NavType.LongType },
                 navArgument("job") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("bundle") { type = NavType.StringType; nullable = true; defaultValue = null },
+                navArgument("page") { type = NavType.IntType; defaultValue = 0 },
             ),
         ) { entry ->
-            ViewerScreen(documentId = entry.arguments!!.getLong("id").takeIf { it > 0 }, jobId = entry.arguments!!.getString("job"), onBack = back)
+            val args = entry.arguments!!
+            ViewerScreen(
+                documentId = args.getLong("id").takeIf { it > 0 },
+                jobId = args.getString("job"),
+                bundleId = args.getString("bundle"),
+                initialPage = args.getInt("page"),
+                onBack = back,
+            )
         }
         composable(Routes.PRODUCTS) {
             ProductsScreen(onBack = back, onOpen = { go(Routes.product(it)) }, onOpenFamily = { go(Routes.family(it)) })

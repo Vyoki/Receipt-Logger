@@ -81,4 +81,145 @@
     </plurals>
     <string name="bundle_title">Invoices from a file</string>
     <string name="bundle_file_missing">The file is no longer on this phone, so this import was closed. Nothing already saved changes.</string>
+    <!-- The wizard's steps: shown under the top bar -->
+    <string name="bundle_step">Step %1$d of %2$d · %3$s</string>
+    <string name="bundle_step_found">What\'s inside</string>
+    <string name="bundle_step_suppliers">Suppliers</string>
+    <string name="bundle_step_read">Read</string>
+    <!-- Step 1: what the file holds -->
+    <plurals name="bundle_other_buyer">
+        <item quantity="one">%d addressed to another business: left out</item>
+        <item quantity="other">%d addressed to another business: left out</item>
+    </plurals>
+    <plurals name="bundle_unknown_pages">
+        <item quantity="one">%d page is not an invoice the app recognises</item>
+        <item quantity="other">%d pages are not invoices the app recognises</item>
+    </plurals>
+    <string name="bundle_unknown_read_one">Read as one document</string>
+    <string name="bundle_unknown_leave">Leave out</string>
+    <plurals name="bundle_need_look">
+        <item quantity="one">%d needs a look</item>
+        <item quantity="other">%d need a look</item>
+    </plurals>
+    <string name="bundle_same_file_saved">This same file was saved on %1$s as one document (%2$d lines). Reading it again counts those invoices twice. Ask the owner what to do with the old document.</string>
+    <string name="bundle_open_old">Open the old document</string>
+    <plurals name="bundle_next_sort">
+        <item quantity="one">Next: sort %d new supplier</item>
+        <item quantity="other">Next: sort %d new suppliers</item>
+    </plurals>
+    <string name="bundle_next_read">Next: read</string>
+    <!-- Where each invoice starts: the page pictures, and joining or splitting invoices -->
+    <string name="bundle_check_starts">Check where each invoice starts</string>
+    <string name="bundle_belongs_before">These pages belong to the invoice before</string>
+    <string name="bundle_new_starts_here">A new invoice starts here</string>
+    <string name="bundle_flag_no_total">No “Totale documento” found: pages may be missing</string>
+    <string name="bundle_flag_several">Looks like more than one invoice on the same pages: left out unless you tick it</string>
+    <string name="bundle_flag_long">Long invoice: only the first 20 of %1$d pages will be read</string>
+    <string name="bundle_flag_no_supplier">Supplier not found on the page</string>
+    <string name="bundle_flag_start_unsure">Not sure this is where the invoice starts</string>
+    <string name="bundle_maybe_saved">Maybe already saved</string>
+    <string name="tag_already_saved">Already saved</string>
+    <string name="tag_left_out">Left out</string>
+    <string name="tag_credit_note">Credit note: not imported</string>
+    <string name="bundle_not_found">not found</string>
+    <string name="bundle_pages">Pages %1$d–%2$d</string>
+    <string name="bundle_page">Page %1$d</string>
+    <string name="bundle_see_pages">See pages</string>
+    <string name="bundle_looks_right">This invoice is right</string>
+    <string name="bundle_include">Read this invoice</string>
+    <!-- Step 2: one screen per new supplier -->
+    <string name="bundle_supplier_of">Supplier %1$d of %2$d</string>
+    <string name="bundle_vat">VAT %1$s</string>
+    <string name="bundle_supplier_line">%1$s · %2$s · %3$s</string>
+    <string name="bundle_as_printed">%1$s as printed</string>
+    <plurals name="bundle_plus_not_found">
+        <item quantity="one">%1$s + %2$d not found</item>
+        <item quantity="other">%1$s + %2$d not found</item>
+    </plurals>
+    <plurals name="bundle_credit_sum">
+        <item quantity="one">%1$d credit note: %2$s</item>
+        <item quantity="other">%1$d credit notes: %2$s</item>
+    </plurals>
+    <string name="bundle_question">What does this supplier mostly sell you?</string>
+    <string name="bundle_suggested">Suggested</string>
+    <string name="bundle_chosen_before">Chosen last time</string>
+    <plurals name="bundle_use_suggestions">
+        <item quantity="one">Use the suggestion for %d supplier</item>
+        <item quantity="other">Use the suggestion for %d suppliers</item>
+    </plurals>
+    <string name="bundle_leave_out_supplier">Leave these invoices out</string>
+    <string name="bundle_remember_line">Your choices are remembered on this phone for the next files.</string>
+    <plurals name="bundle_known_sorted">
+        <item quantity="one">%d supplier already sorted ✓</item>
+        <item quantity="other">%d suppliers already sorted ✓</item>
+    </plurals>
+    <plurals name="bundle_next_later">
+        <item quantity="one">Next: %d left for later</item>
+        <item quantity="other">Next: %d left for later</item>
+    </plurals>
+    <string name="bundle_decide_later">Decide later</string>
+    <!-- The supplier categories of the plain list in the Suppliers step (until the category tiles take its place) -->
+    <string name="bundle_cat_food">Food</string>
+    <string name="bundle_cat_drinks">Drinks</string>
+    <string name="bundle_cat_supplies">Cleaning &amp; disposables</string>
+    <string name="bundle_cat_utilities">Electricity, gas, water, phone</string>
+    <string name="bundle_cat_fuel">Fuel &amp; transport</string>
+    <string name="bundle_cat_equipment">Repairs, hardware &amp; equipment</string>
+    <string name="bundle_cat_other">Other expenses</string>
+    <string name="bundle_cat_none">Not sorted yet</string>
+    <!-- Step 3: what is read, and how long it takes -->
+    <string name="bundle_read_summary_title">Ready to read</string>
+    <plurals name="bundle_left_out">
+        <item quantity="one">%d left out</item>
+        <item quantity="other">%d left out</item>
+    </plurals>
+    <plurals name="bundle_estimate_checks">
+        <item quantity="one">At least %d will need your check</item>
+        <item quantity="other">At least %d will need your check</item>
+    </plurals>
+    <plurals name="bundle_est_new_suppliers">
+        <item quantity="one">%d new supplier: its first invoice is read first</item>
+        <item quantity="other">%d new suppliers: their first invoice is read first</item>
+    </plurals>
+    <plurals name="bundle_est_bills">
+        <item quantity="one">%d electricity or fuel bill</item>
+        <item quantity="other">%d electricity or fuel bills</item>
+    </plurals>
+    <plurals name="bundle_est_flagged">
+        <item quantity="one">%d marked “needs a look”</item>
+        <item quantity="other">%d marked “needs a look”</item>
+    </plurals>
+    <string name="bundle_estimate_rest">The others are saved by the app when every value checks out.</string>
+    <string name="bundle_time">About %1$s</string>
+    <string name="bundle_duration_min">%1$d min</string>
+    <string name="bundle_duration_h_min">%1$d h %2$d min</string>
+    <string name="bundle_charge">Plug in the charger: reading takes a while.</string>
+    <string name="bundle_done_line">%1$s: %2$d</string>
+    <!-- Being read, and done -->
+    <string name="bundle_check_next">Check the next invoice</string>
+    <string name="bundle_stop_reading">Stop reading this file</string>
+    <string name="bundle_stop_reading_title">Stop reading this file?</string>
+    <string name="bundle_stop_reading_body">Invoices already saved stay as they are. The ones not read yet are not read now: open this file later to read them.</string>
+    <plurals name="bundle_stop_reading_confirm">
+        <item quantity="one">Stop: %d not read yet</item>
+        <item quantity="other">Stop: %d not read yet</item>
+    </plurals>
+    <string name="bundle_keep_reading">Keep reading</string>
+    <plurals name="bundle_read_rest">
+        <item quantity="one">Read the %d not read yet</item>
+        <item quantity="other">Read the %d not read yet</item>
+    </plurals>
+    <string name="notif_bundle_done">Invoices read: %1$d · Saved: %2$d · To check: %3$d · Not readable: %4$d</string>
+    <!-- Leaving the wizard on its first step -->
+    <string name="bundle_leave_title">Leave the import?</string>
+    <string name="bundle_leave_body">Your choices are kept. Continue any time from the home screen.</string>
+    <string name="bundle_leave_later">Continue later</string>
+    <!-- The page viewer of a long file: page bar and Go to page -->
+    <string name="scroll_page">p. %1$d</string>
+    <string name="viewer_go_to_page">Go to page</string>
+    <string name="viewer_page_number">Page number (1–%1$d)</string>
+    <string name="viewer_page_out_of_range">Pick a page from 1 to %1$d</string>
+    <string name="viewer_prev">Previous page</string>
+    <string name="viewer_next">Next page</string>
+    <string name="viewer_go">Go</string>
 </resources>

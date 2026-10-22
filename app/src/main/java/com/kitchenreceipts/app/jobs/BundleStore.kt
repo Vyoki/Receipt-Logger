@@ -17,6 +17,8 @@ import com.kitchenreceipts.core.InvoiceBundle
 import com.kitchenreceipts.core.InvoiceOutcome
 import com.kitchenreceipts.core.PlannedInvoice
 import com.kitchenreceipts.core.SupplierCategories
+import com.kitchenreceipts.core.SupplierCategory
+import com.kitchenreceipts.core.SupplierChoice
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
@@ -60,6 +62,11 @@ class BundleStore(
     private val fileInUse: suspend (String) -> Boolean = { true },
     /** The supplier categories remembered on this phone, by memory key (SupplierCategories.memoryKeys). */
     private val memory: () -> Map<String, String> = { emptyMap() },
+    /**
+     * Keeps the categories the operator chose in the wizard for the next files (the supplier category memory), when
+     * the invoices go to be read. Nothing is kept until it is set.
+     */
+    private val rememberChoices: suspend (List<SupplierChoice>) -> Unit = {},
     /** Where the plans are kept (a test uses its own folder). */
     private val dir: File = File(context.filesDir, DIR),
 ) {
@@ -371,6 +378,24 @@ class BundleStore(
         return p
     }
 
+    /**
+     * "These pages belong to the invoice before" ([index] joins the invoice before it) and "A new invoice starts here"
+     * ([page] opens a new invoice): the invoices around are worked out again from the pages, and checked again against
+     * the documents already saved.
+     */
+    suspend fun join(id: String, index: Int): BundlePlan? = replan(id) { BundleWizard.joinWithPrevious(it, index, ownVat(), memory()) }
+
+    suspend fun splitAt(id: String, page: Int): BundlePlan? = replan(id) { BundleWizard.splitAt(it, page, ownVat(), memory()) }
+
+    private suspend fun replan(id: String, f: (BundlePlan) -> BundlePlan): BundlePlan? {
+        val saved = savedOrEmpty()
+        return update(id) { p ->
+            if (p.status != BundleStatus.SORTING) return@update p
+            val n = f(p)
+            if (n === p) p else BundleWizard.alreadySaved(n, saved)
+        }
+    }
+
     /** What [confirm] and [readRest] came to. */
     sealed interface Prepared {
         /** [count] invoices were queued to be read. */
@@ -390,6 +415,8 @@ class BundleStore(
         if (p.status != BundleStatus.SORTING) return Prepared.Queued(0)
         update(id) { BundleWizard.confirm(it) }
         log.event("BUNDLE_CONFIRMED", "bundle" to id.take(8), "toRead" to BundleWizard.toRead(p).size)
+        val chosen = BundleWizard.newSuppliers(p).filter { it.include && SupplierCategory.fromKey(it.category) != null }
+        if (chosen.isNotEmpty()) runCatching { rememberChoices(chosen) }.onFailure { log.error("bundleRemember", it) }
         return queueWaiting(id) { it.copy(status = BundleStatus.SORTING, step = BundleWizard.Step.READ) }
     }
 

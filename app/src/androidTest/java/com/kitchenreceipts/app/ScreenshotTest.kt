@@ -5,14 +5,20 @@ import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
+import com.kitchenreceipts.app.files.EInvoiceEntry
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.app.settings.AppSettings
+import com.kitchenreceipts.core.BundleWizard
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidLineItem
 import com.kitchenreceipts.core.VatBasis
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import org.junit.BeforeClass
+import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.MethodSorters
 import java.io.File
 import java.math.BigDecimal
 import java.time.LocalDate
@@ -22,10 +28,19 @@ import java.time.LocalDate
  * the ci-screens branch). Not a pass/fail test of the design: it fails only if a screen cannot be opened.
  */
 @RunWith(AndroidJUnit4::class)
+// mainScreens first: the later tests add data of their own, which would change its screens.
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class ScreenshotTest {
 
     private val app: KitchenReceiptsApp = ApplicationProvider.getApplicationContext()
-    private val out = File(app.filesDir, "screens").apply { deleteRecursively(); mkdirs() }
+    private val out = File(app.filesDir, "screens").apply { mkdirs() }
+
+    companion object {
+        /** Emptied once per run (not per test), so every test's screenshots are kept. */
+        @BeforeClass @JvmStatic fun clearScreens() {
+            File(ApplicationProvider.getApplicationContext<KitchenReceiptsApp>().filesDir, "screens").deleteRecursively()
+        }
+    }
 
     private fun shot(name: String) {
         Thread.sleep(1500)
@@ -111,6 +126,47 @@ class ScreenshotTest {
             Thread.sleep(500)
             app.container.pendingRoute.value = "edit/$docId"
             shot("6-edit")
+        }
+    }
+
+    /**
+     * The import of a file of many invoices at its three steps (what the file holds, a new supplier, Read), in English
+     * and in Italian. Invented e-invoices only: ABC S.r.l. and VERDE FRESCO S.p.A., dates in 2031. Cancelled after.
+     */
+    @Test fun wizardScreens() {
+        val store = app.container.bundleStore
+        val settings = app.container.settings
+        val language = settings.language
+        val sha = "5c".repeat(32)
+        fun entry(name: String, vat: String, n: Int, day: Int, cents: Long?, rows: List<String>, credit: Boolean = false) =
+            EInvoiceEntry(null, vat, name, null, "$n/2031", LocalDate.of(2031, 3, day), cents, credit, rows)
+        val food = listOf("PATATE KG 10 9,00", "MOZZARELLA FIOR DI LATTE KG 2,5 22,25", "PASSATA DI POMODORO 700G 12,60", "CIPOLLE KG 8 16,00")
+        val power = listOf("Energia elettrica F1 kWh 420 98,70", "Oneri di sistema 31,20", "Quota fissa potenza impegnata 12,00", "Accisa kWh 420 9,24")
+        val entries = (1..6).map { entry("ABC S.r.l.", "01234567897", 100 + it, it * 4, 18_450L + it * 1_235, food) } +
+            entry("ABC S.r.l.", "01234567897", 107, 26, null, food) +
+            entry("VERDE FRESCO S.p.A.", "09876543217", 31, 5, 18_814, power) +
+            entry("VERDE FRESCO S.p.A.", "09876543217", 32, 28, 2_200, power, credit = true)
+        try {
+            for ((lang, tag) in listOf(AppSettings.Language.ENGLISH to "en", AppSettings.Language.ITALIAN to "it")) {
+                settings.language = lang
+                runBlocking {
+                    store.cancel(sha)
+                    store.planFromEInvoices(sha, entries)
+                }
+                ActivityScenario.launch(MainActivity::class.java).use {
+                    app.container.pendingRoute.value = "bundle/$sha"
+                    shot("30-bundle-found-$tag")
+                    runBlocking { store.update(sha) { it.copy(step = BundleWizard.Step.SUPPLIERS) } }
+                    shot("31-bundle-supplier-$tag")
+                    runBlocking { store.update(sha) { BundleWizard.useSuggestions(it).copy(step = BundleWizard.Step.READ) } }
+                    shot("32-bundle-read-$tag")
+                    app.container.pendingRoute.value = "home"
+                    Thread.sleep(500)
+                }
+            }
+        } finally {
+            settings.language = language
+            runBlocking { store.cancel(sha) }
         }
     }
 }
