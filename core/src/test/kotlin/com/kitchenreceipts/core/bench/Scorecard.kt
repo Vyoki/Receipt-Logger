@@ -1,11 +1,14 @@
 package com.kitchenreceipts.core.bench
 
 import com.kitchenreceipts.core.AutoAccept
+import com.kitchenreceipts.core.DocKind
 import com.kitchenreceipts.core.DocumentDraft
+import com.kitchenreceipts.core.DocumentKinds
 import com.kitchenreceipts.core.DraftField
 import com.kitchenreceipts.core.DuplicateDetector
 import com.kitchenreceipts.core.ItalianDates
 import com.kitchenreceipts.core.ItalianNumbers
+import com.kitchenreceipts.core.LayoutRows
 import com.kitchenreceipts.core.PageMap
 import com.kitchenreceipts.core.ParseOptions
 import com.kitchenreceipts.core.ReceiptParser
@@ -39,6 +42,8 @@ class Scorecard {
     var autoRight = 0
     var autoWrong = 0
     var allRight = 0
+    /** Wrong values not highlighted, lines read that are not on the document included. */
+    var silent = 0
     /** Words of the item table and the supplier's box that the page map could not explain (see [PageMap]). */
     var unexplainedWords = 0
     var unexplainedNumbers = 0
@@ -60,7 +65,7 @@ class Scorecard {
     }
 
     fun score(doc: BenchDoc): List<String> {
-        val options = ParseOptions(null, doc.ownVat)
+        val options = ParseOptions(null, doc.ownVat, supplierByVat = doc.known.takeIf { it.isNotEmpty() }?.let { k -> { vat: String -> k[vat] } })
         val parsed = if (doc.text != null) ReceiptParser.parse(doc.text, options) else ReceiptParser.parsePages(doc.pages, options)
         var draft = DocumentDraft.fromParsed(parsed)
         if (draft.vatBasis == VatBasis.UNKNOWN || draft.vatBasisUncertain) {
@@ -73,6 +78,7 @@ class Scorecard {
         fun field(name: String, f: DraftField, right: Boolean) {
             val o = outcome(right, f)
             stat(name).add(o); stat("all fields").add(o); outcomes += o
+            if (o == Outcome.SILENT) silent++
             if (o == Outcome.SILENT || o == Outcome.FLAGGED) problems += "$name: '${f.text}' ${if (o == Outcome.SILENT) "SILENT" else "flagged"}"
         }
         fun cents(f: DraftField) = ItalianNumbers.parseCents(f.text)
@@ -114,6 +120,7 @@ class Scorecard {
             for (extra in free) {
                 val flagged = extra.uncertainCount > 0
                 stat("extra line").add(if (flagged) Outcome.FLAGGED else Outcome.SILENT)
+                if (!flagged) silent++
                 outcomes += if (flagged) Outcome.FLAGGED else Outcome.SILENT
                 problems += "extra line: '${extra.description.text}' ${cents(extra.lineTotal)}" + if (flagged) "" else " SILENT"
             }
@@ -132,12 +139,18 @@ class Scorecard {
         val right = outcomes.none { it == Outcome.FLAGGED || it == Outcome.SILENT }
         if (right) allRight++
         val reasons = AutoAccept.reasons(draft)
-        val auto = reasons.isEmpty()
+        // The app's last check before saving (DraftPreparer.autoSave): a document titled as a credit note is never
+        // saved by itself.
+        val auto = reasons.isEmpty() && DocumentKinds.detect(doc.text ?: doc.pages.joinToString("\n") { LayoutRows.toText(it) }) != DocKind.CREDIT_NOTE
         if (right && !auto) reasons.forEach { heldBack[it.name] = (heldBack[it.name] ?: 0) + 1 }
-        if (auto && right) autoRight++
-        if (auto && !right) { autoWrong++; problems += "SAVED WITHOUT REVIEW WITH ERRORS" }
+        // A document the app may never save by itself, however well read.
+        val mustNotSave = doc.mustReview != null
+        if (auto && mustNotSave) problems += "SAVED BY ITSELF ALTHOUGH ${doc.mustReview!!.uppercase()}"
+        val wrong = !right || mustNotSave
+        if (auto && !wrong) autoRight++
+        if (auto && wrong) { autoWrong++; if (!right) problems += "SAVED WITHOUT REVIEW WITH ERRORS" }
         if (problems.isNotEmpty()) worst += "${doc.name}: " + problems.take(6).joinToString("; ")
-        if (auto && !right) savedWithErrors += "${doc.name}: " + problems.joinToString("; ")
+        if (auto && wrong) savedWithErrors += "${doc.name}: " + problems.joinToString("; ")
         return problems
     }
 

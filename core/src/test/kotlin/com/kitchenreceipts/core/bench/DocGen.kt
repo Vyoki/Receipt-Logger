@@ -33,7 +33,17 @@ data class DocTruth(
 
 /** A generated test document: what the OCR returns (page by page) and the truth. */
 /** [text] instead of [pages] for documents kept as recognised text only. */
-data class BenchDoc(val name: String, val pages: List<List<OcrLine>>, val truth: DocTruth, val ownVat: String, val text: String? = null)
+/** [mustReview]: why the app may never save it by itself ("a credit note"), even when every value is read right. */
+/** [known]: suppliers the phone already has, name by VAT number (the registry that can prove a supplier). */
+data class BenchDoc(
+    val name: String,
+    val pages: List<List<OcrLine>>,
+    val truth: DocTruth,
+    val ownVat: String,
+    val text: String? = null,
+    val mustReview: String? = null,
+    val known: Map<String, String> = emptyMap(),
+)
 
 /**
  * Invents Italian supplier documents (invoices, delivery notes, cash & carry invoices, shop receipts) in many layouts,
