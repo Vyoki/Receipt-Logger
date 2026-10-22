@@ -132,6 +132,13 @@ class DraftPreparer(
     }.onFailure { log.error("supplierCategory", it) }.getOrNull()
 
     /**
+     * The category chosen for the job itself ([key]: "Just this invoice", or the wizard's choice for an invoice of a
+     * file of many) goes before the one remembered for the supplier. "later" or none: [p] as it is.
+     */
+    fun withJobCategory(p: PreparedDraft, key: String?): PreparedDraft =
+        SupplierCategory.fromKey(key)?.let { p.copy(supplierCategory = it) } ?: p
+
+    /**
      * The operator chose [category] on the check screen. [forSupplier]: for all of the supplier's invoices, remembered
      * by the VAT number printed on [ocrText] and the name. Otherwise "Just this invoice": only this draft carries it,
      * and the memory is not touched.

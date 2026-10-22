@@ -1,7 +1,7 @@
 package com.kitchenreceipts.app.ui.bundle
 
 import androidx.compose.animation.animateContentSize
-import androidx.compose.foundation.BorderStroke
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -12,16 +12,10 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.selection.selectable
-import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ExpandLess
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.RadioButtonChecked
-import androidx.compose.material.icons.filled.RadioButtonUnchecked
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -33,7 +27,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.Role
@@ -44,8 +37,10 @@ import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.components.Annotation
 import com.kitchenreceipts.app.ui.components.BigButton
+import com.kitchenreceipts.app.ui.components.CategoryPickerSheet
+import com.kitchenreceipts.app.ui.components.CategoryTag
+import com.kitchenreceipts.app.ui.components.CategoryTiles
 import com.kitchenreceipts.app.ui.components.ClickCard
-import com.kitchenreceipts.app.ui.components.OutlinedButton
 import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.fmtMoney
 import com.kitchenreceipts.app.ui.theme.Palette
@@ -58,8 +53,9 @@ import java.time.format.DateTimeFormatter
 
 /**
  * Step "Suppliers": one new supplier per screen ("Supplier 3 of 6"), with what the file holds from it as printed, and
- * what it mostly sells. A tap saves the choice and goes on to the next supplier; "Decide later" and "Leave these
- * invoices out" too. Suppliers whose category the phone knows by VAT number are folded at the bottom.
+ * what it mostly sells, as big tiles. A tap saves the choice and goes on to the next supplier; "Decide later" and
+ * "Leave these invoices out" too. A suggestion or the choice of last time is only shown: it still needs a tap (or the
+ * one "Use the suggestion" tap). Suppliers whose category the phone knows by VAT number are folded at the bottom.
  */
 @Composable
 internal fun SupplierStep(plan: BundlePlan, at: Int, vm: BundleViewModel) {
@@ -107,67 +103,32 @@ internal fun SupplierStep(plan: BundlePlan, at: Int, vm: BundleViewModel) {
         }
         if (!choice.include) Annotation(stringResource(R.string.tag_left_out))
         Text(stringResource(R.string.bundle_question), style = MaterialTheme.typography.titleMedium)
-        SupplierCategorySlot(choice, onPick = { vm.pick(choice.key, it) })
-        OutlinedButton(
-            onClick = { vm.decideLater(choice.key) },
-            modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),
-        ) {
-            if (choice.category == SupplierChoice.LATER) {
-                Icon(Icons.Filled.RadioButtonChecked, contentDescription = null)
-                Spacer(Modifier.width(8.dp))
-            }
-            Text(stringResource(R.string.bundle_decide_later), style = MaterialTheme.typography.titleMedium)
-        }
+        CategoryTiles(
+            selected = SupplierCategory.fromKey(choice.category),
+            onPick = { vm.pick(choice.key, it) },
+            suggested = SupplierCategory.fromKey(choice.suggestion),
+            chosenBefore = SupplierCategory.fromKey(choice.lastTime),
+            onDecideLater = { vm.decideLater(choice.key) },
+            decidedLater = choice.category == SupplierChoice.LATER,
+        )
         TextButton(onClick = { vm.leaveOut(choice.key) }, modifier = Modifier.heightIn(min = 48.dp)) {
             Text(stringResource(R.string.bundle_leave_out_supplier))
         }
-        KnownSuppliers(plan)
+        KnownSuppliers(plan, vm)
         Text(stringResource(R.string.bundle_remember_line), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
     }
 }
 
 /**
- * What the supplier mostly sells: the 7 categories in a plain list, the chosen one marked, the suggestion and the
- * choice of last time captioned (both still need a tap). The category tiles take this place when they come.
+ * "17 suppliers already sorted ✓": folded; opened, each with its category. A tap on one changes its category (for
+ * this file, and remembered when the invoices go to be read).
  */
 @Composable
-fun SupplierCategorySlot(choice: SupplierChoice, onPick: (SupplierCategory) -> Unit) {
-    val chosen = SupplierCategory.fromKey(choice.category)
-    Column(Modifier.fillMaxWidth().selectableGroup(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        SupplierCategory.entries.forEach { c ->
-            val selected = c == chosen
-            val suggested = c.key == choice.suggestion
-            val before = c.key == choice.lastTime
-            Card(
-                shape = MaterialTheme.shapes.medium,
-                colors = CardDefaults.cardColors(containerColor = if (selected) Palette.Phthalo else Palette.Panel, contentColor = MaterialTheme.colorScheme.onSurface),
-                border = BorderStroke(if (selected || suggested) 2.dp else 1.dp, if (selected) Palette.PhthaloBright else if (suggested) Palette.Orange else Palette.Hairline),
-                modifier = Modifier.fillMaxWidth().heightIn(min = 64.dp).clip(MaterialTheme.shapes.medium).selectable(selected = selected, onClick = { onPick(c) }, role = Role.RadioButton),
-            ) {
-                Row(Modifier.fillMaxWidth().heightIn(min = 64.dp).padding(horizontal = 16.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    Icon(
-                        if (selected) Icons.Filled.RadioButtonChecked else Icons.Filled.RadioButtonUnchecked,
-                        contentDescription = null,
-                        tint = if (selected) Palette.PhthaloBright else Palette.TextDim,
-                    )
-                    Spacer(Modifier.width(12.dp))
-                    Column(Modifier.weight(1f)) {
-                        Text(categoryName(c), style = MaterialTheme.typography.titleMedium)
-                        if (suggested) Text(stringResource(R.string.bundle_suggested), style = MaterialTheme.typography.labelMedium, color = Palette.Orange)
-                        if (before) Text(stringResource(R.string.bundle_chosen_before), style = MaterialTheme.typography.labelMedium, color = Palette.TextDim)
-                    }
-                }
-            }
-        }
-    }
-}
-
-/** "17 suppliers already sorted ✓": folded; opened, each with its category. */
-@Composable
-private fun KnownSuppliers(plan: BundlePlan) {
+private fun KnownSuppliers(plan: BundlePlan, vm: BundleViewModel) {
     val known = BundleWizard.knownSuppliers(plan)
     if (known.isEmpty()) return
     var open by rememberSaveable { mutableStateOf(false) }
+    var changing by rememberSaveable { mutableStateOf<String?>(null) }
     ClickCard(onClick = { open = !open }, modifier = Modifier.animateContentSize()) {
         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
@@ -175,13 +136,26 @@ private fun KnownSuppliers(plan: BundlePlan) {
                 Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
             }
             if (open) known.forEach { s ->
-                Row(Modifier.fillMaxWidth()) {
+                Row(
+                    Modifier.fillMaxWidth().heightIn(min = 56.dp).clickable(role = Role.Button, onClickLabel = stringResource(R.string.supcat_change)) { changing = s.key },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
                     Text(s.name ?: s.vat ?: "—", style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
                     Spacer(Modifier.width(8.dp))
-                    Text(categoryName(SupplierCategory.fromKey(s.category)), style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
+                    SupplierCategory.fromKey(s.category)?.let { CategoryTag(it) }
                 }
             }
         }
+    }
+    val s = changing?.let { key -> known.firstOrNull { it.key == key } }
+    if (s != null) {
+        CategoryPickerSheet(
+            title = s.name ?: s.vat ?: "—",
+            selected = SupplierCategory.fromKey(s.category),
+            onPick = { c -> vm.changeKnown(s.key, c); changing = null },
+            onDismiss = { changing = null },
+            note = stringResource(R.string.supcat_change_seller_note),
+        )
     }
 }
 

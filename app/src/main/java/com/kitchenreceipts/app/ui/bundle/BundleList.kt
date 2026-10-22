@@ -45,6 +45,7 @@ import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.fmtDate
 import com.kitchenreceipts.app.ui.fmtMoney
+import com.kitchenreceipts.app.ui.supplierCategoryLabel
 import com.kitchenreceipts.app.ui.theme.Palette
 import com.kitchenreceipts.core.BundlePlan
 import com.kitchenreceipts.core.BundleWizard
@@ -139,7 +140,7 @@ private fun GroupHeader(g: SupplierGroup) {
         )
         val count = pluralStringResource(R.plurals.bundle_invoices, g.invoices.size, g.invoices.size)
         Text(
-            listOfNotNull(count, g.category?.let { categoryName(it) }).joinToString(" · "),
+            listOfNotNull(count, g.category?.let { supplierCategoryLabel(it) }).joinToString(" · "),
             style = MaterialTheme.typography.bodySmall,
             color = Palette.TextDim,
         )

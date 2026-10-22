@@ -22,6 +22,7 @@ import com.kitchenreceipts.app.jobs.DraftPreparer
 import com.kitchenreceipts.app.jobs.ImportQueue
 import com.kitchenreceipts.app.jobs.ReadingNotifier
 import com.kitchenreceipts.app.learning.LearningStore
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.SupplierMemory
 
 /** Manual dependency container: small enough that a DI framework would add more than it saves. */
@@ -101,6 +102,12 @@ class AppContainer(context: Context) {
         context, appScope, fileStore, importQueue, settings, log, notifier,
         saved = { repository.savedForBundles() },
         fileInUse = { repository.fileInUse(it) },
+        // What each supplier sells, as remembered on this phone: a supplier known by its VAT number is not asked again.
+        memory = { learning.supplierCategoryMemory.value.mapValues { it.value.category.key } },
+        // The wizard's choices, for the next files and for Sellers (by VAT number, and the name only as a code).
+        rememberChoices = { list ->
+            list.forEach { s -> SupplierCategory.fromKey(s.category)?.let { repository.rememberCategory(s.vat, s.name, it) } }
+        },
         dishesCheck = { ids -> checkDishesOnce(ids) },
     )
 

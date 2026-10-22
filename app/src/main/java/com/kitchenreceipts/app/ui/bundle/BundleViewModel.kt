@@ -233,6 +233,11 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
 
     fun leaveOut(key: String) = choose { p -> BundleWizard.setSupplierIncluded(p, key, false) }
 
+    /** A supplier already sorted (folded at the bottom) gets another category: for this file, remembered at Read. */
+    fun changeKnown(key: String, category: SupplierCategory) = change {
+        update(planId) { p -> if (p.status == BundleStatus.SORTING) BundleWizard.setCategory(p, key, category.key) else p }
+    }
+
     private fun choose(f: (BundlePlan) -> BundlePlan) {
         val plan = state.value.plan ?: return
         val at = (state.value.page as? BundlePage.Supplier)?.at ?: return

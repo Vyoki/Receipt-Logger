@@ -440,9 +440,25 @@ class BundleStore(
         if (p.status != BundleStatus.SORTING) return Prepared.Queued(0)
         update(id) { BundleWizard.confirm(it) }
         log.event("BUNDLE_CONFIRMED", "bundle" to id.take(8), "toRead" to BundleWizard.toRead(p).size)
-        val chosen = BundleWizard.newSuppliers(p).filter { it.include && SupplierCategory.fromKey(it.category) != null }
+        // The categories chosen (new suppliers, and known ones changed here) are remembered for the next files. A
+        // supplier put off or left out is not.
+        val chosen = (BundleWizard.newSuppliers(p) + BundleWizard.knownSuppliers(p)).filter { it.include && SupplierCategory.fromKey(it.category) != null }
         if (chosen.isNotEmpty()) runCatching { rememberChoices(chosen) }.onFailure { log.error("bundleRemember", it) }
         return queueWaiting(id) { it.copy(status = BundleStatus.SORTING, step = BundleWizard.Step.READ) }
+    }
+
+    /**
+     * The operator changed the category of an invoice's supplier on its check ("For all invoices from this supplier",
+     * job [jobId]): the plan's choice for that supplier follows, and so do the jobs of its other invoices (shown and
+     * counted with the new one). Display only: no figure depends on it.
+     */
+    suspend fun supplierCategoryChanged(id: String, jobId: String, category: SupplierCategory) {
+        val p = plan(id) ?: return
+        val inv = p.invoices.firstOrNull { it.jobId == jobId }?.takeIf { it.isInvoice } ?: return
+        val key = BundleWizard.supplierKey(inv)
+        update(id) { BundleWizard.setCategory(it, key, category.key) }
+        p.invoices.filter { it.isInvoice && BundleWizard.supplierKey(it) == key }.mapNotNull { it.jobId }
+            .forEach { queue.setCategory(it, category.key) }
     }
 
     /** "Read the N not read yet": the invoices stopped before are cut from the kept file again and queued. */

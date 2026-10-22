@@ -71,6 +71,8 @@ import com.kitchenreceipts.app.ui.components.Panel
 import com.kitchenreceipts.app.ui.components.SubBarText
 import com.kitchenreceipts.app.ui.components.WarningCard
 import com.kitchenreceipts.app.ui.fmtDate
+import com.kitchenreceipts.app.ui.supplierCategoryIcon
+import com.kitchenreceipts.app.ui.supplierCategoryLabel
 import com.kitchenreceipts.app.ui.theme.Motion
 import com.kitchenreceipts.app.ui.theme.Palette
 import com.kitchenreceipts.core.BundlePlan
@@ -294,20 +296,15 @@ internal fun FactLine(text: String, icon: ImageVector = Icons.Filled.Info, tint:
     }
 }
 
-/** The label of a supplier category, or "Not sorted yet" (null). */
+/** Counts by supplier category key (null: not sorted or decided later), in the tiles' order, each with its symbol. */
 @Composable
-internal fun categoryName(c: SupplierCategory?): String = stringResource(
-    when (c) {
-        SupplierCategory.FOOD -> R.string.bundle_cat_food
-        SupplierCategory.DRINKS -> R.string.bundle_cat_drinks
-        SupplierCategory.SUPPLIES -> R.string.bundle_cat_supplies
-        SupplierCategory.UTILITIES -> R.string.bundle_cat_utilities
-        SupplierCategory.FUEL -> R.string.bundle_cat_fuel
-        SupplierCategory.EQUIPMENT -> R.string.bundle_cat_equipment
-        SupplierCategory.OTHER -> R.string.bundle_cat_other
-        null -> R.string.bundle_cat_none
-    },
-)
+private fun CategoryCounts(byCategory: Map<String?, Int>) {
+    (SupplierCategory.entries.map { it.key } + listOf<String?>(null)).forEach { key ->
+        val n = byCategory[key] ?: 0
+        val c = SupplierCategory.fromKey(key)
+        if (n > 0) FactLine(stringResource(R.string.bundle_done_line, supplierCategoryLabel(c), n), supplierCategoryIcon(c), Palette.PhthaloBright)
+    }
+}
 
 // ---------------------------------------------------------------------- looking through the file
 
@@ -421,10 +418,7 @@ private fun ReadStep(plan: BundlePlan, seconds: Long) {
     Heading(stringResource(R.string.bundle_read_summary_title))
     Panel {
         Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            (SupplierCategory.entries.map { it.key } + listOf<String?>(null)).forEach { key ->
-                val n = sum.byCategory[key] ?: 0
-                if (n > 0) Text(stringResource(R.string.bundle_done_line, categoryName(SupplierCategory.fromKey(key)), n), style = MaterialTheme.typography.bodyLarge)
-            }
+            CategoryCounts(sum.byCategory)
             val left = sum.leftOut.values.sum()
             if (left > 0) Text(pluralStringResource(R.plurals.bundle_left_out, left, left), style = MaterialTheme.typography.bodyLarge, color = Palette.TextDim)
             if (sum.creditNotes > 0) Text(pluralStringResource(R.plurals.bundle_credit_notes_left, sum.creditNotes, sum.creditNotes), style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
@@ -522,15 +516,11 @@ private fun Done(plan: BundlePlan, vm: BundleViewModel, onClose: () -> Unit, onH
     val n = BundleWizard.counts(plan)
     Heading(stringResource(R.string.bundle_all_done))
     Text(stringResource(R.string.notif_bundle_done, n.read, n.saved, n.toCheck, n.failed), style = MaterialTheme.typography.titleMedium)
+    // What was saved, by what each supplier sells ("Food: 120", "Electricity, gas, water, phone: 6").
     val byCategory = BundleWizard.savedByCategory(plan)
     if (byCategory.isNotEmpty()) {
         Panel {
-            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                (SupplierCategory.entries.map { it.key } + listOf<String?>(null)).forEach { key ->
-                    val c = byCategory[key] ?: 0
-                    if (c > 0) Text(stringResource(R.string.bundle_done_line, categoryName(SupplierCategory.fromKey(key)), c), style = MaterialTheme.typography.bodyLarge)
-                }
-            }
+            Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) { CategoryCounts(byCategory) }
         }
     }
     if (n.stopped > 0) BigButton(pluralStringResource(R.plurals.bundle_read_rest, n.stopped, n.stopped), null, onClick = vm::readRest, primary = false)

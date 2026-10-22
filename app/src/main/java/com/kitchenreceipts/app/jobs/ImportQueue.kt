@@ -268,6 +268,17 @@ class ImportQueue(
         log.event("JOB_DISCARDED", "job" to id.take(8), "status" to job.status)
     }
 
+    /**
+     * The supplier category chosen for job [id] (a SupplierCategory key, "later", or null): "Just this invoice" on its
+     * check, or the supplier's new category for an invoice of a file of many. Kept with the job, on the phone.
+     */
+    suspend fun setCategory(id: String, category: String?) = withContext(Dispatchers.IO) {
+        var changed: ImportJob? = null
+        _jobs.update { list -> list.map { if (it.id == id && it.category != category) it.copy(category = category).also { c -> changed = c } else it } }
+        changed?.let(::writeMeta)
+        Unit
+    }
+
     /** The operator saved the document [documentId] from the review screen (the file now belongs to it). */
     fun markSaved(id: String, documentId: Long? = null) {
         val job = job(id)
@@ -372,7 +383,7 @@ class ImportQueue(
             if (j.file.mimeType != FileStore.MIME_XML) {
                 runCatching { ReadingTime.record(settings, pending.pagesRead, System.currentTimeMillis() - t0, ai != null) }
             }
-            val prepared = preparer.prepare(pending, j.flags)
+            val prepared = preparer.withJobCategory(preparer.prepare(pending, j.flags), j.category)
             val d = prepared.draft
             // Discarded while it was being read: nothing is saved.
             if (job(j.id) == null) return
@@ -469,7 +480,7 @@ class ImportQueue(
         val start = job(id)?.takeIf { it.status == JobStatus.READY && id !in inReview } ?: return null
         // Rebuilt now, not the reading in memory: the supplier saved since is looked up by its VAT number again.
         val pending = loadReading(start) ?: return null
-        val prepared = preparer.prepare(pending, start.flags)
+        val prepared = preparer.withJobCategory(preparer.prepare(pending, start.flags), start.category)
         // Opened, saved, thrown away or read again meanwhile: left as it is.
         val now = job(id)?.takeIf { it.status == JobStatus.READY && id !in inReview } ?: return null
         val savedId = runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()

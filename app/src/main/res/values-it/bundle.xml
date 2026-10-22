@@ -141,8 +141,6 @@
         <item quantity="other">%1$d note di credito: %2$s</item>
     </plurals>
     <string name="bundle_question">Cosa ti vende soprattutto questo fornitore?</string>
-    <string name="bundle_suggested">Suggerito</string>
-    <string name="bundle_chosen_before">Scelto l\'ultima volta</string>
     <plurals name="bundle_use_suggestions">
         <item quantity="one">Usa il suggerimento per %d fornitore</item>
         <item quantity="other">Usa il suggerimento per %d fornitori</item>
@@ -157,16 +155,6 @@
         <item quantity="one">Avanti: %d da decidere dopo</item>
         <item quantity="other">Avanti: %d da decidere dopo</item>
     </plurals>
-    <string name="bundle_decide_later">Decidi dopo</string>
-    <!-- Le categorie dei fornitori nell'elenco semplice del passo Fornitori (finché non arrivano i riquadri) -->
-    <string name="bundle_cat_food">Alimentari</string>
-    <string name="bundle_cat_drinks">Bevande</string>
-    <string name="bundle_cat_supplies">Pulizia e monouso</string>
-    <string name="bundle_cat_utilities">Luce, gas, acqua, telefono</string>
-    <string name="bundle_cat_fuel">Carburante e trasporti</string>
-    <string name="bundle_cat_equipment">Manutenzione, ferramenta e attrezzature</string>
-    <string name="bundle_cat_other">Altre spese</string>
-    <string name="bundle_cat_none">Da classificare</string>
     <!-- Passo 3: cosa viene letto e quanto tempo ci vuole -->
     <string name="bundle_read_summary_title">Pronto per la lettura</string>
     <plurals name="bundle_left_out">

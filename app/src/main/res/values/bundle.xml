@@ -141,8 +141,6 @@
         <item quantity="other">%1$d credit notes: %2$s</item>
     </plurals>
     <string name="bundle_question">What does this supplier mostly sell you?</string>
-    <string name="bundle_suggested">Suggested</string>
-    <string name="bundle_chosen_before">Chosen last time</string>
     <plurals name="bundle_use_suggestions">
         <item quantity="one">Use the suggestion for %d supplier</item>
         <item quantity="other">Use the suggestion for %d suppliers</item>
@@ -157,16 +155,7 @@
         <item quantity="one">Next: %d left for later</item>
         <item quantity="other">Next: %d left for later</item>
     </plurals>
-    <string name="bundle_decide_later">Decide later</string>
     <!-- The supplier categories of the plain list in the Suppliers step (until the category tiles take its place) -->
-    <string name="bundle_cat_food">Food</string>
-    <string name="bundle_cat_drinks">Drinks</string>
-    <string name="bundle_cat_supplies">Cleaning &amp; disposables</string>
-    <string name="bundle_cat_utilities">Electricity, gas, water, phone</string>
-    <string name="bundle_cat_fuel">Fuel &amp; transport</string>
-    <string name="bundle_cat_equipment">Repairs, hardware &amp; equipment</string>
-    <string name="bundle_cat_other">Other expenses</string>
-    <string name="bundle_cat_none">Not sorted yet</string>
     <!-- Step 3: what is read, and how long it takes -->
     <string name="bundle_read_summary_title">Ready to read</string>
     <plurals name="bundle_left_out">
