@@ -160,6 +160,57 @@ class RepositoryTest {
         assertTrue(r == null || r.match.reason != SellerMatchReason.VAT_NUMBER)
     }
 
+    @Test fun aVatFromTheSuppliersOwnBoxMovesToTheCleanNameAndNeverBecomesTheRestaurants() = runBlocking {
+        var detected: String? = null
+        repo.onSharedVatNumber = { detected = it }
+        val vat = "01234567897"
+        // An earlier reading took words of the next box into the supplier's name.
+        val polluted = "ABC S.R.L. CESSIONARIO COMMITTENTE\nCedente/prestatore (fornitore)\nP.IVA $vat\nFattura n. 1 del 03/02/2031"
+        repo.saveDocument(doc("ABC S.r.l. Cessionario committente", "1", emptyList()), StoredFile("documents/c4a.pdf", "application/pdf", 1, "sha-c4a"), polluted, null, SellerLearning(polluted, null, null))
+        assertEquals("ABC S.r.l. Cessionario committente", db.sellerDao().byVatNumber(vat)?.name)
+        // The same supplier read cleanly, its number in its own role-labelled box.
+        val clean = "Cedente/prestatore (fornitore)\nABC S.r.l.\nP.IVA $vat\nFattura n. 2 del 04/02/2031"
+        repo.saveDocument(doc("ABC S.r.l.", "2", emptyList()), StoredFile("documents/c4b.pdf", "application/pdf", 1, "sha-c4b"), clean, null, SellerLearning(clean, null, null, vatFromRoleBox = true))
+        // Not taken as the restaurant's own number, not forgotten: it moved to the supplier saved now.
+        assertEquals(null, detected)
+        assertEquals("ABC S.r.l.", db.sellerDao().byVatNumber(vat)?.name)
+        // The next document of that supplier is recognised by it.
+        val r = repo.identifySeller(clean.replace("n. 2", "n. 3"), "ABC S.r.l.", null, vatFromRoleBox = true)!!
+        assertEquals("ABC S.r.l.", r.match.name)
+        assertEquals(SellerMatchReason.VAT_NUMBER, r.match.reason)
+    }
+
+    @Test fun withoutTheRoleBoxAVatOnTwoSuppliersIsStillTheRestaurants() = runBlocking {
+        var detected: String? = null
+        repo.onSharedVatNumber = { detected = it }
+        val vat = "01234567897"
+        val a = "ABC S.R.L.\nP.IVA $vat\nFattura n. 1 del 03/02/2031"
+        val b = "VERDE FRESCO S.P.A.\nP.IVA $vat\nFattura n. 2 del 04/02/2031"
+        repo.saveDocument(doc("ABC S.r.l.", "1", emptyList()), StoredFile("documents/c4c.pdf", "application/pdf", 1, "sha-c4c"), a, null, SellerLearning(a, null, null))
+        repo.saveDocument(doc("VERDE FRESCO S.p.A.", "2", emptyList()), StoredFile("documents/c4d.pdf", "application/pdf", 1, "sha-c4d"), b, null, SellerLearning(b, null, null))
+        // As before: one number on two suppliers' documents is the customer's, and is used for neither.
+        assertEquals(vat, detected)
+        assertEquals(null, db.sellerDao().byVatNumber(vat))
+    }
+
+    @Test fun aVatFromTheSuppliersOwnBoxIsNotForgottenWhenTheNameDisagrees() = runBlocking {
+        var detected: String? = null
+        repo.onSharedVatNumber = { detected = it }
+        val vat = "01234567897"
+        // An earlier reading took the customer's name for the supplier's, with the supplier's number.
+        val earlier = "RISTORANTE PROVA SAS\nCedente/prestatore (fornitore)\nP.IVA $vat\nFattura n. 5 del 03/02/2031"
+        repo.saveDocument(doc("RISTORANTE PROVA SAS", "5", emptyList()), StoredFile("documents/c4e.pdf", "application/pdf", 1, "sha-c4e"), earlier, null, SellerLearning(earlier, null, null))
+        val now = "Cedente/prestatore (fornitore)\nVERDE FRESCO S.p.A.\nP.IVA $vat\nFattura n. 6 del 04/02/2031"
+        // The clearly printed name differs from the one saved under the number: the number is in the supplier's own
+        // box, so it is the supplier's, never the restaurant's. Nothing is forgotten.
+        repo.identifySeller(now, "VERDE FRESCO S.p.A.", null, ocrSellerReliable = true, vatFromRoleBox = true)
+        assertEquals(null, detected)
+        assertEquals("RISTORANTE PROVA SAS", db.sellerDao().byVatNumber(vat)?.name)
+        // Without the role box: today's rule (the number is taken as the restaurant's).
+        repo.identifySeller(now, "VERDE FRESCO S.p.A.", null, ocrSellerReliable = true)
+        assertEquals(vat, detected)
+    }
+
     @Test fun productRememberedByArticleCodeEvenIfDescriptionIsMisread() = runBlocking {
         val galletti = repo.createProduct("Biscotti Galletti")
         val line = ValidLineItem("BISCOTTI M.BIANCO GALLETTI 800", galletti.id, BigDecimal.ONE, "pz", null, 345, null, null, null, "2046225")

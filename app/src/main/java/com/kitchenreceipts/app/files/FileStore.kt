@@ -205,9 +205,9 @@ class FileStore(private val context: Context) {
         val messages = generateSequence(e) { it.cause }.take(8).mapNotNull { it.message }.joinToString(" ")
         return when {
             generateSequence(e) { it.cause }.take(8).any { it is InvalidPasswordException } -> SplitFailure.LOCKED
+            e is IllegalArgumentException -> SplitFailure.OTHER
             messages.contains("ENOSPC") || messages.contains("No space left", ignoreCase = true) ||
                 documentsDir.usableSpace < LOW_SPACE_BYTES -> SplitFailure.STORAGE
-            e is IllegalArgumentException -> SplitFailure.OTHER
             e is IOException -> SplitFailure.DAMAGED
             else -> SplitFailure.OTHER
         }
