@@ -58,8 +58,16 @@ data class UnassignedGroup(
     val lineItemIds: List<Long>,
 )
 
-/** What a saved document teaches the app about its supplier. */
-data class SellerLearning(val documentText: String, val ocrSellerName: String?, val ownVatNumber: String?)
+/**
+ * What a saved document teaches the app about its supplier. [vatFromRoleBox]: the supplier's VAT number was read in its
+ * own role-labelled box (ParsedDocument.supplierVatSource = ROLE_BOX), so it is never the restaurant's own.
+ */
+data class SellerLearning(
+    val documentText: String,
+    val ocrSellerName: String?,
+    val ownVatNumber: String?,
+    val vatFromRoleBox: Boolean = false,
+)
 
 /** A supplier recognised on a new scan, with what the app learned about them. */
 data class SellerRecognition(val match: SellerMatch, val usualVatBasis: VatBasis?, val documentCount: Int)
@@ -237,6 +245,9 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
                 if (other.id == previousSellerId) {
                     // The operator corrected the supplier's name on this document: the number moves to the right
                     // supplier. It is not shared by two suppliers (which would make it the restaurant's own).
+                } else if (l.vatFromRoleBox) {
+                    // Printed in the supplier's own box: it is this supplier's, learned before under another spelling
+                    // of its name (a name read with extra words, say). It moves to this supplier the same way.
                 } else {
                     onSharedVatNumber(vat)
                     vat = null
@@ -262,6 +273,8 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
         ocrSellerName: String?,
         ownVatNumber: String?,
         ocrSellerReliable: Boolean = false,
+        /** The supplier's VAT number was read in its own role-labelled box (see SellerLearning.vatFromRoleBox). */
+        vatFromRoleBox: Boolean = false,
     ): SellerRecognition? {
         val all = sellers.allOnce()
         if (all.isEmpty()) return null
@@ -270,7 +283,10 @@ class ReceiptRepository(private val db: AppDatabase, private val files: FileStor
             SellerCandidate(it.id, it.name, it.vatNumber, SellerProfiles.parseProfile(it.headerProfile), aliases[it.id].orEmpty().toSet())
         }
         val result = SellerProfiles.identifyDetailed(candidates, documentText, ocrSellerName, ownVatNumber, ocrSellerReliable)
-        result.suspectVatNumber?.let { vat ->
+        // The number in the supplier's own box is the supplier's, never the operator's: kept (saving the document
+        // moves it to the supplier saved, see learnSeller).
+        val roleBoxVat = if (vatFromRoleBox) SellerProfiles.supplierVatNumber(documentText, ownVatNumber) else null
+        result.suspectVatNumber?.takeIf { it != roleBoxVat }?.let { vat ->
             // A clearly printed company name contradicts the VAT match: that number was learned by mistake
             // (it is the operator's, printed as the customer). Forget it for every supplier.
             forgetVatNumber(vat)

@@ -10,8 +10,11 @@ import com.kitchenreceipts.app.ocr.ImportProgress
 import com.kitchenreceipts.app.ocr.OcrEngine
 import com.kitchenreceipts.app.ocr.PendingImport
 import com.kitchenreceipts.app.settings.AppSettings
+import com.kitchenreceipts.core.AiScope
 import com.kitchenreceipts.core.OcrLineCodec
+import com.kitchenreceipts.core.ReviewReason
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -48,7 +51,51 @@ data class ImportJob(
     val itemCount: Int = 0,
     /** Readings started (kept on the phone): a document that stops the app is not read again and again. */
     val attempts: Int = 0,
+    /** One invoice cut from a file of many: that file's plan (its SHA-256, see BundlePlan.id); null for a single import. */
+    val bundleId: String? = null,
+    /** Its invoice's place in the plan (BundlePlan.invoices). */
+    val order: Int? = null,
+    /** The supplier category chosen for it (a SupplierCategory key, or "later"), when one was chosen. */
+    val category: String? = null,
+    /** Why its pages need a look (InvoiceBundle.Flag names): any flag keeps it from being saved by the app. */
+    val flags: Set<String> = emptySet(),
+    /** For the list once read: values still unchecked, and why it needs a look (also when its reading is not in memory). */
+    val uncertainCount: Int = 0,
+    val reasons: List<ReviewReason> = emptyList(),
 )
+
+/**
+ * What happened to a job, for whoever keeps track of a file of many invoices (see [ImportQueue.listener]): the queue
+ * forgets saved and discarded jobs, so their outcome is handed out as it happens.
+ */
+data class JobEvent(
+    val kind: Kind,
+    val jobId: String,
+    val bundleId: String?,
+    /** The job's [ImportJob.order]. */
+    val order: Int?,
+    /** SAVED_BY_APP and SAVED_BY_YOU: the saved document. RESTORED: the document the app saved by itself, if any. */
+    val documentId: Long? = null,
+    /** RESTORED: the job's status as loaded after a restart (a reading cut short comes back QUEUED). */
+    val status: JobStatus? = null,
+) {
+    enum class Kind {
+        /** Read: waiting for the operator. */
+        READY,
+        /** Read and saved by the app (every value checked out). */
+        SAVED_BY_APP,
+        /** Saved by the operator from the review. */
+        SAVED_BY_YOU,
+        /** Could not be read (or stopped the app twice). */
+        FAILED,
+        /** A document the app saved by itself, hidden from the list. */
+        DISMISSED,
+        /** Thrown away (or its reading stopped) by the operator, unsaved. */
+        DISCARDED,
+        /** Loaded again after the app was closed. */
+        RESTORED,
+    }
+}
 
 /**
  * Documents are read one after another in the background, so the operator can keep working (or scan the next
@@ -69,6 +116,8 @@ class ImportQueue(
     private val notifier: ReadingNotifier,
     /** True when a saved document uses the file: it is then never deleted with the job. */
     private val fileInUse: suspend (String) -> Boolean = { false },
+    /** Where the reading runs: threads of background priority, so the screen in use stays smooth. */
+    private val worker: CoroutineDispatcher = ReadingThreads.dispatcher,
 ) {
     private val dir = File(context.filesDir, "jobs").apply { mkdirs() }
     private val appContext = context.applicationContext
@@ -83,6 +132,26 @@ class ImportQueue(
 
     /** Called when a document read in the background was saved without review (keeps its reading, see ReadingArchive). */
     @Volatile var onAutoSaved: (Long, PendingImport) -> Unit = { _, _ -> }
+
+    /**
+     * Told what happens to every job (read, saved by the app or the operator, failed, hidden, thrown away, loaded
+     * after a restart). Called on the thread where it happens (the reading's, the screen's): quick and thread-safe.
+     */
+    @Volatile var listener: (JobEvent) -> Unit = {}
+
+    /**
+     * True while the plan of a file of many invoices still needs its jobs that were saved (its import is not done):
+     * those are not cleared at the next start. Unknown plans are kept.
+     */
+    @Volatile var bundleOpen: (String) -> Boolean = { true }
+
+    /**
+     * Readings of invoices cut from a file of many, rebuilt when opened (see [load]): the last few only, so a file of
+     * hundreds of invoices does not fill the memory.
+     */
+    private val kept = object : LinkedHashMap<String, PendingImport>(LAZY_KEEP + 1, 0.75f, true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, PendingImport>?): Boolean = size > LAZY_KEEP
+    }
 
     /** True while something is still to be read (the foreground service stays up meanwhile). */
     val busy: Boolean get() = _jobs.value.any { it.status == JobStatus.QUEUED || it.status == JobStatus.READING }
@@ -105,11 +174,69 @@ class ImportQueue(
         return job
     }
 
+    /**
+     * Queues the invoices cut from one file at once, in [files] order: one write of the list, one start of the
+     * reader. [categories], [flags] and [orders] go with the file at the same index (orders default to the index).
+     * The order survives a restart (each job is created a millisecond after the one before).
+     */
+    suspend fun enqueueAll(
+        files: List<StoredFile>,
+        source: String,
+        bundleId: String? = null,
+        categories: List<String?> = emptyList(),
+        flags: List<Set<String>> = emptyList(),
+        orders: List<Int>? = null,
+    ): List<ImportJob> {
+        if (files.isEmpty()) return emptyList()
+        val now = System.currentTimeMillis()
+        val jobs = files.mapIndexed { i, f ->
+            ImportJob(
+                UUID.randomUUID().toString(), now + i, source, f, JobStatus.QUEUED,
+                bundleId = bundleId, order = orders?.getOrNull(i) ?: i, category = categories.getOrNull(i),
+                flags = flags.getOrNull(i).orEmpty(),
+            )
+        }
+        withContext(Dispatchers.IO) { jobs.forEach { writeMeta(it) } }
+        _jobs.update { it + jobs }
+        log.event("JOBS_QUEUED", "jobs" to jobs.size, "source" to source, "bundle" to bundleId?.take(8), "flagged" to jobs.count { it.flags.isNotEmpty() })
+        startWorker()
+        wake.trySend(Unit)
+        return jobs
+    }
+
+    /**
+     * The finished reading of a job, for the review: the one in memory, or rebuilt from what was stored (about a
+     * second; nothing is read again). An invoice cut from a file of many keeps its reading in memory only while it is
+     * one of the last [LAZY_KEEP] opened. Null when the job is gone, not read yet, or its reading cannot be rebuilt
+     * (it is then read again, as after a restart).
+     */
+    suspend fun load(id: String): PendingImport? {
+        val job = job(id) ?: return null
+        job.pending?.let { return it }
+        synchronized(kept) { kept[id] }?.let { return it }
+        if (job.status != JobStatus.READY) return null
+        val pending = runCatching { loadReading(job) }.onFailure { log.error("loadReading", it) }.getOrNull()
+        val now = job(id) ?: return null // discarded meanwhile
+        if (pending == null) {
+            if (now.status == JobStatus.READY) {
+                update(now.copy(status = JobStatus.QUEUED))
+                startWorker()
+                wake.trySend(Unit)
+            }
+            return null
+        }
+        if (now.bundleId == null) update(now.copy(pending = pending), persist = false) else keep(id, pending)
+        return pending
+    }
+
+    private fun keep(id: String, pending: PendingImport) = synchronized(kept) { kept[id] = pending }
+
     /** Stops a reading or drops a document that was not saved; its file is deleted. */
     fun discard(id: String) {
         val job = job(id) ?: return
         val running = current.takeIf { currentId == id }
         remove(id)
+        emit(JobEvent(JobEvent.Kind.DISCARDED, id, job.bundleId, job.order))
         // The file is deleted once the reading has really stopped (it may still be using it), and only when no saved
         // document uses it: the app may have saved it by itself just before being closed, without marking the job.
         scope.launch(Dispatchers.IO) {
@@ -121,11 +248,19 @@ class ImportQueue(
         log.event("JOB_DISCARDED", "job" to id.take(8), "status" to job.status)
     }
 
-    /** The operator saved the document from the review screen (the file now belongs to it). */
-    fun markSaved(id: String) = remove(id)
+    /** The operator saved the document [documentId] from the review screen (the file now belongs to it). */
+    fun markSaved(id: String, documentId: Long? = null) {
+        val job = job(id)
+        remove(id)
+        if (job != null) emit(JobEvent(JobEvent.Kind.SAVED_BY_YOU, id, job.bundleId, job.order, documentId))
+    }
 
     /** Hides a document the app saved by itself from the list. */
-    fun dismiss(id: String) = remove(id)
+    fun dismiss(id: String) {
+        val job = job(id)
+        remove(id)
+        if (job != null) emit(JobEvent(JobEvent.Kind.DISMISSED, id, job.bundleId, job.order, job.savedDocumentId))
+    }
 
     fun retry(id: String) {
         val job = job(id) ?: return
@@ -134,18 +269,23 @@ class ImportQueue(
         wake.trySend(Unit)
     }
 
-    /** Loads the queue after a restart: finished readings are rebuilt (no reading again), unfinished ones re-queued. */
+    /**
+     * Loads the queue after a restart: finished readings are rebuilt (no reading again), unfinished ones re-queued.
+     * Invoices cut from a file of many keep their readings on the phone until opened (see [load]).
+     */
     fun restore() {
         // Documents the app saved by itself on an earlier day leave the home screen by themselves (no "Hide" tap for
-        // each); they are in Documents like any other.
+        // each); they are in Documents like any other. Those of a file still being imported stay, for its counts.
         val today = java.time.LocalDate.now().atStartOfDay(java.time.ZoneId.systemDefault()).toInstant().toEpochMilli()
+        fun stillNeeded(j: ImportJob) = j.bundleId != null && runCatching { bundleOpen(j.bundleId) }.getOrDefault(true)
         val loaded = dir.listFiles()?.mapNotNull { d -> runCatching { readMeta(d) }.getOrNull() }.orEmpty()
-            .filter { j -> !(j.status == JobStatus.SAVED && j.createdAt < today).also { old -> if (old) File(dir, j.id).deleteRecursively() } }
+            .filter { j -> !(j.status == JobStatus.SAVED && j.createdAt < today && !stillNeeded(j)).also { old -> if (old) File(dir, j.id).deleteRecursively() } }
             .sortedBy { it.createdAt }
             .map { if (it.status == JobStatus.READING) it.copy(status = JobStatus.QUEUED) else it }
         _jobs.value = loaded
+        loaded.forEach { j -> emit(JobEvent(JobEvent.Kind.RESTORED, j.id, j.bundleId, j.order, j.savedDocumentId, j.status)) }
         // One after another: rebuilding several readings at once would slow the start and any new reading.
-        val ready = loaded.filter { it.status == JobStatus.READY }
+        val ready = loaded.filter { it.status == JobStatus.READY && it.bundleId == null }
         if (ready.isNotEmpty()) scope.launch {
             for (j in ready) {
                 val pending = runCatching { loadReading(j) }.getOrNull()
@@ -167,7 +307,7 @@ class ImportQueue(
             for (signal in wake) {
                 while (true) {
                     val next = _jobs.value.firstOrNull { it.status == JobStatus.QUEUED } ?: break
-                    val job = scope.launch { read(next) }
+                    val job = scope.launch(worker) { read(next) }
                     current = job
                     currentId = next.id
                     job.join()
@@ -185,6 +325,7 @@ class ImportQueue(
             log.event("JOB_GAVE_UP", "job" to start.id.take(8), "attempts" to start.attempts)
             val failed = start.copy(status = JobStatus.FAILED, error = STOPPED, progress = null)
             update(failed)
+            emit(JobEvent(JobEvent.Kind.FAILED, failed.id, failed.bundleId, failed.order))
             notifier.finished(failed)
             return
         }
@@ -207,23 +348,32 @@ class ImportQueue(
                 "ms" to (System.currentTimeMillis() - t0), "ocrLines" to pending.rawLines.sumOf { it.size },
                 "ocrError" to pending.ocrError, "reading" to pending.readingNote, "ai" to pending.aiNote,
             )
-            val prepared = preparer.prepare(pending)
+            val prepared = preparer.prepare(pending, j.flags)
             val d = prepared.draft
             // Discarded while it was being read: nothing is saved.
             if (job(j.id) == null) return
             val savedId = runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()
             savedId?.let { id -> runCatching { onAutoSaved(id, pending) } }
+            // An invoice of a file of many waits on the phone, not in memory: it is rebuilt when opened (see load).
+            val lazy = savedId == null && j.bundleId != null
             j = (job(j.id) ?: return).copy(
                 status = if (savedId != null) JobStatus.SAVED else JobStatus.READY,
-                pending = if (savedId != null) null else pending,
+                pending = if (savedId != null || lazy) null else pending,
                 savedDocumentId = savedId,
                 progress = null,
                 sellerName = d.seller.text.ifBlank { null },
                 totalCents = com.kitchenreceipts.core.ItalianNumbers.parseCents(d.total.text),
                 itemCount = d.items.size,
+                uncertainCount = d.uncertainCount,
+                reasons = prepared.reasons,
             )
+            if (lazy) keep(j.id, pending)
             update(j)
             if (savedId != null) dropReading(j.id) // saved: the reading is kept with the document (ReadingArchive)
+            emit(
+                if (savedId != null) JobEvent(JobEvent.Kind.SAVED_BY_APP, j.id, j.bundleId, j.order, savedId)
+                else JobEvent(JobEvent.Kind.READY, j.id, j.bundleId, j.order),
+            )
             notifier.finished(j)
             val alerts = runCatching { preparer.priceAlerts(savedId, prepared) }.onFailure { log.error("priceAlerts", it) }.getOrDefault(emptyList())
             if (alerts.isNotEmpty()) {
@@ -240,6 +390,7 @@ class ImportQueue(
             }.getOrDefault(e.javaClass.simpleName)
             j = (job(j.id) ?: return).copy(status = JobStatus.FAILED, error = message, progress = null)
             update(j)
+            emit(JobEvent(JobEvent.Kind.FAILED, j.id, j.bundleId, j.order))
             notifier.finished(j)
         }
     }
@@ -258,7 +409,12 @@ class ImportQueue(
 
     private fun remove(id: String) {
         _jobs.update { list -> list.filterNot { it.id == id } }
+        synchronized(kept) { kept.remove(id) }
         File(dir, id).deleteRecursively()
+    }
+
+    private fun emit(e: JobEvent) {
+        runCatching { listener(e) }.onFailure { log.error("jobListener", it) }
     }
 
     private fun writeMeta(job: ImportJob) {
@@ -277,6 +433,13 @@ class ImportQueue(
         job.totalCents?.let { p["total"] = it.toString() }
         p["items"] = job.itemCount.toString()
         p["attempts"] = job.attempts.toString()
+        // A file of many invoices (older versions never wrote these: they read as none).
+        job.bundleId?.let { p["bundle"] = it }
+        job.order?.let { p["order"] = it.toString() }
+        job.category?.let { p["category"] = it }
+        if (job.flags.isNotEmpty()) p["flags"] = job.flags.sorted().joinToString(",")
+        if (job.uncertainCount > 0) p["uncertain"] = job.uncertainCount.toString()
+        if (job.reasons.isNotEmpty()) p["reasons"] = job.reasons.joinToString(",") { it.name }
         // Written aside, then put in place in one step: the app stopped mid-write never leaves a cut file (a job
         // whose details cannot be read is lost from the queue, and its photo with it).
         runCatching {
@@ -304,6 +467,13 @@ class ImportQueue(
             totalCents = p.getProperty("total")?.toLongOrNull(),
             itemCount = p.getProperty("items")?.toIntOrNull() ?: 0,
             attempts = p.getProperty("attempts")?.toIntOrNull() ?: 0,
+            bundleId = p.getProperty("bundle")?.ifBlank { null },
+            order = p.getProperty("order")?.toIntOrNull(),
+            category = p.getProperty("category")?.ifBlank { null },
+            flags = p.getProperty("flags").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
+            uncertainCount = p.getProperty("uncertain")?.toIntOrNull() ?: 0,
+            // A reason this version does not know (written by a newer one) is left out.
+            reasons = p.getProperty("reasons").orEmpty().split(',').mapNotNull { n -> ReviewReason.entries.firstOrNull { it.name == n.trim() } },
         )
     }
 
@@ -323,6 +493,10 @@ class ImportQueue(
         p["aiChecks"] = pending.aiTargeted.size.toString()
         p["aiSpot"] = pending.aiSpot.toString()
         p["aiPicks"] = pending.aiPicks.joinToString(",")
+        // Which questions the AI was asked, beside the answers' keys: the replay asks the same way.
+        p["aiScope"] = pending.aiScope.name
+        // Pages read from the PDF's own text: the rebuilt reading uses the same rules.
+        if (pending.textLayerPages.isNotEmpty()) p["textPages"] = pending.textLayerPages.sorted().joinToString(",")
         pending.aiLayout?.let { File(d, "ai-layout.txt").writeText(it) }
         File(d, "reading.properties").outputStream().use { p.store(it, null) }
         pending.aiRaw.forEachIndexed { i, raw -> File(d, "ai-$i.json").writeText(raw) }
@@ -343,9 +517,12 @@ class ImportQueue(
         val heights = File(d, "heights.txt").takeIf { it.exists() }?.readText()?.split(',')?.mapNotNull { it.trim().toIntOrNull() }.orEmpty()
         val aiRaw = (0 until (p.getProperty("aiPages")?.toIntOrNull() ?: 0)).map { i -> File(d, "ai-$i.json").takeIf { it.exists() }?.readText() ?: "" }
         val aiChecks = (0 until (p.getProperty("aiChecks")?.toIntOrNull() ?: 0)).map { i -> File(d, "ai-check-$i.json").takeIf { it.exists() }?.readText() ?: "" }
+        val textPages = p.getProperty("textPages").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() }.toSet()
+        // An older reading has no scope: it asked every question.
+        val aiScope = AiScope.entries.firstOrNull { it.name == p.getProperty("aiScope") } ?: AiScope.ALL
         ImportProcessor.rebuild(
             job.file, lines, widths, p.getProperty("ocrError"), p.getProperty("engine", ""), aiRaw, p.getProperty("aiNote"), aiChecks,
-            p.getProperty("readingNote", ""), settings.parseOptions(), p.getProperty("ocrMillis")?.toLongOrNull() ?: 0,
+            p.getProperty("readingNote", ""), settings.parseOptions().copy(textLayerPages = textPages), p.getProperty("ocrMillis")?.toLongOrNull() ?: 0,
             p.getProperty("aiSpot") == "true",
             File(d, "ai-layout.txt").takeIf { it.exists() }?.readText(),
             aiPicks = p.getProperty("aiPicks").orEmpty().split(',').mapNotNull { it.trim().toIntOrNull() },
@@ -353,12 +530,16 @@ class ImportQueue(
             aiKeys = aiChecks.indices.map { i -> File(d, "ai-check-$i.key").takeIf { it.exists() }?.readText() }
                 .let { k -> if (k.all { it != null }) k.filterNotNull() else emptyList() },
             heights = heights,
+            aiScope = aiScope,
         )
     }
 
     companion object {
         /** Readings started before giving up (the second one without the AI). */
         const val MAX_ATTEMPTS = 2
+
+        /** Readings of invoices cut from a file of many kept in memory: the one open, the one before and the next. */
+        const val LAZY_KEEP = 3
 
         /** [ImportJob.error] of a reading that stopped the app twice (shown in the operator's language). */
         const val STOPPED = "stopped"

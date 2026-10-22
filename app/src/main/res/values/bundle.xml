@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A file of many invoices: looking through it, cutting it, holding its invoices for a check -->
+    <string name="bundle_hold_reason">This invoice may be cut or joined wrongly: check its pages</string>
+    <string name="bundle_error_locked">This PDF is protected by a password, so the app cannot look inside it.</string>
+    <string name="bundle_error_damaged">This PDF is damaged and cannot be opened.</string>
+    <string name="bundle_error_storage">The phone is out of space. Free some space and try again.</string>
+    <string name="bundle_error_split">The invoices could not be prepared. Nothing was imported: try again.</string>
+</resources>

@@ -119,6 +119,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     /** The document as the app read it (to learn the supplier's layout from what the operator confirms). */
     private var readParsed: com.kitchenreceipts.core.ParsedDocument? = null
     private var supplierKey: String? = null
+    /** An invoice cut from a file of many whose pages need a look (see ImportJob.flags): held for the operator. */
+    private var bundleFlags: Set<String> = emptySet()
     /** What the OCR found where, for showing the part of the photo behind a field (new documents only). */
     private var ocrPages: List<List<com.kitchenreceipts.core.OcrLine>> = emptyList()
     private var ocrWidths: List<Int> = emptyList()
@@ -184,15 +186,18 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     }
 
     private suspend fun loadPending() {
-        val pending = jobId?.let { c.importQueue.job(it) }?.pending
-        if (pending == null) {
+        val job = jobId?.let { c.importQueue.job(it) }
+        // In memory, or rebuilt from what was stored (an invoice of a file of many, a reading after a restart).
+        val pending = job?.let { it.pending ?: c.importQueue.load(it.id) }
+        if (job == null || pending == null) {
             _state.value = ReviewState(loading = false, fatal = "nothing_to_review")
             return
         }
         storedFile = pending.file
         ocrText = pending.ocrText
         // Heavy (supplier, products, price history): off the screen's thread, so opening the review never stutters.
-        val prepared = withContext(Dispatchers.Default) { c.preparer.prepare(pending) }
+        bundleFlags = job.flags
+        val prepared = withContext(Dispatchers.Default) { c.preparer.prepare(pending, bundleFlags) }
         ocrSellerRaw = prepared.ocrSellerRaw
         supplierKey = prepared.supplierKey
         ocrPages = pending.rawLines
@@ -214,7 +219,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             ocrError = pending.ocrError, pagesRead = pending.pagesRead,
             recognisedText = pending.debugReport(),
             recognition = prepared.recognition,
-            reviewReasons = if (kept != null) AutoAccept.reasons(draft) else prepared.reasons,
+            reviewReasons = if (kept != null) AutoAccept.reasons(draft, bundleFlags) else prepared.reasons,
             priceChanges = if (kept != null) priceChanges(draft) else prepared.priceChanges,
         )
         refreshChecks(0)
@@ -317,7 +322,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         checkJob = viewModelScope.launch(Dispatchers.Default) {
             delay(delayMs)
             val d = _state.value.draft
-            val reasons = AutoAccept.reasons(d)
+            val reasons = AutoAccept.reasons(d, bundleFlags)
             val known = sellerNames.value + runCatching { c.knowledge.pack.value.suppliers.map { it.name } }.getOrDefault(emptyList())
             val repl = com.kitchenreceipts.core.Replacements.compute(d, known, LocalDate.now())
             _state.update { if (it.draft === d) it.copy(reviewReasons = reasons, replacements = repl) else it }
@@ -474,7 +479,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                     val uncertain = s.draft.uncertainCount
                     // Nothing wrong is saved without the operator seeing it: whatever still does not check out is
                     // listed and asked once (a clean document saves with one tap, as before).
-                    val open = openReasons(AutoAccept.reasons(s.draft))
+                    val open = openReasons(AutoAccept.reasons(s.draft, bundleFlags))
                     if (dups.isNotEmpty()) {
                         c.log.event("DUPLICATE_WARNING", "matches" to dups.size, "reasons" to dups.flatMap { it.match.reasons }.distinct().joinToString(","))
                     }
@@ -501,7 +506,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         try {
             val own = c.settings.ownVatNumber.ifBlank { null }
             val learning = if (documentId == null) {
-                ocrText?.let { SellerLearning(it, ocrSellerRaw, own) }
+                ocrText?.let {
+                    SellerLearning(it, ocrSellerRaw, own, vatFromRoleBox = readParsed?.supplierVatSource == com.kitchenreceipts.core.SupplierVatSource.ROLE_BOX)
+                }
             } else {
                 docOcrText?.let { SellerLearning(it, null, own) }
             }
@@ -519,7 +526,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
 
     private fun afterSave(id: Long, doc: ValidDocument, own: String?, auto: Boolean) {
         run {
-            if (documentId == null) jobId?.let { c.importQueue.markSaved(it) }
+            if (documentId == null) jobId?.let { c.importQueue.markSaved(it, id) }
             // The reading as the camera saw it, so later versions can read this document again (see ReadingChecker).
             if (documentId == null) runCatching { c.readings.save(id, ocrPages, ocrWidths, ocrHeights) }
             val finalDraft = _state.value.draft

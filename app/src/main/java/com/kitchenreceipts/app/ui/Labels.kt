@@ -121,6 +121,7 @@ fun reviewReasonText(r: ReviewReason): String = stringResource(
         ReviewReason.DUPLICATE_PAGE -> R.string.reason_duplicate_page
         ReviewReason.PAGES_MISSING -> R.string.reason_pages_missing
         ReviewReason.CHECKED_BY_TOTALS -> R.string.reason_checked_by_totals
+        ReviewReason.BUNDLE_CHECK -> R.string.bundle_hold_reason
     },
 )
 

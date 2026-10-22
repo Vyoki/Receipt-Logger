@@ -11,7 +11,15 @@ import android.graphics.pdf.PdfRenderer
 import android.net.Uri
 import android.os.ParcelFileDescriptor
 import androidx.core.content.FileProvider
+import com.tom_roush.pdfbox.cos.COSArray
+import com.tom_roush.pdfbox.cos.COSName
+import com.tom_roush.pdfbox.cos.COSString
+import com.tom_roush.pdfbox.io.MemoryUsageSetting
+import com.tom_roush.pdfbox.multipdf.PageExtractor
+import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import java.io.File
 import java.io.IOException
@@ -27,6 +35,24 @@ data class StoredFile(
     val pageCount: Int,
     val sha256: String,
 )
+
+/** What became of cutting a file of many invoices into one PDF per invoice (see FileStore.splitPdf). */
+sealed interface SplitResult {
+    /** One stored PDF per range, in the order of the ranges. */
+    data class Done(val parts: List<StoredFile>) : SplitResult
+
+    /** Nothing was kept: every part written before the failure was deleted. */
+    data class Failed(val reason: SplitFailure) : SplitResult
+}
+
+/** Why a file could not be cut; [text] says it in the operator's words. */
+enum class SplitFailure(val text: Int) {
+    STORAGE(com.kitchenreceipts.app.R.string.bundle_error_storage),
+    LOCKED(com.kitchenreceipts.app.R.string.bundle_error_locked),
+    DAMAGED(com.kitchenreceipts.app.R.string.bundle_error_damaged),
+    /** Something else went wrong (a page range the file does not have, a part Android cannot open). */
+    OTHER(com.kitchenreceipts.app.R.string.bundle_error_split),
+}
 
 /** A file the app cannot import; [text] says why in the operator's language (the message stays English, for the log). */
 class UnsupportedFileException(message: String, val text: Int = 0, val arg: Any? = null) : IOException(message)
@@ -138,6 +164,58 @@ class FileStore(private val context: Context) {
         finish(tmp, MIME_PDF, sha)
     }
 
+    /**
+     * Cuts a stored PDF of many invoices into one stored PDF per range of pages (0-based, both ends included),
+     * reading the file once. Each part is the same bytes every time it is cut from the same file (its /ID is made
+     * from the file's SHA-256 and the range, not from the clock), so the same invoice cut twice is found as a
+     * duplicate by its file hash. All or nothing: when any part fails, the parts already written are deleted.
+     */
+    suspend fun splitPdf(bundle: StoredFile, ranges: List<IntRange>): SplitResult = withContext(Dispatchers.IO) {
+        val written = mutableListOf<File>()
+        try {
+            val memory = MemoryUsageSetting.setupTempFileOnly().setTempDir(pdfboxTempDir())
+            val parts = PDDocument.load(file(bundle.relativePath), memory).use { doc ->
+                ranges.map { r ->
+                    ensureActive()
+                    if (r.isEmpty() || r.first < 0 || r.last >= doc.numberOfPages) throw IllegalArgumentException("pages ${r.first}-${r.last} of ${doc.numberOfPages}")
+                    PageExtractor(doc, r.first + 1, r.last + 1).extract().use { part ->
+                        val id = MessageDigest.getInstance("MD5").digest("${bundle.sha256}:${r.first}-${r.last}".toByteArray(Charsets.UTF_8))
+                        part.document.trailer.setItem(COSName.ID, COSArray().apply { add(COSString(id)); add(COSString(id)) })
+                        val tmp = File(documentsDir, "import_${UUID.randomUUID()}.tmp")
+                        written += tmp
+                        part.save(tmp)
+                        val target = File(documentsDir, "${UUID.randomUUID()}.pdf")
+                        if (!tmp.renameTo(target)) throw IOException("The part could not be put in place")
+                        written += target
+                        // Android must be able to show and read it, page for page.
+                        if (pdfPageCount(target) != r.last - r.first + 1) throw IOException("The part has the wrong number of pages")
+                        StoredFile("$DOCUMENTS_DIR/${target.name}", MIME_PDF, r.last - r.first + 1, target.inputStream().use { sha256(it) })
+                    }
+                }
+            }
+            SplitResult.Done(parts)
+        } catch (e: Throwable) {
+            written.forEach { it.delete() }
+            if (e is kotlinx.coroutines.CancellationException || e is Error) throw e
+            SplitResult.Failed(splitFailure(e))
+        }
+    }
+
+    private fun splitFailure(e: Throwable): SplitFailure {
+        val messages = generateSequence(e) { it.cause }.take(8).mapNotNull { it.message }.joinToString(" ")
+        return when {
+            generateSequence(e) { it.cause }.take(8).any { it is InvalidPasswordException } -> SplitFailure.LOCKED
+            messages.contains("ENOSPC") || messages.contains("No space left", ignoreCase = true) ||
+                documentsDir.usableSpace < LOW_SPACE_BYTES -> SplitFailure.STORAGE
+            e is IllegalArgumentException -> SplitFailure.OTHER
+            e is IOException -> SplitFailure.DAMAGED
+            else -> SplitFailure.OTHER
+        }
+    }
+
+    /** Where the PDF reader keeps its temporary files while a large file is open (cleared by the caller when idle). */
+    fun pdfboxTempDir(): File = File(context.cacheDir, PDFBOX_TEMP_DIR).apply { mkdirs() }
+
     fun delete(relativePath: String) {
         file(relativePath).delete()
     }
@@ -246,5 +324,8 @@ class FileStore(private val context: Context) {
             return lines.chunked(TEXT_LINES_PER_PAGE).ifEmpty { listOf(emptyList()) }
         }
         const val MAX_BYTES = 50L * 1024 * 1024
+        /** Below this much free space a failed write is put down to a full phone. */
+        private const val LOW_SPACE_BYTES = 5L * 1024 * 1024
+        const val PDFBOX_TEMP_DIR = "pdfbox"
     }
 }

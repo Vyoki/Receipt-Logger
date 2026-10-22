@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Un file con molte fatture: esaminarlo, dividerlo, tenere le sue fatture per un controllo -->
+    <string name="bundle_hold_reason">Questa fattura potrebbe essere divisa o unita male: controlla le pagine</string>
+    <string name="bundle_error_locked">Questo PDF è protetto da password: l\'app non può esaminarlo.</string>
+    <string name="bundle_error_damaged">Questo PDF è danneggiato e non si può aprire.</string>
+    <string name="bundle_error_storage">Il telefono non ha più spazio. Libera spazio e riprova.</string>
+    <string name="bundle_error_split">Non è stato possibile preparare le fatture. Non è stato importato nulla: riprova.</string>
+</resources>

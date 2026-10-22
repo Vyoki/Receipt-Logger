@@ -5,6 +5,7 @@ import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.ai.AiPageReader
 import com.kitchenreceipts.core.AiLoop
 import com.kitchenreceipts.core.AiReader
+import com.kitchenreceipts.core.AiScope
 import com.kitchenreceipts.core.AiTarget
 import com.kitchenreceipts.core.AiTargets
 import com.kitchenreceipts.core.LayoutQuestion
@@ -14,6 +15,7 @@ import com.kitchenreceipts.core.ParseOptions
 import com.kitchenreceipts.core.ParsedDocument
 import com.kitchenreceipts.core.ReceiptParser
 import com.kitchenreceipts.core.SupplierLayout
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.coroutines.cancellation.CancellationException
@@ -51,6 +53,10 @@ data class PendingImport(
     val aiPicks: List<Int> = emptyList(),
     /** What each of [aiTargeted] answered (see AiLoop.keys), for the replay after a restart or an update. */
     val aiKeys: List<String> = emptyList(),
+    /** Pages (from 0) whose words came from the PDF's own text layer (see ParseOptions.textLayerPages). */
+    val textLayerPages: Set<Int> = emptySet(),
+    /** Which questions the AI was asked (see AiScope): the answers are replayed with the same scope. */
+    val aiScope: AiScope = AiScope.ALL,
 ) {
     /** Plain-text report the user can share when a document is read badly. */
     fun debugReport(): String = buildString {
@@ -121,7 +127,11 @@ class AiUse(
     val agent: Boolean = false,
 )
 
-class ImportProcessor(private val renderer: PageRenderer) {
+/**
+ * [cpu]: where the reading's own computing runs (parsing, page text, image clean-up). The background reader gives it
+ * threads of lower priority, so the screen the operator is using stays smooth while documents are read.
+ */
+class ImportProcessor(private val renderer: PageRenderer, private val cpu: CoroutineDispatcher = Dispatchers.Default) {
 
     /**
      * The page image being worked on, kept for the next step that needs the same page (OCR pass 2, the AI) instead
@@ -194,7 +204,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         if (file.mimeType == com.kitchenreceipts.app.files.FileStore.MIME_XML) {
             // An e-invoice: every value is in the XML. No OCR, no AI, nothing guessed.
             onProgress(ImportProgress(1, 1, 1))
-            val read = withContext(Dispatchers.Default) { com.kitchenreceipts.core.EInvoice.read(renderer.bytes(file.relativePath), options.ownVatNumber) }
+            val read = withContext(cpu) { com.kitchenreceipts.core.EInvoice.read(renderer.bytes(file.relativePath), options.ownVatNumber) }
             return PendingImport(
                 file = file,
                 ocrText = read.text,
@@ -247,6 +257,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 best = second
             }
         }
+        // The rules for exact text apply to the pages read from the PDF's own text, in every reading below.
+        val opts = options.copy(textLayerPages = best.textSet)
         var parsed = best.parsed(options)
         var aiLayout: String? = null
         var layoutNote: String? = null
@@ -258,6 +270,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val aiPicks = mutableListOf<Int>()
         val aiKeys = mutableListOf<String>()
         var aiSpot = false
+        // Every question, as before (the owner's question 1 may later allow fewer on exact text: see AiScope).
+        val scope = AiScope.ALL
         if (ai != null && shared != null && best.error == null && best.lines.isNotEmpty()) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
             // totals and key lines of every document before the operator sees it. Whole pages only when the regular
@@ -265,11 +279,11 @@ class ImportProcessor(private val renderer: PageRenderer) {
             // Column headings the app does not know, of a supplier not seen before: one short question first, so the
             // rest of the reading (and the AI's other questions) use the answer. Kept only if it reads the document better.
             if (!ai.always) {
-                val q = withContext(Dispatchers.Default) { AiTargets.layoutQuestion(best.lines, parsed) }
+                val q = withContext(cpu) { AiTargets.layoutQuestion(best.lines, parsed) }
                 if (q != null) {
                     val (raw, note) = askLayout(images, best, shared, q, onProgress, ai.style)
                     val answer = raw?.let { AiReader.decodeLayout(it, q) }
-                    val better = answer?.let { a -> withContext(Dispatchers.Default) { withAiLayout(best.lines, options, parsed, a) } }
+                    val better = answer?.let { a -> withContext(cpu) { withAiLayout(best.lines, opts, parsed, a) } }
                     if (better != null && answer != null) {
                         parsed = better
                         aiLayout = answer.encode()
@@ -277,14 +291,14 @@ class ImportProcessor(private val renderer: PageRenderer) {
                     layoutNote = "headings: $note" + (if (better != null) " (used)" else if (answer != null) " (not better)" else " (no answer)")
                 }
             }
-            val planned = if (ai.always) null else withContext(Dispatchers.Default) { AiTargets.plan(best.lines, parsed, spotCheck = true) }
+            val planned = if (ai.always) null else withContext(cpu) { AiTargets.plan(best.lines, parsed, spotCheck = true, scope = scope) }
             // aiSpot marks the question loop (the answers are replayed through it after a restart).
             aiSpot = planned != null
             aiNote = when {
-                planned == null -> runAi(images, best, ai, shared, options, onProgress, aiRaw, parsed)
+                planned == null -> runAi(images, best, ai, shared, opts, onProgress, aiRaw, parsed)
                 // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
                 planned.isEmpty() -> "nothing to ask"
-                else -> runLoop(images, best, shared, parsed, options, onProgress, aiTargeted, aiPicks, aiKeys, ai, ai.examples(parsed, best.text)).second
+                else -> runLoop(images, best, shared, parsed, opts, onProgress, aiTargeted, aiPicks, aiKeys, ai, scope, ai.examples(parsed, best.text)).second
             }
             layoutNote?.let { aiNote = "$it; $aiNote" }
         }
@@ -293,9 +307,9 @@ class ImportProcessor(private val renderer: PageRenderer) {
             aiRaw, aiNote, aiTargeted,
             "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else "") +
                 (if (best.textPages > 0) ", text of the PDF on ${best.textPages} of ${best.lines.size} page(s)" else ""),
-            options, System.currentTimeMillis() - started, aiSpot, aiLayout,
+            opts, System.currentTimeMillis() - started, aiSpot, aiLayout,
             // Worked out above from the same reading: not again (the AI's answers are replayed on it).
-            preParsed = parsed, aiPicks = aiPicks, aiKeys = aiKeys, heights = best.heights,
+            preParsed = parsed, aiPicks = aiPicks, aiKeys = aiKeys, heights = best.heights, aiScope = scope, cpu = cpu,
         )
     }
 
@@ -345,9 +359,10 @@ class ImportProcessor(private val renderer: PageRenderer) {
         picks: MutableList<Int>,
         keys: MutableList<String>,
         ai: AiUse,
+        scope: AiScope,
         examples: List<AiReader.RowExample> = emptyList(),
     ): Pair<ParsedDocument, String> {
-        val loop = AiLoop(best.lines, best.text, options, start)
+        val loop = AiLoop(best.lines, best.text, options, start, scope = scope)
         val reader = shared.get().getOrElse { return start to "not started: ${it.message}" }
         // The agent's choice has no picture to look at: the smallest blank image keeps it fast.
         val blank = android.graphics.Bitmap.createBitmap(28, 28, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.WHITE) }
@@ -356,7 +371,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
         var stopped = "nothing left to prove"
         while (true) {
             if (System.currentTimeMillis() - started > AI_TIME_LIMIT_MS) { stopped = "time limit"; break }
-            val open = withContext(Dispatchers.Default) { loop.candidates() }
+            val open = withContext(cpu) { loop.candidates() }
             if (open.isEmpty()) {
                 if (loop.answers.size >= loop.maxQuestions) stopped = "question limit"
                 break
@@ -389,7 +404,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             }
             if (r.error == "cancelled") throw CancellationException("AI reading cancelled")
             val raw = if (r.error == null) r.raw else ""
-            withContext(Dispatchers.Default) { loop.answer(t, raw, pick) }
+            withContext(cpu) { loop.answer(t, raw, pick) }
             notes += "q$step ${label(t)}: ${r.millis / 100 / 10.0}s ${r.stats}" + (r.error?.let { " error=$it" } ?: "")
         }
         answers += loop.answers
@@ -415,8 +430,8 @@ class ImportProcessor(private val renderer: PageRenderer) {
         whole: ParsedDocument,
     ): String {
         val pages = best.lines.size
-        val selected = if (ai.always) (0 until pages).toList() else withContext(Dispatchers.Default) {
-            AiReader.pagesToRead(best.lines.map { ReceiptParser.parsePages(listOf(it), options) }, whole)
+        val selected = if (ai.always) (0 until pages).toList() else withContext(cpu) {
+            AiReader.pagesToRead(best.lines.mapIndexed { i, page -> ReceiptParser.parsePages(listOf(page), pageOptions(options, i)) }, whole)
         }
         repeat(pages) { raw += "" }
         onProgress(ImportProgress(selected.first() + 1, pages, 3))
@@ -446,12 +461,13 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val error: String?,
         val pass: Int,
         /** Pages read from the PDF's own text (with the OCR only where it has none). */
-        val textPages: Int = 0,
+        val textSet: Set<Int> = emptySet(),
     ) {
+        val textPages: Int get() = textSet.size
         private var cache: ParsedDocument? = null
         val text: String get() = lines.joinToString("\n${ReceiptParser.PAGE_BREAK}\n") { LayoutRows.toText(it) }
-        suspend fun parsed(options: ParseOptions): ParsedDocument = cache ?: withContext(Dispatchers.Default) {
-            if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options)
+        suspend fun parsed(options: ParseOptions): ParsedDocument = cache ?: withContext(cpu) {
+            if (lines.all { it.isEmpty() }) ParsedDocument.EMPTY else ReceiptParser.parsePages(lines, options.copy(textLayerPages = textSet))
         }.also { cache = it }
     }
 
@@ -466,16 +482,16 @@ class ImportProcessor(private val renderer: PageRenderer) {
         val widths = mutableListOf<Int>()
         val heights = mutableListOf<Int>()
         var error: String? = null
-        var textPages = 0
+        val textSet = mutableSetOf<Int>()
         // A digital PDF's own text where it has some: exact, where the OCR can slip. The OCR still reads the page
         // for what is printed as a picture (often the letterhead), and to check the text is what is printed.
         suspend fun withText(i: Int, seen: List<OcrLine>, w: Int, h: Int): List<OcrLine> {
             val glyphs = runCatching { images.textOf(i) }.getOrNull()
             if (glyphs.isNullOrEmpty()) return seen
-            return withContext(Dispatchers.Default) {
+            return withContext(cpu) {
                 val text = com.kitchenreceipts.core.TextLayer.lines(PdfText.scaled(glyphs, w, h))
                 val merged = com.kitchenreceipts.core.TextLayer.merge(text, seen)
-                if (merged !== seen) textPages++
+                if (merged !== seen) textSet += i
                 merged
             }
         }
@@ -489,7 +505,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                     widths += bmp.width
                     heights += bmp.height
                 } else {
-                    val enhanced = withContext(Dispatchers.Default) { ImageEnhancer.enhance(bmp) }
+                    val enhanced = withContext(cpu) { ImageEnhancer.enhance(bmp) }
                     try {
                         raw += withText(i, engine.recognize(enhanced), enhanced.width, enhanced.height)
                         widths += enhanced.width
@@ -503,13 +519,14 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 break
             }
         }
-        return Reading(raw, widths, heights, error, pass, textPages)
+        return Reading(raw, widths, heights, error, pass, textSet)
     }
 
     companion object {
         /**
          * The final reading from what was read: the regular reading of [lines], improved by the AI's answers when
          * there is one for every page. Also used to rebuild a background reading after the app restarts.
+         * [options] carries the pages read from the PDF's own text (ParseOptions.textLayerPages), as when it was read.
          */
         suspend fun rebuild(
             file: StoredFile,
@@ -533,7 +550,10 @@ class ImportProcessor(private val renderer: PageRenderer) {
             aiPicks: List<Int> = emptyList(),
             aiKeys: List<String> = emptyList(),
             heights: List<Int> = emptyList(),
-        ): PendingImport = withContext(Dispatchers.Default) {
+            /** The scope the AI's questions were asked with (see AiScope). */
+            aiScope: AiScope = AiScope.ALL,
+            cpu: CoroutineDispatcher = Dispatchers.Default,
+        ): PendingImport = withContext(cpu) {
             val pageTexts = lines.map { LayoutRows.toText(it) }
             val text = pageTexts.joinToString("\n${ReceiptParser.PAGE_BREAK}\n")
             var parsed = preParsed ?: run {
@@ -543,7 +563,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
             }
             if (aiTargeted.isNotEmpty()) {
                 // The questions are chosen again the same way from the same reading, so they pair up with the stored answers.
-                parsed = AiLoop.replay(lines, text, options, parsed, aiTargeted, aiPicks, aiKeys)
+                parsed = AiLoop.replay(lines, text, options, parsed, aiTargeted, aiPicks, aiKeys, scope = aiScope)
             }
             if (aiRaw.size == lines.size && aiRaw.any { it.isNotBlank() }) {
                 val aiPages = aiRaw.mapIndexed { i, raw ->
@@ -552,7 +572,7 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 val joined = AiReader.joinPages(aiPages.filterNotNull(), text)
                 if (joined != null) {
                     // Lines page by page (AI where it read the page and did better), header and totals from both readings.
-                    val regularPages = lines.map { ReceiptParser.parsePages(listOf(it), options) }
+                    val regularPages = lines.mapIndexed { i, page -> ReceiptParser.parsePages(listOf(page), pageOptions(options, i)) }
                     parsed = AiReader.merge(parsed, joined.copy(lineItems = AiReader.combineItems(regularPages, aiPages)), text)
                 }
             }
@@ -570,8 +590,14 @@ class ImportProcessor(private val renderer: PageRenderer) {
                 aiLayout = aiLayout,
                 aiPicks = aiPicks,
                 aiKeys = aiKeys,
+                textLayerPages = options.textLayerPages,
+                aiScope = aiScope,
             )
         }
+
+        /** [options] for page [i] read on its own (its text-layer mark moved to index 0). */
+        private fun pageOptions(options: ParseOptions, i: Int): ParseOptions =
+            if (options.textLayerPages.isEmpty()) options else options.copy(textLayerPages = if (i in options.textLayerPages) setOf(0) else emptySet())
 
         /**
          * The reading with the AI's answer about the column headings added to what is known of the supplier, or null

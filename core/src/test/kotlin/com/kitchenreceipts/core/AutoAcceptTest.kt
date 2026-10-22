@@ -25,6 +25,19 @@ class AutoAcceptTest {
         assertEquals(listOf(ReviewReason.DATE_MISSING, ReviewReason.UNCERTAIN_VALUES), AutoAccept.reasons(noDate))
     }
 
+    @Test fun anInvoiceCutFromAFileWithFlagsIsNeverSavedByTheApp() {
+        val item = LineItemDraft(1, DraftField("Patate"), quantity = DraftField("10"), unit = DraftField("kg"), lineTotal = DraftField("9,00"))
+        val ok = DocumentDraft(seller = DraftField("ABC S.r.l."), date = DraftField("01/09/2031"), total = DraftField("9,90"),
+            subtotal = DraftField("9,00"), vat = DraftField("0,90"), items = listOf(item))
+        // Everything checks out: only the flags of its pages hold it (auto-save needs no reason at all).
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(ok, emptySet()))
+        assertEquals(listOf(ReviewReason.BUNDLE_CHECK), AutoAccept.reasons(ok, setOf(InvoiceBundle.Flag.START_UNSURE.name)))
+        // A flag name the app does not know (written by a newer version) still holds it.
+        assertEquals(listOf(ReviewReason.BUNDLE_CHECK), AutoAccept.reasons(ok, setOf("SOMETHING_NEW")))
+        val wrong = ok.copy(total = DraftField("19,90"), subtotal = DraftField("18,00"))
+        assertEquals(listOf(ReviewReason.SUM_MISMATCH, ReviewReason.BUNDLE_CHECK), AutoAccept.reasons(wrong, setOf("NO_TOTAL")))
+    }
+
     @Test fun taxableEqualToTotalWithNoVatPrintedIsAsked() {
         // "SUBTOTALE 3,00 / TOTALE 3,00", no VAT line: a receipt with VAT inside as much as a net document.
         val item = LineItemDraft(1, DraftField("Pane"), quantity = DraftField("2"), unit = DraftField("pz"), lineTotal = DraftField("3,00"))

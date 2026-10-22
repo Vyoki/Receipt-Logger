@@ -30,6 +30,8 @@ enum class ReviewReason {
     PAGES_MISSING,
     /** The document's own sums made the reading add or leave out lines: the operator confirms them. */
     CHECKED_BY_TOTALS,
+    /** One invoice cut from a file of many whose pages may be cut or joined wrongly (see InvoiceBundle.Flag). */
+    BUNDLE_CHECK,
 }
 
 /**
@@ -39,7 +41,11 @@ enum class ReviewReason {
  */
 object AutoAccept {
 
-    fun reasons(d: DocumentDraft): List<ReviewReason> {
+    /**
+     * [bundleFlags]: the flags of the invoice's pages when it was cut from a file of many invoices (InvoiceBundle.Flag
+     * names). Any flag holds it for the operator: its pages may be cut or joined wrongly.
+     */
+    fun reasons(d: DocumentDraft, bundleFlags: Set<String> = emptySet()): List<ReviewReason> {
         val out = mutableListOf<ReviewReason>()
         if (d.seller.isMissing) out += ReviewReason.SELLER_MISSING
         if (d.date.isMissing || ItalianDates.parse(d.date.text) == null) out += ReviewReason.DATE_MISSING
@@ -71,6 +77,7 @@ object AutoAccept {
         if (d.vatBasis == VatBasis.UNKNOWN && inferVatBasis(d) == null && sumOk) {
             out += ReviewReason.VAT_BASIS_UNKNOWN
         }
+        if (bundleFlags.isNotEmpty()) out += ReviewReason.BUNDLE_CHECK
         return out
     }
 

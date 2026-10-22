@@ -21,6 +21,7 @@ import com.kitchenreceipts.core.ValidationResult
 import com.kitchenreceipts.core.VatBasis
 import com.kitchenreceipts.core.LineSolver
 import com.kitchenreceipts.core.SupplierMemory
+import com.kitchenreceipts.core.SupplierVatSource
 import com.kitchenreceipts.app.learning.LearningStore
 
 /** A reading turned into a draft the operator can review (or the app can save by itself). */
@@ -50,7 +51,11 @@ class DraftPreparer(
     private val knowledge: () -> com.kitchenreceipts.core.KnowledgePack = { com.kitchenreceipts.core.KnowledgePack.EMPTY },
 ) {
 
-    suspend fun prepare(pending: PendingImport): PreparedDraft {
+    /**
+     * [bundleFlags]: for an invoice cut from a file of many, why its pages need a look (ImportJob.flags); any flag
+     * holds it for the operator (ReviewReason.BUNDLE_CHECK).
+     */
+    suspend fun prepare(pending: PendingImport, bundleFlags: Set<String> = emptySet()): PreparedDraft {
         var draft = DocumentDraft.fromParsed(pending.parsed)
         val ocrSellerRaw = pending.parsed.sellerName?.value
 
@@ -59,6 +64,7 @@ class DraftPreparer(
             repo.identifySeller(
                 pending.ocrText, ocrSellerRaw, settings.ownVatNumber.ifBlank { null },
                 ocrSellerReliable = pending.parsed.sellerName?.confidence == Confidence.HIGH,
+                vatFromRoleBox = pending.parsed.supplierVatSource == SupplierVatSource.ROLE_BOX,
             )
         }.getOrNull()
         if (recognition != null) {
@@ -105,7 +111,7 @@ class DraftPreparer(
         }
         val changes = priceChanges(draft, null)
         // A price far from what was paid before is plausible but unusual: never changed, but not saved without a look.
-        val reasons = AutoAccept.reasons(draft) +
+        val reasons = AutoAccept.reasons(draft, bundleFlags) +
             (if (PriceWatch.unusual(changes).isNotEmpty()) listOf(ReviewReason.UNUSUAL_PRICE) else emptyList())
         logParsed(pending, draft, recognition, reasons, changes)
         return PreparedDraft(draft, initial, recognition, reasons, changes, ocrSellerRaw, supplierKey)
@@ -127,7 +133,10 @@ class DraftPreparer(
         if (com.kitchenreceipts.core.DocumentKinds.detect(pending.ocrText) == com.kitchenreceipts.core.DocKind.CREDIT_NOTE) return null
         val id = repo.saveDocument(
             valid, pending.file, pending.ocrText, null,
-            SellerLearning(pending.ocrText, p.ocrSellerRaw, settings.ownVatNumber.ifBlank { null }),
+            SellerLearning(
+                pending.ocrText, p.ocrSellerRaw, settings.ownVatNumber.ifBlank { null },
+                vatFromRoleBox = pending.parsed.supplierVatSource == SupplierVatSource.ROLE_BOX,
+            ),
         )
         log.event("SAVED", "doc" to id, "new" to true, "auto" to true, "items" to valid.items.size, "priceChanges" to p.priceChanges.size)
         learning?.addExamples(p.supplierKey, SupplierMemory.examplesFrom(p.draft))

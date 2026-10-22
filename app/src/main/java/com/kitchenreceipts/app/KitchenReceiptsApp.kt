@@ -39,7 +39,8 @@ class AppContainer(context: Context) {
     val checks = com.kitchenreceipts.app.data.ChecksRepository(database)
     /** Food cost of dishes and months, and the usual order to each supplier. */
     val food = com.kitchenreceipts.app.data.FoodRepository(database)
-    val importProcessor = ImportProcessor(pageRenderer)
+    /** Reads documents in the background, at background priority (see ReadingThreads). */
+    val importProcessor = ImportProcessor(pageRenderer, com.kitchenreceipts.app.jobs.ReadingThreads.dispatcher)
     val aiModels = AiModelStore(context)
     /** What the app learned from the operator's choices and confirmed lines, per supplier (phone only). */
     val learning = LearningStore(context)
