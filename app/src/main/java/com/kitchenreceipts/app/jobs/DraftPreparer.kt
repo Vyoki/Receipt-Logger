@@ -125,6 +125,21 @@ class DraftPreparer(
         repo.categoryOf(vat, sellerName)?.takeIf { it.known }?.category
     }.onFailure { log.error("supplierCategory", it) }.getOrNull()
 
+    /**
+     * The operator chose [category] on the check screen. [forSupplier]: for all of the supplier's invoices, remembered
+     * by the VAT number printed on [ocrText] and the name. Otherwise "Just this invoice": only this draft carries it,
+     * and the memory is not touched.
+     */
+    suspend fun chooseCategory(p: PreparedDraft, ocrText: String, category: SupplierCategory, forSupplier: Boolean): PreparedDraft {
+        if (forSupplier) {
+            runCatching {
+                val vat = SellerProfiles.supplierVatNumber(ocrText, settings.ownVatNumber.ifBlank { null })
+                repo.rememberCategory(vat, p.draft.seller.text, category)
+            }.onFailure { log.error("rememberCategory", it) }
+        }
+        return p.copy(supplierCategory = category)
+    }
+
     suspend fun priceChanges(d: DocumentDraft, excludeDocumentId: Long?): List<PriceChange> = runCatching {
         repo.priceChangesForDraft(d.seller.text, ItalianDates.parse(d.date.text), d.vatBasis, d.items, excludeDocumentId)
     }.getOrDefault(emptyList())
