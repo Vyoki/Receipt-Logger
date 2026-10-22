@@ -27,6 +27,7 @@ import com.kitchenreceipts.core.ItalianDates
 import com.kitchenreceipts.core.ItalianNumbers
 import com.kitchenreceipts.core.LineItemDraft
 import com.kitchenreceipts.core.LineChoice
+import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.SupplierMemory
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidationResult
@@ -92,6 +93,13 @@ data class ReviewState(
     val kind: com.kitchenreceipts.core.DocKind? = null,
     /** An invoice of a file of many, saved or put off: where the chain goes now (see [ChainMove]). */
     val chainMove: ChainMove? = null,
+    /**
+     * What the supplier sells: this invoice's own choice, else remembered by its VAT number (a saved document: by its
+     * name too, as on Sellers); null = not sorted. Where things are shown only: no figure depends on it.
+     */
+    val supplierCategory: SupplierCategory? = null,
+    /** The category chosen last time for a supplier of the same name (no VAT number to be sure): shown, never applied. */
+    val categoryChosenBefore: SupplierCategory? = null,
 )
 
 /**
@@ -238,6 +246,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         val prepared = withContext(Dispatchers.Default) { c.preparer.prepare(pending, bundleFlags) }
         ocrSellerRaw = prepared.ocrSellerRaw
         supplierKey = prepared.supplierKey
+        // The job's own category ("Just this invoice", or the file's wizard) before the one remembered by VAT number.
+        val category = c.preparer.withJobCategory(prepared, job.category).supplierCategory
+        val match = if (category == null) withContext(Dispatchers.Default) { c.preparer.categoryMatch(pending.ocrText, prepared.draft.seller.text) } else null
         ocrPages = pending.rawLines
         readParsed = pending.parsed
         ocrWidths = pending.ocrWidths
@@ -259,6 +270,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             recognition = prepared.recognition,
             reviewReasons = if (kept != null) AutoAccept.reasons(draft, bundleFlags) else prepared.reasons,
             priceChanges = if (kept != null) priceChanges(draft) else prepared.priceChanges,
+            supplierCategory = category,
+            categoryChosenBefore = match?.takeIf { !it.known }?.category,
         )
         refreshChecks(0)
         // The next invoice of the chain is made ready meanwhile (about a second), so it opens at once.
@@ -333,12 +346,15 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         val shown = kept ?: draft
         startKeys(shown)
         if (kept != null) c.log.event("DRAFT_RESTORED", "new" to false, "doc" to id)
+        // A saved supplier's category as Sellers shows it: by its VAT number, else by its name.
+        val match = withContext(Dispatchers.Default) { c.preparer.categoryMatch(doc.ocrText, sellerName) }
         _state.value = ReviewState(
             loading = false, isNew = false, draft = shown, restored = kept != null,
             filePath = doc.filePath, mimeType = doc.mimeType, pageCount = doc.pageCount,
             recognisedText = doc.ocrText?.takeIf { it.isNotBlank() },
             reviewReasons = AutoAccept.reasons(shown),
             priceChanges = priceChanges(shown),
+            supplierCategory = match?.category,
         )
         refreshChecks(0)
     }
@@ -401,6 +417,33 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun setKind(k: com.kitchenreceipts.core.DocKind?) {
         _state.update { it.copy(kind = k) }
         c.log.event("KIND_SET", "new" to true, "kind" to k)
+    }
+
+    /** A document read now (not a saved one) can keep a category for itself only: "Just this invoice". */
+    val canChooseJustThis: Boolean get() = documentId == null && jobId != null
+
+    /**
+     * The operator chose what the supplier sells. [forSupplier] ("For all invoices from this supplier", the default):
+     * remembered on this phone by the supplier's VAT number and name, as on Sellers; an invoice of a file of many
+     * also moves its supplier there in the file. Otherwise "Just this invoice": kept with this document's job only,
+     * the memory untouched. Display only: no amount changes.
+     */
+    fun chooseCategory(category: SupplierCategory, forSupplier: Boolean) {
+        val all = forSupplier || !canChooseJustThis
+        _state.update { it.copy(supplierCategory = category) }
+        c.log.event("CATEGORY_SET", "category" to category.key, "forSupplier" to all, "new" to (documentId == null))
+        val text = ocrText ?: docOcrText
+        val name = _state.value.draft.seller.text.ifBlank { null }
+        c.appScope.launch {
+            runCatching {
+                if (all) c.repository.rememberCategory(c.preparer.supplierVat(text), name, category)
+                if (documentId == null) jobId?.let { id ->
+                    c.importQueue.setCategory(id, category.key)
+                    val planId = bundleId
+                    if (all && planId != null) c.bundleStore.supplierCategoryChanged(planId, id, category)
+                }
+            }.onFailure { c.log.error("chooseCategory", it) }
+        }
     }
 
     fun setVatBasis(v: VatBasis) = editDraft { it.copy(vatBasis = v, vatBasisUncertain = false) }

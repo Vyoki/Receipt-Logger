@@ -87,6 +87,14 @@ import com.kitchenreceipts.app.ui.components.RecognisedTextCard
 import com.kitchenreceipts.app.ui.components.ReviewField
 import com.kitchenreceipts.app.ui.components.SectionTitle
 import com.kitchenreceipts.app.ui.components.WarningCard
+import com.kitchenreceipts.app.ui.components.CategoryPickerSheet
+import com.kitchenreceipts.app.ui.components.CategoryPill
+import com.kitchenreceipts.app.ui.components.FastScrollbar
+import com.kitchenreceipts.app.ui.components.FastScrollbarDefaults
+import com.kitchenreceipts.app.ui.components.JumpChip
+import com.kitchenreceipts.app.ui.components.JumpChips
+import androidx.compose.foundation.gestures.animateScrollBy
+import androidx.compose.ui.semantics.CustomAccessibilityAction
 import com.kitchenreceipts.app.ui.components.PriceChangesCard
 import com.kitchenreceipts.app.ui.categoryLabel
 import com.kitchenreceipts.app.ui.reviewReasonText
@@ -110,6 +118,9 @@ import com.kitchenreceipts.core.ReceiptParser
 import com.kitchenreceipts.core.SellerMatchReason
 import com.kitchenreceipts.core.Units
 import com.kitchenreceipts.core.VatBasis
+import com.kitchenreceipts.core.SupplierCategory
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.selectableGroup
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.togetherWith
@@ -156,6 +167,9 @@ fun ReviewScreen(
 
     var askDiscard by remember { mutableStateOf(false) }
     var pickerFor by rememberSaveable { mutableStateOf<Long?>(null) }
+    // The supplier's category tiles, with "For all invoices from this supplier" (the default) or "Just this invoice".
+    var pickCategory by rememberSaveable { mutableStateOf(false) }
+    var categoryForAll by rememberSaveable { mutableStateOf(true) }
     var showDatePicker by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -169,6 +183,8 @@ fun ReviewScreen(
     var initialKeys by rememberSaveable { mutableStateOf<List<Long>?>(null) }
     var opened by rememberSaveable { mutableStateOf(listOf<Long>()) }
     var openGroups by rememberSaveable { mutableStateOf(listOf<Long>()) }
+    // A non-food bill's lines, folded into one row until tapped.
+    var notFoodOpen by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(state.loading) {
         if (!state.loading && keepOpen == null) {
             val d = state.draft
@@ -185,11 +201,19 @@ fun ReviewScreen(
         if (s.draft.warnings.isNotEmpty()) add(TopRow("warnings"))
         add(TopRow(HEADER))
         if (s.isNew) add(TopRow("kind"))
-        add(TopRow("itemsTitle"))
+        add(TopRow(CATEGORY))
+        add(TopRow(ITEMS_TITLE))
         if (s.draft.checks?.let { hasSomethingToSay(it) } == true) add(TopRow("checks"))
         if (s.draft.items.isEmpty()) add(TopRow("noItems"))
-        addAll(lineRows(s.draft, s.errors, keepOpen?.toSet(), initialKeys?.toSet(), opened.toSet(), openGroups.toSet()))
-        add(TopRow("addItem"))
+        // Electricity, fuel and other non-food bills: their lines in one row, so only the supplier, date, number and
+        // totals are checked. Open on a tap, or when a line has an error to fix. Nothing about them is held differently.
+        val notFood = s.supplierCategory?.goods == false && s.draft.items.isNotEmpty()
+        val folded = notFood && !notFoodOpen && s.errors.keys.none { it.startsWith("item:") }
+        if (notFood) add(TopRow(NOT_FOOD))
+        if (!folded) {
+            addAll(lineRows(s.draft, s.errors, keepOpen?.toSet(), initialKeys?.toSet(), opened.toSet(), openGroups.toSet()))
+            add(TopRow("addItem"))
+        }
         // Background information after the lines: what to check comes first.
         if (s.priceChanges.isNotEmpty()) add(TopRow("prices"))
         if (s.recognisedText != null) add(TopRow("recognised"))
@@ -278,13 +302,102 @@ fun ReviewScreen(
     // A replacement under every value the app could not settle (worked out by the view model as the operator edits).
     val replacements = state.replacements
     val toCheck = rows.count { r -> (r is CardRow && r.item.needsLook(state.errors, state.draft.lotsPrinted)) || (r is TopRow && r.key == HEADER && state.draft.headerNeedsLook(state.errors)) }
+
+    // The fast scroller's bubble and TalkBack: what the row at a place is ("Document", "Line 34 of 80", "12 lines ✓").
+    // Worked out here, read by the scroller only while it is dragged (no scroll position is read in this screen).
+    val labelPages = stringResource(R.string.jump_pages)
+    val labelTop = stringResource(R.string.jump_top)
+    val labelDocument = stringResource(R.string.document_section)
+    val labelLines = stringResource(R.string.jump_lines)
+    val labelTotals = stringResource(R.string.jump_totals)
+    val labelNext = stringResource(R.string.jump_next_check)
+    val labelPrices = stringResource(R.string.price_changes)
+    val labelText = stringResource(R.string.recognised_text)
+    val labelBack = stringResource(R.string.jump_back)
+    val lineNo = remember(state.draft.items) { state.draft.items.withIndex().associate { (i, item) -> item.key to i + 1 } }
+    val lineCount = state.draft.items.size
+    fun labelAt(i: Int): String? = when (val r = rows.getOrNull(i)) {
+        null -> null
+        is CardRow -> res.getString(R.string.scroll_line, lineNo[r.item.key] ?: 0, lineCount)
+        is CompactRow -> res.getString(R.string.scroll_line, lineNo[r.item.key] ?: 0, lineCount)
+        is GroupRow -> res.getQuantityString(R.plurals.scroll_lines_ok, r.keys.size, r.keys.size)
+        is TopRow -> when (r.key) {
+            "preview" -> labelPages
+            HEADER, "kind", CATEGORY -> labelDocument
+            ITEMS_TITLE, "checks", "noItems", NOT_FOOD, "addItem" -> labelLines
+            "prices" -> labelPrices
+            "recognised" -> labelText
+            "bottomSpace" -> if (i > 0) labelAt(i - 1) else labelTop
+            else -> labelTop
+        }
+    }
+
+    // Jumps (the chips, the scroller and TalkBack's actions): afterwards, "Back to where you were" for 5 s.
+    var backOffer by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun here() = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
+    fun offerBack(from: Pair<Int, Int>, now: String?) {
+        backOffer?.cancel()
+        backOffer = scope.launch {
+            val r = kotlinx.coroutines.withTimeoutOrNull(BACK_OFFER_MS) {
+                reviewSnackbar.showSnackbar(now ?: labelBack, actionLabel = labelBack, duration = androidx.compose.material3.SnackbarDuration.Indefinite)
+            }
+            if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) listState.animateScrollToItem(from.first, from.second)
+        }
+    }
+    fun jumpTo(index: Int, totals: Boolean = false) {
+        if (index !in rows.indices) return
+        val from = here()
+        val key = rows[index].key
+        scope.launch {
+            listState.animateScrollToItem(index)
+            // Totals: the header card's lower part, where the amounts before and with VAT are.
+            if (totals) {
+                val info = listState.layoutInfo
+                info.visibleItemsInfo.firstOrNull { it.index == index }?.let { item ->
+                    val extra = item.size - ((info.viewportEndOffset - info.viewportStartOffset) * 0.6f).toInt()
+                    if (extra > 0) listState.animateScrollBy(extra.toFloat())
+                }
+            }
+            flash = key to System.nanoTime()
+            offerBack(from, if (totals) labelTotals else labelAt(index))
+        }
+    }
+    fun jumpNext() {
+        nextToCheck(rows, listState.firstVisibleItemIndex, state.draft, state.errors, HEADER)?.let { jumpTo(it) }
+    }
+    val jumpTotals = { jumpTo(rows.indexOfFirst { it.key == HEADER }, totals = true) }
+    // Lines · Totals · Next to check, on a long document only (a fixed rule: the top of the screen never shifts).
+    val showChips = !state.loading && state.fatal == null && state.draft.items.size >= JUMP_CHIPS_FROM_LINES
+    val chips = buildList {
+        add(JumpChip(labelLines, rows.indexOfFirst { it.key == ITEMS_TITLE }))
+        add(JumpChip(labelTotals, CHIP_TOTALS))
+        if (toCheck > 0) add(JumpChip(labelNext, CHIP_NEXT))
+    }
+    val onChip: (Int) -> Unit = { i ->
+        when (i) {
+            CHIP_TOTALS -> jumpTotals()
+            CHIP_NEXT -> jumpNext()
+            else -> jumpTo(i)
+        }
+    }
+    val jumpActions = buildList {
+        if (toCheck > 0) add(CustomAccessibilityAction(labelNext) { jumpNext(); true })
+        add(CustomAccessibilityAction(labelTotals) { jumpTotals(); true })
+    }
+    var dragFrom by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     CompositionLocalProvider(LocalFieldPeek provides onPeek, LocalReplacements provides replacements) {
     Box(Modifier.fillMaxSize()) {
     AppScaffold(
         title = title,
         onBack = leave,
         snackbarHostState = reviewSnackbar,
-        subBar = chain?.let { ch -> { ChainBar(ch, canPutOff = !state.loading && state.fatal == null && state.savedId == null && state.chainMove == null, onCheckLater = vm::checkLater) } },
+        subBar = if (chain != null || showChips) ({
+            Column {
+                chain?.let { ch -> ChainBar(ch, canPutOff = !state.loading && state.fatal == null && state.savedId == null && state.chainMove == null, onCheckLater = vm::checkLater) }
+                // Hidden while the keyboard is open (JumpChips), so they never take room from the field being typed in.
+                if (showChips) JumpChips(chips, onChip, Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp))
+            }
+        }) else null,
         actions = {
             if (state.isNew && state.fatal == null && !state.loading) {
                 IconButton(onClick = { askDiscard = true }, modifier = Modifier.size(48.dp)) {
@@ -353,10 +466,13 @@ fun ReviewScreen(
                 EmptyState(stringResource(R.string.nothing_to_review))
                 Button(onClick = onBack, modifier = Modifier.fillMaxWidth().height(56.dp)) { Text(stringResource(R.string.back)) }
             }
-            else -> LazyColumn(
+            // The scroller's track shrinks with the keyboard, like the list.
+            else -> Box(Modifier.padding(padding).imePadding()) {
+            LazyColumn(
                 state = listState,
-                modifier = Modifier.padding(padding).imePadding(),
-                contentPadding = PaddingValues(start = 16.dp, end = 16.dp, top = 16.dp, bottom = 88.dp),
+                modifier = Modifier.fillMaxSize(),
+                // 24dp at the end: the ✓ and delete buttons stay clear of the scroller's thumb.
+                contentPadding = PaddingValues(start = 16.dp, end = 24.dp + FastScrollbarDefaults.EndGutter, top = 16.dp, bottom = 88.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 items(rows, key = { it.key }, contentType = { it::class.simpleName }) { row ->
@@ -388,9 +504,35 @@ fun ReviewScreen(
                             openGroups = if (row.open) openGroups - first else openGroups + first
                         }, modifier = m)
                         is CompactRow -> CompactLine(row.item, onOpen = { opened = opened + row.item.key }, modifier = m)
-                        is TopRow -> Box(m) { TopPart(row.key, state, vm, sellerNames, flashing?.second, onViewOriginal, onPickDate = { showDatePicker = true }) }
+                        is TopRow -> Box(m) {
+                            when (row.key) {
+                                CATEGORY -> CategoryRow(state.supplierCategory, onClick = { pickCategory = true })
+                                NOT_FOOD -> NotFoodLines(state.draft, open = notFoodOpen, onToggle = { notFoodOpen = !notFoodOpen })
+                                else -> TopPart(row.key, state, vm, sellerNames, flashing?.second, onViewOriginal, onPickDate = { showDatePicker = true })
+                            }
+                        }
                     }
                 }
+            }
+            // Above "Next to check" and the Save bar. A drag closes the photo strip and the keyboard (the jumps it
+            // makes do not count as the operator scrolling the list), then offers the way back.
+            FastScrollbar(
+                listState,
+                label = ::labelAt,
+                bottomInset = 88.dp,
+                onGrab = {
+                    peekRequest = null
+                    focusManager.clearFocus()
+                    dragFrom = here()
+                },
+                onRelease = {
+                    val from = dragFrom
+                    dragFrom = null
+                    val now = listState.firstVisibleItemIndex
+                    if (from != null && now != from.first) offerBack(from, labelAt(now))
+                },
+                actions = jumpActions,
+            )
             }
         }
     }
@@ -502,6 +644,23 @@ fun ReviewScreen(
         ) { DatePicker(state = pickerState) }
     }
 
+    if (pickCategory) {
+        CategoryPickerSheet(
+            title = state.draft.seller.text.ifBlank { stringResource(R.string.seller) },
+            selected = state.supplierCategory,
+            onPick = { cat -> vm.chooseCategory(cat, categoryForAll); pickCategory = false },
+            onDismiss = { pickCategory = false },
+            note = if (categoryForAll || !vm.canChooseJustThis) stringResource(R.string.supcat_change_seller_note) else null,
+            chosenBefore = state.categoryChosenBefore,
+            extra = if (vm.canChooseJustThis) ({
+                Column(Modifier.selectableGroup()) {
+                    ScopeChoice(stringResource(R.string.supcat_scope_all), categoryForAll) { categoryForAll = true }
+                    ScopeChoice(stringResource(R.string.supcat_scope_one), !categoryForAll) { categoryForAll = false }
+                }
+            }) else null,
+        )
+    }
+
     pickerFor?.let { key ->
         val item = state.draft.items.firstOrNull { it.key == key }
         if (item == null) {
@@ -522,6 +681,16 @@ fun ReviewScreen(
 
 /** The pause after "Saved ✓ · next: …" before the next invoice of the chain opens. */
 private const val CHAIN_PAUSE_MS = 2_000L
+
+/** How long "Back to where you were" stays after a jump. */
+private const val BACK_OFFER_MS = 5_000L
+
+/** The jump chips show on documents of this many lines or more. */
+private const val JUMP_CHIPS_FROM_LINES = 12
+
+/** Chips whose place is worked out at the tap (not a row index). */
+private const val CHIP_TOTALS = -1
+private const val CHIP_NEXT = -2
 
 /** "Invoice 3 of 25 to check (+ 40 still being read)" under the top bar, with "Check later" beside it. */
 @Composable
@@ -773,6 +942,84 @@ private fun HeaderSection(
 
 /** Key of the header's row (supplier, date, number, totals). */
 private const val HEADER = "header"
+private const val CATEGORY = "category"
+private const val ITEMS_TITLE = "itemsTitle"
+/** The one row that holds a non-food bill's lines while they are folded. */
+private const val NOT_FOOD = "notFood"
+
+/** What the supplier sells, as a chip that opens the category tiles ("Not sorted yet" when there is none). */
+@Composable
+private fun CategoryRow(category: SupplierCategory?, onClick: () -> Unit) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text(stringResource(R.string.supcat_label), style = MaterialTheme.typography.labelLarge)
+        CategoryPill(category, onClick = onClick)
+    }
+}
+
+/** "For all invoices from this supplier" / "Just this invoice": one of two, a 56dp row with a radio mark. */
+@Composable
+private fun ScopeChoice(text: String, selected: Boolean, onClick: () -> Unit) {
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp).selectable(selected = selected, onClick = onClick, role = androidx.compose.ui.semantics.Role.RadioButton),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        androidx.compose.material3.RadioButton(selected = selected, onClick = null)
+        Spacer(Modifier.width(12.dp))
+        Text(text, style = MaterialTheme.typography.bodyLarge)
+    }
+}
+
+/**
+ * The difference between the lines' amounts and the document's total (before VAT, or with it), in cents: 0 when they
+ * add up (as the header's own check counts it), null when a line's amount or the total is not there.
+ */
+private fun linesDifference(d: DocumentDraft): Long? {
+    val totals = d.items.map { ItalianNumbers.parseCents(it.lineTotal.text) }
+    if (totals.isEmpty() || totals.any { it == null }) return null
+    val sum = totals.sumOf { it!! }
+    val diff = listOfNotNull(ItalianNumbers.parseCents(d.subtotal.text), ItalianNumbers.parseCents(d.total.text))
+        .map { it - sum }.minByOrNull { kotlin.math.abs(it) } ?: return null
+    return if (kotlin.math.abs(diff) <= maxOf(2, totals.size.toLong())) 0 else diff
+}
+
+/**
+ * A non-food bill's lines folded into one row: "18 lines: kept apart from your food products", and whether they add
+ * up to the total. A tap shows them (and folds them again).
+ */
+@Composable
+private fun NotFoodLines(draft: DocumentDraft, open: Boolean, onToggle: () -> Unit) {
+    val status = LocalStatusColors.current
+    val n = draft.items.size
+    val diff = remember(draft.items, draft.subtotal, draft.total) { linesDifference(draft) }
+    val turn by androidx.compose.animation.core.animateFloatAsState(if (open) 180f else 0f, label = "notFoodChevron")
+    val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
+    Surface(
+        onClick = onToggle,
+        interactionSource = source,
+        modifier = Modifier.pressScale(source).fillMaxWidth().heightIn(min = 64.dp),
+        shape = MaterialTheme.shapes.medium,
+        color = Palette.Panel,
+        border = androidx.compose.foundation.BorderStroke(1.dp, Palette.PhthaloBorder),
+    ) {
+        Row(Modifier.padding(horizontal = 14.dp, vertical = 10.dp), verticalAlignment = Alignment.CenterVertically) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                Text(pluralStringResource(R.plurals.supcat_not_food_lines, n, n), style = MaterialTheme.typography.titleSmall)
+                when {
+                    diff == 0L -> Text(stringResource(R.string.supcat_lines_sum_ok), style = MaterialTheme.typography.bodyMedium, color = status.ok)
+                    diff != null -> Text(
+                        stringResource(R.string.supcat_lines_sum_off, fmtMoney(kotlin.math.abs(diff), draft.currency.text.ifBlank { "EUR" })),
+                        style = MaterialTheme.typography.bodyMedium, color = status.uncertainBorder,
+                    )
+                }
+                Text(
+                    stringResource(if (open) R.string.lines_tap_to_fold else R.string.lines_tap_to_see),
+                    style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            Icon(Icons.Filled.ExpandMore, contentDescription = null, modifier = Modifier.padding(start = 8.dp).graphicsLayer { rotationZ = turn })
+        }
+    }
+}
 
 /** The fixed parts of the review list, by row key (see [ReviewRow]). */
 @Composable
@@ -815,7 +1062,7 @@ private fun TopPart(
         // What kind of document this is decides where it counts (a credit note is subtracted from spending):
         // shown before saving, one tap to change.
         "kind" -> KindRow(state.kind, vm::setKind)
-        "itemsTitle" -> {
+        ITEMS_TITLE -> {
             val n = state.draft.items.size
             val open = state.draft.items.count { it.needsLook(state.errors, state.draft.lotsPrinted) }
             Column {
