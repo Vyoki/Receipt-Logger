@@ -419,4 +419,25 @@ class BundleWizardTest {
             for (secret in invoices.flatMap { listOf(it.supplierVat, it.supplierName, it.number) }) assertFalse(secret, text.contains(secret))
         }
     }
+
+    /**
+     * The same file imported again after its import was closed: the new plan keeps what the closed one kept (the
+     * original, the e-invoices of invoices not imported), also once the new one is cancelled; a cancelled plan keeps
+     * only those.
+     */
+    @Test fun aNewPlanForTheSameFileKeepsWhatTheEarlierOneKept() {
+        val closed = BundleWizard.close(
+            base.copy(file = "documents/a.pdf", invoices = listOf(PlannedInvoice(0, 0, file = "documents/left-out.xml", outcome = InvoiceOutcome.LEFT_OUT))),
+        )
+        assertEquals(setOf("documents/a.pdf", "documents/left-out.xml"), BundleWizard.files(closed))
+        val again = BundleWizard.carryKept(base.copy(file = "documents/b.pdf"), closed)
+        assertEquals(setOf("documents/a.pdf", "documents/left-out.xml", "documents/b.pdf"), BundleWizard.files(again))
+        val cancelled = BundleWizard.close(again, BundleStatus.CANCELLED)
+        assertEquals(setOf("documents/a.pdf", "documents/left-out.xml"), BundleWizard.files(cancelled))
+        // Once more after that cancel: still kept, and only once each.
+        val third = BundleWizard.carryKept(base.copy(file = "documents/a.pdf"), cancelled)
+        assertEquals(listOf("documents/a.pdf", "documents/left-out.xml"), third.kept)
+        assertEquals(setOf("documents/a.pdf", "documents/left-out.xml"), BundleWizard.files(third))
+        assertEquals(third, BundlePlanCodec.decode(BundlePlanCodec.encode(third)))
+    }
 }

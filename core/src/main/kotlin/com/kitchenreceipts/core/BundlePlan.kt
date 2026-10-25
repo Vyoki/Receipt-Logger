@@ -90,6 +90,11 @@ data class BundlePlan(
     val sameFileDocumentId: Long? = null,
     /** The one message "Invoices read: N · Saved: N…" was posted for this reading (not again after a restart). */
     val announced: Boolean = false,
+    /**
+     * Files that earlier imports of this same file kept (its original, the e-invoices of invoices not imported), when
+     * it was imported again after they ended: still kept, also when this import is cancelled (question 3).
+     */
+    val kept: List<String> = emptyList(),
 ) {
     val sameFileWarning: Boolean get() = sameFileDocumentId != null
 
@@ -582,6 +587,24 @@ object BundleWizard {
         return planOrder(plan).filter { it in same && plan.invoices[it].outcome in waiting }.mapNotNull { plan.invoices[it].jobId }
     }
 
+    /** The plan's own files: the file of many invoices, and each invoice's own e-invoice. */
+    fun ownFiles(plan: BundlePlan): List<String> = listOfNotNull(plan.file.ifBlank { null }) + plan.invoices.mapNotNull { it.file }
+
+    /**
+     * The files the plan keeps on the phone: its own, unless it was cancelled, and always the ones earlier imports of
+     * the same file kept.
+     */
+    fun files(plan: BundlePlan): Set<String> =
+        (plan.kept + if (plan.status == BundleStatus.CANCELLED) emptyList() else ownFiles(plan)).toSet()
+
+    /**
+     * A new plan [new] for a file whose plan [earlier] it replaces (the same file imported again after its import
+     * ended): what the earlier one kept is kept by the new one, so nothing the earlier import kept is ever removed
+     * with the new one.
+     */
+    fun carryKept(new: BundlePlan, earlier: BundlePlan): BundlePlan =
+        new.copy(kept = (new.kept + files(earlier)).distinct())
+
     /** The Done screen: saved invoices by category key (null: not sorted). */
     fun savedByCategory(plan: BundlePlan): Map<String?, Int> =
         plan.invoices.filter { it.outcome in SAVED }.groupingBy { categoryOf(plan, it) }.eachCount()
@@ -623,6 +646,7 @@ object BundlePlanCodec {
         line("step", p.step.name)
         line("samefile", p.sameFileDocumentId)
         line("ann", flag(p.announced))
+        for (f in p.kept) line("kept", f)
         for (s in p.signals) record("sig", InvoiceBundle.encode(s))
         for (i in p.invoices) record("inv", BundleText.record(
             "f" to i.first.toString(), "l" to i.last.toString(),
@@ -647,12 +671,14 @@ object BundlePlanCodec {
         val invoices = mutableListOf<PlannedInvoice>()
         val suppliers = mutableListOf<SupplierChoice>()
         val retired = mutableListOf<SupplierChoice>()
+        val kept = mutableListOf<String>()
         for (raw in text.lines()) {
             val eq = raw.indexOf('=')
             if (raw.isBlank() || eq <= 0) continue
             val key = raw.substring(0, eq)
             val value = raw.substring(eq + 1)
             when (key) {
+                "kept" -> BundleText.unesc(value).takeIf { it.isNotBlank() }?.let { kept += it }
                 "sig" -> InvoiceBundle.decode(value)?.let { signals += it }
                 "inv" -> invoice(BundleText.fields(value))?.let { invoices += it }
                 "sup" -> supplier(BundleText.fields(value))?.let { suppliers += it }
@@ -668,7 +694,7 @@ object BundlePlanCodec {
             scanned = single["scanned"]?.toIntOrNull() ?: 0, signals = signals, invoices = invoices, suppliers = suppliers, retired = retired,
             step = enumOr(single["step"], BundleWizard.Step.FOUND),
             createdAt = single["created"]?.toLongOrNull() ?: 0L, sameFileDocumentId = single["samefile"]?.toLongOrNull(),
-            announced = single["ann"] == "1",
+            announced = single["ann"] == "1", kept = kept,
         )
     }.getOrNull()
 

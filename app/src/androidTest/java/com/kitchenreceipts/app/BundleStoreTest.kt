@@ -225,6 +225,56 @@ class BundleStoreTest {
         assertEquals(1, store.plans.value.size)
     }
 
+    /**
+     * The same file shared again after its import was closed: a new import starts, cut from the copy kept the first
+     * time (the phone does not hold it twice). Cancelling the new one ("Don't import"), and the clean-up at the next
+     * start, leave that copy: the original stays until the owner decides (question 3).
+     */
+    @Test fun aClosedImportsFileStaysWhenTheSameFileComesAgainAndIsCancelled() = runBlocking<Unit> {
+        val uri = pdf("bundle-again-closed.pdf", invoices(3))
+        val first = intake.take(uri, "test") as Intake.Bundle
+        val original = store.plan(first.planId)!!.file
+        store.close(first.planId)
+        val before = documents()
+        assertEquals(Intake.Bundle(first.planId), intake.take(uri, "test"))
+        val again = store.plan(first.planId)!!
+        assertEquals(BundleStatus.SORTING, again.status)
+        assertEquals(original, again.file)
+        assertEquals(before, documents())
+        assertTrue(store.cancel(first.planId))
+        assertTrue(files.file(original).isFile)
+        assertTrue(original in store.filePaths())
+        // The clean-up at the next start, once the file is more than an hour old: it stays, also after a restart.
+        assertTrue(files.file(original).setLastModified(System.currentTimeMillis() - 2 * 60 * 60 * 1000L))
+        store.flush()
+        val restarted = newStore()
+        val c = app.container
+        c.repository.cleanupOrphanFiles(c.importQueue.filePaths() + c.bundleStore.filePaths() + queue.filePaths() + restarted.filePaths())
+        assertTrue(files.file(original).isFile)
+        files.delete(original)
+    }
+
+    /** The same for an e-invoice file: the e-invoice of an invoice left out the first time stays after a cancel. */
+    @Test fun theEInvoicesAClosedImportKeptStayWhenTheSameFileComesAgainAndIsCancelled() = runBlocking<Unit> {
+        val uri = zip("einvoices-again-closed.zip", listOf("11/2031", "12/2031"), emptyList())
+        val first = intake.take(uri, "test") as Intake.Bundle
+        store.update(first.planId) { BundleWizard.setInvoiceIncluded(it, 1, false) }
+        val kept = store.plan(first.planId)!!.invoices.mapNotNull { it.file }
+        assertEquals(2, kept.size)
+        store.close(first.planId)
+        assertEquals(first.planId, (intake.take(uri, "test") as Intake.Bundle).planId)
+        val fresh = store.plan(first.planId)!!.invoices.mapNotNull { it.file }
+        assertEquals(2, fresh.size)
+        assertTrue(fresh.none { it in kept })
+        assertTrue(store.cancel(first.planId))
+        // The copies made the second time go with the cancel; the ones kept the first time stay.
+        assertTrue(fresh.none { files.file(it).exists() })
+        assertTrue(kept.all { files.file(it).isFile && it in store.filePaths() })
+        // A job never deletes one of them either.
+        assertTrue(kept.all { store.isKept(it) })
+        kept.forEach { files.delete(it) }
+    }
+
     @Test fun theFileIsKeptWhileItsImportIsOpenAndGoesWithACancel() = runBlocking<Unit> {
         val r = intake.take(pdf("bundle-keep.pdf", invoices(3)), "test") as Intake.Bundle
         val p = store.plan(r.planId)!!

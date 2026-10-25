@@ -144,14 +144,17 @@ class BundleStore(
 
     /**
      * Files the plans still need, not to be cleaned up as orphans and to be put back after a restore: each file of many
-     * invoices, and the e-invoice files of a file of many, for every plan but a cancelled one. The original is kept
-     * after the import is closed, until the owner decides how long (question 3).
+     * invoices, and the e-invoice files of a file of many, for every plan but a cancelled one, and always what earlier
+     * imports of the same file kept (see BundleWizard.files). The original is kept after the import is closed, until
+     * the owner decides how long (question 3).
      */
-    fun filePaths(): Set<String> = synchronized(lock) {
-        byId.values.filter { it.status != BundleStatus.CANCELLED }.flatMap { p ->
-            listOfNotNull(p.file.ifBlank { null }) + p.invoices.mapNotNull { it.file }
-        }.toSet()
-    }
+    fun filePaths(): Set<String> = synchronized(lock) { byId.values.flatMap { BundleWizard.files(it) }.toSet() }
+
+    /**
+     * True for a file an earlier import of the same file kept (BundlePlan.kept): it is never deleted with a job or a
+     * cancelled import.
+     */
+    fun isKept(relativePath: String): Boolean = synchronized(lock) { byId.values.any { relativePath in it.kept } }
 
     /** A plan that was read as one document (it holds no invoice of its own). */
     fun isOneDocument(p: BundlePlan): Boolean = p.status == BundleStatus.CLOSED && p.invoices.isEmpty() && p.file.isNotBlank()
@@ -183,10 +186,10 @@ class BundleStore(
             id = file.sha256, file = file.relativePath, pageCount = file.pageCount, status = BundleStatus.SCANNING,
             scanned = signals.size, signals = signals, createdAt = System.currentTimeMillis(),
         )
-        put(p)
+        val stored = put(p)
         log.event("BUNDLE_SCAN_START", "bundle" to p.id.take(8), "pages" to p.pageCount, "from" to p.scanned)
         startScan(p.id)
-        return p
+        return stored
     }
 
     /** A PDF looked through in full and found to hold two or more invoices: ready for the operator to sort. */
@@ -195,8 +198,7 @@ class BundleStore(
             id = file.sha256, file = file.relativePath, pageCount = file.pageCount, status = BundleStatus.SCANNING,
             scanned = signals.size, signals = signals, createdAt = System.currentTimeMillis(),
         )
-        val p = planned(base)
-        put(p)
+        val p = put(planned(base))
         logPlanned(p)
         return p
     }
@@ -207,9 +209,9 @@ class BundleStore(
             id = file.sha256, file = file.relativePath, pageCount = file.pageCount, status = BundleStatus.NOT_SPLITTABLE,
             scanned = signals.size, signals = signals, createdAt = System.currentTimeMillis(),
         )
-        put(p)
+        val stored = put(p)
         log.event("BUNDLE_NOT_SPLITTABLE", "bundle" to p.id.take(8), "pages" to p.pageCount)
-        return p
+        return stored
     }
 
     /**
@@ -231,8 +233,7 @@ class BundleStore(
             )
         }
         val base = BundlePlan(id = sha, file = "", pageCount = entries.size, status = BundleStatus.SORTING, createdAt = System.currentTimeMillis())
-        val p = BundleWizard.prepare(base, invoices, memory(), savedOrEmpty())
-        put(p)
+        val p = put(BundleWizard.prepare(base, invoices, memory(), savedOrEmpty()))
         logPlanned(p)
         return p
     }
@@ -828,13 +829,28 @@ class BundleStore(
         return p
     }
 
-    /** A new plan (or a new one for the same file), written before anything else happens to it. */
-    private suspend fun put(p: BundlePlan) {
-        synchronized(lock) {
-            early.remove(p.id)
-            set(p)
+    /**
+     * A new plan, written before anything else happens to it. When it replaces the plan of an earlier import of the
+     * same file (closed, done or cancelled), the files that one kept stay kept with the new one, and a PDF to cut is
+     * cut from the copy kept before: the copy just made goes, so the phone holds the file once.
+     */
+    private suspend fun put(plan: BundlePlan): BundlePlan {
+        val (p, fresh) = synchronized(lock) {
+            early.remove(plan.id)
+            val n = byId[plan.id]?.let { BundleWizard.carryKept(plan, it) } ?: plan
+            val toCut = n.file.isNotBlank() && (n.status == BundleStatus.SCANNING || n.status == BundleStatus.SORTING)
+            val length = if (toCut) fileStore.file(n.file).length() else -1L
+            val old = if (!toCut) null else n.kept.firstOrNull { it != n.file && fileStore.file(it).let { f -> f.isFile && f.length() == length } }
+            val stored = if (old != null) n.copy(file = old) else n
+            set(stored)
+            stored to old?.let { n.file }
         }
         persist(p.id)
+        if (fresh != null) {
+            withContext(Dispatchers.IO) { fileStore.delete(fresh) }
+            log.event("BUNDLE_KEPT_FILE_USED", "bundle" to p.id.take(8))
+        }
+        return p
     }
 
     private fun writeSoon(id: String) {

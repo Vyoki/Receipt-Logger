@@ -90,16 +90,17 @@ class AppContainer(context: Context) {
     val preparer = DraftPreparer(repository, settings, log, learning) { knowledge.pack.value }
 
     /** Documents read in the background, one after another; survives restarts. */
-    val importQueue = ImportQueue(
+    val importQueue: ImportQueue = ImportQueue(
         context, appScope, importProcessor, ocrEngine, settings, ::aiUse, preparer, fileStore, log, notifier,
-        fileInUse = { repository.fileInUse(it) },
+        // A file an earlier import of a file of many kept (its original) is never deleted with a job either.
+        fileInUse = { repository.fileInUse(it) || bundleStore.isKept(it) },
     )
 
     /**
      * Imports of files of many invoices, one plan each, kept on the phone: looked through, sorted, cut and queued, and
      * what became of each invoice (see BundleStore).
      */
-    val bundleStore = com.kitchenreceipts.app.jobs.BundleStore(
+    val bundleStore: com.kitchenreceipts.app.jobs.BundleStore = com.kitchenreceipts.app.jobs.BundleStore(
         context, appScope, fileStore, importQueue, settings, log, notifier,
         saved = { repository.savedForBundles() },
         fileInUse = { repository.fileInUse(it) },
