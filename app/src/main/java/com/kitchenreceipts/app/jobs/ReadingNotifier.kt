@@ -65,16 +65,22 @@ class ReadingNotifier(private val context: Context) : Notifier {
     /**
      * The ongoing notification of the reading service: the document being read, or else the file of many invoices
      * being looked through ([scan]: its plan and where the look is). An invoice of a file of many ([plans]) shows the
-     * file's count instead ("Reading 120 of 173 · 12 ready to check"), and a tap opens the next one to check.
+     * file's count instead ("Reading 120 of 173 · 12 ready to check"), and a tap opens the next one to check, never
+     * one of [rechecking] (the app is checking it again right now).
      */
-    fun progress(jobs: List<ImportJob>, scan: Pair<String, BundleStore.ScanProgress>? = null, plans: List<BundlePlan> = emptyList()): Notification {
+    fun progress(
+        jobs: List<ImportJob>,
+        scan: Pair<String, BundleStore.ScanProgress>? = null,
+        plans: List<BundlePlan> = emptyList(),
+        rechecking: Set<String> = emptySet(),
+    ): Notification {
         val c = localized()
         val reading = jobs.firstOrNull { it.status == JobStatus.READING }
         // The invoices of a file of many are counted by their file, not as documents waiting.
         val waiting = jobs.count { it.status == JobStatus.QUEUED && it.bundleId == null }
         if (reading == null && waiting == 0 && scan != null && jobs.none { it.status == JobStatus.QUEUED }) return scanning(c, scan.first, scan.second)
         val plan = (reading ?: jobs.firstOrNull { it.status == JobStatus.QUEUED })?.bundleId?.let { id -> plans.firstOrNull { it.id == id } }
-        if (plan != null) return bundleProgress(c, plan, reading?.progress)
+        if (plan != null) return bundleProgress(c, plan, reading?.progress, rechecking)
         val p = reading?.progress
         val text = when {
             p == null -> c.getString(R.string.notif_starting)
@@ -106,9 +112,9 @@ class ReadingNotifier(private val context: Context) : Notifier {
      * "Reading 120 of 173 · 12 ready to check", updated quietly; the page of the invoice being read below. A tap opens
      * the next invoice to check, or the file's list while none is ready.
      */
-    private fun bundleProgress(c: Context, plan: BundlePlan, p: com.kitchenreceipts.app.ocr.ImportProgress?): Notification {
+    private fun bundleProgress(c: Context, plan: BundlePlan, p: com.kitchenreceipts.app.ocr.ImportProgress?, rechecking: Set<String>): Notification {
         val n = BundleWizard.counts(plan)
-        val next = BundleWizard.nextJob(plan)
+        val next = BundleWizard.nextJob(plan, skip = rechecking)
         val b = NotificationCompat.Builder(context, CHANNEL_PROGRESS)
             .setSmallIcon(R.drawable.ic_stat_reading)
             .setContentTitle(c.getString(R.string.notif_bundle_progress, (n.read + 1).coerceAtMost(n.total), n.total, n.toCheck))

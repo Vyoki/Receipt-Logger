@@ -199,6 +199,16 @@ class ImportQueueTest {
         files.forEach { File(context.filesDir, it.relativePath).delete() }
     }
 
+    /** A photo taken while a file of many invoices is read is read next, not after the whole file. */
+    @Test fun aDocumentOnItsOwnIsReadBeforeTheInvoicesOfAFile() {
+        val file = StoredFile("documents/next.pdf", FileStore.MIME_PDF, 1, "sha-next")
+        fun job(id: String, bundle: String?, status: JobStatus = JobStatus.QUEUED) = ImportJob(id, 0L, "test", file, status, bundleId = bundle)
+        val jobs = listOf(job("b0", "plan", JobStatus.READING), job("b1", "plan"), job("b2", "plan"), job("photo", null), job("b3", "plan"))
+        assertEquals("photo", ImportQueue.nextToRead(jobs)?.id)
+        assertEquals("b1", ImportQueue.nextToRead(jobs.filter { it.id != "photo" })?.id)
+        assertEquals(null, ImportQueue.nextToRead(listOf(job("done", null, JobStatus.READY))))
+    }
+
     @Test fun anOldJobReadsAsASingleImport() {
         jobsDir.deleteRecursively()
         val file = part("old-meta.jpg").copy(mimeType = FileStore.MIME_JPEG)

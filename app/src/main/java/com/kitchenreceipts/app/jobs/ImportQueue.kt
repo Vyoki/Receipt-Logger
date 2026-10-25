@@ -337,7 +337,7 @@ class ImportQueue(
         scope.launch {
             for (signal in wake) {
                 while (true) {
-                    val next = _jobs.value.firstOrNull { it.status == JobStatus.QUEUED } ?: break
+                    val next = nextToRead(_jobs.value) ?: break
                     val job = scope.launch(worker) { read(next) }
                     current = job
                     currentId = next.id
@@ -664,6 +664,15 @@ class ImportQueue(
     }
 
     companion object {
+        /**
+         * The job to read next: a document on its own (a photo just taken) first, so it never waits behind the
+         * invoices of a file of many; those keep their order among themselves.
+         */
+        fun nextToRead(jobs: List<ImportJob>): ImportJob? {
+            val queued = jobs.filter { it.status == JobStatus.QUEUED }
+            return queued.firstOrNull { it.bundleId == null } ?: queued.firstOrNull()
+        }
+
         /** Readings started before giving up (the second one without the AI). */
         const val MAX_ATTEMPTS = 2
 
