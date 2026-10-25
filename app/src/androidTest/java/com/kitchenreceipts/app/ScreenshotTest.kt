@@ -376,7 +376,7 @@ class ScreenshotTest {
             app.container.pendingRoute.value = "edit/$longId"
             Thread.sleep(1500)
             // The 60 lines check out: one row, opened into a row per line.
-            assertTrue("no row \"$fine\"", clickTextIn(fine))
+            assertTrue("no row \"$fine\". On screen: ${screenDump()}", clickTextIn(fine))
             Thread.sleep(800)
             // The thumb to the middle of the list, so folded lines lie under it; then let it settle.
             dragThumb(desc) {}
@@ -411,6 +411,14 @@ class ScreenshotTest {
         listOfNotNull(node.takeIf(test)) + (0 until node.childCount).flatMap { i -> node.getChild(i)?.let { collectNodes(it, test) }.orEmpty() }
 
     private fun countNodes(node: AccessibilityNodeInfo, test: (AccessibilityNodeInfo) -> Boolean): Int = collectNodes(node, test).size
+
+    /** What the screen shows, for a failure message: the active window's package and its texts and descriptions. */
+    private fun screenDump(): String {
+        val root = InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow ?: return "(no active window)"
+        val words = collectNodes(root) { it.text != null || it.contentDescription != null }
+            .map { n -> (n.text ?: "").toString().ifEmpty { "[" + n.contentDescription + "]" }.take(40) }
+        return "${root.packageName}: " + words.take(40).joinToString(" | ")
+    }
 
     /**
      * Suppliers sorted by what they sell (invented data), in English and in Italian: Sellers in sections with filter
@@ -556,7 +564,7 @@ class ScreenshotTest {
         val thumb = (1..10).firstNotNullOfOrNull {
             inst.uiAutomation.rootInActiveWindow?.let { findByDescription(it, desc) } ?: run { Thread.sleep(300); null }
         }
-        assertNotNull("no fast scroller on a long list ($desc)", thumb)
+        assertNotNull("no fast scroller on a long list ($desc). On screen: ${screenDump()}", thumb)
         return Rect().also { thumb!!.getBoundsInScreen(it) }
     }
 
