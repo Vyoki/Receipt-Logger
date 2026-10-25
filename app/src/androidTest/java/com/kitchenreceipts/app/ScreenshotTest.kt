@@ -60,6 +60,7 @@ class ScreenshotTest {
             "November", "Oscar", "Papa", "Quebec", "Romeo", "Sierra", "Tango", "Uniform", "Victor", "Whiskey", "Xray", "Yankee", "Zulu",
         )
         private const val LONG_SELLER = "ABC S.r.l."
+        private const val LONG_NUMBER = "60/2031"
         // An invented electricity supplier (valid check digit).
         private const val UTILITY_SELLER = "VERDE FRESCO S.p.A."
         private const val UTILITY_VAT = "09876543217"
@@ -535,7 +536,9 @@ class ScreenshotTest {
      */
     private fun seedLong(): Long = runBlocking {
         val repo = app.container.repository
-        repo.searchDocuments("", null, null, null).first().firstOrNull { it.sellerName == LONG_SELLER }?.let { return@runBlocking it.id }
+        // The long invoice by its own number: the main seed has a short invoice of the same invented supplier.
+        repo.searchDocuments("", null, null, null).first().firstOrNull { it.sellerName == LONG_SELLER && it.documentNumber == LONG_NUMBER }
+            ?.let { return@runBlocking it.id }
         val last = LocalDate.of(2031, 12, 20)
         var n = 0
         for (word in WORDS) for (kind in listOf("Esempio", "Prova")) {
@@ -553,7 +556,7 @@ class ScreenshotTest {
         }
         File(app.filesDir, "documents/screens-long.jpg").writeBytes(ByteArray(19))
         repo.saveDocument(
-            ValidDocument(LONG_SELLER, LocalDate.of(2031, 3, 14), "60/2031", "EUR", 18000, 1800, 19800, VatBasis.EXCLUSIVE, lines),
+            ValidDocument(LONG_SELLER, LocalDate.of(2031, 3, 14), LONG_NUMBER, "EUR", 18000, 1800, 19800, VatBasis.EXCLUSIVE, lines),
             StoredFile("documents/screens-long.jpg", "image/jpeg", 1, "screens-long"), "$LONG_SELLER\nFATTURA N. 60/2031", null,
         )
     }
