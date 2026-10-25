@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
 import com.kitchenreceipts.app.ui.components.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.LinearProgressIndicator
@@ -44,6 +45,12 @@ import com.kitchenreceipts.app.ui.components.ConfirmDialog
 import com.kitchenreceipts.app.ui.components.SectionTitle
 import kotlinx.coroutines.launch
 import java.util.Locale
+
+/**
+ * The switch for the shorter AI check of digital PDFs (AppSettings.aiLightOnExactText, design A7): hidden until the
+ * owner answers question 1. The setting stays off meanwhile; true shows the switch again.
+ */
+const val AI_LIGHT_SWITCH_SHOWN = false
 
 /** Settings ▸ AI reader: install the model (via the browser, the app stays offline), choose when it runs, test it. */
 @Composable
@@ -128,22 +135,22 @@ fun AiSettingsSection(c: AppContainer) {
                         Text(stringResource(label), modifier = Modifier.padding(start = 12.dp))
                     }
                 }
-                // The owner's choice (question 1): off until the owner says yes. Only when the AI helps "when needed".
-                if (mode == AppSettings.AiMode.WHEN_NEEDED) {
-                    val setLight: (Boolean) -> Unit = { v ->
-                        light = v
-                        c.settings.aiLightOnExactText = v
-                        c.log.event("SETTINGS", "aiLightOnExactText" to v)
-                    }
+                // The owner's choice (question 1): off, and not shown, until the owner says yes (AI_LIGHT_SWITCH_SHOWN).
+                // Only when the AI helps "when needed". One switch for TalkBack: the row, read as on or off.
+                if (AI_LIGHT_SWITCH_SHOWN && mode == AppSettings.AiMode.WHEN_NEEDED) {
                     Row(
-                        Modifier.fillMaxWidth().heightIn(min = 64.dp).selectable(selected = light, role = Role.Switch, onClick = { setLight(!light) }),
+                        Modifier.fillMaxWidth().heightIn(min = 64.dp).toggleable(value = light, role = Role.Switch, onValueChange = { v ->
+                            light = v
+                            c.settings.aiLightOnExactText = v
+                            c.log.event("SETTINGS", "aiLightOnExactText" to v)
+                        }),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Column(Modifier.weight(1f).padding(end = 12.dp)) {
                             Text(stringResource(R.string.ai_light_title), style = MaterialTheme.typography.bodyLarge)
                             Text(stringResource(R.string.ai_light_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.TextDim)
                         }
-                        Switch(checked = light, onCheckedChange = setLight)
+                        Switch(checked = light, onCheckedChange = null)
                     }
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
