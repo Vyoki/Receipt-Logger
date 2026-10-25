@@ -43,6 +43,8 @@ import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.Hyphens
+import androidx.compose.ui.text.style.LineBreak
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
@@ -130,7 +132,12 @@ private fun CategoryTile(
                 Spacer(Modifier.weight(1f))
                 if (selected) Icon(Icons.Filled.CheckCircle, contentDescription = null, tint = Palette.PhthaloBright, modifier = Modifier.size(24.dp))
             }
-            Text(supplierCategoryLabel(c), style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)
+            // Long labels ("Manutenzione, ferramenta e attrezzature" with large text) break between syllables, not anywhere.
+            Text(
+                supplierCategoryLabel(c),
+                style = MaterialTheme.typography.titleMedium.copy(hyphens = Hyphens.Auto, lineBreak = LineBreak.Paragraph),
+                fontWeight = FontWeight.SemiBold,
+            )
             Text(supplierCategoryHint(c), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             if (suggested) Text(stringResource(R.string.supcat_suggested), style = MaterialTheme.typography.labelLarge, color = Palette.Orange)
             if (chosenBefore) Text(stringResource(R.string.supcat_chosen_before), style = MaterialTheme.typography.labelLarge, color = Palette.PhthaloBright)

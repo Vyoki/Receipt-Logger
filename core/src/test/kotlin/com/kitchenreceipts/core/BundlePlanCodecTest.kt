@@ -32,6 +32,7 @@ class BundlePlanCodecTest {
             SupplierChoice(BundleWizard.NO_SUPPLIER, null, null),
         ),
         step = BundleWizard.Step.SUPPLIERS, createdAt = 1234L, sameFileDocumentId = 5L, announced = true,
+        kept = listOf("documents/old|1.pdf", "documents/old=2.xml"),
     )
 
     @Test fun everyFieldRoundTrips() {
@@ -75,6 +76,8 @@ class BundlePlanCodecTest {
         assertEquals(SupplierChoice("x", null, null), minimal.suppliers.single())
         assertEquals(BundleWizard.Step.FOUND, minimal.step)
         assertEquals(0, minimal.pageCount)
+        // A plan written before files of earlier imports were kept with it: none.
+        assertEquals(emptyList<String>(), minimal.kept)
     }
 
     @Test fun garbageIsNoPlan() {

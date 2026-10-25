@@ -90,6 +90,11 @@ data class BundlePlan(
     val sameFileDocumentId: Long? = null,
     /** The one message "Invoices read: N · Saved: N…" was posted for this reading (not again after a restart). */
     val announced: Boolean = false,
+    /**
+     * Files that earlier imports of this same file kept (its original, the e-invoices of invoices not imported), when
+     * it was imported again after they ended: still kept, also when this import is cancelled (question 3).
+     */
+    val kept: List<String> = emptyList(),
 ) {
     val sameFileWarning: Boolean get() = sameFileDocumentId != null
 
@@ -475,15 +480,23 @@ object BundleWizard {
         if (i == index && inv.outcome == InvoiceOutcome.READY) inv.copy(outcome = InvoiceOutcome.CHECK_LATER) else inv
     })
 
-    /** The jobs "Stop reading this file" removes: not saved yet. */
-    fun unsavedJobs(plan: BundlePlan): List<String> = plan.invoices.filter { it.outcome in OPEN }.mapNotNull { it.jobId }
+    private val NOT_READ = setOf(InvoiceOutcome.WAITING, InvoiceOutcome.QUEUED)
 
-    /** Stop reading this file: what is not saved yet is stopped; saved invoices are untouched. */
-    fun stop(plan: BundlePlan): BundlePlan = plan.copy(
+    /** The jobs "Stop reading this file" removes: not read yet. */
+    fun notReadJobs(plan: BundlePlan): List<String> = plan.invoices.filter { it.outcome in NOT_READ }.mapNotNull { it.jobId }
+
+    /**
+     * Stop reading this file: what is not read yet is stopped. Saved invoices are untouched, and so are the ones read
+     * and waiting to be checked (their readings, and whatever the operator corrected on them, stay). The plan is done
+     * once nothing is left to check.
+     */
+    fun stop(plan: BundlePlan): BundlePlan {
+        val invoices = plan.invoices.map { if (it.outcome in NOT_READ) it.copy(outcome = InvoiceOutcome.STOPPED, jobId = null) else it }
+        val ended = plan.status == BundleStatus.CLOSED || plan.status == BundleStatus.CANCELLED
+        val status = if (!ended && invoices.none { it.outcome in OPEN }) BundleStatus.DONE else plan.status
         // The operator stopped it: no "all read" message follows.
-        status = BundleStatus.DONE, announced = true,
-        invoices = plan.invoices.map { if (it.outcome in OPEN) it.copy(outcome = InvoiceOutcome.STOPPED, jobId = null) else it },
-    )
+        return plan.copy(status = status, announced = true, invoices = invoices)
+    }
 
     /** "Read the N not read yet": the stopped invoices go to be read again. */
     fun readRest(plan: BundlePlan): BundlePlan = plan.copy(
@@ -571,16 +584,34 @@ object BundleWizard {
     /**
      * The operator just saved the invoice of job [savedJob]. When it is the first of its supplier they saved in this
      * file, that supplier is now known (by its VAT number), so its other invoices waiting to be checked are worth
-     * checking again: their jobs, in plan order. Only by VAT number, the proof the registry gives.
+     * checking again: their jobs, in plan order. Only by VAT number, the proof the registry gives. Only the ones ready
+     * to check: one put off with "Check later" is the operator's, with whatever they corrected on it.
      */
     fun recheckAfterSave(plan: BundlePlan, savedJob: String): List<String> {
         val at = plan.invoices.indexOfFirst { it.jobId == savedJob }.takeIf { it >= 0 } ?: return emptyList()
         val vat = digits(plan.invoices[at].supplierVat) ?: return emptyList()
         val same = plan.invoices.indices.filter { it != at && plan.invoices[it].isInvoice && digits(plan.invoices[it].supplierVat) == vat }
         if (same.any { plan.invoices[it].outcome == InvoiceOutcome.SAVED_BY_YOU }) return emptyList()
-        val waiting = setOf(InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER)
-        return planOrder(plan).filter { it in same && plan.invoices[it].outcome in waiting }.mapNotNull { plan.invoices[it].jobId }
+        return planOrder(plan).filter { it in same && plan.invoices[it].outcome == InvoiceOutcome.READY }.mapNotNull { plan.invoices[it].jobId }
     }
+
+    /** The plan's own files: the file of many invoices, and each invoice's own e-invoice. */
+    fun ownFiles(plan: BundlePlan): List<String> = listOfNotNull(plan.file.ifBlank { null }) + plan.invoices.mapNotNull { it.file }
+
+    /**
+     * The files the plan keeps on the phone: its own, unless it was cancelled, and always the ones earlier imports of
+     * the same file kept.
+     */
+    fun files(plan: BundlePlan): Set<String> =
+        (plan.kept + if (plan.status == BundleStatus.CANCELLED) emptyList() else ownFiles(plan)).toSet()
+
+    /**
+     * A new plan [new] for a file whose plan [earlier] it replaces (the same file imported again after its import
+     * ended): what the earlier one kept is kept by the new one, so nothing the earlier import kept is ever removed
+     * with the new one.
+     */
+    fun carryKept(new: BundlePlan, earlier: BundlePlan): BundlePlan =
+        new.copy(kept = (new.kept + files(earlier)).distinct())
 
     /** The Done screen: saved invoices by category key (null: not sorted). */
     fun savedByCategory(plan: BundlePlan): Map<String?, Int> =
@@ -623,6 +654,7 @@ object BundlePlanCodec {
         line("step", p.step.name)
         line("samefile", p.sameFileDocumentId)
         line("ann", flag(p.announced))
+        for (f in p.kept) line("kept", f)
         for (s in p.signals) record("sig", InvoiceBundle.encode(s))
         for (i in p.invoices) record("inv", BundleText.record(
             "f" to i.first.toString(), "l" to i.last.toString(),
@@ -647,12 +679,14 @@ object BundlePlanCodec {
         val invoices = mutableListOf<PlannedInvoice>()
         val suppliers = mutableListOf<SupplierChoice>()
         val retired = mutableListOf<SupplierChoice>()
+        val kept = mutableListOf<String>()
         for (raw in text.lines()) {
             val eq = raw.indexOf('=')
             if (raw.isBlank() || eq <= 0) continue
             val key = raw.substring(0, eq)
             val value = raw.substring(eq + 1)
             when (key) {
+                "kept" -> BundleText.unesc(value).takeIf { it.isNotBlank() }?.let { kept += it }
                 "sig" -> InvoiceBundle.decode(value)?.let { signals += it }
                 "inv" -> invoice(BundleText.fields(value))?.let { invoices += it }
                 "sup" -> supplier(BundleText.fields(value))?.let { suppliers += it }
@@ -668,7 +702,7 @@ object BundlePlanCodec {
             scanned = single["scanned"]?.toIntOrNull() ?: 0, signals = signals, invoices = invoices, suppliers = suppliers, retired = retired,
             step = enumOr(single["step"], BundleWizard.Step.FOUND),
             createdAt = single["created"]?.toLongOrNull() ?: 0L, sameFileDocumentId = single["samefile"]?.toLongOrNull(),
-            announced = single["ann"] == "1",
+            announced = single["ann"] == "1", kept = kept,
         )
     }.getOrNull()
 

@@ -333,13 +333,18 @@ fun ReviewScreen(
         }
     }
 
-    // Jumps (the chips, the scroller and TalkBack's actions): afterwards, "Back to where you were" for 5 s.
+    // Jumps (the chips, the scroller and TalkBack's actions): afterwards, "Back to where you were" for 5 s, or as long
+    // as the phone's accessibility settings ask for messages with a button (TalkBack users get longer).
     var backOffer by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val accessibility = androidx.compose.ui.platform.LocalAccessibilityManager.current
+    val backOfferMs = remember(accessibility) {
+        accessibility?.calculateRecommendedTimeoutMillis(BACK_OFFER_MS, containsText = true, containsControls = true) ?: BACK_OFFER_MS
+    }
     fun here() = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
     fun offerBack(from: Pair<Int, Int>, now: String?) {
         backOffer?.cancel()
         backOffer = scope.launch {
-            val r = kotlinx.coroutines.withTimeoutOrNull(BACK_OFFER_MS) {
+            val r = kotlinx.coroutines.withTimeoutOrNull(backOfferMs) {
                 reviewSnackbar.showSnackbar(now ?: labelBack, actionLabel = labelBack, duration = androidx.compose.material3.SnackbarDuration.Indefinite)
             }
             if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) listState.animateScrollToItem(from.first, from.second)
@@ -400,7 +405,8 @@ fun ReviewScreen(
             }
         }) else null,
         actions = {
-            if (state.isNew && state.fatal == null && !state.loading) {
+            // Not once it is saved (the chain's pause before the next invoice): there is nothing left to throw away.
+            if (state.isNew && state.fatal == null && !state.loading && state.savedId == null) {
                 IconButton(onClick = { askDiscard = true }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.discard))
                 }
@@ -409,7 +415,7 @@ fun ReviewScreen(
         floatingActionButton = {
             // One tap to the next thing to check, instead of scrolling through the lines that are fine.
             AnimatedVisibility(
-                visible = !state.loading && state.fatal == null && toCheck > 0,
+                visible = !state.loading && state.fatal == null && state.savedId == null && toCheck > 0,
                 enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
                 exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut(),
             ) {
@@ -429,7 +435,7 @@ fun ReviewScreen(
             }
         },
         bottomBar = {
-            if (!state.loading && state.fatal == null) {
+            if (!state.loading && state.fatal == null && state.savedId == null) {
                 SaveBar(
                     uncertain = state.draft.uncertainCount,
                     open = openReasons(state.reviewReasons).size,
@@ -684,7 +690,7 @@ fun ReviewScreen(
 /** The pause after "Saved ✓ · next: …" before the next invoice of the chain opens. */
 private const val CHAIN_PAUSE_MS = 2_000L
 
-/** How long "Back to where you were" stays after a jump. */
+/** How long "Back to where you were" stays after a jump (longer when the accessibility settings ask for it). */
 private const val BACK_OFFER_MS = 5_000L
 
 /** The jump chips show on documents of this many lines or more. */
@@ -694,16 +700,19 @@ private const val JUMP_CHIPS_FROM_LINES = 12
 private const val CHIP_TOTALS = -1
 private const val CHIP_NEXT = -2
 
-/** "Invoice 3 of 25 to check (+ 40 still being read)" under the top bar, with "Check later" beside it. */
+/**
+ * "Invoice 3 of 25 to check (+ 40 still being read)" under the top bar, and "Check later" on its own line below it,
+ * so the line keeps the whole width (Italian, large text).
+ */
 @Composable
 private fun ChainBar(chain: Chain, canPutOff: Boolean, onCheckLater: () -> Unit) {
     val at = chain.position ?: return
     var text = stringResource(R.string.bundle_position, at, chain.of)
     if (chain.stillReading > 0) text += " (" + pluralStringResource(R.plurals.bundle_position_more, chain.stillReading, chain.stillReading) + ")"
-    Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        com.kitchenreceipts.app.ui.components.SubBarText(text, Modifier.weight(1f))
+    Column(Modifier.fillMaxWidth()) {
+        com.kitchenreceipts.app.ui.components.SubBarText(text)
         if (canPutOff) {
-            TextButton(onClick = onCheckLater, modifier = Modifier.heightIn(min = 56.dp).padding(bottom = 6.dp)) {
+            TextButton(onClick = onCheckLater, modifier = Modifier.align(Alignment.End).padding(end = 8.dp, bottom = 6.dp).heightIn(min = 56.dp)) {
                 Text(stringResource(R.string.bundle_check_later))
             }
         }

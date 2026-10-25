@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Un file con molte fatture interrotto prima di leggerle tutte, e la sua chiusura: detto com'è, mai come completato -->
+    <plurals name="bundle_stopped">
+        <item quantity="one">Interrotta: %d non ancora letta</item>
+        <item quantity="other">Interrotta: %d non ancora lette</item>
+    </plurals>
+    <string name="bundle_close_title">Chiudere questa importazione?</string>
+    <string name="bundle_close_body">Se chiudi ora, queste non vengono importate: %1$s. Le fatture già salvate restano come sono. Per leggerle più tardi, importa di nuovo lo stesso file.</string>
+    <plurals name="bundle_close_not_read">
+        <item quantity="one">%d non ancora letta</item>
+        <item quantity="other">%d non ancora lette</item>
+    </plurals>
+    <plurals name="bundle_close_not_readable">
+        <item quantity="one">%d non leggibile</item>
+        <item quantity="other">%d non leggibili</item>
+    </plurals>
+    <string name="bundle_close_keep">Lascia aperta</string>
+    <!-- Scheda in Home di un file senza fatture trovate per ora (un file scansionato in attesa di risposta, un esame che inizia): le sue pagine -->
+    <string name="bundle_card_title_pages">File importato il %1$s · %2$s</string>
+</resources>

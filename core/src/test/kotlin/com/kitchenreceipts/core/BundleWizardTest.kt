@@ -274,14 +274,32 @@ class BundleWizardTest {
         var p = BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" })
         p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_APP, 1)
         p = BundleWizard.record(p, "job1", InvoiceOutcome.READY)
-        assertEquals(listOf("job1", "job2", "job3", "job4"), BundleWizard.unsavedJobs(p))
+        p = BundleWizard.checkLater(BundleWizard.record(p, "job2", InvoiceOutcome.READY), 2)
+        assertEquals(listOf("job3", "job4"), BundleWizard.notReadJobs(p))
         p = BundleWizard.stop(p)
         assertEquals(InvoiceOutcome.SAVED_BY_APP, p.invoices[0].outcome)
-        assertEquals(4, BundleWizard.counts(p).stopped)
-        assertTrue(p.invoices.drop(1).take(4).all { it.jobId == null })
+        // Read and still to check (also put off): untouched, with their jobs.
+        assertEquals(InvoiceOutcome.READY, p.invoices[1].outcome)
+        assertEquals("job1", p.invoices[1].jobId)
+        assertEquals(InvoiceOutcome.CHECK_LATER, p.invoices[2].outcome)
+        assertEquals(2, BundleWizard.counts(p).stopped)
+        assertEquals(0, BundleWizard.counts(p).reading)
+        assertTrue(p.invoices.drop(3).take(2).all { it.jobId == null && it.outcome == InvoiceOutcome.STOPPED })
+        // Not done while some are still to check; done once they are saved.
+        assertEquals(BundleStatus.QUEUED, p.status)
+        p = BundleWizard.record(BundleWizard.record(p, "job1", InvoiceOutcome.SAVED_BY_YOU, 11), "job2", InvoiceOutcome.SAVED_BY_YOU, 12)
+        assertEquals(BundleStatus.DONE, p.status)
         p = BundleWizard.readRest(p)
-        assertEquals(4, BundleWizard.counts(p).reading)
+        assertEquals(2, BundleWizard.counts(p).reading)
         assertEquals(InvoiceOutcome.SAVED_BY_APP, p.invoices[0].outcome)
+        // Nothing left to check when stopped: done at once.
+        val q = BundleWizard.stop(BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" }))
+        assertEquals(BundleStatus.DONE, q.status)
+        assertEquals(5, BundleWizard.counts(q).stopped)
+        // An import already closed or cancelled stays so.
+        for (ended in listOf(BundleStatus.CLOSED, BundleStatus.CANCELLED)) {
+            assertEquals(ended, BundleWizard.stop(BundleWizard.close(q, ended)).status)
+        }
     }
 
     @Test fun oneMessageWhenTheFileIsRead() {
@@ -324,8 +342,8 @@ class BundleWizardTest {
         for (i in 0..4) p = BundleWizard.record(p, "job$i", InvoiceOutcome.READY)
         p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_YOU, 10)
         assertEquals(listOf("job3"), BundleWizard.recheckAfterSave(p, "job0"))
-        // An invoice put off with "Check later" is checked again too.
-        assertEquals(listOf("job3"), BundleWizard.recheckAfterSave(BundleWizard.checkLater(p, 3), "job0"))
+        // An invoice put off with "Check later" is not: it is the operator's, with what they corrected on it.
+        assertEquals(emptyList<String>(), BundleWizard.recheckAfterSave(BundleWizard.checkLater(p, 3), "job0"))
         // A supplier with one invoice: nothing else to check.
         p = BundleWizard.record(p, "job1", InvoiceOutcome.SAVED_BY_YOU, 11)
         assertEquals(emptyList<String>(), BundleWizard.recheckAfterSave(p, "job1"))
@@ -418,5 +436,26 @@ class BundleWizardTest {
             val text = BundlePlanCodec.encode(closed)
             for (secret in invoices.flatMap { listOf(it.supplierVat, it.supplierName, it.number) }) assertFalse(secret, text.contains(secret))
         }
+    }
+
+    /**
+     * The same file imported again after its import was closed: the new plan keeps what the closed one kept (the
+     * original, the e-invoices of invoices not imported), also once the new one is cancelled; a cancelled plan keeps
+     * only those.
+     */
+    @Test fun aNewPlanForTheSameFileKeepsWhatTheEarlierOneKept() {
+        val closed = BundleWizard.close(
+            base.copy(file = "documents/a.pdf", invoices = listOf(PlannedInvoice(0, 0, file = "documents/left-out.xml", outcome = InvoiceOutcome.LEFT_OUT))),
+        )
+        assertEquals(setOf("documents/a.pdf", "documents/left-out.xml"), BundleWizard.files(closed))
+        val again = BundleWizard.carryKept(base.copy(file = "documents/b.pdf"), closed)
+        assertEquals(setOf("documents/a.pdf", "documents/left-out.xml", "documents/b.pdf"), BundleWizard.files(again))
+        val cancelled = BundleWizard.close(again, BundleStatus.CANCELLED)
+        assertEquals(setOf("documents/a.pdf", "documents/left-out.xml"), BundleWizard.files(cancelled))
+        // Once more after that cancel: still kept, and only once each.
+        val third = BundleWizard.carryKept(base.copy(file = "documents/a.pdf"), cancelled)
+        assertEquals(listOf("documents/a.pdf", "documents/left-out.xml"), third.kept)
+        assertEquals(setOf("documents/a.pdf", "documents/left-out.xml"), BundleWizard.files(third))
+        assertEquals(third, BundlePlanCodec.decode(BundlePlanCodec.encode(third)))
     }
 }

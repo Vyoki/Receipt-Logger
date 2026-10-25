@@ -6,6 +6,7 @@ import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,9 +19,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.selection.toggleable
 import androidx.compose.material.icons.Icons
@@ -36,6 +35,7 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
@@ -155,9 +155,20 @@ private fun InvoiceCard(
             tags(inv).forEach { Text(it, style = MaterialTheme.typography.labelLarge, color = Palette.TextDim) }
             (inv.flags - InvoiceBundle.Flag.OTHER_BUYER).forEach { Annotation(flagText(it, inv)) }
             if (open) {
-                LazyRow(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    items((inv.first..inv.last).toList(), key = { it }) { page ->
-                        PageThumb(vm, page, canSplit = page > inv.first, onSplit = { vm.split(page) }, onOpen = { onSeePages(page) })
+                // Two pages a row, all of them in view going down: nothing to swipe sideways to reach a page.
+                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    (inv.first..inv.last).chunked(2).forEach { pair ->
+                        Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.Top) {
+                            pair.forEach { page ->
+                                key(page) {
+                                    PageThumb(
+                                        vm, page, canSplit = page > inv.first, onSplit = { vm.split(page) }, onOpen = { onSeePages(page) },
+                                        modifier = Modifier.weight(1f),
+                                    )
+                                }
+                            }
+                            if (pair.size == 1) Spacer(Modifier.weight(1f))
+                        }
                     }
                 }
                 if (index > 0) {
@@ -178,7 +189,7 @@ private fun InvoiceCard(
                     }
                 }
                 if (look) BigButton(stringResource(R.string.bundle_looks_right), null, onClick = { vm.keep(inv.first) }, primary = false)
-                TextButton(onClick = { onSeePages(inv.first) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.bundle_see_pages)) }
+                TextButton(onClick = { onSeePages(inv.first) }, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.bundle_see_pages)) }
             }
         }
     }
@@ -186,12 +197,12 @@ private fun InvoiceCard(
 
 /** A small picture of one page (it opens the viewer there), and under it "A new invoice starts here". */
 @Composable
-private fun PageThumb(vm: BundleViewModel, page: Int, canSplit: Boolean, onSplit: () -> Unit, onOpen: () -> Unit) {
+private fun PageThumb(vm: BundleViewModel, page: Int, canSplit: Boolean, onSplit: () -> Unit, onOpen: () -> Unit, modifier: Modifier = Modifier) {
     val bitmap by produceState<Bitmap?>(null, page) { value = vm.thumb(page) }
     val label = stringResource(R.string.bundle_page, page + 1)
-    Column(Modifier.width(160.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Column(modifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Box(
-            Modifier.size(160.dp, 226.dp).clip(MaterialTheme.shapes.small).background(Color(0xFF303030))
+            Modifier.fillMaxWidth().aspectRatio(PAGE_RATIO).clip(MaterialTheme.shapes.small).background(Color(0xFF303030))
                 .clickable(onClickLabel = stringResource(R.string.bundle_see_pages), onClick = onOpen),
             contentAlignment = Alignment.Center,
         ) {
@@ -210,6 +221,9 @@ private fun PageThumb(vm: BundleViewModel, page: Int, canSplit: Boolean, onSplit
         }
     }
 }
+
+/** A portrait A4 page: width over height. */
+private const val PAGE_RATIO = 210f / 297f
 
 @Composable
 private fun pagesLabel(inv: PlannedInvoice): String =

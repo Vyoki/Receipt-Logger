@@ -43,7 +43,8 @@ interface Notifier {
 /**
  * The file's name for the operator: "Invoices 01/09–30/09 · 173", from the dates printed on its invoices, or
  * "Invoices imported on 22/10/2026 · 173" when none was read. [found]: the invoices found so far while it is looked
- * through.
+ * through. A file with no invoice found yet (a scanned one waiting for the answer, a look-through just started) is
+ * named by its pages: "File imported on 22/10/2026 · 344 pages".
  */
 fun bundleTitle(res: Resources, plan: BundlePlan, found: Int? = null): String {
     val reading = plan.status in setOf(BundleStatus.PREPARING, BundleStatus.QUEUED, BundleStatus.PAUSED, BundleStatus.DONE)
@@ -57,8 +58,12 @@ fun bundleTitle(res: Resources, plan: BundlePlan, found: Int? = null): String {
     val first = dates.minOrNull()
     val last = dates.maxOrNull()
     if (first == null || last == null) {
-        val day = Instant.ofEpochMilli(plan.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis()).atZone(ZoneId.systemDefault()).toLocalDate()
-        return res.getString(R.string.bundle_card_title_nodate, ItalianDates.format(day), count)
+        val day = ItalianDates.format(Instant.ofEpochMilli(plan.createdAt.takeIf { it > 0 } ?: System.currentTimeMillis()).atZone(ZoneId.systemDefault()).toLocalDate())
+        val unread = plan.status == BundleStatus.NOT_SPLITTABLE || (plan.status == BundleStatus.SCANNING && count == 0)
+        if (unread && plan.pageCount > 0) {
+            return res.getString(R.string.bundle_card_title_pages, day, res.getQuantityString(R.plurals.pages_count, plan.pageCount, plan.pageCount))
+        }
+        return res.getString(R.string.bundle_card_title_nodate, day, count)
     }
     return res.getString(R.string.bundle_card_title, SHORT_DATE.format(first), SHORT_DATE.format(last), count)
 }

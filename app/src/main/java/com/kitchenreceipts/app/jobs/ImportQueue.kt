@@ -337,7 +337,7 @@ class ImportQueue(
         scope.launch {
             for (signal in wake) {
                 while (true) {
-                    val next = _jobs.value.firstOrNull { it.status == JobStatus.QUEUED } ?: break
+                    val next = nextToRead(_jobs.value) ?: break
                     val job = scope.launch(worker) { read(next) }
                     current = job
                     currentId = next.id
@@ -387,7 +387,10 @@ class ImportQueue(
             val d = prepared.draft
             // Discarded while it was being read: nothing is saved.
             if (job(j.id) == null) return
-            val savedId = runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()
+            // Read again with the operator's corrections kept from before (its reading could not be rebuilt): never
+            // saved by the app, so the corrections come back in the review instead of being thrown away.
+            val savedId = if (draftFile(j.id).exists()) null
+            else runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()
             savedId?.let { id -> runCatching { onAutoSaved(id, pending, j.bundleId) } }
             // An invoice of a file of many waits on the phone, not in memory: it is rebuilt when opened (see load).
             val lazy = savedId == null && j.bundleId != null
@@ -434,10 +437,19 @@ class ImportQueue(
         }
     }
 
-    /** A review of job [id] opened ([open]) or closed: while open, the app does not save that job by itself. */
+    /**
+     * A review of job [id] opened ([open]) or closed: while open, the app does not save that job by itself. A review
+     * that opens while the job is being checked again waits for that check to end (see [rechecking]).
+     */
     fun reviewing(id: String, open: Boolean) {
         if (open) inReview.add(id) else inReview.remove(id)
     }
+
+    /**
+     * The operator's own: open in a review, or corrected and left (the corrections kept on the phone, [draftFile]).
+     * The app never saves such a job by itself, and never drops what was kept with it.
+     */
+    private fun operatorsOwn(id: String): Boolean = id in inReview || draftFile(id).exists()
 
     /** The jobs [ids] are about to be checked again ([recheck]): from now on they are not opened for a check meanwhile. */
     fun holdForRecheck(ids: Collection<String>) = _rechecking.update { it + ids }
@@ -447,7 +459,8 @@ class ImportQueue(
      * unchanged: each reading is rebuilt from what was stored (nothing is read again, but the supplier is looked up
      * again), prepared, and saved by the app when it now checks out (for example because its supplier was just saved,
      * so its name is proven by its VAT number). The others stay to check, their reading no longer held in memory. A
-     * job open in a review, gone, or no longer waiting is left alone. Returns the documents saved.
+     * job open in a review, corrected by the operator (its corrections kept), gone, or no longer waiting is left
+     * alone. Returns the documents saved.
      */
     suspend fun recheck(ids: List<String>): List<Long> {
         _rechecking.update { it + ids }
@@ -477,12 +490,13 @@ class ImportQueue(
     }
 
     private suspend fun recheckOne(id: String): Long? {
-        val start = job(id)?.takeIf { it.status == JobStatus.READY && id !in inReview } ?: return null
+        val start = job(id)?.takeIf { it.status == JobStatus.READY && !operatorsOwn(id) } ?: return null
         // Rebuilt now, not the reading in memory: the supplier saved since is looked up by its VAT number again.
         val pending = loadReading(start) ?: return null
         val prepared = preparer.withJobCategory(preparer.prepare(pending, start.flags), start.category)
-        // Opened, saved, thrown away or read again meanwhile: left as it is.
-        val now = job(id)?.takeIf { it.status == JobStatus.READY && id !in inReview } ?: return null
+        // Opened, corrected, saved, thrown away or read again meanwhile: left as it is. A review that opens from now
+        // on waits until this check is over (the job is in [rechecking] until then).
+        val now = job(id)?.takeIf { it.status == JobStatus.READY && !operatorsOwn(id) } ?: return null
         val savedId = runCatching { preparer.autoSave(pending, prepared) }.onFailure { log.error("autoSave", it) }.getOrNull()
         val d = prepared.draft
         if (savedId == null) {
@@ -650,6 +664,15 @@ class ImportQueue(
     }
 
     companion object {
+        /**
+         * The job to read next: a document on its own (a photo just taken) first, so it never waits behind the
+         * invoices of a file of many; those keep their order among themselves.
+         */
+        fun nextToRead(jobs: List<ImportJob>): ImportJob? {
+            val queued = jobs.filter { it.status == JobStatus.QUEUED }
+            return queued.firstOrNull { it.bundleId == null } ?: queued.firstOrNull()
+        }
+
         /** Readings started before giving up (the second one without the AI). */
         const val MAX_ATTEMPTS = 2
 

@@ -131,7 +131,7 @@
     <string name="bundle_supplier_of">Fornitore %1$d di %2$d</string>
     <string name="bundle_vat">P.IVA %1$s</string>
     <string name="bundle_supplier_line">%1$s · %2$s · %3$s</string>
-    <string name="bundle_as_printed">%1$s come stampato</string>
+    <string name="bundle_as_printed">%1$s come da stampa</string>
     <plurals name="bundle_plus_not_found">
         <item quantity="one">%1$s + %2$d non trovato</item>
         <item quantity="other">%1$s + %2$d non trovati</item>
@@ -170,8 +170,8 @@
         <item quantity="other">%d nuovi fornitori: la loro prima fattura viene letta per prima</item>
     </plurals>
     <plurals name="bundle_est_bills">
-        <item quantity="one">%d bolletta o fattura di carburante</item>
-        <item quantity="other">%d bollette o fatture di carburante</item>
+        <item quantity="one">%d fattura di utenze, carburante, riparazioni o altre spese</item>
+        <item quantity="other">%d fatture di utenze, carburante, riparazioni o altre spese</item>
     </plurals>
     <plurals name="bundle_est_flagged">
         <item quantity="one">%d segnata “da controllare”</item>
@@ -194,7 +194,7 @@
     </plurals>
     <string name="bundle_keep_reading">Continua a leggere</string>
     <plurals name="bundle_read_rest">
-        <item quantity="one">Leggi la %d non ancora letta</item>
+        <item quantity="one">Leggi quella non ancora letta</item>
         <item quantity="other">Leggi le %d non ancora lette</item>
     </plurals>
     <string name="notif_bundle_done">Fatture lette: %1$d · Salvate: %2$d · Da controllare: %3$d · Non leggibili: %4$d</string>
@@ -210,7 +210,7 @@
     <string name="viewer_prev">Pagina precedente</string>
     <string name="viewer_next">Pagina successiva</string>
     <string name="viewer_go">Vai</string>
-    <!-- Home card of a file of many invoices, review chain, recheck and the file's one notification -->
+    <!-- La scheda in Home di un file con molte fatture, la catena dei controlli, il nuovo controllo e l'unica notifica del file -->
     <string name="bundle_card_title">Fatture %1$s–%2$s · %3$d</string>
     <string name="bundle_card_title_nodate">Fatture importate il %1$s · %2$d</string>
     <string name="bundle_continue">Importazione in corso – continua</string>
@@ -231,7 +231,7 @@
         <item quantity="one">Prezzi cambiati in %d fattura</item>
         <item quantity="other">Prezzi cambiati in %d fatture</item>
     </plurals>
-    <!-- The file's list, grouped by supplier -->
+    <!-- L'elenco delle fatture del file, per fornitore -->
     <string name="bundle_list_title">Fatture per fornitore</string>
     <string name="bundle_no_supplier">Fornitore non letto</string>
     <string name="bundle_status_waiting">In attesa di lettura</string>

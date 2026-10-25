@@ -397,14 +397,17 @@ class ReceiptRepository(
         learning?.let { store -> flow { emitAll(store.supplierCategoryMemory) }.flowOn(Dispatchers.IO) } ?: flowOf(emptyMap())
 
     /**
-     * The category of each saved supplier that has one. By its VAT number, else by its name: a saved supplier is one
-     * name in this app's records, so a choice made for it on Sellers holds without a VAT number too.
+     * The category of each saved supplier that has one. A supplier with a VAT number goes by that number only (a
+     * choice remembered under the same name could be another supplier's: a suggestion at most). One without a VAT
+     * number goes by its name: a saved supplier is one name in this app's records, so a choice made for it on Sellers
+     * holds without a VAT number too.
      */
     fun sellerCategories(): Flow<Map<Long, SupplierCategory>> =
         combine(sellers.all(), categoryMemory()) { list, memory ->
             if (memory.isEmpty()) return@combine emptyMap()
             list.mapNotNull { s ->
-                SupplierCategories.memoryKeys(s.vatNumber, s.name).firstNotNullOfOrNull { memory[it] }?.let { s.id to it.category }
+                val keys = SupplierCategories.vatKey(s.vatNumber)?.let { listOf(it) } ?: SupplierCategories.memoryKeys(null, s.name)
+                keys.firstNotNullOfOrNull { memory[it] }?.let { s.id to it.category }
             }.toMap()
         }.distinctUntilChanged().flowOn(Dispatchers.Default)
 
