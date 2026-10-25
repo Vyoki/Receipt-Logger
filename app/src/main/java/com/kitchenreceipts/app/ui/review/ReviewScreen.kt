@@ -695,16 +695,19 @@ private const val JUMP_CHIPS_FROM_LINES = 12
 private const val CHIP_TOTALS = -1
 private const val CHIP_NEXT = -2
 
-/** "Invoice 3 of 25 to check (+ 40 still being read)" under the top bar, with "Check later" beside it. */
+/**
+ * "Invoice 3 of 25 to check (+ 40 still being read)" under the top bar, and "Check later" on its own line below it,
+ * so the line keeps the whole width (Italian, large text).
+ */
 @Composable
 private fun ChainBar(chain: Chain, canPutOff: Boolean, onCheckLater: () -> Unit) {
     val at = chain.position ?: return
     var text = stringResource(R.string.bundle_position, at, chain.of)
     if (chain.stillReading > 0) text += " (" + pluralStringResource(R.plurals.bundle_position_more, chain.stillReading, chain.stillReading) + ")"
-    Row(Modifier.fillMaxWidth().padding(end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
-        com.kitchenreceipts.app.ui.components.SubBarText(text, Modifier.weight(1f))
+    Column(Modifier.fillMaxWidth()) {
+        com.kitchenreceipts.app.ui.components.SubBarText(text)
         if (canPutOff) {
-            TextButton(onClick = onCheckLater, modifier = Modifier.heightIn(min = 56.dp).padding(bottom = 6.dp)) {
+            TextButton(onClick = onCheckLater, modifier = Modifier.align(Alignment.End).padding(end = 8.dp, bottom = 6.dp).heightIn(min = 56.dp)) {
                 Text(stringResource(R.string.bundle_check_later))
             }
         }

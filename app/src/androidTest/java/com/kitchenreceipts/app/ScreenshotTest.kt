@@ -21,8 +21,12 @@ import com.kitchenreceipts.core.SupplierCategory
 import com.kitchenreceipts.core.ValidDocument
 import com.kitchenreceipts.core.ValidLineItem
 import com.kitchenreceipts.core.VatBasis
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withTimeoutOrNull
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.BeforeClass
 import org.junit.FixMethodOrder
 import org.junit.Test
@@ -227,6 +231,99 @@ class ScreenshotTest {
         }
     }
 
+    /**
+     * The import of a file of many invoices with large text (font size 1.3) on a 360dp-wide screen, in Italian (the
+     * longer words): its steps, the file being read, a check in its chain ("Check later" on its own line) and its Home
+     * card. Invented e-invoices (ABC S.r.l., VERDE FRESCO S.p.A., dates in 2031), read by the app's own queue with
+     * saving by itself off; put away after, and the screen set back.
+     */
+    @Test fun wizardScreensLargeText() {
+        val c = app.container
+        val store = c.bundleStore
+        val settings = c.settings
+        val language = settings.language
+        val autoSave = settings.autoSave
+        var planId: String? = null
+        try {
+            shell("settings put system font_scale 1.3")
+            shell("wm size 720x1440")
+            shell("wm density 320")
+            settings.language = AppSettings.Language.ITALIAN
+            settings.autoSave = false
+            val xmls = (1..3).map { einvoice("${40 + it}/2031", "01234567897", "ABC S.r.l.", it * 5) } +
+                einvoice("44/2031", "09876543217", "VERDE FRESCO S.p.A.", 20)
+            val r = runBlocking { c.intake.take(zipOf("screens-large.zip", xmls), "test") }
+            assertTrue("$r", r is com.kitchenreceipts.app.jobs.ImportIntake.Intake.Bundle)
+            val id = (r as com.kitchenreceipts.app.jobs.ImportIntake.Intake.Bundle).planId
+            planId = id
+            ActivityScenario.launch(MainActivity::class.java).use {
+                app.container.pendingRoute.value = "bundle/$id"
+                shot("40-large-found-it")
+                runBlocking { store.update(id) { it.copy(step = BundleWizard.Step.SUPPLIERS) } }
+                shot("41-large-supplier-it")
+                runBlocking { store.update(id) { BundleWizard.useSuggestions(it).copy(step = BundleWizard.Step.READ) } }
+                shot("42-large-read-it")
+                runBlocking { store.confirm(id) }
+                val next = runBlocking { withTimeoutOrNull(60_000) { while (store.next(id) == null) delay(200); store.next(id) } }
+                shot("43-large-reading-it")
+                if (next != null) {
+                    app.container.pendingRoute.value = "review/$next"
+                    shot("44-large-review-chain-it")
+                }
+                app.container.pendingRoute.value = "home"
+                shot("45-large-home-it")
+            }
+        } finally {
+            shell("settings put system font_scale 1.0")
+            shell("wm size reset")
+            shell("wm density reset")
+            settings.language = language
+            settings.autoSave = autoSave
+            planId?.let { id ->
+                runBlocking {
+                    store.stop(id)
+                    c.importQueue.jobs.value.filter { it.bundleId == id }.forEach { c.importQueue.discard(it.id, deleteFile = false) }
+                    store.update(id) { BundleWizard.close(it, BundleStatus.CANCELLED) }
+                    store.plan(id)?.let { p -> BundleWizard.ownFiles(p).forEach { c.fileStore.delete(it) } }
+                }
+            }
+        }
+    }
+
+    /** Runs a shell command (as the test's shell user) and waits until it is done. */
+    private fun shell(cmd: String) {
+        val out = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
+        android.os.ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes() }
+    }
+
+    /** An invented purchase e-invoice of [seller] to RISTORANTE PROVA SAS, dated [day] March 2031. */
+    private fun einvoice(number: String, sellerVat: String, seller: String, day: Int): String = """<?xml version="1.0" encoding="UTF-8"?>
+<p:FatturaElettronica versione="FPR12" xmlns:p="http://ivaservizi.agenziaentrate.gov.it/docs/xsd/fatture/v1.2">
+  <FatturaElettronicaHeader>
+    <CedentePrestatore><DatiAnagrafici><IdFiscaleIVA><IdPaese>IT</IdPaese><IdCodice>$sellerVat</IdCodice></IdFiscaleIVA><Anagrafica><Denominazione>$seller</Denominazione></Anagrafica></DatiAnagrafici></CedentePrestatore>
+    <CessionarioCommittente><DatiAnagrafici><Anagrafica><Denominazione>RISTORANTE PROVA SAS</Denominazione></Anagrafica></DatiAnagrafici></CessionarioCommittente>
+  </FatturaElettronicaHeader>
+  <FatturaElettronicaBody>
+    <DatiGenerali><DatiGeneraliDocumento><TipoDocumento>TD01</TipoDocumento><Divisa>EUR</Divisa><Data>2031-03-${"%02d".format(day)}</Data><Numero>$number</Numero><ImportoTotaleDocumento>9.90</ImportoTotaleDocumento></DatiGeneraliDocumento></DatiGenerali>
+    <DatiBeniServizi>
+      <DettaglioLinee><NumeroLinea>1</NumeroLinea><Descrizione>PATATE</Descrizione><Quantita>10.00</Quantita><UnitaMisura>KG</UnitaMisura><PrezzoUnitario>0.90</PrezzoUnitario><PrezzoTotale>9.00</PrezzoTotale><AliquotaIVA>10.00</AliquotaIVA></DettaglioLinee>
+      <DatiRiepilogo><AliquotaIVA>10.00</AliquotaIVA><ImponibileImporto>9.00</ImponibileImporto><Imposta>0.90</Imposta></DatiRiepilogo>
+    </DatiBeniServizi>
+  </FatturaElettronicaBody>
+</p:FatturaElettronica>"""
+
+    private fun zipOf(name: String, xmls: List<String>): android.net.Uri {
+        val out = java.io.ByteArrayOutputStream()
+        java.util.zip.ZipOutputStream(out).use { z ->
+            xmls.forEachIndexed { i, x ->
+                z.putNextEntry(java.util.zip.ZipEntry("IT01234567897_${"%05d".format(i + 1)}.xml"))
+                z.write(x.toByteArray())
+                z.closeEntry()
+            }
+        }
+        return android.net.Uri.fromFile(File(app.cacheDir, name).apply { writeBytes(out.toByteArray()) })
+    }
+
     /** The fast scroller and the jump chips on long screens (invented data), in English and in Italian. */
     @Test fun scrollScreens() {
         seed()
@@ -258,6 +355,61 @@ class ScreenshotTest {
             settings.language = language
         }
     }
+
+    /**
+     * A tap on the fast scroller's thumb still reaches what lies under it (design D1): on the 60-line invoice, with
+     * the thumb moved to the middle of the list, a tap where the thumb covers a folded line opens that line. Invented
+     * data; nothing is saved.
+     */
+    @Test fun scrollThumbLetsATapThrough() {
+        seed()
+        val longId = seedLong()
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            var desc = ""
+            var fine = ""
+            var remove = ""
+            scenario.onActivity {
+                desc = it.getString(R.string.scrollbar_desc)
+                fine = it.resources.getQuantityString(R.plurals.lines_check_out, 60, 60)
+                remove = it.getString(R.string.remove_item)
+            }
+            app.container.pendingRoute.value = "edit/$longId"
+            Thread.sleep(1500)
+            // The 60 lines check out: one row, opened into a row per line.
+            assertTrue(clickTextIn(fine))
+            Thread.sleep(800)
+            // The thumb to the middle of the list, so folded lines lie under it; then let it settle.
+            dragThumb(desc) {}
+            Thread.sleep(1000)
+            val thumb = thumbBounds(desc)
+            val inst = InstrumentationRegistry.getInstrumentation()
+            val root = inst.uiAutomation.rootInActiveWindow!!
+            // A folded line ("Articolo di prova NN") that the thumb covers in part.
+            val line = findNode(root) { n ->
+                n.isClickable && Rect().also { n.getBoundsInScreen(it) }.let { Rect.intersects(it, thumb) } &&
+                    findNode(n) { it.text?.toString()?.startsWith("Articolo di prova") == true } != null
+            }
+            assertNotNull("no line under the thumb", line)
+            val under = Rect().also { line!!.getBoundsInScreen(it) }
+            assertTrue(under.intersect(thumb))
+            fun opened() = inst.uiAutomation.rootInActiveWindow?.let { r -> countNodes(r) { it.contentDescription?.toString() == remove } } ?: 0
+            val before = opened()
+            // A plain tap (no move) in the part the thumb covers.
+            val down = SystemClock.uptimeMillis()
+            for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, under.exactCenterX(), under.exactCenterY(), 0)
+                inst.sendPointerSync(e)
+                e.recycle()
+            }
+            val deadline = SystemClock.uptimeMillis() + 3000
+            while (opened() <= before && SystemClock.uptimeMillis() < deadline) Thread.sleep(100)
+            shot("39-scroll-tap-through")
+            assertTrue("the tap under the thumb did not open the line", opened() > before)
+        }
+    }
+
+    private fun countNodes(node: AccessibilityNodeInfo, test: (AccessibilityNodeInfo) -> Boolean): Int =
+        (if (test(node)) 1 else 0) + (0 until node.childCount).sumOf { i -> node.getChild(i)?.let { countNodes(it, test) } ?: 0 }
 
     /**
      * Suppliers sorted by what they sell (invented data), in English and in Italian: Sellers in sections with filter
@@ -397,16 +549,23 @@ class ScreenshotTest {
         )
     }
 
-    /**
-     * Holds the fast scroller's thumb (found by its TalkBack description [desc]) dragged half-way down the screen
-     * while [whileHeld] runs, so the bubble shows; then lets go. Does nothing if no thumb is on screen.
-     */
-    private fun dragThumb(desc: String, whileHeld: () -> Unit) {
+    /** The fast scroller's thumb on screen (found by its TalkBack description [desc]); the test fails without one. */
+    private fun thumbBounds(desc: String): Rect {
         val inst = InstrumentationRegistry.getInstrumentation()
         val thumb = (1..10).firstNotNullOfOrNull {
             inst.uiAutomation.rootInActiveWindow?.let { findByDescription(it, desc) } ?: run { Thread.sleep(300); null }
-        } ?: return
-        val r = Rect().also { thumb.getBoundsInScreen(it) }
+        }
+        assertNotNull("no fast scroller on a long list ($desc)", thumb)
+        return Rect().also { thumb!!.getBoundsInScreen(it) }
+    }
+
+    /**
+     * Holds the fast scroller's thumb (found by its TalkBack description [desc]) dragged half-way down the screen
+     * while [whileHeld] runs, so the bubble shows; then lets go. Fails when no thumb is on screen.
+     */
+    private fun dragThumb(desc: String, whileHeld: () -> Unit) {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        val r = thumbBounds(desc)
         val x = r.exactCenterX()
         val from = r.exactCenterY()
         val to = app.resources.displayMetrics.heightPixels * 0.55f
