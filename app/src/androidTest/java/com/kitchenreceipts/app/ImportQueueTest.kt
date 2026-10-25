@@ -474,6 +474,34 @@ class ImportQueueTest {
         }
     }
 
+    /**
+     * The check again never throws away what the operator did: an invoice of the same supplier they corrected and
+     * left (the corrections kept on the phone), or put off with "Check later", stays for them to check, with its
+     * corrections; another one of that supplier is still checked again and saved by the app.
+     */
+    @Test fun aCorrectedOrPutOffInvoiceIsNotCheckedAgain() = runBlocking<Unit> {
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        Reading().use { r ->
+            settings.autoSave = false
+            val id = r.bundle("recheck-kept.zip", listOf(abc("1/2031"), abc("2/2031"), abc("3/2031"), abc("4/2031")))
+            r.store.confirm(id)
+            until("all read") { r.plan(id).invoices.all { it.outcome == InvoiceOutcome.READY } }
+            // 2/2031 corrected and left; 3/2031 put off.
+            val draft = r.queue.draftFile(r.jobOf(id, "2/2031")).apply { parentFile?.mkdirs(); writeText("0\n{}") }
+            r.store.checkLater(id, r.jobOf(id, "3/2031"))
+            settings.autoSave = true
+            r.queue.markSaved(r.jobOf(id, "1/2031"), 79L)
+            until("checked again") { r.outcomeOf(id, "4/2031") == InvoiceOutcome.SAVED_BY_APP }
+            until("check over") { r.queue.rechecking.value.isEmpty() }
+            assertEquals(InvoiceOutcome.READY, r.outcomeOf(id, "2/2031"))
+            assertEquals(JobStatus.READY, r.queue.job(r.jobOf(id, "2/2031"))!!.status)
+            assertTrue(draft.isFile)
+            assertEquals(InvoiceOutcome.CHECK_LATER, r.outcomeOf(id, "3/2031"))
+            assertEquals(JobStatus.READY, r.queue.job(r.jobOf(id, "3/2031"))!!.status)
+        }
+    }
+
     @Test fun stopRemovesOnlyWhatIsNotSavedAndReadRestQueuesItAgain() = runBlocking<Unit> {
         plansDir.deleteRecursively()
         jobsDir.deleteRecursively()

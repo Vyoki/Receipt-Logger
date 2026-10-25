@@ -576,15 +576,15 @@ object BundleWizard {
     /**
      * The operator just saved the invoice of job [savedJob]. When it is the first of its supplier they saved in this
      * file, that supplier is now known (by its VAT number), so its other invoices waiting to be checked are worth
-     * checking again: their jobs, in plan order. Only by VAT number, the proof the registry gives.
+     * checking again: their jobs, in plan order. Only by VAT number, the proof the registry gives. Only the ones ready
+     * to check: one put off with "Check later" is the operator's, with whatever they corrected on it.
      */
     fun recheckAfterSave(plan: BundlePlan, savedJob: String): List<String> {
         val at = plan.invoices.indexOfFirst { it.jobId == savedJob }.takeIf { it >= 0 } ?: return emptyList()
         val vat = digits(plan.invoices[at].supplierVat) ?: return emptyList()
         val same = plan.invoices.indices.filter { it != at && plan.invoices[it].isInvoice && digits(plan.invoices[it].supplierVat) == vat }
         if (same.any { plan.invoices[it].outcome == InvoiceOutcome.SAVED_BY_YOU }) return emptyList()
-        val waiting = setOf(InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER)
-        return planOrder(plan).filter { it in same && plan.invoices[it].outcome in waiting }.mapNotNull { plan.invoices[it].jobId }
+        return planOrder(plan).filter { it in same && plan.invoices[it].outcome == InvoiceOutcome.READY }.mapNotNull { plan.invoices[it].jobId }
     }
 
     /** The plan's own files: the file of many invoices, and each invoice's own e-invoice. */

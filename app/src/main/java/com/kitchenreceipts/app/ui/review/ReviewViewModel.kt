@@ -234,6 +234,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     }
 
     private suspend fun loadPending() {
+        // Being checked again by the app right now (it may save it): opened once that check is over, as it is then.
+        jobId?.let { id -> c.importQueue.rechecking.first { id !in it } }
         val job = jobId?.let { c.importQueue.job(it) }
         // In memory, or rebuilt from what was stored (an invoice of a file of many, a reading after a restart).
         val pending = job?.let { it.pending ?: c.importQueue.load(it.id) }

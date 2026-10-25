@@ -324,8 +324,8 @@ class BundleWizardTest {
         for (i in 0..4) p = BundleWizard.record(p, "job$i", InvoiceOutcome.READY)
         p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_YOU, 10)
         assertEquals(listOf("job3"), BundleWizard.recheckAfterSave(p, "job0"))
-        // An invoice put off with "Check later" is checked again too.
-        assertEquals(listOf("job3"), BundleWizard.recheckAfterSave(BundleWizard.checkLater(p, 3), "job0"))
+        // An invoice put off with "Check later" is not: it is the operator's, with what they corrected on it.
+        assertEquals(emptyList<String>(), BundleWizard.recheckAfterSave(BundleWizard.checkLater(p, 3), "job0"))
         // A supplier with one invoice: nothing else to check.
         p = BundleWizard.record(p, "job1", InvoiceOutcome.SAVED_BY_YOU, 11)
         assertEquals(emptyList<String>(), BundleWizard.recheckAfterSave(p, "job1"))
