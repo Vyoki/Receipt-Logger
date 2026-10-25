@@ -350,8 +350,10 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         val shown = kept ?: draft
         startKeys(shown)
         if (kept != null) c.log.event("DRAFT_RESTORED", "new" to false, "doc" to id)
-        // A saved supplier's category as Sellers shows it: by its VAT number, else by its name.
-        val match = withContext(Dispatchers.Default) { c.preparer.categoryMatch(doc.ocrText, sellerName) }
+        // A saved supplier's category as Sellers shows it: by its VAT number, else (no VAT number printed) by its name.
+        val match = withContext(Dispatchers.Default) {
+            c.preparer.categoryMatch(doc.ocrText, sellerName)?.takeIf { it.known || c.preparer.supplierVat(doc.ocrText) == null }
+        }
         _state.value = ReviewState(
             loading = false, isNew = false, draft = shown, restored = kept != null,
             filePath = doc.filePath, mimeType = doc.mimeType, pageCount = doc.pageCount,
@@ -394,6 +396,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     }
 
     private fun editDraft(f: (DocumentDraft) -> DocumentDraft) {
+        // Saved (the chain shows "Saved ✓ · next" for a moment): nothing changes any more, nothing would be kept.
+        if (_state.value.savedId != null) return
         // The document's proof is dropped as soon as the lines it was made on change.
         _state.update { it.copy(draft = f(it.draft).checksStillFor(it.draft), saveError = null) }
         refreshChecks()
@@ -419,6 +423,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun setDate(date: LocalDate) = setHeader(HeaderField.DATE, ItalianDates.format(date))
 
     fun setKind(k: com.kitchenreceipts.core.DocKind?) {
+        if (_state.value.savedId != null) return
         _state.update { it.copy(kind = k) }
         c.log.event("KIND_SET", "new" to true, "kind" to k)
     }
@@ -433,6 +438,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
      * the memory untouched. Display only: no amount changes.
      */
     fun chooseCategory(category: SupplierCategory, forSupplier: Boolean) {
+        if (_state.value.savedId != null) return
         val all = forSupplier || !canChooseJustThis
         _state.update { it.copy(supplierCategory = category) }
         c.log.event("CATEGORY_SET", "category" to category.key, "forSupplier" to all, "new" to (documentId == null))
@@ -469,6 +475,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
      * same doubt is settled by itself next time.
      */
     fun pickChoice(key: Long, choice: LineChoice) {
+        if (_state.value.savedId != null) return
         editItem(key) { it.pick(choice) }
         if (_state.value.isNew) {
             val key = supplierKey
@@ -493,6 +500,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     fun renameNewProduct(key: Long, name: String) = editItem(key) { it.copy(newProductName = name.ifBlank { null }) }
 
     fun createProductAndAssign(key: Long, name: String) {
+        if (_state.value.savedId != null) return
         viewModelScope.launch {
             val product = try {
                 repo.createProduct(name)
@@ -680,6 +688,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
 
     /** Throws away a document that was read but not saved, including its stored original. */
     fun discard() {
+        // Saved a moment ago: it is a document now, not a reading to throw away.
+        if (_state.value.savedId != null) return
         c.log.event("DISCARDED", "new" to (documentId == null), "seconds" to (System.currentTimeMillis() - openedAt) / 1000)
         dropKept()
         if (documentId == null) jobId?.let { c.importQueue.discard(it) } // deletes the stored original too

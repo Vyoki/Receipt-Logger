@@ -400,7 +400,8 @@ fun ReviewScreen(
             }
         }) else null,
         actions = {
-            if (state.isNew && state.fatal == null && !state.loading) {
+            // Not once it is saved (the chain's pause before the next invoice): there is nothing left to throw away.
+            if (state.isNew && state.fatal == null && !state.loading && state.savedId == null) {
                 IconButton(onClick = { askDiscard = true }, modifier = Modifier.size(48.dp)) {
                     Icon(Icons.Filled.Delete, contentDescription = stringResource(R.string.discard))
                 }
@@ -409,7 +410,7 @@ fun ReviewScreen(
         floatingActionButton = {
             // One tap to the next thing to check, instead of scrolling through the lines that are fine.
             AnimatedVisibility(
-                visible = !state.loading && state.fatal == null && toCheck > 0,
+                visible = !state.loading && state.fatal == null && state.savedId == null && toCheck > 0,
                 enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
                 exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut(),
             ) {
@@ -429,7 +430,7 @@ fun ReviewScreen(
             }
         },
         bottomBar = {
-            if (!state.loading && state.fatal == null) {
+            if (!state.loading && state.fatal == null && state.savedId == null) {
                 SaveBar(
                     uncertain = state.draft.uncertainCount,
                     open = openReasons(state.reviewReasons).size,
