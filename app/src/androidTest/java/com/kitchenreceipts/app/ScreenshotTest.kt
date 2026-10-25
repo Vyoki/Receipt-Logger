@@ -376,7 +376,7 @@ class ScreenshotTest {
             app.container.pendingRoute.value = "edit/$longId"
             Thread.sleep(1500)
             // The 60 lines check out: one row, opened into a row per line.
-            assertTrue(clickTextIn(fine))
+            assertTrue("no row \"$fine\"", clickTextIn(fine))
             Thread.sleep(800)
             // The thumb to the middle of the list, so folded lines lie under it; then let it settle.
             dragThumb(desc) {}
@@ -384,14 +384,13 @@ class ScreenshotTest {
             val thumb = thumbBounds(desc)
             val inst = InstrumentationRegistry.getInstrumentation()
             val root = inst.uiAutomation.rootInActiveWindow!!
-            // A folded line ("Articolo di prova NN") that the thumb covers in part.
-            val line = findNode(root) { n ->
-                n.isClickable && Rect().also { n.getBoundsInScreen(it) }.let { Rect.intersects(it, thumb) } &&
-                    findNode(n) { it.text?.toString()?.startsWith("Articolo di prova") == true } != null
+            // The folded line ("Articolo di prova NN") the thumb covers most: the part of it under the thumb.
+            val lines = collectNodes(root) { n ->
+                n.isClickable && findNode(n) { it.text?.toString()?.startsWith("Articolo di prova") == true } != null
             }
-            assertNotNull("no line under the thumb", line)
-            val under = Rect().also { line!!.getBoundsInScreen(it) }
-            assertTrue(under.intersect(thumb))
+            val under = checkNotNull(
+                lines.mapNotNull { n -> Rect().also { n.getBoundsInScreen(it) }.takeIf { it.intersect(thumb) } }.maxByOrNull { it.width() * it.height() },
+            ) { "no line under the thumb (${lines.size} lines on screen)" }
             fun opened() = inst.uiAutomation.rootInActiveWindow?.let { r -> countNodes(r) { it.contentDescription?.toString() == remove } } ?: 0
             val before = opened()
             // A plain tap (no move) in the part the thumb covers.
@@ -408,8 +407,10 @@ class ScreenshotTest {
         }
     }
 
-    private fun countNodes(node: AccessibilityNodeInfo, test: (AccessibilityNodeInfo) -> Boolean): Int =
-        (if (test(node)) 1 else 0) + (0 until node.childCount).sumOf { i -> node.getChild(i)?.let { countNodes(it, test) } ?: 0 }
+    private fun collectNodes(node: AccessibilityNodeInfo, test: (AccessibilityNodeInfo) -> Boolean): List<AccessibilityNodeInfo> =
+        listOfNotNull(node.takeIf(test)) + (0 until node.childCount).flatMap { i -> node.getChild(i)?.let { collectNodes(it, test) }.orEmpty() }
+
+    private fun countNodes(node: AccessibilityNodeInfo, test: (AccessibilityNodeInfo) -> Boolean): Int = collectNodes(node, test).size
 
     /**
      * Suppliers sorted by what they sell (invented data), in English and in Italian: Sellers in sections with filter
