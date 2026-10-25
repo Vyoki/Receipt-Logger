@@ -111,7 +111,7 @@ internal fun SupplierStep(plan: BundlePlan, at: Int, vm: BundleViewModel) {
             onDecideLater = { vm.decideLater(choice.key) },
             decidedLater = choice.category == SupplierChoice.LATER,
         )
-        TextButton(onClick = { vm.leaveOut(choice.key) }, modifier = Modifier.heightIn(min = 48.dp)) {
+        TextButton(onClick = { vm.leaveOut(choice.key) }, modifier = Modifier.heightIn(min = 56.dp)) {
             Text(stringResource(R.string.bundle_leave_out_supplier))
         }
         KnownSuppliers(plan, vm)
