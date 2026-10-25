@@ -130,6 +130,16 @@ class AppSettings(context: Context) {
         get() = prefs.getBoolean("ai_light_exact_text", false)
         set(v) = prefs.edit().putBoolean("ai_light_exact_text", v).apply()
 
+    /**
+     * A PDF whose every page is its own exact text, and whose money its own arithmetic proves to the cent (every line,
+     * the taxable amount, VAT and total), is not double-checked by the AI: it would only repeat what the sums prove,
+     * and it takes minutes per invoice on a phone. Photos, scans and anything that does not add up keep the AI check.
+     * On by default; the operator can turn it off in Settings ▸ AI reader.
+     */
+    var aiSkipProvenExactText: Boolean
+        get() = prefs.getBoolean("ai_skip_proven_exact", true)
+        set(v) = prefs.edit().putBoolean("ai_skip_proven_exact", v).apply()
+
     /** Language of the reports sent to others (the boss may read Italian while the app is in English). */
     var reportLanguage: Language
         get() = readLanguage(prefs.getString("report_language", null)).takeIf { it != Language.SYSTEM } ?: Language.ITALIAN

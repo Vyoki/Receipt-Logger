@@ -381,7 +381,9 @@ class ImportQueue(
             )
             // How long reading takes on this phone, for the estimate before a file of many invoices is read.
             if (j.file.mimeType != FileStore.MIME_XML) {
-                runCatching { ReadingTime.record(settings, pending.pagesRead, System.currentTimeMillis() - t0, ai != null) }
+                // A reading the AI was spared counts as one without it.
+                val aiRan = ai != null && pending.aiNote != ImportProcessor.AI_NOT_NEEDED
+                runCatching { ReadingTime.record(settings, pending.pagesRead, System.currentTimeMillis() - t0, aiRan) }
             }
             val prepared = preparer.withJobCategory(preparer.prepare(pending, j.flags), j.category)
             val d = prepared.draft

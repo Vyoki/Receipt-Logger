@@ -4,6 +4,8 @@ import com.kitchenreceipts.app.files.PageRenderer
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.ai.AiPageReader
 import com.kitchenreceipts.core.AiLoop
+import com.kitchenreceipts.core.AutoAccept
+import com.kitchenreceipts.core.DocumentDraft
 import com.kitchenreceipts.core.AiReader
 import com.kitchenreceipts.core.AiScope
 import com.kitchenreceipts.core.AiTarget
@@ -127,6 +129,8 @@ class AiUse(
     val agent: Boolean = false,
     /** On exact text only the supplier, header and totals are double-checked (AppSettings.aiLightOnExactText). */
     val lightOnExactText: Boolean = false,
+    /** No AI double-check on exact text whose money is proven (AppSettings.aiSkipProvenExactText). */
+    val skipProvenExactText: Boolean = false,
 )
 
 /**
@@ -277,7 +281,13 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
         // for at most 30 s. The lines are still proven by the arithmetic. Not in "always" mode, nor on photos or scans.
         val light = ai != null && !ai.always && ai.lightOnExactText && best.lines.isNotEmpty() && best.textPages == best.lines.size
         val scope = if (light) AiScope.HEADER_TOTALS else AiScope.ALL
-        if (ai != null && shared != null && best.error == null && best.lines.isNotEmpty()) {
+        // Exact text whose every amount its own arithmetic proves: the AI would only repeat the sums, at minutes per
+        // invoice. It stays for photos, scans and anything that does not add up (AppSettings.aiSkipProvenExactText).
+        val proven = ai != null && !ai.always && ai.skipProvenExactText && best.error == null && best.lines.isNotEmpty() &&
+            best.textPages == best.lines.size &&
+            withContext(cpu) { runCatching { AutoAccept.moneyProven(DocumentDraft.fromParsed(parsed)) }.getOrDefault(false) }
+        if (proven) aiNote = AI_NOT_NEEDED
+        if (ai != null && !proven && shared != null && best.error == null && best.lines.isNotEmpty()) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
             // totals and key lines of every document before the operator sees it. Whole pages only when the regular
             // reading failed too broadly for that, or when the operator asked the AI to read everything.
@@ -627,6 +637,9 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
         const val AI_TIME_LIMIT_MS = 150_000L
         /** The same on exact text, when only the supplier, header and totals are asked about (AiScope.HEADER_TOTALS). */
         const val AI_EXACT_TEXT_LIMIT_MS = 30_000L
+
+        /** The note of a reading the AI was spared: exact text, every amount proven. */
+        const val AI_NOT_NEEDED = "not needed: exact text, every amount proven"
         /** Whole pages read by the AI, all pages together (a page takes 2 to 5 minutes on a phone). */
         const val AI_PAGES_LIMIT_MS = 10 * 60_000L
         const val OCR_LONG_SIDE = 2400

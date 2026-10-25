@@ -63,6 +63,7 @@ fun AiSettingsSection(c: AppContainer) {
     var option by remember { mutableStateOf(AiModelStore.OPTIONS.first()) }
     var mode by remember { mutableStateOf(c.settings.aiMode) }
     var light by remember { mutableStateOf(c.settings.aiLightOnExactText) }
+    var skipProven by remember { mutableStateOf(c.settings.aiSkipProvenExactText) }
     var copying by remember { mutableStateOf<Float?>(null) }
     var message by remember { mutableStateOf<String?>(null) }
     var askRemove by remember { mutableStateOf(false) }
@@ -133,6 +134,24 @@ fun AiSettingsSection(c: AppContainer) {
                     ) {
                         RadioButton(selected = mode == m, onClick = null)
                         Text(stringResource(label), modifier = Modifier.padding(start = 12.dp))
+                    }
+                }
+                // Digital invoices whose every amount adds up are not double-checked by the AI (much faster for files of
+                // many invoices). Only when the AI helps "when needed". One switch for TalkBack: the row, read as on or off.
+                if (mode == AppSettings.AiMode.WHEN_NEEDED) {
+                    Row(
+                        Modifier.fillMaxWidth().heightIn(min = 64.dp).toggleable(value = skipProven, role = Role.Switch, onValueChange = { v ->
+                            skipProven = v
+                            c.settings.aiSkipProvenExactText = v
+                            c.log.event("SETTINGS", "aiSkipProvenExactText" to v)
+                        }),
+                        verticalAlignment = Alignment.CenterVertically,
+                    ) {
+                        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+                            Text(stringResource(R.string.ai_skip_proven_title), style = MaterialTheme.typography.bodyLarge)
+                            Text(stringResource(R.string.ai_skip_proven_hint), style = MaterialTheme.typography.bodySmall, color = com.kitchenreceipts.app.ui.theme.Palette.TextDim)
+                        }
+                        Switch(checked = skipProven, onCheckedChange = null)
                     }
                 }
                 // The owner's choice (question 1): off, and not shown, until the owner says yes (AI_LIGHT_SWITCH_SHOWN).

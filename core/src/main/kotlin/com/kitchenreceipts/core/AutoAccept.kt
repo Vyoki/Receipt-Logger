@@ -147,6 +147,40 @@ object AutoAccept {
     }
 
     /**
+     * The document's money is proven by its own arithmetic, to the cent: every line has its amount, and quantity x
+     * price = amount on every goods line; the lines add up to the printed taxable amount or total; taxable + VAT =
+     * total when all three are printed; the VAT summary agrees; no page is missing and nothing was added or left out
+     * by the totals check. After [settleProven], no money field is left uncertain (a quantity worked out from the
+     * amount, or a value the AI read differently, stays uncertain and so is not proven).
+     *
+     * What arithmetic cannot prove (the supplier, the date, the number, a lot) is not part of it: those still go to
+     * the operator when doubtful. Used to spare the slow AI double-check on a PDF's exact text (see ImportProcessor).
+     */
+    fun moneyProven(d: DocumentDraft): Boolean {
+        if (d.items.isEmpty() || !sumMatches(d) || d.vatGroupProblems.isNotEmpty()) return false
+        if (d.warnings.any { it in MONEY_DOUBTS }) return false
+        val lineOk = d.items.all {
+            if (cents(it.lineTotal.text) == null) return@all false
+            if (it.isCharge) return@all true
+            val q = ItalianNumbers.parse(it.quantity.text) ?: return@all false
+            val p = ItalianNumbers.parse(it.unitPrice.text) ?: return@all false
+            LineDiscount.matches(q, p, it.discount.text, cents(it.lineTotal.text)!!)
+        }
+        if (!lineOk) return false
+        val sub = cents(d.subtotal.text); val vat = cents(d.vat.text); val tot = cents(d.total.text) ?: return false
+        if (sub != null && vat != null && !totalsAddUp(sub, vat, tot)) return false
+        val s = settleProven(d)
+        if (s.total.uncertain || s.subtotal.uncertain || s.vat.uncertain) return false
+        return s.items.all { !it.lineTotal.uncertain && !it.quantity.uncertain && !it.unitPrice.uncertain && !it.discount.uncertain }
+    }
+
+    private val MONEY_DOUBTS = setOf(
+        ParseWarning.LINE_TOTAL_MISMATCH, ParseWarning.ITEMS_SUM_MISMATCH, ParseWarning.TOTALS_INCONSISTENT,
+        ParseWarning.MULTIPLE_TOTALS, ParseWarning.VAT_GROUP_MISMATCH, ParseWarning.PAGES_MISSING,
+        ParseWarning.DUPLICATE_PAGE, ParseWarning.CHECKED_BY_TOTALS, ParseWarning.NO_ITEMS_FOUND,
+    )
+
+    /**
      * The line amounts add up to the printed taxable amount or total, to the cent: printed documents are exact, and a
      * sum a few cents off is a misread digit somewhere (a line or the total), never a proof.
      */

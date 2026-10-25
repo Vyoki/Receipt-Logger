@@ -132,7 +132,10 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
         // An e-invoice is read from its own values: no pages to read, no AI.
         if (plan.file.isBlank()) return read.size.toLong()
         val pages = read.sumOf { minOf(it.pageCount, InvoiceBundle.PAGE_LIMIT) }
-        return ReadingTime.seconds(c.settings, pages, read.size, ai)
+        // The AI is spared on invoices whose printed total the VAT summary proves (their lines are then checked by
+        // their sums too); it is counted for the others. A guess from the look-through; the reading itself decides.
+        val withAi = if (c.settings.aiSkipProvenExactText) read.count { !it.totalProven } else read.size
+        return ReadingTime.seconds(c.settings, pages, withAi, ai)
     }
 
     // ------------------------------------------------------------------ the file's list while it is read

@@ -25,6 +25,32 @@ class AutoAcceptTest {
         assertEquals(listOf(ReviewReason.DATE_MISSING, ReviewReason.UNCERTAIN_VALUES), AutoAccept.reasons(noDate))
     }
 
+    @Test fun moneyProvenOnlyWhenEveryAmountChecksOut() {
+        fun line(k: Long, q: String, p: String, t: String, uncertain: Boolean = false) = LineItemDraft(
+            k, DraftField("Prodotto $k"), quantity = DraftField(q), unit = DraftField("kg"), unitPrice = DraftField(p),
+            lineTotal = DraftField(t, uncertain = uncertain),
+        )
+        val ok = DocumentDraft(
+            seller = DraftField("ABC S.r.l.", uncertain = true), date = DraftField("01/09/2031"), total = DraftField("16,50"),
+            subtotal = DraftField("15,00"), vat = DraftField("1,50"), items = listOf(line(1, "10", "0,90", "9,00"), line(2, "2", "3,00", "6,00")),
+        )
+        // The money is proven although the supplier is still doubtful: that one is for the operator, not the AI.
+        assertTrue(AutoAccept.moneyProven(ok))
+        // A line whose quantity x price is not its amount.
+        assertTrue(!AutoAccept.moneyProven(ok.copy(items = listOf(line(1, "10", "0,90", "9,10"), line(2, "2", "3,00", "6,00")))))
+        // Lines that do not add up to the taxable amount, or taxable + VAT that is not the total.
+        assertTrue(!AutoAccept.moneyProven(ok.copy(subtotal = DraftField("15,10"), total = DraftField("16,60"))))
+        assertTrue(!AutoAccept.moneyProven(ok.copy(total = DraftField("16,40"))))
+        // No total, no lines, a price missing, or a page missing.
+        assertTrue(!AutoAccept.moneyProven(ok.copy(total = DraftField(""))))
+        assertTrue(!AutoAccept.moneyProven(ok.copy(items = emptyList())))
+        assertTrue(!AutoAccept.moneyProven(ok.copy(items = listOf(line(1, "10", "", "9,00"), line(2, "2", "3,00", "6,00")))))
+        assertTrue(!AutoAccept.moneyProven(ok.copy(warnings = setOf(ParseWarning.PAGES_MISSING))))
+        // A quantity worked out from the amount was never printed: not proven.
+        val worked = ok.items[0].copy(quantity = DraftField("10", uncertain = true, source = "x ${ReceiptParser.WORKED_OUT}"))
+        assertTrue(!AutoAccept.moneyProven(ok.copy(items = listOf(worked, ok.items[1]))))
+    }
+
     @Test fun anInvoiceCutFromAFileWithFlagsIsNeverSavedByTheApp() {
         val item = LineItemDraft(1, DraftField("Patate"), quantity = DraftField("10"), unit = DraftField("kg"), lineTotal = DraftField("9,00"))
         val ok = DocumentDraft(seller = DraftField("ABC S.r.l."), date = DraftField("01/09/2031"), total = DraftField("9,90"),
