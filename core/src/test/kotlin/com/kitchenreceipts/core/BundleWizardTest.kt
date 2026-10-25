@@ -296,6 +296,10 @@ class BundleWizardTest {
         val q = BundleWizard.stop(BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" }))
         assertEquals(BundleStatus.DONE, q.status)
         assertEquals(5, BundleWizard.counts(q).stopped)
+        // An import already closed or cancelled stays so.
+        for (ended in listOf(BundleStatus.CLOSED, BundleStatus.CANCELLED)) {
+            assertEquals(ended, BundleWizard.stop(BundleWizard.close(q, ended)).status)
+        }
     }
 
     @Test fun oneMessageWhenTheFileIsRead() {

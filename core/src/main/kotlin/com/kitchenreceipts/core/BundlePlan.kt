@@ -492,8 +492,10 @@ object BundleWizard {
      */
     fun stop(plan: BundlePlan): BundlePlan {
         val invoices = plan.invoices.map { if (it.outcome in NOT_READ) it.copy(outcome = InvoiceOutcome.STOPPED, jobId = null) else it }
+        val ended = plan.status == BundleStatus.CLOSED || plan.status == BundleStatus.CANCELLED
+        val status = if (!ended && invoices.none { it.outcome in OPEN }) BundleStatus.DONE else plan.status
         // The operator stopped it: no "all read" message follows.
-        return plan.copy(status = if (invoices.none { it.outcome in OPEN }) BundleStatus.DONE else plan.status, announced = true, invoices = invoices)
+        return plan.copy(status = status, announced = true, invoices = invoices)
     }
 
     /** "Read the N not read yet": the stopped invoices go to be read again. */
