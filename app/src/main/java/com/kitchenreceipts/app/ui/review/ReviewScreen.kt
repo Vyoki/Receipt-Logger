@@ -333,13 +333,18 @@ fun ReviewScreen(
         }
     }
 
-    // Jumps (the chips, the scroller and TalkBack's actions): afterwards, "Back to where you were" for 5 s.
+    // Jumps (the chips, the scroller and TalkBack's actions): afterwards, "Back to where you were" for 5 s, or as long
+    // as the phone's accessibility settings ask for messages with a button (TalkBack users get longer).
     var backOffer by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    val accessibility = androidx.compose.ui.platform.LocalAccessibilityManager.current
+    val backOfferMs = remember(accessibility) {
+        accessibility?.calculateRecommendedTimeoutMillis(BACK_OFFER_MS, containsText = true, containsControls = true) ?: BACK_OFFER_MS
+    }
     fun here() = listState.firstVisibleItemIndex to listState.firstVisibleItemScrollOffset
     fun offerBack(from: Pair<Int, Int>, now: String?) {
         backOffer?.cancel()
         backOffer = scope.launch {
-            val r = kotlinx.coroutines.withTimeoutOrNull(BACK_OFFER_MS) {
+            val r = kotlinx.coroutines.withTimeoutOrNull(backOfferMs) {
                 reviewSnackbar.showSnackbar(now ?: labelBack, actionLabel = labelBack, duration = androidx.compose.material3.SnackbarDuration.Indefinite)
             }
             if (r == androidx.compose.material3.SnackbarResult.ActionPerformed) listState.animateScrollToItem(from.first, from.second)
@@ -685,7 +690,7 @@ fun ReviewScreen(
 /** The pause after "Saved ✓ · next: …" before the next invoice of the chain opens. */
 private const val CHAIN_PAUSE_MS = 2_000L
 
-/** How long "Back to where you were" stays after a jump. */
+/** How long "Back to where you were" stays after a jump (longer when the accessibility settings ask for it). */
 private const val BACK_OFFER_MS = 5_000L
 
 /** The jump chips show on documents of this many lines or more. */

@@ -155,7 +155,6 @@
         <item quantity="one">Next: %d left for later</item>
         <item quantity="other">Next: %d left for later</item>
     </plurals>
-    <!-- The supplier categories of the plain list in the Suppliers step (until the category tiles take its place) -->
     <!-- Step 3: what is read, and how long it takes -->
     <string name="bundle_read_summary_title">Ready to read</string>
     <plurals name="bundle_left_out">
@@ -171,8 +170,8 @@
         <item quantity="other">%d new suppliers: their first invoice is read first</item>
     </plurals>
     <plurals name="bundle_est_bills">
-        <item quantity="one">%d electricity or fuel bill</item>
-        <item quantity="other">%d electricity or fuel bills</item>
+        <item quantity="one">%d bill for electricity, fuel, repairs or other costs</item>
+        <item quantity="other">%d bills for electricity, fuel, repairs or other costs</item>
     </plurals>
     <plurals name="bundle_est_flagged">
         <item quantity="one">%d marked “needs a look”</item>
@@ -195,7 +194,7 @@
     </plurals>
     <string name="bundle_keep_reading">Keep reading</string>
     <plurals name="bundle_read_rest">
-        <item quantity="one">Read the %d not read yet</item>
+        <item quantity="one">Read the one not read yet</item>
         <item quantity="other">Read the %d not read yet</item>
     </plurals>
     <string name="notif_bundle_done">Invoices read: %1$d · Saved: %2$d · To check: %3$d · Not readable: %4$d</string>
