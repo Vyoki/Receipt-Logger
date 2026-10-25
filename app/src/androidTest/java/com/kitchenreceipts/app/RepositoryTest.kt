@@ -336,6 +336,18 @@ class RepositoryTest {
         assertNull(preparer.supplierCategory("VERDE FRESCO S.P.A.\nP.IVA $VERDE_VAT\nFattura n. 8", VERDE))
         // No readable name is stored.
         assertFalse(file.readText().contains("verde", ignoreCase = true))
+        // A saved supplier of that name with a VAT number goes by the number only (Sellers, lists, labels): not sorted.
+        val text = "VERDE FRESCO S.P.A.\nVia Prova 2\nP.IVA $VERDE_VAT\nFattura n. 9 del 03/03/2031"
+        repo.saveDocument(
+            doc(VERDE, "9", emptyList(), 1000, MARCH), StoredFile("documents/k9.jpg", "image/jpeg", 1, "sha-k9"), text, null, SellerLearning(text, null, null),
+        )
+        assertEquals(VERDE_VAT, repo.sellerStats().first().single().vatNumber)
+        assertEquals(emptyMap<Long, SupplierCategory>(), repo.sellerCategories().first())
+        // One without a VAT number goes by its name, as chosen for it on Sellers.
+        repo.saveDocument(doc(ABC, "10", emptyList(), 1000, MARCH), StoredFile("documents/k10.jpg", "image/jpeg", 1, "sha-k10"), "ABC S.R.L.\nFattura n. 10", null)
+        repo.rememberCategory(null, ABC, SupplierCategory.DRINKS)
+        val abc = repo.sellerStats().first().single { it.name == ABC }
+        assertEquals(mapOf(abc.id to SupplierCategory.DRINKS), repo.sellerCategories().first())
     }
 
     @Test fun forgetRemovesBothKeys() = withSettings {
