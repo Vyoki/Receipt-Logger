@@ -377,7 +377,8 @@ class ScreenshotTest {
             app.container.pendingRoute.value = "edit/$longId"
             Thread.sleep(1500)
             // The 60 lines check out: one row, opened into a row per line.
-            assertTrue("no row \"$fine\". On screen: ${screenDump()}", clickTextIn(fine))
+            // The row is below the header cards: scroll the list until it shows.
+            assertTrue("no row \"$fine\". On screen: ${screenDump()}", scrollUntilText(fine) && clickTextIn(fine))
             Thread.sleep(800)
             // The thumb to the middle of the list, so folded lines lie under it; then let it settle.
             dragThumb(desc) {}
@@ -412,6 +413,22 @@ class ScreenshotTest {
         listOfNotNull(node.takeIf(test)) + (0 until node.childCount).flatMap { i -> node.getChild(i)?.let { collectNodes(it, test) }.orEmpty() }
 
     private fun countNodes(node: AccessibilityNodeInfo, test: (AccessibilityNodeInfo) -> Boolean): Int = collectNodes(node, test).size
+
+    /**
+     * Scrolls the screen's main list (its tallest scrolling node, not a row of page pictures) until a node reading
+     * exactly [text] is on screen, at most [pages] times. True when it shows.
+     */
+    private fun scrollUntilText(text: String, pages: Int = 12): Boolean {
+        val inst = InstrumentationRegistry.getInstrumentation()
+        repeat(pages) {
+            val root = inst.uiAutomation.rootInActiveWindow ?: run { Thread.sleep(300); return@repeat }
+            if (findNode(root) { it.text?.toString() == text } != null) return true
+            val list = collectNodes(root) { it.isScrollable }.maxByOrNull { n -> Rect().also { n.getBoundsInScreen(it) }.height() } ?: return false
+            list.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)
+            Thread.sleep(400)
+        }
+        return inst.uiAutomation.rootInActiveWindow?.let { r -> findNode(r) { it.text?.toString() == text } } != null
+    }
 
     /** What the screen shows, for a failure message: the active window's package and its texts and descriptions. */
     private fun screenDump(): String {
