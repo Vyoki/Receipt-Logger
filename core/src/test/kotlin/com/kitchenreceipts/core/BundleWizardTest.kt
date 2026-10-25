@@ -274,14 +274,28 @@ class BundleWizardTest {
         var p = BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" })
         p = BundleWizard.record(p, "job0", InvoiceOutcome.SAVED_BY_APP, 1)
         p = BundleWizard.record(p, "job1", InvoiceOutcome.READY)
-        assertEquals(listOf("job1", "job2", "job3", "job4"), BundleWizard.unsavedJobs(p))
+        p = BundleWizard.checkLater(BundleWizard.record(p, "job2", InvoiceOutcome.READY), 2)
+        assertEquals(listOf("job3", "job4"), BundleWizard.notReadJobs(p))
         p = BundleWizard.stop(p)
         assertEquals(InvoiceOutcome.SAVED_BY_APP, p.invoices[0].outcome)
-        assertEquals(4, BundleWizard.counts(p).stopped)
-        assertTrue(p.invoices.drop(1).take(4).all { it.jobId == null })
+        // Read and still to check (also put off): untouched, with their jobs.
+        assertEquals(InvoiceOutcome.READY, p.invoices[1].outcome)
+        assertEquals("job1", p.invoices[1].jobId)
+        assertEquals(InvoiceOutcome.CHECK_LATER, p.invoices[2].outcome)
+        assertEquals(2, BundleWizard.counts(p).stopped)
+        assertEquals(0, BundleWizard.counts(p).reading)
+        assertTrue(p.invoices.drop(3).take(2).all { it.jobId == null && it.outcome == InvoiceOutcome.STOPPED })
+        // Not done while some are still to check; done once they are saved.
+        assertEquals(BundleStatus.QUEUED, p.status)
+        p = BundleWizard.record(BundleWizard.record(p, "job1", InvoiceOutcome.SAVED_BY_YOU, 11), "job2", InvoiceOutcome.SAVED_BY_YOU, 12)
+        assertEquals(BundleStatus.DONE, p.status)
         p = BundleWizard.readRest(p)
-        assertEquals(4, BundleWizard.counts(p).reading)
+        assertEquals(2, BundleWizard.counts(p).reading)
         assertEquals(InvoiceOutcome.SAVED_BY_APP, p.invoices[0].outcome)
+        // Nothing left to check when stopped: done at once.
+        val q = BundleWizard.stop(BundleWizard.queued(BundleWizard.confirm(plan()), (0..4).associateWith { "job$it" }))
+        assertEquals(BundleStatus.DONE, q.status)
+        assertEquals(5, BundleWizard.counts(q).stopped)
     }
 
     @Test fun oneMessageWhenTheFileIsRead() {

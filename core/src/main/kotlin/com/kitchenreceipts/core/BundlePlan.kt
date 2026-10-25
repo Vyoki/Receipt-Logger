@@ -480,15 +480,21 @@ object BundleWizard {
         if (i == index && inv.outcome == InvoiceOutcome.READY) inv.copy(outcome = InvoiceOutcome.CHECK_LATER) else inv
     })
 
-    /** The jobs "Stop reading this file" removes: not saved yet. */
-    fun unsavedJobs(plan: BundlePlan): List<String> = plan.invoices.filter { it.outcome in OPEN }.mapNotNull { it.jobId }
+    private val NOT_READ = setOf(InvoiceOutcome.WAITING, InvoiceOutcome.QUEUED)
 
-    /** Stop reading this file: what is not saved yet is stopped; saved invoices are untouched. */
-    fun stop(plan: BundlePlan): BundlePlan = plan.copy(
+    /** The jobs "Stop reading this file" removes: not read yet. */
+    fun notReadJobs(plan: BundlePlan): List<String> = plan.invoices.filter { it.outcome in NOT_READ }.mapNotNull { it.jobId }
+
+    /**
+     * Stop reading this file: what is not read yet is stopped. Saved invoices are untouched, and so are the ones read
+     * and waiting to be checked (their readings, and whatever the operator corrected on them, stay). The plan is done
+     * once nothing is left to check.
+     */
+    fun stop(plan: BundlePlan): BundlePlan {
+        val invoices = plan.invoices.map { if (it.outcome in NOT_READ) it.copy(outcome = InvoiceOutcome.STOPPED, jobId = null) else it }
         // The operator stopped it: no "all read" message follows.
-        status = BundleStatus.DONE, announced = true,
-        invoices = plan.invoices.map { if (it.outcome in OPEN) it.copy(outcome = InvoiceOutcome.STOPPED, jobId = null) else it },
-    )
+        return plan.copy(status = if (invoices.none { it.outcome in OPEN }) BundleStatus.DONE else plan.status, announced = true, invoices = invoices)
+    }
 
     /** "Read the N not read yet": the stopped invoices go to be read again. */
     fun readRest(plan: BundlePlan): BundlePlan = plan.copy(

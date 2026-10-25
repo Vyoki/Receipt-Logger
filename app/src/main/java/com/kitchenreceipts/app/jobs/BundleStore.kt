@@ -627,12 +627,13 @@ class BundleStore(
     }
 
     /**
-     * "Stop reading this file": the invoices not saved yet are not read now (their jobs and readings go); the saved
-     * ones are untouched. They can be read later ("Read the N not read yet").
+     * "Stop reading this file": the invoices not read yet are not read now (their jobs go); they can be read later
+     * ("Read the N not read yet"). The saved ones are untouched, and so are the ones read and waiting to be checked,
+     * with whatever the operator corrected on them.
      */
     suspend fun stop(id: String) {
         val p = plan(id) ?: return
-        val jobs = BundleWizard.unsavedJobs(p)
+        val jobs = BundleWizard.notReadJobs(p)
         update(id) { BundleWizard.stop(it) }
         // A part cut from a PDF goes (it is cut again from the kept file); an e-invoice is the original: it stays.
         jobs.forEach { queue.discard(it, deleteFile = p.file.isNotBlank()) }
@@ -640,18 +641,19 @@ class BundleStore(
     }
 
     /**
-     * Cancels an import before anything from it was saved (stopping a scan, "Don't import", "Cancel the import"):
-     * like discarding a queued import, its jobs and its file go, unless a saved document uses the file. When something
-     * was saved already, it only stops (nothing saved changes, and the file stays). False then.
+     * Cancels an import before anything from it was read (stopping a scan, "Don't import", "Cancel the import"): like
+     * discarding a queued import, its jobs and its file go, unless a saved document uses the file. When something was
+     * read or saved already, it only stops (nothing saved changes, nothing read and not checked yet is thrown away,
+     * and the file stays). False then.
      */
     suspend fun cancel(id: String): Boolean {
         val p = plan(id) ?: return false
-        if (p.invoices.any { it.outcome == InvoiceOutcome.SAVED_BY_APP || it.outcome == InvoiceOutcome.SAVED_BY_YOU }) {
+        if (p.invoices.any { it.outcome in READ_OR_SAVED }) {
             stop(id)
             return false
         }
         synchronized(scanJobs) { scanJobs[id] }?.cancelAndJoin()
-        val jobs = BundleWizard.unsavedJobs(p)
+        val jobs = BundleWizard.notReadJobs(p)
         val done = update(id) { BundleWizard.close(BundleWizard.stop(it), BundleStatus.CANCELLED) } ?: return false
         jobs.forEach { queue.discard(it) }
         withContext(Dispatchers.IO) {
@@ -666,16 +668,20 @@ class BundleStore(
 
     /**
      * "Close" after the last invoice: the plan keeps only pages, outcomes and document ids (no names, VAT numbers or
-     * numbers). Anything not saved yet is stopped first. The original file stays on the phone.
+     * numbers). Anything not read yet is stopped first. The original file stays on the phone. Not while an invoice is
+     * read and waits to be checked: its reading, and whatever the operator corrected on it, are never thrown away
+     * here (false then).
      */
-    suspend fun close(id: String) {
-        val p = plan(id) ?: return
-        if (BundleWizard.unsavedJobs(p).isNotEmpty()) stop(id)
+    suspend fun close(id: String): Boolean {
+        val p = plan(id) ?: return false
+        if (p.invoices.any { it.outcome == InvoiceOutcome.READY || it.outcome == InvoiceOutcome.CHECK_LATER }) return false
+        if (BundleWizard.notReadJobs(p).isNotEmpty()) stop(id)
         update(id) { BundleWizard.close(it) }
         // Invoices that could not be read have no card of their own: their jobs go with the import (a part is cut
         // again from the kept file; an e-invoice is the original and stays).
         p.invoices.filter { it.outcome == InvoiceOutcome.FAILED }.mapNotNull { it.jobId }.forEach { queue.discard(it, deleteFile = p.file.isNotBlank()) }
         log.event("BUNDLE_CLOSED", "bundle" to id.take(8))
+        return true
     }
 
     /** "Try again" on an invoice that could not be read (job [jobId]): it is read again, as a document on its own is. */
@@ -937,5 +943,6 @@ class BundleStore(
         const val SOURCE_ONE = "file"
         private val ENDED = setOf(BundleStatus.DONE, BundleStatus.CLOSED, BundleStatus.CANCELLED)
         private val OPEN = setOf(InvoiceOutcome.WAITING, InvoiceOutcome.QUEUED, InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER)
+        private val READ_OR_SAVED = setOf(InvoiceOutcome.READY, InvoiceOutcome.CHECK_LATER, InvoiceOutcome.SAVED_BY_APP, InvoiceOutcome.SAVED_BY_YOU)
     }
 }

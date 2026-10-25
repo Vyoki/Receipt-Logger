@@ -155,7 +155,11 @@ fun BundleScreen(
                 ) {
                     st.error?.let { WarningCard(listOf(stringResource(it))) }
                     if (page == BundlePage.Reading) Reading(p, st.seconds, vm, onReview, onHome, onStop = { asking = Ask.STOP_READING })
-                    else Done(p, vm, onClose = { vm.close(); onHome() }, onHome)
+                    else Done(p, vm, onClose = {
+                        // What would not be imported is said first; otherwise it closes at once.
+                        val n = BundleWizard.counts(p)
+                        if (n.stopped > 0 || n.failed > 0) asking = Ask.CLOSE else { vm.close(); onHome() }
+                    }, onHome)
                 }
                 else -> Column(
                     Modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(16.dp),
@@ -212,7 +216,8 @@ fun BundleScreen(
             onDismiss = { asking = null },
         )
         Ask.STOP_READING -> {
-            val n = plan?.let { BundleWizard.unsavedJobs(it).size } ?: 0
+            // Only the ones not read yet stop: those read stay to check.
+            val n = plan?.let { BundleWizard.counts(it).reading } ?: 0
             ConfirmDialog(
                 title = stringResource(R.string.bundle_stop_reading_title),
                 text = stringResource(R.string.bundle_stop_reading_body),
@@ -222,11 +227,26 @@ fun BundleScreen(
                 onDismiss = { asking = null },
             )
         }
+        Ask.CLOSE -> {
+            val n = plan?.let { BundleWizard.counts(it) }
+            val parts = listOfNotNull(
+                n?.stopped?.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.bundle_close_not_read, it, it) },
+                n?.failed?.takeIf { it > 0 }?.let { pluralStringResource(R.plurals.bundle_close_not_readable, it, it) },
+            )
+            ConfirmDialog(
+                title = stringResource(R.string.bundle_close_title),
+                text = stringResource(R.string.bundle_close_body, parts.joinToString(", ")),
+                confirmLabel = stringResource(R.string.bundle_close),
+                dismissLabel = stringResource(R.string.bundle_close_keep),
+                onConfirm = { asking = null; vm.close(); onHome() },
+                onDismiss = { asking = null },
+            )
+        }
         null -> Unit
     }
 }
 
-private enum class Ask { STOP_SCAN, LEAVE, CANCEL, STOP_READING }
+private enum class Ask { STOP_SCAN, LEAVE, CANCEL, STOP_READING, CLOSE }
 
 /** "Step 2 of 3 · Suppliers" on the wizard's steps; nothing elsewhere. */
 @Composable
@@ -489,8 +509,13 @@ private fun Preparing(onHome: () -> Unit) {
 @Composable
 private fun Reading(plan: BundlePlan, secondsLeft: Long, vm: BundleViewModel, onReview: (String) -> Unit, onHome: () -> Unit, onStop: () -> Unit) {
     val n = BundleWizard.counts(plan)
-    Heading(pluralStringResource(R.plurals.bundle_queued_title, n.total, n.total))
-    Text(stringResource(R.string.bundle_queued_body), style = MaterialTheme.typography.bodyLarge)
+    if (n.reading == 0 && n.stopped > 0) {
+        // Stopped by the operator, with some still to check.
+        Stopped(n.stopped)
+    } else {
+        Heading(pluralStringResource(R.plurals.bundle_queued_title, n.total, n.total))
+        Text(stringResource(R.string.bundle_queued_body), style = MaterialTheme.typography.bodyLarge)
+    }
     LinearProgressIndicator(progress = { if (n.total <= 0) 1f else n.read.toFloat() / n.total }, modifier = Modifier.fillMaxWidth())
     Text(stringResource(R.string.bundle_card_progress, n.read, n.total), style = MaterialTheme.typography.titleMedium)
     if (plan.status == BundleStatus.PAUSED) Annotation(stringResource(R.string.bundle_paused))
@@ -505,16 +530,29 @@ private fun Reading(plan: BundlePlan, secondsLeft: Long, vm: BundleViewModel, on
     if (n.toCheck > 0) {
         Text(pluralStringResource(R.plurals.bundle_card_to_check, n.toCheck, n.toCheck), style = MaterialTheme.typography.bodyMedium, color = Palette.Orange)
     }
+    if (n.stopped > 0 && n.reading == 0) BigButton(pluralStringResource(R.plurals.bundle_read_rest, n.stopped, n.stopped), null, onClick = vm::readRest, primary = false)
     BigButton(stringResource(R.string.bundle_home), null, onClick = onHome, primary = false)
-    if (BundleWizard.unsavedJobs(plan).isNotEmpty()) {
+    if (n.reading > 0) {
         TextButton(onClick = onStop, modifier = Modifier.heightIn(min = 56.dp)) { Text(stringResource(R.string.bundle_stop_reading)) }
     }
+}
+
+/** "Stopped: 108 not read yet", in orange: the file is not all done. */
+@Composable
+private fun Stopped(count: Int) {
+    Text(
+        pluralStringResource(R.plurals.bundle_stopped, count, count),
+        style = MaterialTheme.typography.titleLarge,
+        color = Palette.Orange,
+        modifier = Modifier.semantics { heading() },
+    )
 }
 
 @Composable
 private fun Done(plan: BundlePlan, vm: BundleViewModel, onClose: () -> Unit, onHome: () -> Unit) {
     val n = BundleWizard.counts(plan)
-    Heading(stringResource(R.string.bundle_all_done))
+    // Stopped before every invoice was read: said as it is, never as all done.
+    if (n.stopped > 0) Stopped(n.stopped) else Heading(stringResource(R.string.bundle_all_done))
     Text(stringResource(R.string.notif_bundle_done, n.read, n.saved, n.toCheck, n.failed), style = MaterialTheme.typography.titleMedium)
     // What was saved, by what each supplier sells ("Food: 120", "Electricity, gas, water, phone: 6").
     val byCategory = BundleWizard.savedByCategory(plan)
@@ -534,7 +572,9 @@ private fun Done(plan: BundlePlan, vm: BundleViewModel, onClose: () -> Unit, onH
 private fun Ended(plan: BundlePlan, vm: BundleViewModel, onHome: () -> Unit) {
     when {
         vm.isOneDocument(plan) -> Text(stringResource(R.string.bundle_one_document), style = MaterialTheme.typography.titleMedium)
-        plan.status == BundleStatus.CLOSED -> Heading(stringResource(R.string.bundle_all_done))
+        plan.status == BundleStatus.CLOSED -> BundleWizard.counts(plan).stopped.let { stopped ->
+            if (stopped > 0) Stopped(stopped) else Heading(stringResource(R.string.bundle_all_done))
+        }
         else -> Unit
     }
     BigButton(stringResource(R.string.bundle_home), null, onClick = onHome)

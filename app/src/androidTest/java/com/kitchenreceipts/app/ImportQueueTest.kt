@@ -45,6 +45,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.After
 import org.junit.Assert.assertTrue
@@ -512,7 +513,12 @@ class ImportQueueTest {
         }
     }
 
-    @Test fun stopRemovesOnlyWhatIsNotSavedAndReadRestQueuesItAgain() = runBlocking<Unit> {
+    /**
+     * "Stop reading this file" stops only what is not read yet: the saved invoice stays, and so does one read and
+     * waiting to be checked, with the operator's corrections (the import is not done, and does not close, while it
+     * waits). "Read the N not read yet" queues the stopped one again.
+     */
+    @Test fun stopStopsOnlyWhatIsNotReadAndReadRestQueuesItAgain() = runBlocking<Unit> {
         plansDir.deleteRecursively()
         jobsDir.deleteRecursively()
         Reading().use { r ->
@@ -523,17 +529,26 @@ class ImportQueueTest {
             r.queue.markSaved(r.jobOf(id, "4/2031"), 78L)
             // Let the check again of 5/2031 (auto-save is off: it stays to check) finish first.
             until("checked again") { r.queue.rechecking.value.isEmpty() }
+            // 5/2031 corrected and left; 6/2031 as if not read yet (its job still waits in the plan).
+            val five = r.jobOf(id, "5/2031")
+            val draft = r.queue.draftFile(five).apply { writeText("0\n{}") }
+            r.store.update(id) { p -> p.copy(invoices = p.invoices.map { if (it.number == "6/2031") it.copy(outcome = InvoiceOutcome.QUEUED) else it }) }
             r.store.stop(id)
-            assertTrue(r.queue.jobs.value.none { it.bundleId == id })
             assertEquals(InvoiceOutcome.SAVED_BY_YOU, r.outcomeOf(id, "4/2031"))
-            assertEquals(InvoiceOutcome.STOPPED, r.outcomeOf(id, "5/2031"))
+            assertEquals(InvoiceOutcome.READY, r.outcomeOf(id, "5/2031"))
+            assertEquals(JobStatus.READY, r.queue.job(five)!!.status)
+            assertTrue(draft.isFile)
             assertEquals(InvoiceOutcome.STOPPED, r.outcomeOf(id, "6/2031"))
+            assertEquals(listOf(five), r.queue.jobs.value.filter { it.bundleId == id }.map { it.id })
+            assertEquals(BundleStatus.QUEUED, r.plan(id).status)
+            assertFalse(r.store.close(id))
             // The e-invoices are the originals: they stay, to be read again.
             assertTrue(r.plan(id).invoices.mapNotNull { it.file }.all { r.files.file(it).isFile })
-            assertEquals(BundleStore.Prepared.Queued(2), r.store.readRest(id))
-            assertEquals(2, r.queue.jobs.value.count { it.bundleId == id })
-            until("read again") { r.outcomeOf(id, "5/2031") == InvoiceOutcome.READY && r.outcomeOf(id, "6/2031") == InvoiceOutcome.READY }
+            assertEquals(BundleStore.Prepared.Queued(1), r.store.readRest(id))
+            until("read again") { r.outcomeOf(id, "6/2031") == InvoiceOutcome.READY }
             assertEquals(InvoiceOutcome.SAVED_BY_YOU, r.outcomeOf(id, "4/2031"))
+            assertEquals(InvoiceOutcome.READY, r.outcomeOf(id, "5/2031"))
+            assertTrue(draft.isFile)
             // One message for the first reading, one for the rest.
             until("two messages") { r.notifier.bundles.size == 2 }
             assertEquals(0, r.notifier.finished.size)

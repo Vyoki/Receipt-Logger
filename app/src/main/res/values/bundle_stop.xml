@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A file of many invoices stopped before all were read, and closing it: said as it is, never as all done -->
+    <plurals name="bundle_stopped">
+        <item quantity="one">Stopped: %d not read yet</item>
+        <item quantity="other">Stopped: %d not read yet</item>
+    </plurals>
+    <string name="bundle_close_title">Close this import?</string>
+    <string name="bundle_close_body">If you close now, these are not imported: %1$s. Invoices already saved stay as they are. To read them later, import the same file again.</string>
+    <plurals name="bundle_close_not_read">
+        <item quantity="one">%d not read yet</item>
+        <item quantity="other">%d not read yet</item>
+    </plurals>
+    <plurals name="bundle_close_not_readable">
+        <item quantity="one">%d not readable</item>
+        <item quantity="other">%d not readable</item>
+    </plurals>
+    <string name="bundle_close_keep">Keep it open</string>
+    <!-- Home card of a file with no invoice found yet (a scanned file waiting for an answer, a look-through starting): its pages -->
+    <string name="bundle_card_title_pages">File imported on %1$s · %2$s</string>
+</resources>

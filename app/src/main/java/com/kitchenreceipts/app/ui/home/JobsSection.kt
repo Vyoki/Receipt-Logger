@@ -118,9 +118,12 @@ private fun BundleCard(plan: BundlePlan, scan: BundleStore.ScanProgress?, onOpen
     val res = LocalContext.current.resources
     val n = BundleWizard.counts(plan)
     val wizard = plan.status in WIZARD
+    // Stopped by the operator before every invoice was read: never shown as all done.
+    val stopped = n.stopped > 0 && n.reading == 0
+    val done = plan.status == BundleStatus.DONE && !stopped
     val accent = when {
-        plan.status == BundleStatus.DONE -> Palette.Ok
-        n.toCheck > 0 || wizard -> Palette.Orange
+        done -> Palette.Ok
+        n.toCheck > 0 || wizard || stopped -> Palette.Orange
         else -> Palette.PhthaloBorder
     }
     val source = remember { androidx.compose.foundation.interaction.MutableInteractionSource() }
@@ -136,7 +139,7 @@ private fun BundleCard(plan: BundlePlan, scan: BundleStore.ScanProgress?, onOpen
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Icon(
                     when {
-                        plan.status == BundleStatus.DONE -> Icons.Filled.CheckCircle
+                        done -> Icons.Filled.CheckCircle
                         n.toCheck > 0 -> Icons.Filled.RateReview
                         else -> Icons.Filled.FolderCopy
                     },
@@ -148,10 +151,11 @@ private fun BundleCard(plan: BundlePlan, scan: BundleStore.ScanProgress?, onOpen
                     val line = when {
                         wizard -> stringResource(R.string.bundle_continue)
                         plan.status == BundleStatus.PAUSED -> stringResource(R.string.bundle_paused)
-                        plan.status == BundleStatus.DONE -> stringResource(R.string.bundle_all_done)
+                        stopped -> pluralStringResource(R.plurals.bundle_stopped, n.stopped, n.stopped)
+                        done -> stringResource(R.string.bundle_all_done)
                         else -> stringResource(R.string.bundle_card_progress, n.read, n.total)
                     }
-                    Text(line, style = MaterialTheme.typography.bodySmall, color = if (wizard || plan.status == BundleStatus.PAUSED) Palette.Orange else Palette.TextDim)
+                    Text(line, style = MaterialTheme.typography.bodySmall, color = if (wizard || stopped || plan.status == BundleStatus.PAUSED) Palette.Orange else Palette.TextDim)
                 }
                 Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
             }
