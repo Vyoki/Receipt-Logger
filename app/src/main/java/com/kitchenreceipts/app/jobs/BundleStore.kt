@@ -126,12 +126,27 @@ class BundleStore(
     /** Scans, splits and quick looks running (the PDF reader's temporary files are in use meanwhile). */
     private val working = java.util.concurrent.atomic.AtomicInteger()
 
+    /** The plans are read from the phone once ([load]); whatever needs them waits until they are. */
+    private val loading = lazy { runCatching { dir.mkdirs(); load() }.onFailure { log.error("bundleLoad", it) }; Unit }
+
     init {
-        dir.mkdirs()
-        load()
+        // Read off the main thread while the app starts (a phone with many plans starts as fast as one with none).
+        Thread({ loading.value }, "bundle-plans").start()
     }
 
-    fun plan(id: String): BundlePlan? = synchronized(lock) { byId[id] }
+    /** [block] under the plans' lock, once they are read. */
+    private inline fun <T> locked(block: () -> T): T {
+        loading.value
+        return synchronized(lock) { block() }
+    }
+
+    /** Every plan, once they are read (the [plans] flow starts empty until then). */
+    private fun allPlans(): List<BundlePlan> {
+        loading.value
+        return _plans.value
+    }
+
+    fun plan(id: String): BundlePlan? = locked { byId[id] }
 
     /**
      * True while the plan still needs its jobs that were saved (for ImportQueue.bundleOpen): it is not done, closed or
@@ -148,13 +163,13 @@ class BundleStore(
      * imports of the same file kept (see BundleWizard.files). The original is kept after the import is closed, until
      * the owner decides how long (question 3).
      */
-    fun filePaths(): Set<String> = synchronized(lock) { byId.values.flatMap { BundleWizard.files(it) }.toSet() }
+    fun filePaths(): Set<String> = locked { byId.values.flatMap { BundleWizard.files(it) }.toSet() }
 
     /**
      * True for a file an earlier import of the same file kept (BundlePlan.kept): it is never deleted with a job or a
      * cancelled import.
      */
-    fun isKept(relativePath: String): Boolean = synchronized(lock) { byId.values.any { relativePath in it.kept } }
+    fun isKept(relativePath: String): Boolean = locked { byId.values.any { relativePath in it.kept } }
 
     /** A plan that was read as one document (it holds no invoice of its own). */
     fun isOneDocument(p: BundlePlan): Boolean = p.status == BundleStatus.CLOSED && p.invoices.isEmpty() && p.file.isNotBlank()
@@ -315,7 +330,7 @@ class BundleStore(
 
     /** Every scan that was stopped (the app closed, Android paused it) carries on from its last saved page. */
     fun resumeScans() {
-        plans.value.filter { it.status == BundleStatus.SCANNING }.forEach { startScan(it.id) }
+        allPlans().filter { it.status == BundleStatus.SCANNING }.forEach { startScan(it.id) }
     }
 
     /**
@@ -437,9 +452,14 @@ class BundleStore(
      * cannot be cut, nothing is queued and the plan is back at the Read step.
      */
     suspend fun confirm(id: String): Prepared {
-        val p = plan(id) ?: return Prepared.Failed(SplitFailure.OTHER)
-        if (p.status != BundleStatus.SORTING) return Prepared.Queued(0)
-        update(id) { BundleWizard.confirm(it) }
+        // Checked and moved on in one step: a second tap (or a second screen) at the same moment does nothing, so the
+        // file is never cut and queued twice.
+        var sorted: BundlePlan? = null
+        update(id) { now ->
+            if (now.status != BundleStatus.SORTING) now else BundleWizard.confirm(now).also { sorted = now }
+        } ?: return Prepared.Failed(SplitFailure.OTHER)
+        // The plan as the operator left it at the Read step.
+        val p = sorted ?: return Prepared.Queued(0)
         log.event("BUNDLE_CONFIRMED", "bundle" to id.take(8), "toRead" to BundleWizard.toRead(p).size)
         // The categories chosen (new suppliers, and known ones changed here) are remembered for the next files. A
         // supplier put off or left out is not.
@@ -516,7 +536,7 @@ class BundleStore(
                 flags = order.map { i -> p.invoices[i].flags.map { it.name }.toSet() },
                 orders = order,
             )
-            synchronized(lock) {
+            locked {
                 var q = BundleWizard.queued(byId[id] ?: return Prepared.Queued(jobs.size), order.zip(jobs).associate { (i, j) -> i to j.id })
                 early.remove(id)?.forEach { q = apply(q, it) }
                 set(settle(q))
@@ -592,7 +612,7 @@ class BundleStore(
      * [afterRestore]), and runs the dishes check once for the invoices the app saved.
      */
     private fun announceIfRead(id: String) {
-        val p = synchronized(lock) {
+        val p = locked {
             val p = byId[id]?.takeIf { BundleWizard.toAnnounce(it) } ?: return
             set(BundleWizard.announce(p))
             dirty.add(id)
@@ -688,7 +708,7 @@ class BundleStore(
     fun pause(): Boolean {
         val scanning = synchronized(scanJobs) { scanJobs.values.toList() }
         scanning.forEach { it.cancel() }
-        val reading = plans.value.filter { it.status == BundleStatus.QUEUED }
+        val reading = allPlans().filter { it.status == BundleStatus.QUEUED }
         reading.forEach { p -> change(p.id) { if (it.status == BundleStatus.QUEUED) it.copy(status = BundleStatus.PAUSED) else it } }
         if (scanning.isNotEmpty() || reading.isNotEmpty()) log.event("BUNDLE_PAUSED", "scans" to scanning.size, "plans" to reading.size)
         return scanning.isNotEmpty() || reading.isNotEmpty()
@@ -697,7 +717,7 @@ class BundleStore(
     /** The app is in front again: paused plans carry on, and so do stopped scans. */
     fun resume() {
         notifier.cancelPaused()
-        plans.value.filter { it.status == BundleStatus.PAUSED }.forEach { p ->
+        allPlans().filter { it.status == BundleStatus.PAUSED }.forEach { p ->
             change(p.id) { if (it.status == BundleStatus.PAUSED) settle(it.copy(status = BundleStatus.QUEUED)) else it }
             announceIfRead(p.id)
         }
@@ -710,7 +730,7 @@ class BundleStore(
     fun onJobEvent(e: JobEvent) {
         val id = e.bundleId ?: return
         var recheck = emptyList<String>()
-        val launch = synchronized(lock) {
+        val launch = locked {
             val p = byId[id] ?: return
             val n = if (p.invoices.none { it.jobId == e.jobId }) {
                 when {
@@ -772,10 +792,10 @@ class BundleStore(
     fun afterRestore(jobs: List<ImportJob>) {
         val mine = jobs.filter { it.bundleId != null }.groupBy { it.bundleId!! }
         val reading = setOf(BundleStatus.PREPARING, BundleStatus.QUEUED, BundleStatus.PAUSED)
-        for (p0 in plans.value.filter { it.status in reading }) {
+        for (p0 in allPlans().filter { it.status in reading }) {
             val own = mine[p0.id].orEmpty()
             change(p0.id) { start ->
-                synchronized(lock) { early.remove(start.id) }
+                locked { early.remove(start.id) }
                 var p = start
                 if (p.status == BundleStatus.PREPARING) {
                     val known = p.invoices.mapNotNull { it.jobId }.toSet()
@@ -800,7 +820,7 @@ class BundleStore(
             }
         }
         // A file whose last invoice was read just before the app was closed: its result is posted now.
-        plans.value.forEach { announceIfRead(it.id) }
+        allPlans().forEach { announceIfRead(it.id) }
     }
 
     /** A plan being read with nothing left to read or check is done. */
@@ -818,7 +838,7 @@ class BundleStore(
 
     /** Changes a plan in memory at once, and on the phone soon after (never on the calling thread). */
     private fun change(id: String, f: (BundlePlan) -> BundlePlan): BundlePlan? {
-        val (p, launch) = synchronized(lock) {
+        val (p, launch) = locked {
             val old = byId[id] ?: return null
             val new = f(old)
             if (new == old) return old
@@ -835,7 +855,7 @@ class BundleStore(
      * cut from the copy kept before: the copy just made goes, so the phone holds the file once.
      */
     private suspend fun put(plan: BundlePlan): BundlePlan {
-        val (p, fresh) = synchronized(lock) {
+        val (p, fresh) = locked {
             early.remove(plan.id)
             val n = byId[plan.id]?.let { BundleWizard.carryKept(plan, it) } ?: plan
             val toCut = n.file.isNotBlank() && (n.status == BundleStatus.SCANNING || n.status == BundleStatus.SORTING)
@@ -872,7 +892,7 @@ class BundleStore(
 
     /** Written aside, then put in place in one step: the app stopped mid-write never leaves a cut plan. */
     private fun write(id: String) {
-        val p = synchronized(lock) {
+        val p = locked {
             dirty.remove(id)
             byId[id]
         } ?: return
