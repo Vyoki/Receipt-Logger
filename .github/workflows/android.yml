@@ -5,6 +5,11 @@ on:
     branches: [main]
   pull_request:
   workflow_dispatch:
+    inputs:
+      release:
+        description: "Also put the APK on the Releases page (only when every check passed)"
+        type: boolean
+        default: false
 
 jobs:
   build:
@@ -393,3 +398,41 @@ jobs:
         with:
           name: ai-model-check
           path: ai-run/
+
+  # The tested APK on the Releases page, when asked for (Run workflow > release): only after the build, the emulator
+  # tests and the AI check all passed. The same APK as the run's app-debug, signed with the fixed key.
+  release:
+    if: github.event_name == 'workflow_dispatch' && inputs.release
+    needs: [build, instrumented-tests, ai-model-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 40
+      - uses: actions/download-artifact@v5
+        with:
+          name: app-debug
+          path: apk
+      - name: Publish the release
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          tag="build-${GITHUB_RUN_NUMBER}"
+          name="kitchen-receipts-${tag}.apk"
+          cp apk/app-debug.apk "$name"
+          {
+            echo "Tested build of ${GITHUB_SHA::7} (core tests, emulator tests and the AI check passed)."
+            echo
+            echo "Install: open this page on the phone, download **$name** and open it. It installs over the app"
+            echo "already on the phone and keeps all its data."
+            echo
+            echo "Latest changes:"
+            git log -12 --no-merges --format='- %s'
+          } > notes.md
+          gh release create "$tag" "$name" --repo "$GITHUB_REPOSITORY" --target "$GITHUB_SHA" \
+            --title "Kitchen Receipts, build ${GITHUB_RUN_NUMBER}" --notes-file notes.md --latest
+          echo "::notice title=Release::https://github.com/${GITHUB_REPOSITORY}/releases/tag/${tag}"
