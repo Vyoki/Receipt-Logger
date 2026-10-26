@@ -177,7 +177,7 @@ class DraftPreparer(
     suspend fun autoSave(pending: PendingImport, p: PreparedDraft): Long? {
         if (!settings.autoSave || p.reasons.isNotEmpty()) return null
         val valid = (DraftValidator.validate(p.draft) as? ValidationResult.Valid)?.document ?: return null
-        if (repo.findDuplicates(valid, pending.file.sha256, null).isNotEmpty()) return null
+        if (repo.findDuplicates(valid, pending.file.sha256, null, pending.ocrText, settings.ownVatNumber).isNotEmpty()) return null
         // A credit note is subtracted from spending: never saved without the operator seeing it.
         if (com.kitchenreceipts.core.DocumentKinds.detect(pending.ocrText) == com.kitchenreceipts.core.DocKind.CREDIT_NOTE) return null
         val id = repo.saveDocument(

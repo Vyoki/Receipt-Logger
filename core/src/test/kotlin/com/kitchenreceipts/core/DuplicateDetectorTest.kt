@@ -52,6 +52,33 @@ class DuplicateDetectorTest {
         assertTrue(DuplicateDetector.findDuplicates(c, existing).isEmpty())
     }
 
+    @Test fun sameVatNumberIsTheSameSupplierHoweverTheNameReads() {
+        val old = DocumentFingerprint(1, "ABC S.r.l.", "77/2031", LocalDate.of(2031, 2, 3), 7106, "aaa", sellerVat = "01234567897")
+        // The name read with extra words: by name alone this is another supplier.
+        val again = DocumentFingerprint(0, "ABC Distribuzione Alimentare", "77/2031", null, null, null, sellerVat = "IT 01234567897")
+        val m = DuplicateDetector.findDuplicates(again, listOf(old)).single()
+        assertEquals(setOf(DuplicateReason.SAME_SELLER_AND_NUMBER), m.reasons)
+        assertTrue(m.isStrong)
+        // Same date and total under the same VAT number: the same supplier's document, not the weak hint.
+        val sameDay = DocumentFingerprint(0, "ABC Distribuzione Alimentare", null, LocalDate.of(2031, 2, 3), 7106, null, sellerVat = "01234567897")
+        assertEquals(setOf(DuplicateReason.SAME_SELLER_DATE_TOTAL), DuplicateDetector.findDuplicates(sameDay, listOf(old)).single().reasons)
+    }
+
+    @Test fun vatNumberDoesNotJoinOtherDocuments() {
+        val old = DocumentFingerprint(1, "ABC S.r.l.", "77/2031", LocalDate.of(2031, 2, 3), 7106, "aaa", sellerVat = "01234567897")
+        // Another supplier's invoice with the same number.
+        val other = DocumentFingerprint(0, "VERDE FRESCO S.p.A.", "77/2031", LocalDate.of(2031, 2, 5), 900, null, sellerVat = "09876543217")
+        assertTrue(DuplicateDetector.findDuplicates(other, listOf(old)).isEmpty())
+        // The same supplier's next year's invoice with the same number.
+        val nextYear = DocumentFingerprint(0, "ABC", "77/2031", LocalDate.of(2032, 1, 9), 900, null, sellerVat = "01234567897")
+        assertTrue(DuplicateDetector.findDuplicates(nextYear, listOf(old)).isEmpty())
+        // A number that is not a VAT number (too short, all zeros) is never used.
+        val short = DocumentFingerprint(0, "XYZ", "77/2031", null, null, null, sellerVat = "123")
+        assertTrue(DuplicateDetector.findDuplicates(short, listOf(old.copy(sellerVat = "123"))).isEmpty())
+        val zeros = DocumentFingerprint(0, "XYZ", "77/2031", null, null, null, sellerVat = "00000000000")
+        assertTrue(DuplicateDetector.findDuplicates(zeros, listOf(old.copy(sellerVat = "00000000000"))).isEmpty())
+    }
+
     @Test fun editingASavedDocumentDoesNotMatchItself() {
         val c = existing[0].copy()
         assertTrue(DuplicateDetector.findDuplicates(c, existing).none { it.existingId == 1L })

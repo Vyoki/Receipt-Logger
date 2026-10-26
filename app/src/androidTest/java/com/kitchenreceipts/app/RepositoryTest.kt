@@ -146,6 +146,19 @@ class RepositoryTest {
         assertTrue(repo.sellerStats().first().isEmpty())
     }
 
+    @Test fun duplicateBySupplierVatNumberWhateverTheName() = runBlocking<Unit> {
+        val text = "ABC S.R.L.\nP.IVA IT01234567897\nSpett.le RISTORANTE PROVA SAS P.IVA 09876543217\nFattura n. 77/2031"
+        val first = doc("ABC S.r.l.", "77/2031", listOf(item("Limoni", null, "2", "pz", 240)))
+        repo.saveDocument(first, StoredFile("documents/vat1.jpg", "image/jpeg", 1, "sha-v1"), text, null, SellerLearning(text, "ABC S.r.l.", "09876543217"))
+        // The same paper again, its name read with other words: the VAT number says it is the same supplier.
+        val again = first.copy(sellerName = "ABC Distribuzione Alimentare")
+        val dups = repo.findDuplicates(again, "sha-v2", null, text, "09876543217")
+        assertEquals(setOf(DuplicateReason.SAME_SELLER_AND_NUMBER), dups.single().match.reasons)
+        // Without the restaurant's own number the VAT number is not used (it could be the restaurant's): only the
+        // weak hint of the same date and total is left.
+        assertEquals(setOf(DuplicateReason.SAME_DATE_AND_TOTAL), repo.findDuplicates(again, "sha-v2", null, text, "").single().match.reasons)
+    }
+
     @Test fun learnsSupplierAndRecognisesItNextTime() = runBlocking<Unit> {
         val text = "CASEIFICIO VALVERDE S.R.L.\nLatticini freschi\nP.IVA IT01234567897\nSpett.le RISTORANTE P.IVA 09876543217\nFattura n. 1"
         val file = StoredFile("documents/l.jpg", "image/jpeg", 1, "sha-l")

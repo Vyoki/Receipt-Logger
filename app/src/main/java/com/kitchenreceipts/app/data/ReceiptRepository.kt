@@ -125,10 +125,23 @@ class ReceiptRepository(
     suspend fun documentOnce(id: Long) = documents.documentById(id)
     suspend fun itemsOnce(id: Long) = documents.itemsOnce(id)
 
-    suspend fun findDuplicates(doc: ValidDocument, sha256: String?, excludeId: Long?): List<DuplicateInfo> {
+    /**
+     * Saved documents this one may repeat. [documentText] (with the restaurant's own [ownVatNumber]) gives the
+     * supplier's VAT number: the same number and document number is the same invoice, however the name was read.
+     */
+    suspend fun findDuplicates(
+        doc: ValidDocument,
+        sha256: String?,
+        excludeId: Long?,
+        documentText: String? = null,
+        ownVatNumber: String? = null,
+    ): List<DuplicateInfo> {
         val rows = documents.fingerprints()
-        val candidate = DocumentFingerprint(excludeId ?: -1, doc.sellerName, doc.number, doc.date, doc.totalCents, sha256)
-        val existing = rows.map { DocumentFingerprint(it.id, it.sellerName, it.documentNumber, it.documentDate, it.totalCents, it.fileSha256) }
+        // Without the restaurant's own number, the number read could be the restaurant's (printed as the customer).
+        val vat = if (documentText.isNullOrBlank() || ownVatNumber.isNullOrBlank()) null
+        else runCatching { SellerProfiles.supplierVatNumber(documentText, ownVatNumber) }.getOrNull()
+        val candidate = DocumentFingerprint(excludeId ?: -1, doc.sellerName, doc.number, doc.date, doc.totalCents, sha256, vat)
+        val existing = rows.map { DocumentFingerprint(it.id, it.sellerName, it.documentNumber, it.documentDate, it.totalCents, it.fileSha256, it.sellerVat) }
         val byId = rows.associateBy { it.id }
         return DuplicateDetector.findDuplicates(candidate, existing).map { DuplicateInfo(it, byId.getValue(it.existingId)) }
     }

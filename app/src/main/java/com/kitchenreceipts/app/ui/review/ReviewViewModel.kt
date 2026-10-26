@@ -569,7 +569,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 _state.update { it.copy(errors = emptyMap(), saving = true) }
                 viewModelScope.launch {
                     val dups = try {
-                        withContext(Dispatchers.Default) { repo.findDuplicates(r.document, storedFile?.sha256, documentId) }
+                        withContext(Dispatchers.Default) { repo.findDuplicates(r.document, storedFile?.sha256, documentId, ocrText ?: docOcrText, c.settings.ownVatNumber) }
                     } catch (e: Exception) {
                         if (e is kotlinx.coroutines.CancellationException) throw e
                         c.log.error("save", e)

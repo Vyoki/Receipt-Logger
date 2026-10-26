@@ -10,14 +10,16 @@ data class DocumentFingerprint(
     val date: LocalDate?,
     val totalCents: Long?,
     val fileSha256: String?,
+    /** The supplier's VAT number (11 digits), when known: the same number is the same supplier, however the name reads. */
+    val sellerVat: String? = null,
 )
 
 enum class DuplicateReason {
     /** Exactly the same file bytes were already imported. */
     SAME_FILE,
-    /** Same seller and same document number. */
+    /** Same seller (by name or VAT number) and same document number. */
     SAME_SELLER_AND_NUMBER,
-    /** Same seller, same date and same total. */
+    /** Same seller (by name or VAT number), same date and same total. */
     SAME_SELLER_DATE_TOTAL,
     /** Different or unknown seller, but same date and same total (weaker hint). */
     SAME_DATE_AND_TOTAL,
@@ -49,15 +51,23 @@ object DuplicateDetector {
         return parts.joinToString("/") { p -> if (p.all { it.isDigit() }) p.trimStart('0').ifEmpty { "0" } else p }
     }
 
+    /** The 11 digits of an Italian VAT number ("IT 01234567897" too); anything else is not used. */
+    private fun vatDigits(vat: String?): String? =
+        vat?.filter { it.isDigit() }?.takeIf { it.length == 11 && it.trimStart('0').isNotEmpty() }
+
     fun findDuplicates(candidate: DocumentFingerprint, existing: List<DocumentFingerprint>): List<DuplicateMatch> {
         val cSeller = normalizeSeller(candidate.sellerName)
         val cNumber = normalizeNumber(candidate.documentNumber)
+        val cVat = vatDigits(candidate.sellerVat)
         return existing.asSequence()
             .filter { it.id != candidate.id }
             .mapNotNull { e ->
                 val reasons = mutableSetOf<DuplicateReason>()
                 if (candidate.fileSha256 != null && candidate.fileSha256 == e.fileSha256) reasons += DuplicateReason.SAME_FILE
-                val sameSeller = cSeller != null && cSeller == normalizeSeller(e.sellerName)
+                // A name read differently ("Rossi Carni" for "Rossi Carni S.r.l. Unipersonale") is still the same
+                // supplier when both carry the same VAT number.
+                val sameSeller = (cSeller != null && cSeller == normalizeSeller(e.sellerName)) ||
+                    (cVat != null && cVat == vatDigits(e.sellerVat))
                 // Invoice numbers start again every year: number 12 of last year is another document.
                 val sameYear = candidate.date == null || e.date == null || candidate.date.year == e.date.year
                 if (sameSeller && sameYear && cNumber != null && cNumber == normalizeNumber(e.documentNumber)) {
