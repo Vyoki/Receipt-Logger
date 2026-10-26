@@ -457,6 +457,19 @@ class ScreenshotTest {
                 while ((described(d) != null) != shown && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
                 return (described(d) != null) == shown
             }
+            // A finger's tap in the middle of the button (as the operator does), not TalkBack's click.
+            fun tap(d: String): String {
+                var n = described(d) ?: return "no \"$d\""
+                while (!n.isClickable) n = n.parent ?: break
+                val b = Rect().also { n.getBoundsInScreen(it) }
+                val down = SystemClock.uptimeMillis()
+                for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                    val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, b.exactCenterX(), b.exactCenterY(), 0)
+                    inst.sendPointerSync(e)
+                    e.recycle()
+                }
+                return "tapped \"$d\" at $b (clickable=${n.isClickable})"
+            }
             fun everyWindow() = roots().joinToString(" || ") { r ->
                 collectNodes(r) { it.text != null || it.contentDescription != null }.take(30)
                     .joinToString(" | ") { n -> (n.text ?: "").toString().ifEmpty { "[" + n.contentDescription + "]" }.take(40) }
@@ -468,17 +481,17 @@ class ScreenshotTest {
             // The date field (at the top of the form, under the page picture).
             assertTrue("no date field. On screen: ${screenDump()}", scrollUntilText(PEEK_DATE) && clickTextIn(PEEK_DATE))
             assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
-            described(photo)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            assertTrue("the photo did not open. On screen: ${everyWindow()}", waitFor(zoomIn, true))
+            val tapped = tap(photo)
+            assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", waitFor(zoomIn, true))
             shot("40-photo-viewer")
-            described(zoomIn)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            tap(zoomIn)
             shot("41-photo-viewer-zoomed")
-            described(close)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            tap(close)
             assertTrue("the photo did not close. On screen: ${everyWindow()}", waitFor(zoomIn, false))
             // Back closes it too.
             assertTrue(clickTextIn(PEEK_DATE))
             assertTrue(waitFor(photo, true))
-            described(photo)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            tap(photo)
             assertTrue(waitFor(zoomIn, true))
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
