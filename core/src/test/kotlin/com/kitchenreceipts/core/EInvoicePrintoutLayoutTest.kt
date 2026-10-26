@@ -364,6 +364,15 @@ class EInvoicePrintoutLayoutTest {
             .lineItems.all { it.nameNote == null && it.nameFirstLine == null })
     }
 
+    @Test fun aNameOverThreeLinesIsHeldNotJoined() {
+        // Two lines under a name that wrapped: where it ends is not sure, so it is looked at, as before.
+        val first = longNames.lines[0].copy(more = listOf("PROVA AFFETTATO SOTTILE DI", "MONTAGNA"))
+        val d = read(longNames.copy(lines = listOf(first) + longNames.lines.drop(1)))
+        assertEquals("the name continues on the next printed line", d.lineItems[0].nameNote)
+        assertEquals("PROSCIUTTO CRUDO STAGIONATO DI", d.lineItems[0].originalDescription)
+        assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
+    }
+
     @Test fun aNameCutAtAHyphenIsJoined() {
         val first = meat.lines[0].copy(desc = "Pancetta tesa e salsic-", more = listOf("cia fresca"))
         val d = read(meatWith(first))

@@ -809,7 +809,8 @@ object TableReader {
             tookName = false
             rowPriced = false
             val more = readRow(row)
-            if (continued != null && !tookName) nameContinues(continued, wrapped)
+            // Another row of words only right after: the name may go on further, so it is joined only when it stops.
+            if (continued != null && !tookName) nameContinues(continued, wrapped.takeUnless { items.size == count && pendingDescription != null })
             lastRowAddedItem = items.size > count
             if (lastRowAddedItem) { pricedSinceItem = false; lastItemRow = row } else if (rowPriced) pricedSinceItem = true
             if (!more) break
