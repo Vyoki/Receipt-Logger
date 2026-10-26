@@ -313,7 +313,9 @@ object TableReader {
             var bandHeader: Header? = null
             var bandEnd = -1
             if (hIdx < 0) {
-                band@ for (i in rows.indices) for (n in 2..3) {
+                // Three lines first: a third line of headings ("UM %IVA PREZZO TOTALE" printed between "PREZZO / UNITARIO"
+                // and "SCONTO / O MAGG.") would otherwise be left out, and its columns with it.
+                band@ for (i in rows.indices) for (n in 3 downTo 2) {
                     if (i + n > rows.size) continue
                     val band = rows.subList(i, i + n)
                     if (!band.all { isHeadingLine(it) }) continue

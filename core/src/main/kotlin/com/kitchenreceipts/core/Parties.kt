@@ -57,6 +57,8 @@ object Parties {
                     val digits = lines.joinToString(" ") { SellerProfiles.repairDigits(it.text.replace(rx("(?i)\\bIT(?=[0-9O])"), "IT ")) }
                     if (own != null && digits.filter(Char::isDigit).contains(own)) continue // this is the operator's own box
                     val vat = rx("\\d{11}").findAll(digits).map { it.value }.firstOrNull { SellerProfiles.isValidPartitaIva(it) && it != own }
+                        // A supplier in another EU country ("DE123456788"), its country's check digits right.
+                        ?: EuVat.find(lines.joinToString(" ") { it.text }).firstOrNull()
                     // A party's box says who it is: a name label or a VAT number. "Trasporto a cura del: Mittente" is no box.
                     if (vat == null && lines.none { NAME_LABEL.containsMatchIn(it.text) }) continue
                     val box = PageBox(lines.minOf { it.left }, cell.top, lines.maxOf { it.right }, lines.maxOf { it.bottom })

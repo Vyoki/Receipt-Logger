@@ -394,4 +394,40 @@ class EInvoicePrintoutLayoutTest {
         assertTrue(LotExtractor.isDeliveryNoteRef("Ns. doc. (DDT09) n. 77/ZZ del 03/02/2031"))
         assertTrue(LotExtractor.isDeliveryNoteRef("DDT 77/ZZ del 03-02-2031"))
     }
+    @Test fun noTotalPrinted() {
+        // An invoice whose "TOTALE DOCUMENTO" is left empty (the form an Italian buyer issues for a foreign supplier).
+        val d = read(EInvoicePrintoutFixture.SELF_BILLED.copy(type = "TD01 fattura"))
+        // Taxable and VAT under their headings: sure, as the summary row (VAT = 22% of the taxable) and the line agree.
+        assertEquals(23400L, d.subtotalCents?.value)
+        assertEquals(Confidence.HIGH, d.subtotalCents?.confidence)
+        assertEquals(5148L, d.vatCents?.value)
+        assertEquals(Confidence.HIGH, d.vatCents?.confidence)
+        // The total is not printed: none is made up.
+        assertNull(d.totalCents)
+        // The line under a heading band of three printed lines ("PREZZO", "UM %IVA PREZZO TOTALE", "UNITARIO"), read by
+        // its columns; the summary row "Esigib. non dich." is no line.
+        assertEquals(listOf(23400L), d.lineItems.map { it.lineTotalCents?.value })
+        assertEquals(listOf("22"), d.lineItems.map { it.vatRatePercent?.value?.stripTrailingZeros()?.toPlainString() })
+        assertTrue(d.lineItems.none { it.originalDescription.contains("Esigib") })
+    }
+
+    @Test fun theDateOfTheInvoiceNamedOverTheLinesIsNotTheDocumentsDate() {
+        // "Fatt.Coll. 4711 del 21-02-2031" names another document; the date is the one under "DATA / DOCUMENTO",
+        // printed next to "ART. / 73".
+        val d = read(EInvoicePrintoutFixture.SELF_BILLED.copy(type = "TD01 fattura"))
+        assertEquals(LocalDate.of(2031, 2, 28), d.documentDate?.value)
+        assertEquals(Confidence.HIGH, d.documentDate?.confidence)
+        assertEquals("00000003/2031/A", d.documentNumber?.value)
+    }
+
+    @Test fun aForeignSuppliersBoxProvesItsName() {
+        // Read from the PDF's own text, the name in the supplier's box with a VAT number whose (German) check digits
+        // are right: the supplier is sure.
+        val d = read(EInvoicePrintoutFixture.SELF_BILLED.copy(type = "TD01 fattura"))
+        assertEquals("MUSTER HANDEL GMBH", d.sellerName?.value)
+        assertEquals(SupplierProof.State.PROVEN, d.supplierProof?.state)
+        // The same box with one digit misread proves nothing.
+        val misread = read(EInvoicePrintoutFixture.SELF_BILLED.copy(type = "TD01 fattura", supplierVat = "DE123456789"))
+        assertNotEquals(SupplierProof.State.PROVEN, misread.supplierProof?.state)
+    }
 }

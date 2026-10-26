@@ -44,6 +44,8 @@ data class FingerprintRow(
     val totalCents: Long?,
     val fileSha256: String,
     val sellerVat: String? = null,
+    /** The text read, only for a reverse-charge form (TD16-TD19): it names the supplier's invoice it completes. */
+    val formText: String? = null,
 )
 
 /** A saved document as a file of many invoices checks against it: is this invoice in the app already? */
@@ -199,7 +201,9 @@ interface DocumentDao {
 
     @Query(
         "SELECT d.id AS id, s.name AS sellerName, d.document_number AS documentNumber, d.document_date AS documentDate, " +
-            "d.total_cents AS totalCents, d.file_sha256 AS fileSha256, s.vat_number AS sellerVat " +
+            "d.total_cents AS totalCents, d.file_sha256 AS fileSha256, s.vat_number AS sellerVat, " +
+            "CASE WHEN d.ocr_text LIKE '%TD16%' OR d.ocr_text LIKE '%TD17%' OR d.ocr_text LIKE '%TD18%' OR d.ocr_text LIKE '%TD19%' " +
+            "THEN d.ocr_text END AS formText " +
             "FROM documents d JOIN sellers s ON s.id = d.seller_id",
     )
     suspend fun fingerprints(): List<FingerprintRow>

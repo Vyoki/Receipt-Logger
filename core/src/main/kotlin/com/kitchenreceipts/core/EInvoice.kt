@@ -233,6 +233,8 @@ object EInvoice {
         "TD01" to "FATTURA", "TD02" to "ACCONTO SU FATTURA", "TD04" to "NOTA DI CREDITO", "TD05" to "NOTA DI DEBITO",
         "TD06" to "PARCELLA", "TD07" to "FATTURA SEMPLIFICATA", "TD08" to "NOTA DI CREDITO SEMPLIFICATA",
         "TD24" to "FATTURA DIFFERITA", "TD25" to "FATTURA DIFFERITA",
+        "TD16" to "integrazione fattura reverse charge interno", "TD17" to "integrazione/autofattura per acquisto servizi dall'estero",
+        "TD18" to "integrazione per acquisto di beni intracomunitari", "TD19" to "integrazione/autofattura per acquisto di beni ex art.17 c.2",
     )
 
     /**
@@ -255,9 +257,15 @@ object EInvoice {
         val printedTotal = dec(gen?.text("ImportoTotaleDocumento"))
         val ddts = body.at("DatiGenerali")?.kids("DatiDDT").orEmpty().map { d -> listOfNotNull(d.text("NumeroDDT"), date(d.text("DataDDT"))?.let(ItalianDates::format)).joinToString(" del ") }
 
+        // A reverse-charge form names the supplier's own invoice it completes (see ReverseCharge).
+        val linked = body.at("DatiGenerali")?.kids("DatiFattureCollegate").orEmpty().firstOrNull()
+        val linkedNumber = linked?.text("IdDocumento")
+        val linkedDate = date(linked?.text("Data"))
+
         val text = StringBuilder()
         val title = DOC_NAMES[type] ?: "FATTURA"
-        text.append("$title ELETTRONICA").append(type?.let { " ($it)" } ?: "").append('\n')
+        if (type in ReverseCharge.TYPES) text.append("$type $title").append('\n')
+        else text.append("$title ELETTRONICA").append(type?.let { " ($it)" } ?: "").append('\n')
         text.append(seller ?: "").append('\n')
         sellerVat?.let { text.append("P.IVA ").append(it).append('\n') }
         header.text("CedentePrestatore/Sede/Indirizzo")?.let { a ->
@@ -266,6 +274,9 @@ object EInvoice {
         text.append("Cliente: ").append(buyer ?: "").append(buyerId?.let { "  P.IVA/C.F. $it" } ?: "").append('\n')
         text.append("Numero ").append(number ?: "").append(" del ").append(docDate?.let(ItalianDates::format) ?: "").append('\n')
         if (ddts.isNotEmpty()) text.append("DDT: ").append(ddts.joinToString(", ")).append('\n')
+        if (type in ReverseCharge.TYPES && linkedNumber != null) {
+            text.append("Fatt. coll. ").append(linkedNumber).append(linkedDate?.let { " del " + ItalianDates.format(it) } ?: "").append('\n')
+        }
         text.append('\n')
 
         val items = mutableListOf<ParsedLineItem>()
@@ -396,6 +407,8 @@ object EInvoice {
             vatChecks = checks,
             lotsPrinted = items.any { it.lotNumber != null },
         )
-        return Read(parsed, sellerVat, buyerId, type, type in CREDIT_NOTES, text.toString().trimEnd())
+        // A reverse-charge form: logged net of the VAT it states (see ReverseCharge).
+        val logged = if (type in ReverseCharge.TYPES) ReverseCharge.apply(parsed, ReverseCharge.Form(type!!, vat.takeIf { summary.isNotEmpty() }, linkedNumber, linkedDate)) else parsed
+        return Read(logged, sellerVat, buyerId, type, type in CREDIT_NOTES, text.toString().trimEnd())
     }
 }

@@ -89,6 +89,14 @@ object ReceiptParser {
         "(?i)\\b(scad|scadenza|consegna|pagamento|nascita|valuta|entro|due|payable\\s+by|delivery|shipped|order\\s+date|[ée]ch[ée]ance|livraison|" +
             "f[äa]llig|liefer\\w*|leverdatum|vervaldatum|vencimiento|entrega|termin)",
     )
+    /**
+     * Words naming another document a date belongs to: "Fatt. coll. 12 del ...", "Rif. vs. fattura 3 del ...",
+     * "Ns. doc. 5 del ...", "Ordine 7 del ...". Such a date is never the date of the document read.
+     */
+    private val OTHER_DOC_REF = Regex(
+        "(?i)(\\bfatt(?:ura)?\\.?\\s*coll(?:egat[ao])?\\b|\\bdoc(?:umento)?\\.?\\s*collegat|\\brif(?:\\.|erimento\\b|\\b)|" +
+            "\\bvs\\.?\\s*(?:fatt|ft\\b|doc|ddt|ord)|\\bns\\.?\\s*(?:doc|ddt|ord)|\\bordine\\b)",
+    )
     private val TABLE_HEADER = Regex(
         "(?i)\\b(descrizione|articolo|prodotto|q\\.?\\s?t[àa']?\\.?|quantit[àa]|prezzo|importo|imponibile|" +
             "u\\.?\\s?m\\.?|codice|sconto|aliquota|iva|totale|valore)\\b",
@@ -155,7 +163,8 @@ object ReceiptParser {
     )
     /** The VAT summary's own rows ("RIEPILOGHI IVA E TOTALI", "Esigibilità IVA ..."): never items. */
     /** "Riepiloghi IVA", "Esigibilità immediata" and the stylesheet's own row label "I (esigibilità immediata)" (also D, S). */
-    private val SUMMARY_ROW = Regex("(?i)^\\W*(?:[IDS]\\s*\\(\\s*)?(riepiloghi|esigibilit)")
+    // "Esigib. non dich. (si presume immediata)": the abbreviated form of the same summary row.
+    private val SUMMARY_ROW = Regex("(?i)^\\W*(?:[IDS]\\s*\\(\\s*)?(riepiloghi|esigibilit|esigib\\.)")
     /**
      * Notes printed under fresh produce: origin, class and size ("Prov ITALIA Cat II Cal 40-45", "Origine: Spagna",
      * "Categoria I Calibro 70/80"). They are never items and never the name of the numbers next to them.
@@ -242,6 +251,7 @@ object ReceiptParser {
             // are their sums when taxable + VAT of every row is exactly the printed total.
             val gridded = HeaderGrid.apply(marked, grid, o.today).let { d ->
                 val gt = grid.total
+                if (d.totalCents == null && gt == null) return@let taxableWithoutTotal(d, grid, text)
                 if (d.totalCents != null || gt == null) return@let d
                 val gs = runCatching { VatSummary.parse(text) }.getOrDefault(emptyList())
                 // Not proven (a summary row this reader does not know): the printed total is shown, flagged for a check.
@@ -267,7 +277,9 @@ object ReceiptParser {
             // Lots at the end of the product names ("... AB500168"): offered, or taken once learned for this supplier.
             val named = runCatching { LotsInNames.apply(coded, o.layout) }.getOrDefault(coded)
             val lotted = runCatching { LotsByPosition.apply(named, pages, o.ownVatNumber) }.getOrDefault(named)
-            val marked2 = Handwriting.mark(lotted, pages).copy(supplierVatSource = vatSource)
+            val handled = Handwriting.mark(lotted, pages).copy(supplierVatSource = vatSource)
+            // A reverse-charge form (TD16-TD19): logged net of the VAT it prints (see ReverseCharge).
+            val marked2 = runCatching { ReverseCharge.fromText(text)?.let { ReverseCharge.apply(handled, it) } }.getOrNull() ?: handled
             return if (repeats.isEmpty()) marked2 else marked2.copy(warnings = marked2.warnings + ParseWarning.DUPLICATE_PAGE)
         }
         val plain = read(options.copy(layoutLookup = null))
@@ -278,6 +290,29 @@ object ReceiptParser {
         val learned = runCatching { options.layoutLookup.invoke(key) }.getOrNull() ?: return plain
         val withLayout = read(options.copy(layout = learned, layoutLookup = null))
         return if (quality(withLayout) >= quality(plain)) withLayout else plain
+    }
+
+    /**
+     * No total printed (the "TOTALE DOCUMENTO" box left empty, as on the self-billing forms for a foreign supplier):
+     * the taxable amount and the VAT under their headings are still read. Sure only when the VAT summary rows (each
+     * proven by its rate) add up to both, and the lines add up to the taxable amount to the cent; otherwise shown for a
+     * check. The total stays empty: it is not printed.
+     */
+    private fun taxableWithoutTotal(d: ParsedDocument, grid: HeaderGrid.Grid, text: String): ParsedDocument {
+        val sub = grid.subtotal ?: return d
+        val vat = grid.vat ?: return d
+        if (d.subtotalCents.let { it != null && it.value != sub } || d.vatCents.let { it != null && it.value != vat }) return d
+        val gs = runCatching { VatSummary.parse(text) }.getOrDefault(emptyList())
+        val summed = gs.isNotEmpty() && gs.sumOf { it.taxableCents } == sub && gs.sumOf { it.vatCents } == vat
+        val amounts = d.lineItems.mapNotNull { it.lineTotalCents?.value }
+        val linesAddUp = d.lineItems.isNotEmpty() && amounts.size == d.lineItems.size && amounts.sum() == sub
+        val sure = summed && linesAddUp
+        val src = if (sure) "under the headings; the VAT summary rows and the lines add up to it" else "under the headings; nothing else proves it"
+        val c = if (sure) Confidence.HIGH else Confidence.LOW
+        return d.copy(
+            subtotalCents = Extracted(sub, c, src), vatCents = Extracted(vat, c, src),
+            warnings = if (sure) d.warnings - ParseWarning.ITEMS_SUM_MISMATCH else d.warnings,
+        )
     }
 
     /** A row that ends the item table: totals, VAT summary, carry-over to the next page. */
@@ -892,10 +927,12 @@ object ReceiptParser {
                 ) vat = vv.copy(confidence = Confidence.LOW)
             }
         }
-        return doc.copy(
+        val out = doc.copy(
             lineItems = items, totalCents = total, vatCents = vat, subtotalCents = subtotal, vatBasis = vatBasis, warnings = warnings,
             vatChecks = vatChecks, lotsPrinted = lotsPrinted, reconciled = report,
         )
+        // A reverse-charge form stays logged net whatever this pass read (see ReverseCharge).
+        return ReverseCharge.keepNet(out)
     }
 
     /** Number of leading lines of [next] that repeat the last lines of [prev] (at least 2 to count). */
@@ -1075,6 +1112,8 @@ object ReceiptParser {
             for (label in DATE_LABEL.findAll(line)) {
                 // "Order Date", "Due Date", "Delivery date": a date, not the document's.
                 if (NOT_DOC_DATE.containsMatchIn(line.substring(maxOf(0, label.range.first - 12), label.range.last + 1))) continue
+                // "Fatt. coll. 12 del 21-02-2031": the date of the document referred to.
+                if (refersToOtherDocument(line.substring(maxOf(0, label.range.first - 40), label.range.first))) continue
                 val d = dates.firstOrNull { it.range.first > label.range.last && it.range.first - label.range.last <= 8 }
                 if (d != null && !isInsideExpiry(line, d)) {
                     consumed += i
@@ -1122,7 +1161,7 @@ object ReceiptParser {
             if (scan.expiry != null || scan.lot != null || scan.lotRejectedAsDate) return@forEachIndexed
             // "RIMESSA DIRETTA ENTRO 60 GG.D.F. B26 204177 15/09/2026": only a date right after "entro",
             // "scadenza", "consegna"... is about something else.
-            val d = ItalianDates.findDates(line).firstOrNull { !afterNotDocWord(line, it) }
+            val d = ItalianDates.findDates(line).firstOrNull { !afterNotDocWord(line, it) && !afterOtherDocument(line, it) }
             if (d != null) {
                 consumed += i
                 return Extracted(d.date, Confidence.LOW, line)
@@ -1142,6 +1181,20 @@ object ReceiptParser {
     private fun afterNotDocWord(line: String, d: DateMatch): Boolean {
         val before = line.substring(maxOf(0, d.range.first - 16), d.range.first)
         return NOT_DOC_DATE.containsMatchIn(before)
+    }
+
+    /** True when the date is that of another document named just before it ("Fatt. coll. 12 del 21-02-2031"). */
+    private fun afterOtherDocument(line: String, d: DateMatch): Boolean =
+        refersToOtherDocument(line.substring(maxOf(0, d.range.first - 40), d.range.first))
+
+    /**
+     * [before] (the text before a date or its label) ends with another document's reference and its number: "Rif. vs.
+     * fattura n. 3 del", "Ordine 7 del". A heading such as "Riferimento amministrazione  Data" names no number: not one.
+     */
+    private fun refersToOtherDocument(before: String): Boolean {
+        val ref = OTHER_DOC_REF.findAll(before).lastOrNull() ?: return false
+        val rest = before.substring(ref.range.last + 1)
+        return rest.length <= 30 && rest.any(Char::isDigit)
     }
 
     private fun isInsideExpiry(line: String, d: DateMatch): Boolean =

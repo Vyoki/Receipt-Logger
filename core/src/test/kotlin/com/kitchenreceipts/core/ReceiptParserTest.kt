@@ -178,4 +178,21 @@ class ReceiptParserTest {
         assertNull(ReceiptParser.parse("ESEMPIO SRL\nCONSUMO F1 KWH 120 0,20 24,00\nTOTALE 24,00").lineItems.single().unit)
         assertEquals("pz", ReceiptParser.parse("ESEMPIO SRL\nCARTA FORNO 2 3,45 6,90\nTOTALE 6,90").lineItems.single().unit?.value)
     }
+    @Test fun theDateOfAnotherDocumentIsNeverTheDocumentsDate() {
+        // A date after another document's reference and number ("Rif. vs. fattura n. 3 del", "Fatt. coll. 12 del",
+        // "Ordine 7 del") is that document's date.
+        fun date(text: String) = ReceiptParser.parse(text).documentDate
+        val referred = "ABC S.r.l.\nRif. vs. fattura n. 3 del 21/02/2031\nData documento 28/02/2031\nPASSATA 2 1,00 2,00\nTOTALE 2,00"
+        assertEquals(LocalDate.of(2031, 2, 28), date(referred)?.value)
+        assertEquals(Confidence.HIGH, date(referred)?.confidence)
+        assertEquals(LocalDate.of(2031, 2, 28), date("ABC S.r.l.\nFatt. coll. 12 del 21-02-2031\nDel 28/02/2031\nTOTALE 2,00")?.value)
+        // With no labelled date, the first date that names no other document (unsure).
+        val ordered = date("ABC S.r.l.\nOrdine 7 del 21/02/2031\n28/02/2031\nTOTALE 2,00")
+        assertEquals(LocalDate.of(2031, 2, 28), ordered?.value)
+        assertEquals(Confidence.LOW, ordered?.confidence)
+        // A heading that names no document number ("Riferimento amministrazione") is no reference: its date stands.
+        assertEquals(LocalDate.of(2031, 2, 28), date("ABC S.r.l.\nRiferimento amministrazione Data 28/02/2031\nTOTALE 2,00")?.value)
+        // The document's own "Fattura n. 5 del ..." is its date.
+        assertEquals(LocalDate.of(2031, 2, 28), date("ABC S.r.l.\nFattura n. 5 del 28/02/2031\nTOTALE 2,00")?.value)
+    }
 }

@@ -32,6 +32,8 @@ enum class ReviewReason {
     CHECKED_BY_TOTALS,
     /** One invoice cut from a file of many whose pages may be cut or joined wrongly (see InvoiceBundle.Flag). */
     BUNDLE_CHECK,
+    /** A reverse-charge form (TD16-TD19): logged without the VAT it prints; the operator sees why once. */
+    REVERSE_CHARGE,
 }
 
 /**
@@ -74,6 +76,7 @@ object AutoAccept {
         if (ParseWarning.DUPLICATE_PAGE in d.warnings) out += ReviewReason.DUPLICATE_PAGE
         if (ParseWarning.PAGES_MISSING in d.warnings) out += ReviewReason.PAGES_MISSING
         if (ParseWarning.CHECKED_BY_TOTALS in d.warnings) out += ReviewReason.CHECKED_BY_TOTALS
+        if (ParseWarning.REVERSE_CHARGE in d.warnings) out += ReviewReason.REVERSE_CHARGE
         if (d.vatBasis == VatBasis.UNKNOWN && inferVatBasis(d) == null && sumOk) {
             out += ReviewReason.VAT_BASIS_UNKNOWN
         }

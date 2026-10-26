@@ -53,6 +53,11 @@ internal object EInvoicePrintoutFixture {
         val summary: Boolean = true,
         /** The summary's heading row ("ESIGIBILITÀ IVA / RIFERIMENTI NORMATIVI ... TOTALE IMPOSTA"). */
         val summaryHeading: Boolean = true,
+        /**
+         * Where the band's third line sits ([headingBand]): one unit higher and the heading reads as three rows none of
+         * which names the table alone (the band is then read as one heading).
+         */
+        val bandThird: Int = 25,
     )
 
     const val CUSTOMER_VAT = "09876543217"
@@ -90,11 +95,12 @@ internal object EInvoicePrintoutFixture {
 
     private const val PAGE_BOTTOM = 3300
 
-    private fun headingBand(y: Int) = listOf(
+    /** [third]: how far under the first line the third line of the band is printed. */
+    private fun headingBand(y: Int, third: Int = 25) = listOf(
         s(1542, y, "PREZZO"), s(1841, y, "SCONTO"),
         s(259, y + 12, "COD. ARTICOLO"), s(888, y + 12, "DESCRIZIONE"), s(1332, y + 12, "QUANTITÀ"), s(1733, y + 12, "UM"),
         s(2002, y + 12, "%IVA"), s(2115, y + 12, "PREZZO TOTALE"),
-        s(1534, y + 25, "UNITARIO"), s(1839, y + 25, "O MAGG."),
+        s(1534, y + third, "UNITARIO"), s(1839, y + third, "O MAGG."),
     )
 
     /** The pages of one invoice. */
@@ -105,8 +111,12 @@ internal object EInvoicePrintoutFixture {
         // The parties.
         page += t(102, 172, "Cedente/prestatore (fornitore)", cw = 19, h = 42)
         page += t(1263, 172, "Cessionario/committente (cliente)", cw = 19, h = 42)
-        val left = mutableListOf("Identificativo fiscale ai fini IVA: IT${inv.supplierVat}")
-        if (inv.soleTrader) {
+        // A supplier in another EU country: its VAT number printed with its own prefix, no Italian tax code.
+        val foreign = inv.supplierVat.first().isLetter()
+        val left = mutableListOf("Identificativo fiscale ai fini IVA: ${if (foreign) inv.supplierVat else "IT" + inv.supplierVat}")
+        if (foreign) {
+            left += "Denominazione: ${inv.supplierName}"
+        } else if (inv.soleTrader) {
             left += "Codice fiscale: RSSMRA80A01H501U"
             left += "Cognome nome: ${inv.supplierName}"
         } else {
@@ -114,7 +124,8 @@ internal object EInvoicePrintoutFixture {
             left += "Denominazione: ${inv.supplierName}"
         }
         inv.supplierName2?.let { left += it }
-        left += listOf("Regime fiscale: RF01 ordinario", "Indirizzo: VIA DI PROVA 12", "Comune: ROMA Provincia: RM", "Cap: 00100 Nazione: IT")
+        left += if (foreign) listOf("Regime fiscale: RF18 altro", "Indirizzo: MUSTERSTRASSE 5", "Comune: MUSTERSTADT", "Cap: 00000 Nazione: ${inv.supplierVat.take(2)}")
+            else listOf("Regime fiscale: RF01 ordinario", "Indirizzo: VIA DI PROVA 12", "Comune: ROMA Provincia: RM", "Cap: 00100 Nazione: IT")
         val right = listOf(
             "Identificativo fiscale ai fini IVA: IT$customerVat", "Codice fiscale: $customerVat", "Denominazione: $CUSTOMER_NAME",
             "Indirizzo: VIA ESEMPIO 1", "Comune: ROMA Provincia: RM", "Cap: 00100 Nazione: IT",
@@ -140,7 +151,7 @@ internal object EInvoicePrintoutFixture {
         page += t(1526, y, inv.date, cw = 17)
         page += t(1979, y, "ABC1234", cw = 21)
         y += 204
-        page += headingBand(y)
+        page += headingBand(y, inv.bandThird)
         y += 52
         for (ref in inv.ddtRefs) { page += t(633, y, ref, cw = 15, h = 26); y += 35 }
         for (line in inv.lines) {
@@ -148,7 +159,7 @@ internal object EInvoicePrintoutFixture {
             if (y + height > PAGE_BOTTOM) {
                 page = mutableListOf(); pages += page
                 y = 177
-                page += headingBand(y)
+                page += headingBand(y, inv.bandThird)
                 y += 70
             }
             line.code?.let { c -> page += t(84, y + 1, if (line.codeType != null) "$c ( ${line.codeType} )" else c, cw = 16, h = 26) }
@@ -200,7 +211,8 @@ internal object EInvoicePrintoutFixture {
             inv.bollo?.let { page += r(420, y, it) }
             inv.docDiscount?.let { page += r(1010, y, it) }
             inv.rounding?.let { page += r(1330, y, it) }
-            page += r(2366, y, inv.total)
+            // A self-billing form leaves the document's total empty.
+            if (inv.total.isNotEmpty()) page += r(2366, y, inv.total)
             y += 121
         }
         page += s(318, y, "MODALITÀ PAGAMENTO"); page += s(1065, y, "DETTAGLI"); page += s(1462, y, "SCADENZE"); page += s(1958, y, "IMPORTO")
@@ -281,6 +293,22 @@ internal object EInvoicePrintoutFixture {
         ),
         groups = listOf(Group("10,00", "81,00", "8,10")),
         total = "89,10",
+    )
+
+    /**
+     * The form an Italian buyer issues for goods bought from a supplier in another EU country (TD18): the supplier's
+     * box with its foreign VAT number, the supplier's own invoice named over the lines, one line of goods with no
+     * quantity, the VAT the buyer owes in the summary and no total printed.
+     */
+    val SELF_BILLED = Invoice(
+        supplierVat = "DE123456788", supplierName = "MUSTER HANDEL GMBH", number = "00000003/2031/A", date = "28-02-2031",
+        type = "TD18 integrazione per acquisto di beni",
+        ddtRefs = listOf("Fatt.Coll. 4711 del 21-02-2031"),
+        lines = listOf(Line("BENI", null, "234,00", null, "22,00", "234,00")),
+        groups = listOf(Group("22,00", "234,00", "51,48", label = "Esigib. non dich. (si presume immediata)")),
+        total = "",
+        payment = null,
+        bandThird = 24,
     )
 
     /** A long invoice, so its lines run over a second page. */

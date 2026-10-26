@@ -45,6 +45,7 @@ fun warningText(w: ParseWarning): String = stringResource(
         ParseWarning.DUPLICATE_PAGE -> R.string.warn_duplicate_page
         ParseWarning.PAGES_MISSING -> R.string.warn_pages_missing
         ParseWarning.CHECKED_BY_TOTALS -> R.string.warn_checked_by_totals
+        ParseWarning.REVERSE_CHARGE -> R.string.warn_reverse_charge
     },
 )
 
@@ -79,6 +80,7 @@ fun duplicateReasonText(r: DuplicateReason): String = stringResource(
         DuplicateReason.SAME_SELLER_AND_NUMBER -> R.string.dup_same_number
         DuplicateReason.SAME_SELLER_DATE_TOTAL -> R.string.dup_same_seller_date_total
         DuplicateReason.SAME_DATE_AND_TOTAL -> R.string.dup_same_date_total
+        DuplicateReason.SAME_PURCHASE -> R.string.dup_same_purchase
     },
 )
 
@@ -180,6 +182,7 @@ fun reviewReasonText(r: ReviewReason): String = stringResource(
         ReviewReason.PAGES_MISSING -> R.string.reason_pages_missing
         ReviewReason.CHECKED_BY_TOTALS -> R.string.reason_checked_by_totals
         ReviewReason.BUNDLE_CHECK -> R.string.bundle_hold_reason
+        ReviewReason.REVERSE_CHARGE -> R.string.reason_reverse_charge
     },
 )
 

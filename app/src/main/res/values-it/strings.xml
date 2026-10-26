@@ -96,6 +96,7 @@
     <string name="dup_same_number">Stesso fornitore e stesso numero documento.</string>
     <string name="dup_same_seller_date_total">Stesso fornitore, data e totale.</string>
     <string name="dup_same_date_total">Stessa data e stesso totale (fornitore diverso).</string>
+    <string name="dup_same_purchase">Lo stesso acquisto: un\'integrazione/autofattura (TD16–TD19) e la fattura del fornitore che integra. Tenetene una sola.</string>
 
     <string name="on_document">Sul documento: “%1$s”</string>
     <string name="search_or_new_product">Cerca o scrivi il nome di un nuovo prodotto</string>
@@ -742,5 +743,7 @@
     <string name="training_forget">Elimina il file da questo telefono</string>
     <string name="warn_checked_by_totals">I totali del documento hanno fatto aggiungere o escludere righe (elencate sopra le righe): controllale prima di salvare.</string>
     <string name="reason_checked_by_totals">Righe aggiunte o escluse per far tornare i totali: controllale.</string>
+    <string name="warn_reverse_charge">Integrazione/autofattura in reverse charge (TD16–TD19): l\'IVA indicata è a vostro carico (si integra e si detrae), non si paga al fornitore. Registrata senza quell\'IVA: totale = imponibile, righe solo con l\'importo.</string>
+    <string name="reason_reverse_charge">Integrazione in reverse charge: registrata senza l\'IVA indicata.</string>
     <string name="training_older">%1$d sono stati salvati prima di questa versione, che non conservava ancora ciò che serve all\'esportazione (la misura della foto letta). I documenti salvati da ora in poi si possono usare.</string>
 </resources>

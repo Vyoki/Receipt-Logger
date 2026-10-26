@@ -118,7 +118,9 @@ object HeaderGrid {
                     // still a row of labels, and the labels are judged once stacked.
                     if (from < 0 || !rows[from].all { c -> kind(c.text) != null || SHORT_NUMBER.matches(c.text.trim()) }) break
                     val labels = stack(rows.subList(from, v))
-                    if (labels.any { kind(it.text) == null }) continue
+                    // A short number left alone (the "73" of "ART. / 73" when its "ART." is on a row further up) is a
+                    // piece of a label, of nothing the grid uses: no reason to leave the other labels unread.
+                    if (labels.any { kind(it.text) == null && !SHORT_NUMBER.matches(it.text.trim()) }) continue
                     g = readValues(g, labels, values)
                 }
             }

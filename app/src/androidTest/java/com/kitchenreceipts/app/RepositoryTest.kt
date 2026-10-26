@@ -160,6 +160,21 @@ class RepositoryTest {
         assertEquals(setOf(DuplicateReason.SAME_DATE_AND_TOTAL), repo.findDuplicates(again, "sha-v2", null, text, "").single().match.reasons)
     }
 
+    @Test fun aReverseChargeFormAndTheInvoiceItCompletesAreOnePurchase() = runBlocking<Unit> {
+        // An invented TD18 form, saved first with the text read from it: it names the supplier's invoice 4711.
+        val formText = "TD18 integrazione per acquisto di beni intracomunitari\nMUSTER HANDEL GMBH\nFatt.Coll. 4711 del 21-02-2031\nBENI 234,00"
+        val form = doc("MUSTER HANDEL GMBH", "00000003/2031/A", listOf(item("BENI", null, "1", "pz", 23400)), total = 23400, date = LocalDate.of(2031, 2, 28))
+        repo.saveDocument(form, StoredFile("documents/rc1.pdf", "application/pdf", 1, "sha-rc1"), formText, null)
+        // The supplier's own invoice 4711 added later: the same purchase.
+        val invoice = doc("MUSTER HANDEL GMBH", "4711", listOf(item("KAESE", null, "2", "kg", 23400)), total = 23400, date = LocalDate.of(2031, 2, 21))
+        val dups = repo.findDuplicates(invoice, "sha-rc2", null, "MUSTER HANDEL GMBH\nRechnung 4711", "09876543217")
+        assertEquals(setOf(DuplicateReason.SAME_PURCHASE), dups.single().match.reasons)
+        // The other way round: the invoice saved first, the form found against it.
+        val id = repo.saveDocument(invoice, StoredFile("documents/rc2.pdf", "application/pdf", 1, "sha-rc2"), "MUSTER HANDEL GMBH\nRechnung 4711", null)
+        val back = repo.findDuplicates(form, "sha-rc3", null, formText, "09876543217").filter { it.match.existingId == id }
+        assertEquals(setOf(DuplicateReason.SAME_PURCHASE), back.single().match.reasons)
+    }
+
     @Test fun aNameJoinedFromTwoPrintedLinesFindsTheProductSavedUnderItsFirstLine() = runBlocking<Unit> {
         // Saved before under the name's first printed line (as the app read a wrapped name before joining it).
         val first = "PROSCIUTTO CRUDO STAGIONATO DI"

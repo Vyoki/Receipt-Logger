@@ -12,6 +12,9 @@ data class DocumentFingerprint(
     val fileSha256: String?,
     /** The supplier's VAT number (11 digits), when known: the same number is the same supplier, however the name reads. */
     val sellerVat: String? = null,
+    /** A reverse-charge form's (see ReverseCharge): the number and date of the supplier's own invoice it completes. */
+    val refNumber: String? = null,
+    val refDate: LocalDate? = null,
 )
 
 enum class DuplicateReason {
@@ -23,6 +26,11 @@ enum class DuplicateReason {
     SAME_SELLER_DATE_TOTAL,
     /** Different or unknown seller, but same date and same total (weaker hint). */
     SAME_DATE_AND_TOTAL,
+    /**
+     * A reverse-charge form (TD16-TD19) and the supplier's own invoice it completes (same supplier, the number the
+     * form names): one purchase, logged twice if both are saved.
+     */
+    SAME_PURCHASE,
 }
 
 data class DuplicateMatch(val existingId: Long, val reasons: Set<DuplicateReason>) {
@@ -73,6 +81,14 @@ object DuplicateDetector {
                 if (sameSeller && sameYear && cNumber != null && cNumber == normalizeNumber(e.documentNumber)) {
                     reasons += DuplicateReason.SAME_SELLER_AND_NUMBER
                 }
+                // The form names the invoice by its number (and date): either may be saved first.
+                fun completes(form: DocumentFingerprint, invoice: DocumentFingerprint): Boolean {
+                    val ref = normalizeNumber(form.refNumber) ?: return false
+                    if (ref != normalizeNumber(invoice.documentNumber)) return false
+                    return if (form.refDate != null && invoice.date != null) form.refDate == invoice.date
+                    else form.date == null || invoice.date == null || form.date.year == invoice.date.year
+                }
+                if (sameSeller && (completes(candidate, e) || completes(e, candidate))) reasons += DuplicateReason.SAME_PURCHASE
                 val sameDateTotal = candidate.date != null && candidate.date == e.date &&
                     candidate.totalCents != null && candidate.totalCents == e.totalCents
                 if (sameDateTotal) {

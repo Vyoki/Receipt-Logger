@@ -100,6 +100,7 @@
     <string name="dup_same_number">Same seller and same document number.</string>
     <string name="dup_same_seller_date_total">Same seller, date and total.</string>
     <string name="dup_same_date_total">Same date and total (different seller).</string>
+    <string name="dup_same_purchase">The same purchase: a reverse-charge form (TD16–TD19) and the supplier\'s invoice it completes. Keep only one.</string>
 
     <!-- Product picker -->
     <string name="on_document">On the document: “%1$s”</string>
@@ -754,5 +755,7 @@
     <string name="training_forget">Delete the file from this phone</string>
     <string name="warn_checked_by_totals">The document\'s totals made the app add or leave out lines (listed above the lines): check them before saving.</string>
     <string name="reason_checked_by_totals">Lines added or left out to make the totals add up: check them.</string>
+    <string name="warn_reverse_charge">Reverse-charge form (TD16–TD19): the VAT it prints is yours to self-assess and deduct, not paid to the supplier. It is logged without that VAT: total = taxable amount, lines as amounts only.</string>
+    <string name="reason_reverse_charge">Reverse-charge form: logged without the VAT it prints.</string>
     <string name="training_older">%1$d of them were saved before this version, which did not yet keep what the export needs (the size of the photo as read). Documents saved from now on can be used.</string>
 </resources>

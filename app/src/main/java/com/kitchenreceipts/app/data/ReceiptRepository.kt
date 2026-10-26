@@ -29,6 +29,7 @@ import com.kitchenreceipts.core.ProductMatching
 import com.kitchenreceipts.core.PurchaseExportRow
 import com.kitchenreceipts.core.PurchaseRecord
 import com.kitchenreceipts.core.ReportDocument
+import com.kitchenreceipts.core.ReverseCharge
 import com.kitchenreceipts.core.SearchQuery
 import com.kitchenreceipts.core.SellerCandidate
 import com.kitchenreceipts.core.SellerMatch
@@ -140,8 +141,14 @@ class ReceiptRepository(
         // Without the restaurant's own number, the number read could be the restaurant's (printed as the customer).
         val vat = if (documentText.isNullOrBlank() || ownVatNumber.isNullOrBlank()) null
         else runCatching { SellerProfiles.supplierVatNumber(documentText, ownVatNumber) }.getOrNull()
-        val candidate = DocumentFingerprint(excludeId ?: -1, doc.sellerName, doc.number, doc.date, doc.totalCents, sha256, vat)
-        val existing = rows.map { DocumentFingerprint(it.id, it.sellerName, it.documentNumber, it.documentDate, it.totalCents, it.fileSha256, it.sellerVat) }
+        // A reverse-charge form and the supplier's own invoice it names are one purchase (either may come first).
+        fun form(text: String?) = text?.let { t -> runCatching { ReverseCharge.fromText(t) }.getOrNull() }
+        val own = form(documentText)
+        val candidate = DocumentFingerprint(excludeId ?: -1, doc.sellerName, doc.number, doc.date, doc.totalCents, sha256, vat, own?.refNumber, own?.refDate)
+        val existing = rows.map {
+            val f = form(it.formText)
+            DocumentFingerprint(it.id, it.sellerName, it.documentNumber, it.documentDate, it.totalCents, it.fileSha256, it.sellerVat, f?.refNumber, f?.refDate)
+        }
         val byId = rows.associateBy { it.id }
         return DuplicateDetector.findDuplicates(candidate, existing).map { DuplicateInfo(it, byId.getValue(it.existingId)) }
     }

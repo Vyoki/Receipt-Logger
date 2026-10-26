@@ -548,11 +548,19 @@ object AiReader {
                         checked++
                         return if (old.value == new.value) old else flag(old, what, null, ItalianNumbers.formatCents(new.value), money = true)
                     }
+                    // A reverse-charge form is logged net (see ReverseCharge): its VAT and total are on purpose not
+                    // what is printed, so only the taxable amount is checked, and the total follows it.
+                    val net = ParseWarning.REVERSE_CHARGE in d.warnings
                     for ((k, old) in listOf("subtotal" to d.subtotalCents, "vat" to d.vatCents, "total" to d.totalCents)) {
+                        if (net && k != "subtotal") continue
                         money(k)?.value?.takeIf { it != old?.value }?.let { headerRead[k] = ItalianNumbers.centsToEditText(it) }
                     }
-                    val next = d.copy(
-                        subtotalCents = check(d.subtotalCents, money("subtotal"), "subtotal"),
+                    val checkedSub = check(d.subtotalCents, money("subtotal"), "subtotal")
+                    val next = if (net) d.copy(
+                        subtotalCents = checkedSub,
+                        totalCents = checkedSub?.let { Extracted(it.value, it.confidence, d.totalCents?.source ?: it.source) },
+                    ) else d.copy(
+                        subtotalCents = checkedSub,
                         vatCents = check(d.vatCents, money("vat"), "vat"),
                         totalCents = check(d.totalCents, money("total"), "total"),
                     )

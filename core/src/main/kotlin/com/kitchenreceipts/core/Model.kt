@@ -43,6 +43,11 @@ enum class ParseWarning {
     PAGES_MISSING,
     /** The document's own sums made the reading add or leave out lines (see Reconcile): shown for the operator to confirm. */
     CHECKED_BY_TOTALS,
+    /**
+     * A reverse-charge form (TD16-TD19, see ReverseCharge): the VAT printed is the buyer's own, self-assessed, never
+     * paid to the supplier. Logged net of VAT, its lines as amounts only.
+     */
+    REVERSE_CHARGE,
 }
 
 data class ParsedLineItem(

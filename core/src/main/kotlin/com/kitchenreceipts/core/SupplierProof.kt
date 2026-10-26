@@ -80,7 +80,7 @@ object SupplierProof {
         val ownName = DuplicateDetector.normalizeSeller(options.ownBusinessName)?.takeIf { it.length >= 4 }
         val all = pages.joinToString("\n") { it.joinToString("\n") }
         // The VAT number printed in the supplier's own box (under its role label) first.
-        val supplierVat = boxVat?.takeIf { it != ownVat && SellerProfiles.isValidPartitaIva(it) } ?: SellerProfiles.supplierVatNumber(all, ownVat)
+        val supplierVat = boxVat?.takeIf { it != ownVat && (SellerProfiles.isValidPartitaIva(it) || EuVat.isValid(it)) } ?: SellerProfiles.supplierVatNumber(all, ownVat)
         val out = mutableListOf<Source>()
         fun own(name: String) = ownName != null && (DuplicateDetector.normalizeSeller(name) ?: "").contains(ownName)
 
@@ -157,8 +157,9 @@ object SupplierProof {
             out += Source(Kind.SUPPLIER_BOX, boxName, null, page, line, anchor = true)
             // The name and a valid VAT number in the supplier's own box, as the invoice was issued (a digital PDF's
             // text, no camera): a place of its own, like the registry. Not when the number is the operator's.
-            val vat = boxVat?.filter(Char::isDigit)
-            if (exactBox && vat != null && vat != ownVat && SellerProfiles.isValidPartitaIva(vat) && plainName(boxName)) {
+            // An Italian number, or one of another EU country with its country's check digits right.
+            val vat = boxVat?.takeIf { v -> v.filter(Char::isDigit) != ownVat && (SellerProfiles.isValidPartitaIva(v) || EuVat.isValid(v)) }
+            if (exactBox && vat != null && plainName(boxName)) {
                 out += Source(Kind.EXACT_BOX, boxName, null, -1, "exact text: supplier box with VAT $vat", anchor = true)
             }
         }
