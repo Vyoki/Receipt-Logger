@@ -9,8 +9,11 @@ import java.text.Normalizer
  */
 object FieldLocator {
 
-    /** [area]: the part of the page to show; [mark]: what to highlight in it (the value, or the whole row). */
-    data class Spot(val page: Int, val area: PageBox, val mark: PageBox, val exact: Boolean)
+    /**
+     * [area]: the part of the page to show; [mark]: what to highlight in it (the value, or the whole row); [lineHeight]:
+     * the height of one line of print there (to show it at a readable size).
+     */
+    data class Spot(val page: Int, val area: PageBox, val mark: PageBox, val exact: Boolean, val lineHeight: Int = 0)
 
     fun locate(pages: List<List<OcrLine>>, source: String?, value: String): Spot? {
         val v = value.trim()
@@ -57,7 +60,7 @@ object FieldLocator {
             val half = minOf(rowBox.height / 2, 2 * h) + h
             PageBox((rowBox.left - h).coerceAtLeast(0), (mid - half).coerceAtLeast(0), rowBox.right + h, mid + half)
         }
-        return Spot(row.page, area, mark, hit != null)
+        return Spot(row.page, area, mark, hit != null, h)
     }
 
     /** Same number (Italian format, OCR slips repaired) or same word. */

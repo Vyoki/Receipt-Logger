@@ -61,6 +61,7 @@ class ScreenshotTest {
         )
         private const val LONG_SELLER = "ABC S.r.l."
         private const val LONG_NUMBER = "60/2031"
+        private const val PEEK_NUMBER = "PK-7/2031"
         // An invented electricity supplier (valid check digit).
         private const val UTILITY_SELLER = "VERDE FRESCO S.p.A."
         private const val UTILITY_VAT = "09876543217"
@@ -406,6 +407,71 @@ class ScreenshotTest {
             while (opened() <= before && SystemClock.uptimeMillis() < deadline) Thread.sleep(100)
             shot("39-scroll-tap-through")
             assertTrue("the tap under the thumb did not open the line", opened() > before)
+        }
+    }
+
+    /**
+     * The photo of a value opens only on request, full screen: a field being edited shows the photo icon, which opens
+     * the page (the whole page here: a saved document keeps no reading positions), with zoom buttons; Close and Back
+     * close it. An invented page drawn by the test; nothing is saved.
+     */
+    @Test fun photoViewerOnRequest() {
+        val id = runBlocking {
+            val repo = app.container.repository
+            repo.searchDocuments("", null, null, null).first().firstOrNull { it.documentNumber == PEEK_NUMBER }?.let { return@runBlocking it.id }
+            val page = Bitmap.createBitmap(1200, 1700, Bitmap.Config.ARGB_8888)
+            android.graphics.Canvas(page).apply {
+                drawColor(android.graphics.Color.WHITE)
+                val ink = android.graphics.Paint().apply { color = android.graphics.Color.BLACK; textSize = 42f; isAntiAlias = true }
+                listOf("ABC S.r.l.", "Fattura n. $PEEK_NUMBER del 03/02/2031", "LIMONI  2 pz  1,20  2,40", "Totale documento 2,40")
+                    .forEachIndexed { i, t -> drawText(t, 80f, 160f + i * 90f, ink) }
+            }
+            val path = "documents/screens-peek.jpg"
+            File(app.filesDir, path).apply { parentFile?.mkdirs() }.outputStream().use { page.compress(Bitmap.CompressFormat.JPEG, 90, it) }
+            repo.saveDocument(
+                ValidDocument(
+                    LONG_SELLER, LocalDate.of(2031, 2, 3), PEEK_NUMBER, "EUR", 240, null, 240, VatBasis.EXCLUSIVE,
+                    listOf(ValidLineItem("LIMONI", null, BigDecimal(2), "pz", BigDecimal("1.20"), 240, null, null, null)),
+                ),
+                StoredFile(path, "image/jpeg", 1, "screens-peek"), null, null,
+            )
+        }
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            var photo = ""
+            var zoomIn = ""
+            var close = ""
+            scenario.onActivity {
+                photo = it.getString(R.string.peek_button)
+                zoomIn = it.getString(R.string.peek_zoom_in)
+                close = it.getString(R.string.close)
+            }
+            val inst = InstrumentationRegistry.getInstrumentation()
+            fun described(d: String) = inst.uiAutomation.rootInActiveWindow?.let { r -> findNode(r) { it.contentDescription?.toString() == d } }
+            fun waitFor(d: String, shown: Boolean): Boolean {
+                val deadline = SystemClock.uptimeMillis() + 5000
+                while ((described(d) != null) != shown && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
+                return (described(d) != null) == shown
+            }
+            app.container.pendingRoute.value = "edit/$id"
+            Thread.sleep(1500)
+            // Nothing opens by itself, and no field shows the icon before it is edited.
+            assertTrue("a photo button before any field was tapped. On screen: ${screenDump()}", described(photo) == null)
+            assertTrue("no number field. On screen: ${screenDump()}", clickTextIn(PEEK_NUMBER))
+            assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
+            described(photo)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            assertTrue("the photo did not open. On screen: ${screenDump()}", waitFor(zoomIn, true))
+            shot("40-photo-viewer")
+            described(zoomIn)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            shot("41-photo-viewer-zoomed")
+            described(close)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            assertTrue("the photo did not close", waitFor(zoomIn, false))
+            // Back closes it too.
+            assertTrue(clickTextIn(PEEK_NUMBER))
+            assertTrue(waitFor(photo, true))
+            described(photo)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
+            assertTrue(waitFor(zoomIn, true))
+            inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            assertTrue("Back did not close the photo", waitFor(zoomIn, false))
         }
     }
 

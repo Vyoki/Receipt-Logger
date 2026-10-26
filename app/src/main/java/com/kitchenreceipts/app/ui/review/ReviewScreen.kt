@@ -12,8 +12,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
-import com.kitchenreceipts.app.ui.components.FieldPeekCard
-import com.kitchenreceipts.app.ui.components.FieldPeekDialog
+import com.kitchenreceipts.app.ui.components.FieldPhotoViewer
 import com.kitchenreceipts.app.ui.components.LocalFieldPeek
 import com.kitchenreceipts.app.ui.components.PeekImage
 import com.kitchenreceipts.app.ui.components.PeekRequest
@@ -30,7 +29,6 @@ import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.interaction.DragInteraction
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
@@ -231,32 +229,22 @@ fun ReviewScreen(
         }
     }
 
-    // The part of the photo behind the field being checked (tap a field to see it).
-    var peekRequest by remember { mutableStateOf<PeekRequest?>(null) }
-    var peekImage by remember { mutableStateOf<PeekImage?>(null) }
-    var peekClosed by remember { mutableStateOf(false) }
-    var enlarged by remember { mutableStateOf<Pair<String, PeekImage>?>(null) }
-    // The value's place could not be found on the photo: said (with the original one tap away), not left blank.
-    var peekMissing by remember { mutableStateOf(false) }
-    LaunchedEffect(peekRequest) {
-        val r = peekRequest
-        peekMissing = false
-        if (r == null) { peekImage = null; return@LaunchedEffect }
-        peekClosed = false
-        peekImage = runCatching { vm.peek(r.source, r.value) }.getOrNull()
-        peekMissing = peekImage == null && state.filePath != null && (r.value.isNotBlank() || !r.source.isNullOrBlank())
+    // A field's value on the photo, full screen, when its photo button is tapped (nothing opens by itself).
+    var viewing by remember { mutableStateOf<PeekRequest?>(null) }
+    var viewingPage by remember { mutableStateOf<Int?>(null) }
+    var viewerImage by remember { mutableStateOf<PeekImage?>(null) }
+    var viewerFailed by remember { mutableStateOf(false) }
+    LaunchedEffect(viewing, viewingPage) {
+        val r = viewing
+        viewerImage = null
+        viewerFailed = false
+        if (r == null) return@LaunchedEffect
+        val page = viewingPage
+        val img = runCatching { if (page == null) vm.peek(r) else vm.peekPage(page) }.getOrNull()
+        viewerImage = img
+        viewerFailed = img == null
     }
-    // Scrolling the form by hand means the operator moved on: close the photo strip (and the keyboard), so it never
-    // stays on screen over other fields. Scrolls the screen makes by itself (to show the focused field) do not count.
     val focusManager = LocalFocusManager.current
-    LaunchedEffect(listState) {
-        listState.interactionSource.interactions.collect { i ->
-            if (i is DragInteraction.Start && (peekRequest != null || peekImage != null)) {
-                peekRequest = null
-                focusManager.clearFocus()
-            }
-        }
-    }
 
     // Going back keeps a new document waiting on the home screen, with the corrections made so far; throwing it away
     // is its own button. Leaving the edit of a saved document with changes asks first.
@@ -299,7 +287,8 @@ fun ReviewScreen(
     }
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
-    val onPeek: (PeekRequest?) -> Unit = remember { { r -> if (r != null) peekRequest = r else if (enlarged == null) peekRequest = null } }
+    // The keyboard closes: the photo has the whole screen.
+    val onPeek: (PeekRequest) -> Unit = remember { { r -> focusManager.clearFocus(); viewingPage = null; viewing = r } }
     // A replacement under every value the app could not settle (worked out by the view model as the operator edits).
     val replacements = state.replacements
     val toCheck = rows.count { r -> (r is CardRow && r.item.needsLook(state.errors, state.draft.lotsPrinted)) || (r is TopRow && r.key == HEADER && state.draft.headerNeedsLook(state.errors)) }
@@ -391,7 +380,7 @@ fun ReviewScreen(
         add(CustomAccessibilityAction(labelTotals) { jumpTotals(); true })
     }
     var dragFrom by remember { mutableStateOf<Pair<Int, Int>?>(null) }
-    CompositionLocalProvider(LocalFieldPeek provides onPeek, LocalReplacements provides replacements) {
+    CompositionLocalProvider(LocalFieldPeek provides onPeek.takeIf { state.filePath != null }, LocalReplacements provides replacements) {
     Box(Modifier.fillMaxSize()) {
     AppScaffold(
         title = title,
@@ -521,14 +510,13 @@ fun ReviewScreen(
                     }
                 }
             }
-            // Above "Next to check" and the Save bar. A drag closes the photo strip and the keyboard (the jumps it
-            // makes do not count as the operator scrolling the list), then offers the way back.
+            // Above "Next to check" and the Save bar. A drag closes the keyboard (the jumps it makes do not count as the
+            // operator scrolling the list), then offers the way back.
             FastScrollbar(
                 listState,
                 label = ::labelAt,
                 bottomInset = 88.dp,
                 onGrab = {
-                    peekRequest = null
                     focusManager.clearFocus()
                     dragFrom = here()
                 },
@@ -543,48 +531,18 @@ fun ReviewScreen(
             }
         }
     }
-    val shown = peekImage
-    val req = peekRequest
-    AnimatedVisibility(
-        visible = shown != null && req != null && !peekClosed,
-        enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { -it / 3 },
-        exit = androidx.compose.animation.fadeOut(),
-        modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
-    ) {
-        // The last picture stays while it fades out.
-        val last = remember { mutableStateOf<Pair<String, PeekImage>?>(null) }
-        if (shown != null && req != null) last.value = req.label to shown
-        last.value?.let { (label, img) ->
-            FieldPeekCard(
-                label = label,
-                img = img,
-                onEnlarge = { enlarged = label to img },
-                onClose = { peekClosed = true },
-            )
-        }
-    }
-    AnimatedVisibility(
-        visible = peekMissing && peekRequest != null && !peekClosed,
-        enter = androidx.compose.animation.fadeIn(),
-        exit = androidx.compose.animation.fadeOut(),
-        modifier = Modifier.align(Alignment.TopCenter).statusBarsPadding().padding(top = 64.dp),
-    ) {
-        Surface(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp),
-            shape = MaterialTheme.shapes.small,
-            color = Palette.Panel,
-            border = androidx.compose.foundation.BorderStroke(1.dp, Palette.HairlineStrong),
-            shadowElevation = 6.dp,
-        ) {
-            Row(Modifier.padding(start = 12.dp), verticalAlignment = Alignment.CenterVertically) {
-                Text(stringResource(R.string.peek_not_found), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.weight(1f))
-                TextButton(onClick = { peekClosed = true; onViewOriginal() }, modifier = Modifier.heightIn(min = 48.dp)) { Text(stringResource(R.string.peek_open_original)) }
-            }
-        }
     }
     }
+    viewing?.let { r ->
+        FieldPhotoViewer(
+            label = r.label,
+            img = viewerImage,
+            failed = viewerFailed,
+            onPage = { viewingPage = it },
+            onOpenOriginal = { viewing = null; onViewOriginal() },
+            onDismiss = { viewing = null },
+        )
     }
-    enlarged?.let { (label, img) -> FieldPeekDialog(label, img) { enlarged = null } }
 
     // ---------------------------------------------------------------- dialogs & sheets
 
@@ -1460,6 +1418,8 @@ private fun ItemInput(
         missingHint = missingHint,
         highlightMissing = !optional,
         replacements = LocalReplacements.current[com.kitchenreceipts.core.Replacements.item(item.key, field.key)].orEmpty(),
+        // A value of the line not printed (a missing quantity): its line's row is shown instead.
+        rowHint = item.description.source?.takeIf { it.isNotBlank() } ?: item.description.text.takeIf { it.isNotBlank() },
     )
 }
 

@@ -40,6 +40,7 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import com.kitchenreceipts.app.ui.theme.pressScale
 import androidx.compose.ui.Alignment
@@ -246,18 +247,15 @@ fun ReviewField(
     highlightMissing: Boolean = true,
     /** Other readings of a doubtful or missing value, offered under the field: one tap takes one (see core Replacements). */
     replacements: List<String> = emptyList(),
+    /** The printed row of the value's line, shown on the photo when the value itself is not printed there. */
+    rowHint: String? = null,
 ) {
     val status = LocalStatusColors.current
-    // Where this value was read on the photo, shown while the field is being checked (review screen only).
+    // Where this value was read on the photo, on request (review screen only): "See on the photo" under a value to
+    // check, and an icon in the field being edited. Nothing opens by itself.
     val peek = LocalFieldPeek.current
-    val currentField = androidx.compose.runtime.rememberUpdatedState(field)
-    val hadFocus = androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
-    // A focused field removed from the screen (its line deleted, the list recycled it) closes its photo strip too.
-    if (peek != null) {
-        androidx.compose.runtime.DisposableEffect(Unit) {
-            onDispose { if (hadFocus.value) { hadFocus.value = false; peek(null) } }
-        }
-    }
+    var focused by androidx.compose.runtime.remember { androidx.compose.runtime.mutableStateOf(false) }
+    val openPhoto: () -> Unit = { peek?.invoke(PeekRequest(label, field.source, field.text, rowHint)) }
     // Black field, hairline border, green when focused; orange when the value needs a look.
     // The colours change smoothly: a value confirmed fades from orange to the plain field.
     val plain = error == null && !field.uncertain && !(field.isMissing && highlightMissing)
@@ -330,27 +328,24 @@ fun ReviewField(
                     }
                 }
             }
-            trailing != null -> trailing
-            else -> null
-        },
-        modifier = Modifier.fillMaxWidth().let { m ->
-            if (peek == null) {
-                m
-            } else {
-                m.onFocusChanged { f ->
-                    // Only this field gaining or losing focus counts (fields also report "not focused" when first shown).
-                    if (f.isFocused) {
-                        hadFocus.value = true
-                        peek(PeekRequest(label, currentField.value.source, currentField.value.text))
-                    } else if (hadFocus.value) {
-                        hadFocus.value = false
-                        peek(null)
+            // The photo icon only in the field being edited: the form stays plain, and the field keeps its height.
+            peek != null && focused -> {
+                {
+                    androidx.compose.foundation.layout.Row(verticalAlignment = Alignment.CenterVertically) {
+                        PeekIconButton(openPhoto)
+                        trailing?.invoke()
                     }
                 }
             }
+            trailing != null -> trailing
+            else -> null
         },
+        modifier = Modifier.fillMaxWidth().let { m -> if (peek == null) m else m.onFocusChanged { focused = it.isFocused } },
     )
-    // The app's other readings of a value it could not settle: one tap replaces it (and counts as checked).
+    // A value to check: "See on the photo" first, then the app's other readings (one tap replaces it and counts as
+    // checked). Always there while the value is to be checked, so nothing jumps when a field is tapped.
+    val flagged = field.uncertain || (field.isMissing && highlightMissing)
+    if (peek != null && flagged) PeekChip(openPhoto)
     if ((field.uncertain || field.isMissing) && replacements.isNotEmpty()) {
         replacements.forEach { r ->
             androidx.compose.material3.AssistChip(

@@ -562,7 +562,6 @@
     <string name="close">Close</string>
     <string name="peek_title">%1$s on the photo</string>
     <string name="peek_title_row">%1$s: its row on the photo</string>
-    <string name="peek_hint">Tap the picture to enlarge it.</string>
     <string name="choice_title">These numbers add up in more than one way. Which is printed? (Remembered for this supplier.)</string>
     <string name="choice_option">%1$s × %2$s = %3$s</string>
     <string name="choice_suggested">AI suggests</string>
@@ -598,7 +597,6 @@
     <string name="discount_short" formatted="false">Disc. %</string>
     <string name="more_details">More details (pack, discount, expiry)</string>
     <string name="fewer_details">Fewer details</string>
-    <string name="peek_not_found">This value\'s place was not found on the photo.</string>
     <string name="peek_open_original">Open the photo</string>
     <string name="reason_lots_missing">Some lines have no lot number, but this document prints lots.</string>
     <string name="vat_group_line">%1$s%%: lines %2$s, summary %3$s (difference %4$s)</string>

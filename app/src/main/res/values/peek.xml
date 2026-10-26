@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- A value of the check screen on the photo, full screen, on request -->
+    <string name="peek_button">See on the photo</string>
+    <!-- The viewer's title when the value's place was not found: the field's name -->
+    <string name="peek_title_page">%1$s: the whole page</string>
+    <string name="peek_whole_page">Its place was not found on the photo: here is the whole page.</string>
+    <string name="peek_failed">The photo cannot be shown here.</string>
+    <!-- TalkBack: the picture, with the field's name -->
+    <string name="peek_picture">Photo of the page: %1$s</string>
+    <string name="peek_zoom_in">Zoom in</string>
+    <string name="peek_zoom_out">Zoom out</string>
+    <string name="peek_whole">Whole page</string>
+    <string name="peek_back_to_value">Back to the value</string>
+    <string name="peek_page">Page %1$d of %2$d</string>
+</resources>

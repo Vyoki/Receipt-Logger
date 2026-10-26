@@ -150,7 +150,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     private var ocrPages: List<List<com.kitchenreceipts.core.OcrLine>> = emptyList()
     private var ocrWidths: List<Int> = emptyList()
     private var ocrHeights: List<Int> = emptyList()
-    private var peekPage: Pair<Int, android.graphics.Bitmap>? = null
+    private var cachedPage: Pair<Int, android.graphics.Bitmap>? = null
     private var openedAt = System.currentTimeMillis()
 
     /**
@@ -524,38 +524,50 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
 
     // ------------------------------------------------------------ where a value is on the photo
 
-    /** The part of the page photo a field was read from, with the value outlined; null when it cannot be found. */
-    suspend fun peek(source: String?, value: String): com.kitchenreceipts.app.ui.components.PeekImage? {
+    /**
+     * The page a field was read from, with the value (or its row, or its line's row) to outline; the first page,
+     * whole, when its place is not found. Null when the page cannot be drawn.
+     */
+    suspend fun peek(r: com.kitchenreceipts.app.ui.components.PeekRequest): com.kitchenreceipts.app.ui.components.PeekImage? {
+        val spot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
+            com.kitchenreceipts.core.FieldLocator.locate(ocrPages, r.source, r.value)
+                ?: r.rowHint?.let { com.kitchenreceipts.core.FieldLocator.locate(ocrPages, it, "") }
+        } ?: return peekPage(0)
+        val page = pageBitmap(spot.page) ?: return null
+        val scale = page.width.toFloat() / (ocrWidths.getOrNull(spot.page) ?: page.width).coerceAtLeast(1)
+        fun box(b: com.kitchenreceipts.core.PageBox) =
+            com.kitchenreceipts.core.PeekView.Box(b.left * scale, b.top * scale, b.right * scale, b.bottom * scale)
+        return com.kitchenreceipts.app.ui.components.PeekImage(
+            page, spot.page, storedFile?.pageCount ?: 1, box(spot.mark), box(spot.area), spot.lineHeight * scale, spot.exact,
+        )
+    }
+
+    /** A whole page of the document (from 0), nothing outlined. */
+    suspend fun peekPage(index: Int): com.kitchenreceipts.app.ui.components.PeekImage? {
+        val count = storedFile?.pageCount ?: 1
+        val i = index.coerceIn(0, (count - 1).coerceAtLeast(0))
+        val page = pageBitmap(i) ?: return null
+        return com.kitchenreceipts.app.ui.components.PeekImage(page, i, count, null, null, 0f, false)
+    }
+
+    /**
+     * The page drawn at the resolution it was read at, kept for the next look. The one before is let go, not
+     * recycled: the viewer may still be drawing it.
+     */
+    private suspend fun pageBitmap(index: Int): android.graphics.Bitmap? {
+        cachedPage?.takeIf { it.first == index }?.let { return it.second }
         val path = storedFile?.relativePath ?: return null
         val mime = storedFile?.mimeType ?: return null
-        val spot = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Default) {
-            com.kitchenreceipts.core.FieldLocator.locate(ocrPages, source, value)
-        } ?: return null
-        val page = peekPage?.takeIf { it.first == spot.page }?.second ?: run {
-            val bmp = runCatching {
-                c.pageRenderer.renderForReading(path, mime, spot.page, com.kitchenreceipts.app.ocr.ImportProcessor.OCR_LONG_SIDE)
-            }.getOrNull() ?: return null
-            peekPage?.second?.recycle()
-            peekPage = spot.page to bmp
-            bmp
-        }
-        val scale = page.width.toFloat() / (ocrWidths.getOrNull(spot.page) ?: page.width).coerceAtLeast(1)
-        fun px(v: Int, max: Int) = (v * scale).toInt().coerceIn(0, max)
-        val l = px(spot.area.left, page.width - 1); val t = px(spot.area.top, page.height - 1)
-        val r = px(spot.area.right, page.width).coerceAtLeast(l + 1); val b = px(spot.area.bottom, page.height).coerceAtLeast(t + 1)
-        val crop = android.graphics.Bitmap.createBitmap(page, l, t, r - l, b - t)
-            .let { if (it === page) it.copy(android.graphics.Bitmap.Config.ARGB_8888, false) else it }
-        fun fx(v: Int) = ((v * scale - l) / (r - l)).coerceIn(0f, 1f)
-        fun fy(v: Int) = ((v * scale - t) / (b - t)).coerceIn(0f, 1f)
-        return com.kitchenreceipts.app.ui.components.PeekImage(
-            crop, fx(spot.mark.left), fy(spot.mark.top), fx(spot.mark.right), fy(spot.mark.bottom), spot.exact,
-        )
+        val bmp = runCatching {
+            c.pageRenderer.renderForReading(path, mime, index, com.kitchenreceipts.app.ocr.ImportProcessor.OCR_LONG_SIDE)
+        }.getOrNull() ?: return null
+        cachedPage = index to bmp
+        return bmp
     }
 
     override fun onCleared() {
         if (documentId == null) jobId?.let { c.importQueue.reviewing(it, false) }
-        peekPage?.second?.recycle()
-        peekPage = null
+        cachedPage = null
         // The last corrections, if the short wait before keeping them had not passed yet (a small file).
         if (!finished && !_state.value.loading && _state.value.savedId == null) writeKept(_state.value.draft)
     }

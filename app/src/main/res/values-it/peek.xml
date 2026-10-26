@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="peek_button">Vedi sulla foto</string>
+    <string name="peek_title_page">%1$s: la pagina intera</string>
+    <string name="peek_whole_page">Il suo punto non è stato trovato sulla foto: ecco la pagina intera.</string>
+    <string name="peek_failed">La foto non si può mostrare qui.</string>
+    <string name="peek_picture">Foto della pagina: %1$s</string>
+    <string name="peek_zoom_in">Ingrandisci</string>
+    <string name="peek_zoom_out">Rimpicciolisci</string>
+    <string name="peek_whole">Pagina intera</string>
+    <string name="peek_back_to_value">Torna al valore</string>
+    <string name="peek_page">Pagina %1$d di %2$d</string>
+</resources>

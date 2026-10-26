@@ -550,7 +550,6 @@
     <string name="close">Chiudi</string>
     <string name="peek_title">%1$s sulla foto</string>
     <string name="peek_title_row">%1$s: la sua riga sulla foto</string>
-    <string name="peek_hint">Tocca l\'immagine per ingrandirla.</string>
     <string name="choice_title">Questi numeri tornano in più di un modo. Quale è stampato? (Viene ricordato per questo fornitore.)</string>
     <string name="choice_option">%1$s × %2$s = %3$s</string>
     <string name="choice_suggested">suggerito dall\'IA</string>
@@ -586,7 +585,6 @@
     <string name="discount_short" formatted="false">Sc. %</string>
     <string name="more_details">Altri dettagli (formato, sconto, scadenza)</string>
     <string name="fewer_details">Meno dettagli</string>
-    <string name="peek_not_found">Il punto di questo valore non è stato trovato nella foto.</string>
     <string name="peek_open_original">Apri la foto</string>
     <string name="reason_lots_missing">Alcune righe non hanno il lotto, ma il documento riporta i lotti.</string>
     <string name="vat_group_line">%1$s%%: righe %2$s, riepilogo %3$s (differenza %4$s)</string>
