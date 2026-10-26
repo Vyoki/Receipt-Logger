@@ -642,7 +642,11 @@ class ReceiptRepository(
             if (item.productId != null || item.description.text.isBlank()) return@map item
             // Discounts and charges are never products: no link, no new product.
             if (item.isCharge) return@map item.copy(newProductName = null, productSource = null)
-            val remembered = sellerId?.let { rememberedProduct(it, item.description.text, item.itemCode) }
+            // A name joined from two printed lines: earlier documents may have saved it under its first line only.
+            val remembered = sellerId?.let { id ->
+                rememberedProduct(id, item.description.text, item.itemCode)
+                    ?: item.nameFirstLine?.let { rememberedProduct(id, it, null) }
+            }
             if (remembered != null && names.containsKey(remembered)) {
                 return@map item.copy(productId = remembered, productName = names[remembered], productSource = ProductSource.REMEMBERED, newProductName = null)
             }

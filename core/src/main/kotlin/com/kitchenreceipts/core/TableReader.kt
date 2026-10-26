@@ -28,7 +28,11 @@ object TableReader {
     data class Header(val columns: List<Column>, val hasLotColumn: Boolean = false, val qtyPzOrKg: Boolean = false)
 
     /** [conf]: how sure the OCR was of the word (1 = not said); [spaced]: part of a name printed letter by letter. */
-    private data class Word(val text: String, val left: Double, val right: Double, val conf: Float = 1f, val spaced: Boolean = false) {
+    /** [top] and [bottom]: where the word's line is on the page (0 when not known). */
+    private data class Word(
+        val text: String, val left: Double, val right: Double, val conf: Float = 1f, val spaced: Boolean = false,
+        val top: Double = 0.0, val bottom: Double = 0.0,
+    ) {
         val center: Double get() = (left + right) / 2
     }
 
@@ -193,25 +197,25 @@ object TableReader {
             // and its discount); the sign is neither.
             val cut = w.left + (w.right - w.left) * mark.groupValues[1].length / w.text.length
             val after = w.left + (w.right - w.left) * (mark.groupValues[1].length + 1) / w.text.length
-            return@flatMap listOf(Word(mark.groupValues[1], w.left, cut), Word(mark.groupValues[2], after, w.right))
+            return@flatMap listOf(w.copy(text = mark.groupValues[1], right = cut), w.copy(text = mark.groupValues[2], left = after))
         }
         val text = OcrCleanup.fixWordToken(OcrCleanup.fixNumericToken(w.text))
         val pd = PRICE_WITH_DISCOUNT.matchEntire(text)
         if (pd != null) {
             // "13,20010+10": the unit price and a cascaded discount printed without a space.
             val cut = w.left + (w.right - w.left) * pd.groupValues[1].length / text.length
-            return@flatMap listOf(Word(pd.groupValues[1], w.left, cut), Word(pd.groupValues[2], cut, w.right))
+            return@flatMap listOf(w.copy(text = pd.groupValues[1], right = cut), w.copy(text = pd.groupValues[2], left = cut))
         }
         val m = CODE_WITH_COLLI.find(text)
         val g = GLUED_SIZE.matchEntire(text)
         if (g != null && m == null) {
             // "KG1", "GR400": pack size printed without a space.
             val cut = w.left + (w.right - w.left) * g.groupValues[1].length / text.length
-            listOf(Word(g.groupValues[1], w.left, cut), Word(g.groupValues[2], cut, w.right))
+            listOf(w.copy(text = g.groupValues[1], right = cut), w.copy(text = g.groupValues[2], left = cut))
         } else if (m != null) {
             // "10000032x3": article code 1000003 and colli 2x3 printed without a space.
             val cut = w.left + (w.right - w.left) * m.groupValues[1].length / text.length
-            listOf(Word(m.groupValues[1], w.left, cut), Word(m.groupValues[2], cut, w.right))
+            listOf(w.copy(text = m.groupValues[1], right = cut), w.copy(text = m.groupValues[2], left = cut))
         } else {
             listOf(w.copy(text = text))
         }
@@ -220,7 +224,9 @@ object TableReader {
     private fun rawWords(line: OcrLine, slope: Double): List<Word> {
         val y = line.centerY
         if (line.words.isNotEmpty()) {
-            return line.words.filter { it.text.isNotBlank() }.map { Word(it.text.trim(), it.left + slope * it.centerY, it.right + slope * it.centerY, it.confidence) }
+            return line.words.filter { it.text.isNotBlank() }.map {
+                Word(it.text.trim(), it.left + slope * it.centerY, it.right + slope * it.centerY, it.confidence, top = it.top.toDouble(), bottom = it.bottom.toDouble())
+            }
         }
         val text = line.text
         if (text.isBlank()) return emptyList()
@@ -231,7 +237,10 @@ object TableReader {
             if (text[i] == ' ') { i++; continue }
             val start = i
             while (i < text.length && text[i] != ' ') i++
-            out += Word(text.substring(start, i), line.left + start * perChar + slope * y, line.left + i * perChar + slope * y, line.confidence)
+            out += Word(
+                text.substring(start, i), line.left + start * perChar + slope * y, line.left + i * perChar + slope * y, line.confidence,
+                top = line.top.toDouble(), bottom = line.bottom.toDouble(),
+            )
         }
         return out
     }
@@ -250,6 +259,10 @@ object TableReader {
     /** A row that starts with a weight label ("Peso netto 12,40", "PESO: 8,00"): no item unless quantity x price = amount. */
     private val WEIGHT_LABEL = Regex("(?i)^\\W*peso\\b")
     /** Quality marks printed in brackets inside a name: never a code's kind. */
+    /** The kinds of article code the e-invoice prints in brackets after a code ("CodiceTipo"). */
+    /** A word cut at the end of a line by a hyphen ("SALSIC-"). */
+    private val HYPHEN_CUT = Regex("\\p{L}{2,}-$")
+    private val CODE_KINDS = Regex("(?i)^(codice\\s+articolo|cod\\.?\\s*art\\.?|articolo|interno|fornitore|cod\\.?\\s*forn\\.?|ean|sku|proprio|carb)$")
     private val QUALITY_MARKS = setOf("DOP", "IGP", "BIO", "DOC", "DOCG", "IGT", "STG")
     private const val NAME_CONTINUES = "the name continues on the next printed line"
     private const val SEVERAL_LOTS = "several lots printed for this line: "
@@ -490,7 +503,10 @@ object TableReader {
                     var e = k + 1
                     if (zone[k].text[0].isLetter()) while (e < zone.size && zone[e].text[0].isLetter()) e++
                     val part = zone.subList(k, e)
-                    out += Word(part.joinToString("") { it.text }, part.first().left, part.last().right, part.minOf { it.conf }, spaced = true)
+                    out += Word(
+                        part.joinToString("") { it.text }, part.first().left, part.last().right, part.minOf { it.conf }, spaced = true,
+                        top = part.minOf { it.top }, bottom = part.maxOf { it.bottom },
+                    )
                     k = e
                 }
             } else out += zone
@@ -510,13 +526,15 @@ object TableReader {
         val open = row.indexOfFirst { it.text == "(" || it.text.startsWith("(") }
         if (open !in 1..2) return row
         val code = row[open - 1]
-        if (!code.text.any(Char::isDigit) || cols[columnIndex(code.center, cols)].kind != Kind.CODE) return row
+        if (cols[columnIndex(code.center, cols)].kind != Kind.CODE) return row
         // The bracket itself is printed in the code cell, not at the start of the name.
         if (cols[columnIndex(row[open].center, cols)].kind != Kind.CODE) return row
         val close = (open until minOf(row.size, open + 5)).firstOrNull { row[it].text == ")" || row[it].text.endsWith(")") } ?: return row
         val inside = row.subList(open, close + 1).joinToString(" ") { it.text }.trim('(', ')', ' ')
         if (inside.isEmpty() || inside.length > 24 || inside.count(Char::isLetter) < 2 || inside.any(Char::isDigit)) return row
         if (inside.uppercase() in QUALITY_MARKS) return row
+        // A code of letters only ("X", which some programs print for no code) only with a kind the e-invoice names.
+        if (!code.text.any(Char::isDigit) && !CODE_KINDS.matches(inside)) return row
         return row.subList(0, open) + row.subList(close + 1, row.size)
     }
 
@@ -606,6 +624,12 @@ object TableReader {
         var rowPriced = false
         // The item a words-only row printed right under it may continue (PDF text only): see [NAME_CONTINUES].
         var runsOn: Int? = null
+        // That row, when everything says the name wrapped onto it (see [wrapsOnto]): it is the rest of the name.
+        var wrapWords: List<Word>? = null
+        // The row that made the last item.
+        var lastItemRow: List<Word>? = null
+        // How far right the item names reach: a name cut where the column ends wrapped (see [wrapsOnto]).
+        val nameEdge = if (textLayer) nameEdge(rows, header) else null
         // This row took the words-only row above as its name.
         var tookName = false
         var lastRowAddedItem = false
@@ -735,7 +759,10 @@ object TableReader {
                         pendingDescription = desc.takeIf { it.count(Char::isLetter) >= 3 }
                         // Words only, under the name of the item printed right above: maybe the rest of its name.
                         if (textLayer && lastRowAddedItem && pendingDescription != null && cells.keys.all { it == Kind.DESCRIPTION } &&
-                            !ReceiptParser.isSectionHeading(desc)) runsOn = items.lastIndex
+                            !ReceiptParser.isSectionHeading(desc)) {
+                            runsOn = items.lastIndex
+                            wrapWords = cells[Kind.DESCRIPTION].orEmpty().takeIf { w -> wrapsOnto(lastItemRow, w, header, nameEdge) }
+                        }
                     }
                 }
                 item.originalDescription.isBlank() -> {
@@ -757,30 +784,80 @@ object TableReader {
             return true
         }
 
-        /** The words-only row under item [i] was not the name of a numbers row below it: the name may be cut short. */
-        fun nameContinues(i: Int) {
+        /**
+         * The words-only row under item [i] was not the name of a numbers row below it: the rest of its name when the
+         * name wrapped onto it ([wrapped]), joined; otherwise the name may be cut short, and is shown for a look.
+         */
+        fun nameContinues(i: Int, wrapped: List<Word>?) {
             val it = items.getOrNull(i) ?: return
-            items[i] = it.copy(nameNote = it.nameNote ?: NAME_CONTINUES)
+            // The rest as printed: no marker letter taken off its start (it may begin with a one-letter word, "E" or "A").
+            val rest = wrapped?.joinToString(" ") { it.text.trim() }?.trim()?.takeIf { r -> r.count(Char::isLetterOrDigit) >= 2 }
+            items[i] = if (rest != null && it.nameNote == null) {
+                it.copy(originalDescription = it.originalDescription + " " + rest, nameFirstLine = it.originalDescription)
+            } else {
+                it.copy(nameNote = it.nameNote ?: NAME_CONTINUES)
+            }
         }
 
         for (row in rows) {
             if (row.isEmpty()) continue
             val count = items.size
             val continued = runsOn
+            val wrapped = wrapWords
             runsOn = null
+            wrapWords = null
             tookName = false
             rowPriced = false
             val more = readRow(row)
-            if (continued != null && !tookName) nameContinues(continued)
+            if (continued != null && !tookName) nameContinues(continued, wrapped)
             lastRowAddedItem = items.size > count
-            if (lastRowAddedItem) pricedSinceItem = false else if (rowPriced) pricedSinceItem = true
+            if (lastRowAddedItem) { pricedSinceItem = false; lastItemRow = row } else if (rowPriced) pricedSinceItem = true
             if (!more) break
         }
-        runsOn?.let { nameContinues(it) }
+        runsOn?.let { nameContinues(it, wrapWords) }
         return items
     }
 
     /** Puts each word of a row under a column. */
+    /**
+     * Where the item names end on the right, when at least two priced rows' names end there (within a character):
+     * the edge of the description column, where a long name is cut and goes on below. Null otherwise.
+     */
+    private fun nameEdge(rows: List<List<Word>>, header: Header): Double? {
+        val ends = rows.filter { r -> r.any { isMoney(it.text) } }
+            .mapNotNull { r -> assign(r, header)[Kind.DESCRIPTION]?.takeIf { it.isNotEmpty() }?.let { w -> w.maxOf { it.right } to charWidth(w) } }
+        if (ends.size < 2) return null
+        val edge = ends.maxOf { it.first }
+        return edge.takeIf { e -> ends.count { (r, c) -> r >= e - 1.5 * c } >= 2 }
+    }
+
+    private fun charWidth(words: List<Word>): Double =
+        words.sumOf { it.right - it.left } / words.sumOf { it.text.length }.coerceAtLeast(1)
+
+    /**
+     * A name wrapped onto the next printed line (PDF text only): the item's name reached the column's edge
+     * ([nameEdge]), and the words under it start where the name starts, on the very next line of print (the gap
+     * well under the space between two items: less than half a line), at the same size. Then they are the rest of
+     * its name. Anything less clear stays a name to look at ([NAME_CONTINUES]).
+     */
+    private fun wrapsOnto(itemRow: List<Word>?, words: List<Word>, header: Header, nameEdge: Double?): Boolean {
+        if (itemRow == null || words.isEmpty()) return false
+        val name = assign(itemRow, header)[Kind.DESCRIPTION].orEmpty()
+        if (name.isEmpty() || name.any { it.bottom <= it.top } || words.any { it.bottom <= it.top }) return false
+        val c = charWidth(name)
+        // Cut where the column ends, or at a hyphen ("SALSIC-" over "CIA FRESCA").
+        val full = (nameEdge != null && name.maxOf { it.right } >= nameEdge - 1.5 * c) || HYPHEN_CUT.containsMatchIn(name.last().text)
+        // Where the name starts: its first word from about where the words under it start (a code's kind printed
+        // in the code cell before it is no part of the name's column).
+        val from = words.minOf { it.left }
+        val start = name.filter { it.right > from - 1.5 * c }.minOfOrNull { it.left } ?: return false
+        val sameStart = kotlin.math.abs(from - start) <= 1.5 * c
+        val h = name.maxOf { it.bottom } - name.minOf { it.top }
+        val gap = words.minOf { it.top } - name.maxOf { it.bottom }
+        val wh = words.maxOf { it.bottom } - words.minOf { it.top }
+        return full && sameStart && h > 0 && gap >= -0.1 * h && gap < 0.45 * h && wh in 0.6 * h..1.4 * h
+    }
+
     private fun assign(row: List<Word>, header: Header): Map<Kind, List<Word>> {
         val cols = header.columns
         val mapped = mapRow(row, header)

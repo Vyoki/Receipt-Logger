@@ -13,6 +13,8 @@ package com.kitchenreceipts.core
  *    except the customer's box, carriers, banks and parent companies;
  *  - the website, email or PEC address (abcsrl.it, abcsrl@pec.it), which confirms a spelling without giving one;
  *  - the phone's own registry: the supplier saved before under this VAT number ([ParseOptions.supplierByVat]);
+ *  - the supplier's box in the document's own text (a digital PDF, not a photo) with a valid VAT number in it: the
+ *    name and the number as the invoice was issued, read without the camera ([Kind.EXACT_BOX]);
  *  - the AI's reading of those places (see [withAi]).
  *
  * Two places on different lines that spell the name the same way prove it. One reading alone leaves it unproven
@@ -20,7 +22,7 @@ package com.kitchenreceipts.core
  */
 object SupplierProof {
 
-    enum class Kind { READING, SUPPLIER_BOX, COMPANY_LINE, WEB, REGISTRY, AI }
+    enum class Kind { READING, SUPPLIER_BOX, COMPANY_LINE, WEB, REGISTRY, AI, EXACT_BOX }
 
     /**
      * One place the name was read. [name] is null for a web address (it confirms, it does not spell). [line] is the
@@ -65,7 +67,15 @@ object SupplierProof {
     /** Mailbox names that are not a company: info@, amministrazione@... */
     private val GENERIC_MAILBOX = rx("^(info|amministrazione|ammin\\w*|ordini|ordine|commerciale|vendite|fatture|fatturazione|contabilita|segreteria|ufficio\\w*|direzione|posta|mail|pec|sales|office|admin|acquisti|logistica|magazzino)$")
 
-    fun collect(pages: List<List<String>>, reading: Extracted<String>?, boxName: String?, options: ParseOptions, boxVat: String? = null): List<Source> {
+    fun collect(
+        pages: List<List<String>>,
+        reading: Extracted<String>?,
+        boxName: String?,
+        options: ParseOptions,
+        boxVat: String? = null,
+        /** The box was read from the document's own text (see [Kind.EXACT_BOX]). */
+        exactBox: Boolean = false,
+    ): List<Source> {
         val ownVat = options.ownVatNumber?.filter(Char::isDigit)?.takeIf { it.length >= 8 }
         val ownName = DuplicateDetector.normalizeSeller(options.ownBusinessName)?.takeIf { it.length >= 4 }
         val all = pages.joinToString("\n") { it.joinToString("\n") }
@@ -145,9 +155,26 @@ object SupplierProof {
         if (boxName != null && !own(boxName)) {
             val (page, line) = placeOf(boxName)
             out += Source(Kind.SUPPLIER_BOX, boxName, null, page, line, anchor = true)
+            // The name and a valid VAT number in the supplier's own box, as the invoice was issued (a digital PDF's
+            // text, no camera): a place of its own, like the registry. Not when the number is the operator's.
+            val vat = boxVat?.filter(Char::isDigit)
+            if (exactBox && vat != null && vat != ownVat && SellerProfiles.isValidPartitaIva(vat) && plainName(boxName)) {
+                out += Source(Kind.EXACT_BOX, boxName, null, -1, "exact text: supplier box with VAT $vat", anchor = true)
+            }
         }
         return out
     }
+
+    /** Words of a form, not of a name: a box whose name took in its labels or address is never proof on its own. */
+    private val FORM_WORDS = rx(
+        "(?i)\\b(dati|anagrafic\\w*|nome|cognome|denominazione|ragione|sociale|sede|indirizzo|civico|cap|comune|provincia|" +
+            "nazione|partita|codice|fiscale|regime|telefono|tel|fax|email|pec|via|viale|piazza|corso|strada|localit\\w*|frazione)\\b",
+    )
+
+    /** A name as printed alone: no label (no colon, no form words), no postal code, at most eight words. */
+    private fun plainName(name: String): Boolean =
+        ':' !in name && !FORM_WORDS.containsMatchIn(name) && !rx("\\b\\d{5}\\b").containsMatchIn(name) &&
+            name.split(' ').count { it.isNotBlank() } <= 8 && name.count(Char::isLetter) >= 3
 
     /** "abc-srl" -> "abc", "verdefrescospa" -> "verdefresco": letters and digits only, without a legal form at the end. */
     private fun stem(s: String): String? {
@@ -179,7 +206,9 @@ object SupplierProof {
         // the same company, a misread letter included. A different company printed elsewhere never replaces it: who
         // the supplier is was decided by the reading (customer's box, own VAT number...); here only its spelling and
         // its proof are settled.
-        val identity = named.filter { it.kind == Kind.READING || it.kind == Kind.SUPPLIER_BOX || it.kind == Kind.REGISTRY || it.kind == Kind.AI }
+        val identity = named.filter {
+            it.kind == Kind.READING || it.kind == Kind.SUPPLIER_BOX || it.kind == Kind.REGISTRY || it.kind == Kind.AI || it.kind == Kind.EXACT_BOX
+        }
             .ifEmpty { anchored }
         val inPlay = named.filter { s ->
             s in identity || identity.any { a -> SellerProfiles.sameCompanyOrMisread(a.name!!, s.name!!) }
@@ -189,7 +218,9 @@ object SupplierProof {
         // Support: the independent places that spell it exactly this way (one per printed line; the registry and the
         // AI count as places of their own), plus a web address with that name.
         fun support(k: String, group: List<Source>): Int {
-            val places = group.map { if (it.kind == Kind.REGISTRY || it.kind == Kind.AI) it.kind.name else "${it.page}|${norm(it.line)}" }.distinct().size
+            val places = group.map {
+                if (it.kind == Kind.REGISTRY || it.kind == Kind.AI || it.kind == Kind.EXACT_BOX) it.kind.name else "${it.page}|${norm(it.line)}"
+            }.distinct().size
             return places + webs.map { it.stem }.distinct().count { webSupports(it!!, k) }
         }
         val ranked = byKey.map { (k, g) -> Triple(k, g, support(k, g)) }
@@ -236,7 +267,7 @@ object SupplierProof {
 
     /** Which spelling to show first on a tie: the AI (it sees the picture) and printed lines over the camera's logo. */
     private fun rank(k: Kind) = when (k) {
-        Kind.REGISTRY -> 0; Kind.AI -> 1; Kind.SUPPLIER_BOX -> 2; Kind.COMPANY_LINE -> 3; Kind.READING -> 4; Kind.WEB -> 5
+        Kind.REGISTRY -> 0; Kind.AI -> 1; Kind.EXACT_BOX -> 2; Kind.SUPPLIER_BOX -> 2; Kind.COMPANY_LINE -> 3; Kind.READING -> 4; Kind.WEB -> 5
     }
 
     /** The cleanest spelling in a group: with its legal form, from a printed line rather than the logo. */
@@ -252,8 +283,8 @@ object SupplierProof {
      * The supplier as proven: sure only when proven; otherwise highlighted (and asked to the AI), with the other
      * spellings read when they disagree. A reading the camera found clear is no longer sure on its own.
      */
-    fun apply(doc: ParsedDocument, pages: List<List<String>>, box: Parties.Supplier?, options: ParseOptions): ParsedDocument {
-        val sources = collect(pages, doc.sellerName, box?.name?.value, options, box?.vatNumber)
+    fun apply(doc: ParsedDocument, pages: List<List<String>>, box: Parties.Supplier?, options: ParseOptions, exactBox: Boolean = false): ParsedDocument {
+        val sources = collect(pages, doc.sellerName, box?.name?.value, options, box?.vatNumber, exactBox)
         val r = judge(sources)
         return applyResult(doc, r)
     }

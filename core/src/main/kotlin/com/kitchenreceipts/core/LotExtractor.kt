@@ -94,7 +94,8 @@ object LotExtractor {
     /** "03/2031": a month and year (a best-before), never a lot even when labelled. */
     fun monthYear(token: String): Boolean = MONTH_YEAR.matches(token.trim())
 
-    private val DELIVERY_NOTE = Regex("(?i)(\\bd\\.?\\s?d\\.?\\s?t\\b\\.?|\\bdoc(?:umento|\\.)?\\s+di\\s+trasporto\\b)")
+    // "DDT", "D.D.T.", "DDT09" (a delivery-note type code), "Documento di trasporto".
+    private val DELIVERY_NOTE = Regex("(?i)(\\bd\\.?\\s?d\\.?\\s?t(?:\\b\\.?|(?=\\d))|\\bdoc(?:umento|\\.)?\\s+di\\s+trasporto\\b)")
 
     /**
      * A delivery-note reference printed among the lines ("DDT 77/ZZ del 03-02-2031", "Documento di trasporto n. 12 del

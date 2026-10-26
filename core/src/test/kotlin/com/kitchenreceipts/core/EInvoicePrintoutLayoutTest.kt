@@ -3,6 +3,7 @@ package com.kitchenreceipts.core
 import com.kitchenreceipts.core.EInvoicePrintoutFixture.CUSTOMER_VAT
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.math.BigDecimal
@@ -338,5 +339,50 @@ class EInvoicePrintoutLayoutTest {
         assertTrue(ReviewReason.UNCERTAIN_VALUES in AutoAccept.reasons(draft))
         // On a photo the row is dropped as before, with no new hold.
         assertTrue(readPages(EInvoicePrintoutFixture.pages(meatWith(first)), textLayer = false).lineItems.all { it.nameNote == null })
+    }
+
+    // ------------------------------------------------------------------ a name wrapped onto the next line
+
+    // Two names as long as the column allows (they end at its edge), as a program that wraps long names prints them.
+    private val longNames = meat.copy(lines = listOf(
+        meat.lines[0].copy(desc = "PROSCIUTTO CRUDO STAGIONATO DI"),
+        meat.lines[1].copy(desc = "SALSICCIA FRESCA DI SUINO AL FI"),
+        meat.lines[2],
+    ))
+
+    @Test fun aNameWrappedAtTheColumnsEdgeIsJoined() {
+        val first = longNames.lines[0].copy(more = listOf("PROVA AFFETTATO"))
+        val d = read(longNames.copy(lines = listOf(first) + longNames.lines.drop(1)))
+        assertEquals("PROSCIUTTO CRUDO STAGIONATO DI PROVA AFFETTATO", d.lineItems[0].originalDescription)
+        assertNull(d.lineItems[0].nameNote)
+        assertEquals("PROSCIUTTO CRUDO STAGIONATO DI", d.lineItems[0].nameFirstLine)
+        assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
+        assertTrue(!DocumentDraft.fromParsed(d).items[0].description.uncertain)
+        // A short name with a line under it stays a name to look at (aNameRunningOnHoldsTheSave); on a photo the row
+        // is dropped as before.
+        assertTrue(readPages(EInvoicePrintoutFixture.pages(longNames.copy(lines = listOf(first) + longNames.lines.drop(1))), textLayer = false)
+            .lineItems.all { it.nameNote == null && it.nameFirstLine == null })
+    }
+
+    @Test fun aNameCutAtAHyphenIsJoined() {
+        val first = meat.lines[0].copy(desc = "Pancetta tesa e salsic-", more = listOf("cia fresca"))
+        val d = read(meatWith(first))
+        assertEquals("Pancetta tesa e salsic cia fresca", d.lineItems[0].originalDescription)
+        assertNull(d.lineItems[0].nameNote)
+    }
+
+    @Test fun aLetterCodeWithTheKindTheEInvoiceNamesIsNoPartOfTheName() {
+        val first = meat.lines[0].copy(code = "X", codeType = "Codice articolo")
+        val d = read(meatWith(first))
+        assertEquals("Pancetta tesa", d.lineItems[0].originalDescription)
+    }
+
+    @Test fun aDeliveryNoteReferenceUnderALineIsNoPartOfItsName() {
+        val first = meat.lines[0].copy(notes = emptyList(), more = listOf("Ns. doc. (DDT09) n. 77/ZZ del 03/02/2031"))
+        val d = read(meatWith(first))
+        assertEquals("Pancetta tesa", d.lineItems[0].originalDescription)
+        assertNull(d.lineItems[0].nameNote)
+        assertTrue(LotExtractor.isDeliveryNoteRef("Ns. doc. (DDT09) n. 77/ZZ del 03/02/2031"))
+        assertTrue(LotExtractor.isDeliveryNoteRef("DDT 77/ZZ del 03-02-2031"))
     }
 }

@@ -1,6 +1,7 @@
 package com.kitchenreceipts.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -109,5 +110,32 @@ class SupplierProofTest {
         assertNotNull(doc.supplierProof)
         assertTrue(doc.sellerName!!.value.startsWith("ABC"))
         assertEquals(Confidence.HIGH, doc.sellerName!!.confidence)
+    }
+
+    // ------------------------------------------------------------------ the supplier's box in a PDF's own text
+
+    private val boxPage = listOf("Cedente/prestatore (fornitore)", "ABC S.r.l.", "Identificativo fiscale ai fini IVA: IT01234567897") + customerBox
+
+    @Test fun theBoxReadFromAPdfsOwnTextWithAValidVatNumberIsAPlaceOfItsOwn() {
+        // A name printed once, in the supplier's box: one place on a photo, proven from the PDF's own text.
+        val photo = SupplierProof.judge(SupplierProof.collect(listOf(boxPage), reading("ABC S.r.l."), "ABC S.r.l.", own, "01234567897"))
+        assertEquals(SupplierProof.State.UNPROVEN, photo.state)
+        val exact = SupplierProof.judge(SupplierProof.collect(listOf(boxPage), reading("ABC S.r.l."), "ABC S.r.l.", own, "01234567897", exactBox = true))
+        assertEquals(SupplierProof.State.PROVEN, exact.state)
+        assertEquals("ABC S.r.l.", exact.name)
+        assertEquals(2, exact.support)
+    }
+
+    @Test fun theExactBoxProvesNothingWithoutAValidNumberOrWithItsLabelsInTheName() {
+        fun state(name: String, vat: String?) =
+            SupplierProof.judge(SupplierProof.collect(listOf(boxPage), reading(name), name, own, vat, exactBox = true)).state
+        // A wrong check digit, the restaurant's own number, no number.
+        assertEquals(SupplierProof.State.UNPROVEN, state("ABC S.r.l.", "01234567890"))
+        assertEquals(SupplierProof.State.UNPROVEN, state("ABC S.r.l.", "09876543217"))
+        assertEquals(SupplierProof.State.UNPROVEN, state("ABC S.r.l.", null))
+        // A name that took in the box's labels or address is no proof.
+        assertNotEquals(SupplierProof.State.PROVEN, state("Dati anagrafici ABC S.r.l.", "01234567897"))
+        assertNotEquals(SupplierProof.State.PROVEN, state("Nome: MARIO Cognome: ROSSI", "01234567897"))
+        assertNotEquals(SupplierProof.State.PROVEN, state("ABC S.r.l. Via Roma 1", "01234567897"))
     }
 }

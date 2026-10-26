@@ -253,7 +253,9 @@ object ReceiptParser {
             }
             val withParties = Parties.apply(gridded, supplier)
             // The supplier's name is sure only when independent places on the page agree (or the phone knows its VAT).
-            val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o) }.getOrDefault(withParties)
+            // The supplier's box read from a digital PDF's own text (no page dropped as a repeat, so the page is the same).
+            val exactBox = supplier != null && repeats.isEmpty() && supplier.page in o.textLayerPages
+            val proven = runCatching { SupplierProof.apply(withParties, layouts.map { it.text.lines() }, supplier, o, exactBox) }.getOrDefault(withParties)
                 .let { d -> runCatching { ReadingSanity.apply(d, text, o.ownVatNumber) }.getOrDefault(d) }
                 .let { d -> runCatching { NumberSlips.apply(d, layouts.map { it.text }) }.getOrDefault(d) }
                 .let { d -> runCatching { otherBuyer(d, pages, o.ownVatNumber) }.getOrDefault(d) }

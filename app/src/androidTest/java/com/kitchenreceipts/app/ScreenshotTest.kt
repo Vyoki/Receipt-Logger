@@ -62,6 +62,7 @@ class ScreenshotTest {
         private const val LONG_SELLER = "ABC S.r.l."
         private const val LONG_NUMBER = "60/2031"
         private const val PEEK_NUMBER = "PK-7/2031"
+        private const val PEEK_DATE = "03/02/2031"
         // An invented electricity supplier (valid check digit).
         private const val UTILITY_SELLER = "VERDE FRESCO S.p.A."
         private const val UTILITY_VAT = "09876543217"
@@ -456,7 +457,8 @@ class ScreenshotTest {
             Thread.sleep(1500)
             // Nothing opens by itself, and no field shows the icon before it is edited.
             assertTrue("a photo button before any field was tapped. On screen: ${screenDump()}", described(photo) == null)
-            assertTrue("no number field. On screen: ${screenDump()}", clickTextIn(PEEK_NUMBER))
+            // The date field (at the top of the form, under the page picture).
+            assertTrue("no date field. On screen: ${screenDump()}", scrollUntilText(PEEK_DATE) && clickTextIn(PEEK_DATE))
             assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
             described(photo)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             assertTrue("the photo did not open. On screen: ${screenDump()}", waitFor(zoomIn, true))
@@ -466,7 +468,7 @@ class ScreenshotTest {
             described(close)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             assertTrue("the photo did not close", waitFor(zoomIn, false))
             // Back closes it too.
-            assertTrue(clickTextIn(PEEK_NUMBER))
+            assertTrue(clickTextIn(PEEK_DATE))
             assertTrue(waitFor(photo, true))
             described(photo)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             assertTrue(waitFor(zoomIn, true))

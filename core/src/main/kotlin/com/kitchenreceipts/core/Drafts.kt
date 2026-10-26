@@ -51,6 +51,8 @@ data class LineItemDraft(
     val discount: DraftField = DraftField(),
     /** What the page's own codes and group lines say about the line (see PageCodes): shown with it, kept on save. */
     val marks: List<ItemMark> = emptyList(),
+    /** The name's first printed line when it went on to the next one (see ParsedLineItem.nameFirstLine): not saved. */
+    val nameFirstLine: String? = null,
 ) {
     /**
      * A discount or charge ("Sconto del 4%", "Spese bancarie"), not goods: no product, quantity or unit needed.
@@ -171,6 +173,7 @@ data class DocumentDraft(
                         adjustment = it.adjustment,
                         discount = f(it.discount) { d -> d },
                         marks = it.marks,
+                        nameFirstLine = it.nameFirstLine,
                     )
                 },
                 warnings = p.warnings,

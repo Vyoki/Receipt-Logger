@@ -26,12 +26,13 @@ object Parties {
     /** Labels whose value always has digits (a tax code, a VAT number). */
     private val ID_LABEL = rx("(?i)^\\s*(identificativo|ldentificativo|codice|cod\\.|c\\.?\\s?f\\.?\\b|partita|p\\.?\\s?iva)")
 
-    data class Supplier(val name: Extracted<String>?, val vatNumber: String?, val box: PageBox)
+    /** [page]: the page of the box (from 0). */
+    data class Supplier(val name: Extracted<String>?, val vatNumber: String?, val box: PageBox, val page: Int = 0)
 
     /** The supplier's box on the first page that has one, or null when the document prints no roles. */
     fun supplier(pages: List<LayoutRows.Layout>, ownVat: String?): Supplier? {
         val own = ownVat?.filter(Char::isDigit)?.takeIf { it.length >= 8 }
-        for (layout in pages.take(2)) {
+        for ((pageIndex, layout) in pages.take(2).withIndex()) {
             val rows = layout.rows.map { r -> r.filter { it.text.isNotBlank() }.sortedBy { it.left } }
             for ((r, row) in rows.withIndex()) {
                 for ((ci, cell) in row.withIndex()) {
@@ -59,7 +60,7 @@ object Parties {
                     // A party's box says who it is: a name label or a VAT number. "Trasporto a cura del: Mittente" is no box.
                     if (vat == null && lines.none { NAME_LABEL.containsMatchIn(it.text) }) continue
                     val box = PageBox(lines.minOf { it.left }, cell.top, lines.maxOf { it.right }, lines.maxOf { it.bottom })
-                    return Supplier(name(lines), vat, box)
+                    return Supplier(name(lines), vat, box, pageIndex)
                 }
             }
         }

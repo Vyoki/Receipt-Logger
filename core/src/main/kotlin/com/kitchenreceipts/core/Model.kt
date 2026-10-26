@@ -91,6 +91,11 @@ data class ParsedLineItem(
      * clear it.
      */
     val nameNote: String? = null,
+    /**
+     * The name's first printed line, when the name wrapped onto the next line and was joined (see TableReader): what
+     * earlier documents may have saved the product under.
+     */
+    val nameFirstLine: String? = null,
 )
 
 /** One code the page explains ([kind] "storage", "tipo riga", "group"...): [code] as printed (none for a group line), [meaning] from the page. */

@@ -153,10 +153,25 @@ class RepositoryTest {
         // The same paper again, its name read with other words: the VAT number says it is the same supplier.
         val again = first.copy(sellerName = "ABC Distribuzione Alimentare")
         val dups = repo.findDuplicates(again, "sha-v2", null, text, "09876543217")
-        assertEquals(setOf(DuplicateReason.SAME_SELLER_AND_NUMBER), dups.single().match.reasons)
+        // Same number, and (the same paper) the same date and total: both as the same supplier's.
+        assertEquals(setOf(DuplicateReason.SAME_SELLER_AND_NUMBER, DuplicateReason.SAME_SELLER_DATE_TOTAL), dups.single().match.reasons)
         // Without the restaurant's own number the VAT number is not used (it could be the restaurant's): only the
         // weak hint of the same date and total is left.
         assertEquals(setOf(DuplicateReason.SAME_DATE_AND_TOTAL), repo.findDuplicates(again, "sha-v2", null, text, "").single().match.reasons)
+    }
+
+    @Test fun aNameJoinedFromTwoPrintedLinesFindsTheProductSavedUnderItsFirstLine() = runBlocking<Unit> {
+        // Saved before under the name's first printed line (as the app read a wrapped name before joining it).
+        val first = "PROSCIUTTO CRUDO STAGIONATO DI"
+        val line = ValidLineItem(first, null, BigDecimal(2), "kg", null, 4000, null, null, null, newProductName = "Prosciutto crudo")
+        repo.saveDocument(doc("ABC S.r.l.", "1", listOf(line), total = 4000), StoredFile("documents/wrap1.jpg", "image/jpeg", 1, "sha-w1"), null, null)
+        val pid = repo.productsOnce().single { it.name == "Prosciutto crudo" }.id
+        val joined = LineItemDraft(1, DraftField("$first PROVA AFFETTATO"), nameFirstLine = first)
+        val out = repo.autoAssign("ABC S.r.l.", listOf(joined), createNew = true).single()
+        assertEquals(pid, out.productId)
+        assertEquals(ProductSource.REMEMBERED, out.productSource)
+        // Without its first line the joined name is not one the supplier's documents saved.
+        assertTrue(repo.autoAssign("ABC S.r.l.", listOf(joined.copy(nameFirstLine = null)), createNew = true).single().productSource != ProductSource.REMEMBERED)
     }
 
     @Test fun learnsSupplierAndRecognisesItNextTime() = runBlocking<Unit> {
