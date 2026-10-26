@@ -154,6 +154,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     private var ocrWidths: List<Int> = emptyList()
     private var ocrHeights: List<Int> = emptyList()
     private var cachedPage: Pair<Int, android.graphics.Bitmap>? = null
+    /** A saved document's original (path, type, pages): the photo of a value shows it. */
+    private var savedFile: Triple<String, String, Int>? = null
     private var openedAt = System.currentTimeMillis()
 
     /**
@@ -320,6 +322,13 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         }
         val sellerName = repo.observeDocument(id).first()?.sellerName ?: ""
         docOcrText = doc.ocrText
+        // The original and the reading kept when it was saved: a value is found on its photo here too.
+        savedFile = Triple(doc.filePath, doc.mimeType, doc.pageCount)
+        withContext(Dispatchers.IO) {
+            val pages = runCatching { c.readings.load(id) }.getOrNull()
+            val sizes = runCatching { c.readings.sizes(id) }.getOrNull()
+            if (pages != null && sizes != null && sizes.size == pages.size) { ocrPages = pages; ocrWidths = sizes.map { it.first } }
+        }
         val items = repo.itemsOnce(id)
         val cents = { v: Long? -> DraftField(ItalianNumbers.centsToEditText(v)) }
         val draft = DocumentDraft(
@@ -543,13 +552,13 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         fun box(b: com.kitchenreceipts.core.PageBox) =
             com.kitchenreceipts.core.PeekView.Box(b.left * scale, b.top * scale, b.right * scale, b.bottom * scale)
         return com.kitchenreceipts.app.ui.components.PeekImage(
-            page, spot.page, storedFile?.pageCount ?: 1, box(spot.mark), box(spot.area), spot.lineHeight * scale, spot.exact,
+            page, spot.page, storedFile?.pageCount ?: savedFile?.third ?: 1, box(spot.mark), box(spot.area), spot.lineHeight * scale, spot.exact,
         )
     }
 
     /** A whole page of the document (from 0), nothing outlined. */
     suspend fun peekPage(index: Int): com.kitchenreceipts.app.ui.components.PeekImage? {
-        val count = storedFile?.pageCount ?: 1
+        val count = storedFile?.pageCount ?: savedFile?.third ?: 1
         val i = index.coerceIn(0, (count - 1).coerceAtLeast(0))
         val page = pageBitmap(i) ?: return null
         return com.kitchenreceipts.app.ui.components.PeekImage(page, i, count, null, null, 0f, false)
@@ -561,8 +570,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
      */
     private suspend fun pageBitmap(index: Int): android.graphics.Bitmap? {
         cachedPage?.takeIf { it.first == index }?.let { return it.second }
-        val path = storedFile?.relativePath ?: return null
-        val mime = storedFile?.mimeType ?: return null
+        val path = storedFile?.relativePath ?: savedFile?.first ?: return null
+        val mime = storedFile?.mimeType ?: savedFile?.second ?: return null
         val bmp = runCatching {
             c.pageRenderer.renderForReading(path, mime, index, com.kitchenreceipts.app.ocr.ImportProcessor.OCR_LONG_SIDE)
         }.getOrNull() ?: return null

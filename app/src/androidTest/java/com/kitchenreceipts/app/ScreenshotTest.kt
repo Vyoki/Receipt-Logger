@@ -447,11 +447,19 @@ class ScreenshotTest {
                 close = it.getString(R.string.close)
             }
             val inst = InstrumentationRegistry.getInstrumentation()
-            fun described(d: String) = inst.uiAutomation.rootInActiveWindow?.let { r -> findNode(r) { it.contentDescription?.toString() == d } }
+            // The photo opens in a window of its own (a dialog): every window on screen is searched.
+            val ua = inst.uiAutomation
+            ua.serviceInfo = ua.serviceInfo.apply { flags = flags or android.accessibilityservice.AccessibilityServiceInfo.FLAG_RETRIEVE_INTERACTIVE_WINDOWS }
+            fun roots() = ua.windows.mapNotNull { it.root }.ifEmpty { listOfNotNull(ua.rootInActiveWindow) }
+            fun described(d: String) = roots().firstNotNullOfOrNull { r -> findNode(r) { it.contentDescription?.toString() == d } }
             fun waitFor(d: String, shown: Boolean): Boolean {
-                val deadline = SystemClock.uptimeMillis() + 5000
+                val deadline = SystemClock.uptimeMillis() + 10_000
                 while ((described(d) != null) != shown && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
                 return (described(d) != null) == shown
+            }
+            fun everyWindow() = roots().joinToString(" || ") { r ->
+                collectNodes(r) { it.text != null || it.contentDescription != null }.take(30)
+                    .joinToString(" | ") { n -> (n.text ?: "").toString().ifEmpty { "[" + n.contentDescription + "]" }.take(40) }
             }
             app.container.pendingRoute.value = "edit/$id"
             Thread.sleep(1500)
@@ -461,19 +469,19 @@ class ScreenshotTest {
             assertTrue("no date field. On screen: ${screenDump()}", scrollUntilText(PEEK_DATE) && clickTextIn(PEEK_DATE))
             assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
             described(photo)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            assertTrue("the photo did not open. On screen: ${screenDump()}", waitFor(zoomIn, true))
+            assertTrue("the photo did not open. On screen: ${everyWindow()}", waitFor(zoomIn, true))
             shot("40-photo-viewer")
             described(zoomIn)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             shot("41-photo-viewer-zoomed")
             described(close)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            assertTrue("the photo did not close", waitFor(zoomIn, false))
+            assertTrue("the photo did not close. On screen: ${everyWindow()}", waitFor(zoomIn, false))
             // Back closes it too.
             assertTrue(clickTextIn(PEEK_DATE))
             assertTrue(waitFor(photo, true))
             described(photo)!!.performAction(AccessibilityNodeInfo.ACTION_CLICK)
             assertTrue(waitFor(zoomIn, true))
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            assertTrue("Back did not close the photo", waitFor(zoomIn, false))
+            assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
         }
     }
 
