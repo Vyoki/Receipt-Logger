@@ -427,6 +427,19 @@ class ReceiptRepository(
     /** Saved suppliers sorted as no kitchen goods (electricity, fuel, repairs, other expenses). */
     fun notGoodsSellerIds(): Flow<Set<Long>> = sellerCategories().map { m -> m.filterValues { !it.goods }.keys }.distinctUntilChanged()
 
+    /** Saved suppliers sorted as the guests' tables (Coperti): their lines are never food cost. */
+    fun copertiSellerIds(): Flow<Set<Long>> =
+        sellerCategories().map { m -> m.filterValues { it == SupplierCategory.COPERTI }.keys }.distinctUntilChanged()
+
+    /** Products for the guests' tables, listed apart: set as Coperti on the product, or bought only from Coperti suppliers. */
+    fun copertiProductIds(): Flow<Set<Long>> =
+        combine(documents.productSellers(), copertiSellerIds(), products.all()) { pairs, coperti, all ->
+            val chosen = all.filter { it.category == com.kitchenreceipts.core.Category.COPERTI.key }.map { it.id }
+            val bySupplier = if (coperti.isEmpty()) emptyList()
+                else pairs.groupBy({ it.productId }, { it.sellerId }).filterValues { ids -> ids.all { it in coperti } }.keys
+            (chosen + bySupplier).toSet()
+        }.distinctUntilChanged().flowOn(Dispatchers.Default)
+
     /** [rows] without the ones of suppliers sorted as no kitchen goods. For lists only: every figure still counts them. */
     fun <T> goodsOnly(rows: Flow<List<T>>, sellerId: (T) -> Long): Flow<List<T>> =
         combine(rows, notGoodsSellerIds()) { list, out -> if (out.isEmpty()) list else list.filterNot { sellerId(it) in out } }

@@ -9,6 +9,7 @@ import androidx.compose.material.icons.outlined.LocalGasStation
 import androidx.compose.material.icons.outlined.Payments
 import androidx.compose.material.icons.outlined.QuestionMark
 import androidx.compose.material.icons.outlined.Restaurant
+import androidx.compose.material.icons.outlined.TableRestaurant
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
@@ -110,6 +111,7 @@ fun categoryLabel(c: Category): String = stringResource(
         Category.BEVERAGES -> R.string.cat_beverages
         Category.CLEANING -> R.string.cat_cleaning
         Category.DISPOSABLES -> R.string.cat_disposables
+        Category.COPERTI -> R.string.cat_coperti
         Category.OTHER -> R.string.cat_other
     },
 )
@@ -123,6 +125,7 @@ fun supplierCategoryLabelRes(c: SupplierCategory?): Int = when (c) {
     SupplierCategory.FOOD -> R.string.supcat_food
     SupplierCategory.DRINKS -> R.string.supcat_drinks
     SupplierCategory.SUPPLIES -> R.string.supcat_supplies
+    SupplierCategory.COPERTI -> R.string.supcat_coperti
     SupplierCategory.UTILITIES -> R.string.supcat_utilities
     SupplierCategory.FUEL -> R.string.supcat_fuel
     SupplierCategory.EQUIPMENT -> R.string.supcat_equipment
@@ -137,6 +140,7 @@ fun supplierCategoryHint(c: SupplierCategory): String = stringResource(
         SupplierCategory.FOOD -> R.string.supcat_food_ex
         SupplierCategory.DRINKS -> R.string.supcat_drinks_ex
         SupplierCategory.SUPPLIES -> R.string.supcat_supplies_ex
+        SupplierCategory.COPERTI -> R.string.supcat_coperti_ex
         SupplierCategory.UTILITIES -> R.string.supcat_utilities_ex
         SupplierCategory.FUEL -> R.string.supcat_fuel_ex
         SupplierCategory.EQUIPMENT -> R.string.supcat_equipment_ex
@@ -149,6 +153,7 @@ fun supplierCategoryIcon(c: SupplierCategory?): ImageVector = when (c) {
     SupplierCategory.FOOD -> Icons.Outlined.Restaurant
     SupplierCategory.DRINKS -> Icons.Outlined.LocalBar
     SupplierCategory.SUPPLIES -> Icons.Outlined.CleaningServices
+    SupplierCategory.COPERTI -> Icons.Outlined.TableRestaurant
     SupplierCategory.UTILITIES -> Icons.Outlined.Bolt
     SupplierCategory.FUEL -> Icons.Outlined.LocalGasStation
     SupplierCategory.EQUIPMENT -> Icons.Outlined.Handyman

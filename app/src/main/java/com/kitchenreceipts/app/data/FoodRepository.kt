@@ -16,6 +16,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
@@ -25,8 +26,11 @@ import java.time.YearMonth
 /** A dish as edited: the recipe and its ingredients. */
 data class RecipeDraft(val recipe: RecipeEntity, val items: List<RecipeItemEntity>)
 
-/** Food cost of dishes, month by month against revenue, and the usual order to each supplier. */
-class FoodRepository(private val db: AppDatabase) {
+/**
+ * Food cost of dishes, month by month against revenue, and the usual order to each supplier. [copertiSellers]: the
+ * suppliers sorted as the guests' tables (Coperti), whose lines are never food cost.
+ */
+class FoodRepository(private val db: AppDatabase, private val copertiSellers: Flow<Set<Long>> = flowOf(emptySet())) {
 
     private val dao = db.foodDao()
     private val products = db.productDao()
@@ -36,7 +40,7 @@ class FoodRepository(private val db: AppDatabase) {
 
     private fun PricedRow.toPurchase() = PricedPurchase(
         productId, documentDate, sellerName, quantity, unit, unitPrice, lineTotalCents, vatBasis, vatRate,
-        Category.fromKey(productCategory) ?: Categories.guess(productName ?: originalDescription), lineItemId,
+        Category.fromKey(productCategory) ?: Categories.guess(productName ?: originalDescription), lineItemId, sellerId,
     )
 
     /** The price of each product: its last purchase, VAT taken out. */
@@ -146,12 +150,12 @@ class FoodRepository(private val db: AppDatabase) {
 
     /** The last [count] months, newest first. */
     fun months(count: Int = 6, today: LocalDate = LocalDate.now()): Flow<List<FoodCost.Month>> =
-        combine(dao.pricedPurchases(), dao.revenue()) { rows, revenue ->
+        combine(dao.pricedPurchases(), dao.revenue(), copertiSellers) { rows, revenue, coperti ->
             val months = (0 until count).map { YearMonth.from(today).minusMonths(it.toLong()) }
             val rev = revenue.mapNotNull { r ->
                 runCatching { FoodCost.MonthRevenue(YearMonth.parse(r.month), r.cents, r.includesVat, r.vatRate) }.getOrNull()
             }
-            FoodCost.months(rows.map { it.toPurchase() }, rev, months)
+            FoodCost.months(rows.map { it.toPurchase() }, rev, months, coperti)
         }.flowOn(Dispatchers.Default)
 
     // ------------------------------------------------------------ orders

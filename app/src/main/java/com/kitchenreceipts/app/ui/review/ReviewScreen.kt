@@ -659,6 +659,7 @@ fun ReviewScreen(
             onDismiss = { pickCategory = false },
             note = if (categoryForAll || !vm.canChooseJustThis) stringResource(R.string.supcat_change_seller_note) else null,
             chosenBefore = state.categoryChosenBefore,
+            suggested = state.categorySuggested,
             extra = if (vm.canChooseJustThis) ({
                 Column(Modifier.selectableGroup()) {
                     ScopeChoice(stringResource(R.string.supcat_scope_all), categoryForAll) { categoryForAll = true }

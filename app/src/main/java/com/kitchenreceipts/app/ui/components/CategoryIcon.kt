@@ -16,6 +16,7 @@ import androidx.compose.material.icons.outlined.KebabDining
 import androidx.compose.material.icons.outlined.LocalDrink
 import androidx.compose.material.icons.outlined.LunchDining
 import androidx.compose.material.icons.outlined.SetMeal
+import androidx.compose.material.icons.outlined.TableRestaurant
 import androidx.compose.material.icons.outlined.TakeoutDining
 import androidx.compose.material3.Icon
 import androidx.compose.runtime.Composable
@@ -41,6 +42,7 @@ fun categoryIcon(c: Category): ImageVector = when (c) {
     Category.BEVERAGES -> Icons.Outlined.LocalDrink
     Category.CLEANING -> Icons.Outlined.CleaningServices
     Category.DISPOSABLES -> Icons.Outlined.TakeoutDining
+    Category.COPERTI -> Icons.Outlined.TableRestaurant
     Category.OTHER -> Icons.Outlined.Category
 }
 

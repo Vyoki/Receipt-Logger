@@ -68,13 +68,15 @@ object InvoiceBundle {
         val fuelHits: Int = 0,
         /** How many product rows look like each kind of product. */
         val kinds: Map<Category, Int> = emptyMap(),
+        /** Signs of a laundry or linen hire (a bit set, see [SupplierCategories]). */
+        val copertiHits: Int = 0,
         /** Some product rows as read (at most [MAX_ROWS]); not kept when the signals are saved. */
         val rowTexts: List<String> = emptyList(),
     ) {
         val assoEnd: Boolean get() = assoEnds > 0
         /** Rule (a): the parties' boxes and the identity row on one page. */
         val assoStart: Boolean get() = supplierRoleTop && customerRole && identityRows > 0
-        val hints: SupplierCategories.Hints get() = SupplierCategories.Hints(utilityHits, fuelHits, kinds)
+        val hints: SupplierCategories.Hints get() = SupplierCategories.Hints(utilityHits, fuelHits, kinds, copertiHits)
     }
 
     data class Segment(
@@ -219,6 +221,7 @@ object InvoiceBundle {
             utilityHits = hints.utility,
             fuelHits = hints.fuel,
             kinds = hints.kinds,
+            copertiHits = hints.coperti,
             rowTexts = rowTexts.filter { PRODUCT_ROW.containsMatchIn(it) }.take(MAX_ROWS),
         )
     }
@@ -389,6 +392,7 @@ object InvoiceBundle {
         "cn" to bit(p.creditNote),
         "u" to p.utilityHits.takeIf { it != 0 }?.toString(), "f" to p.fuelHits.takeIf { it != 0 }?.toString(),
         "k" to p.kinds.takeIf { it.isNotEmpty() }?.entries?.joinToString(",") { "${it.key.key}=${it.value}" },
+        "cp" to p.copertiHits.takeIf { it != 0 }?.toString(),
     )
 
     fun decode(line: String): PageSignals? = runCatching {
@@ -410,6 +414,7 @@ object InvoiceBundle {
             kinds = f["k"].orEmpty().split(',').filter { it.isNotBlank() }.mapNotNull { e ->
                 Category.fromKey(e.substringBefore('='))?.let { it to e.substringAfter('=').toInt() }
             }.toMap(),
+            copertiHits = f["cp"]?.toInt() ?: 0,
         )
     }.getOrNull()
 

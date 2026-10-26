@@ -15,6 +15,8 @@ enum class Category(val key: String) {
     BEVERAGES("beverages"),
     CLEANING("cleaning"),
     DISPOSABLES("disposables"),
+    /** For the guests' tables (linen, laundry, napkins, candles). Never guessed: chosen, or the supplier's category. */
+    COPERTI("coperti"),
     OTHER("other"),
     ;
 

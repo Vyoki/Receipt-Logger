@@ -41,7 +41,7 @@ class AppContainer(context: Context) {
     /** Delivery notes against invoices, agreed prices, credits owed, expiry dates and lots. */
     val checks = com.kitchenreceipts.app.data.ChecksRepository(database)
     /** Food cost of dishes and months, and the usual order to each supplier. */
-    val food = com.kitchenreceipts.app.data.FoodRepository(database)
+    val food = com.kitchenreceipts.app.data.FoodRepository(database, repository.copertiSellerIds())
     /** Reads documents in the background, at background priority (see ReadingThreads). */
     val importProcessor = ImportProcessor(pageRenderer, com.kitchenreceipts.app.jobs.ReadingThreads.dispatcher)
     val aiModels = AiModelStore(context)

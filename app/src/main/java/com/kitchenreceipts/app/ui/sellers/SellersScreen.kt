@@ -167,7 +167,13 @@ fun SellersScreen(onBack: () -> Unit, onOpenSeller: (Long) -> Unit) {
                 editing = null
                 if (c != row.category) {
                     vm.setCategory(row.stats, c)
-                    val text = context.getString(R.string.supcat_saved_seller, row.stats.name, context.getString(supplierCategoryLabelRes(c)))
+                    // Coperti lines are not food cost: moving a supplier in or out of it changes that figure.
+                    val message = when (com.kitchenreceipts.core.SupplierCategory.COPERTI) {
+                        c -> R.string.supcat_saved_seller_coperti
+                        row.category -> R.string.supcat_saved_seller_from_coperti
+                        else -> R.string.supcat_saved_seller
+                    }
+                    val text = context.getString(message, row.stats.name, context.getString(supplierCategoryLabelRes(c)))
                     scope.launch { snackbar.showSnackbar(text) }
                 }
             },

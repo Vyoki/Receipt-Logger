@@ -100,6 +100,26 @@ class FoodCostTest {
         eq("23.0", out.percent)
     }
 
+    @Test fun theGuestsTablesAreNeverFoodCost() {
+        val m = YearMonth.of(2031, 3)
+        val rows = listOf(
+            buy(1, "2031-03-03", "10", "kg", 10000, cat = Category.MEAT),
+            // Chosen as Coperti on the product.
+            buy(2, "2031-03-04", "20", "pz", 3000, cat = Category.COPERTI),
+            // Any line of a supplier sorted as Coperti, whatever its product's kind.
+            buy(3, "2031-03-05", "1", "pz", 8000, cat = Category.OTHER).copy(sellerId = 7),
+            buy(4, "2031-03-05", "200", "pz", 2000, cat = Category.DISPOSABLES).copy(sellerId = 7),
+        )
+        val out = FoodCost.months(rows, emptyList(), listOf(m), copertiSellers = setOf(7L)).single()
+        assertEquals(13000L, out.byCategory[Category.COPERTI])
+        assertEquals(null, out.byCategory[Category.OTHER])
+        assertEquals(10000L, out.foodAndDrinkCents)
+        // Without the supplier sorted, its lines count as before.
+        val before = FoodCost.months(rows, emptyList(), listOf(m)).single()
+        assertEquals(18000L, before.foodAndDrinkCents)
+        assertEquals(3000L, before.byCategory[Category.COPERTI])
+    }
+
     @Test fun usualOrder() {
         val today = LocalDate.of(2026, 10, 7)
         fun b(pid: Long, doc: Long, date: String, q: String, unit: String) = Reorder.Bought(pid, "P$pid", doc, LocalDate.parse(date), BigDecimal(q), unit)

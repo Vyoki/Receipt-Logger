@@ -56,6 +56,25 @@ class SupplierCategoriesTest {
         assertNull(suggest("ARTICOLO 1,00"))
     }
 
+    @Test fun laundryAndLinenHire() {
+        assertEquals(SupplierCategory.COPERTI, suggest("LAVANDERIA ABC S.r.l.", "TOVAGLIA 140X140 20,00 1,20 PZ 22,00 24,00"))
+        // Before the product guesser, which reads table linen as disposables.
+        assertEquals(SupplierCategory.COPERTI, suggest(
+            "Noleggio tovaglie mese di marzo 1,00 80,00 PZ 22,00 80,00", "TOVAGLIOLI STOFFA 200,00 0,15 PZ 22,00 30,00",
+            "COPRIMACCHIA 100X100 40,00 0,50 PZ 22,00 20,00",
+        ))
+        assertEquals(SupplierCategory.COPERTI, suggest("Lavaggio biancheria da tavola 1,00 45,00 22,00 45,00"))
+        // A cleaning product for laundries is a cleaning supplier's.
+        assertEquals(SupplierCategory.SUPPLIES, suggest(
+            "DETERSIVO PER LAVANDERIA LT.10 2,00 9,00 PZ 22,00 18,00", "CANDEGGINA LT.4 1,00 1,50 PZ 22,00 1,50", "SPUGNE 3,00 0,80 PZ 22,00 2,40",
+        ))
+        // Paper napkins alone are disposables, not a linen hire.
+        assertEquals(SupplierCategory.SUPPLIES, suggest("TOVAGLIOLI CARTA 33X33 10,00 2,00 PZ 22,00 20,00", "BICCHIERI PLASTICA 5,00 1,00 PZ 22,00 5,00"))
+        // Saved with a file of many invoices and read back.
+        val p = InvoiceBundle.PageSignals(index = 0, hasText = true, copertiHits = 1)
+        assertEquals(SupplierCategory.COPERTI, SupplierCategories.suggest(listOf(InvoiceBundle.decode(InvoiceBundle.encode(p))!!)))
+    }
+
     @Test fun hardwareGetsNoSuggestion() {
         // Repairs and other expenses are never suggested: the operator taps them.
         assertNull(suggest("VITE AUTOFILETTANTE M6 100,00 0,05 PZ 22,00 5,00", "TRAPANO A BATTERIA 1,00 89,00 PZ 22,00 89,00", "MANODOPERA TECNICO 2,00 35,00 ORE 22,00 70,00"))
@@ -113,6 +132,6 @@ class SupplierCategoriesTest {
         assertNull(SupplierCategory.fromKey("nonsense"))
         assertNull(SupplierCategory.fromKey(null))
         assertEquals(listOf("utilities", "fuel", "equipment", "other"), SupplierCategory.NOT_GOODS_KEYS)
-        assertEquals(listOf(SupplierCategory.FOOD, SupplierCategory.DRINKS, SupplierCategory.SUPPLIES), SupplierCategory.entries.filter { it.goods })
+        assertEquals(listOf(SupplierCategory.FOOD, SupplierCategory.DRINKS, SupplierCategory.SUPPLIES, SupplierCategory.COPERTI), SupplierCategory.entries.filter { it.goods })
     }
 }

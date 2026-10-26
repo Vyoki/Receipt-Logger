@@ -77,6 +77,7 @@ class ProductsViewModel(private val repo: ReceiptRepository) : ViewModel() {
     val products: StateFlow<List<ProductEntity>> = repo.products().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     /** Products bought only from electricity, fuel, repairs or other-expenses suppliers: listed apart, folded. */
     val notFood: StateFlow<Set<Long>> = repo.notFoodProductIds().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
+    val coperti: StateFlow<Set<Long>> = repo.copertiProductIds().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptySet())
     val families: StateFlow<List<ProductFamilyEntity>> = repo.families().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
     val suggestions: StateFlow<List<ProductFamilies.Suggestion>> =
         repo.familySuggestions().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -109,6 +110,8 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
     val suggestions by vm.suggestions.collectAsStateWithLifecycle()
     val notFood by vm.notFood.collectAsStateWithLifecycle()
     var showNotFood by rememberSaveable { mutableStateOf(false) }
+    val coperti by vm.coperti.collectAsStateWithLifecycle()
+    var showCoperti by rememberSaveable { mutableStateOf(false) }
     var assigning by remember { mutableStateOf<UnassignedGroup?>(null) }
     var creating by remember { mutableStateOf(false) }
     var showAllUnassigned by remember { mutableStateOf(false) }
@@ -175,10 +178,21 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
             val rows = summaries
             if (rows != null && rows.isEmpty()) item { EmptyState(stringResource(R.string.no_products)) }
             // Every figure still counts the products of non-food suppliers: they are only listed apart, at the end.
-            val (food, other) = rows.orEmpty().partition { it.product.id !in notFood }
+            // The guests' tables (Coperti) apart too: tracked like the rest, never food cost.
+            val (tables, rest) = rows.orEmpty().partition { it.product.id in coperti }
+            val (food, other) = rest.partition { it.product.id !in notFood }
             items(food, key = { it.product.id }) { p -> ProductCard(p, families) { onOpen(p.product.id) } }
+            if (tables.isNotEmpty()) {
+                item(key = "coperti") {
+                    FoldHeader(stringResource(R.string.products_coperti, tables.size), showCoperti) { showCoperti = !showCoperti }
+                }
+                if (showCoperti) {
+                    item(key = "coperti-hint") { Annotation(stringResource(R.string.products_coperti_hint)) }
+                    items(tables, key = { it.product.id }) { p -> ProductCard(p, families) { onOpen(p.product.id) } }
+                }
+            }
             if (other.isNotEmpty()) {
-                item(key = "not-food") { NotFoodHeader(other.size, showNotFood) { showNotFood = !showNotFood } }
+                item(key = "not-food") { FoldHeader(stringResource(R.string.products_not_food, other.size), showNotFood) { showNotFood = !showNotFood } }
                 if (showNotFood) {
                     item(key = "not-food-hint") { Annotation(stringResource(R.string.products_not_food_hint)) }
                     items(other, key = { it.product.id }) { p -> ProductCard(p, families) { onOpen(p.product.id) } }
@@ -238,9 +252,9 @@ private fun ProductCard(p: ProductWithSummary, families: List<ProductFamilyEntit
     }
 }
 
-/** "Not food (N)": one big row that shows or hides the products of non-food suppliers. */
+/** "Not food (N)", "Coperti (N)": one big row that shows or hides a group of products listed apart. */
 @Composable
-private fun NotFoodHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
+private fun FoldHeader(title: String, open: Boolean, onToggle: () -> Unit) {
     val action = stringResource(if (open) R.string.products_not_food_hide else R.string.products_not_food_show)
     Panel(Modifier.padding(top = 12.dp)) {
         Row(
@@ -250,7 +264,7 @@ private fun NotFoodHeader(count: Int, open: Boolean, onToggle: () -> Unit) {
                 .padding(horizontal = 16.dp, vertical = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(stringResource(R.string.products_not_food, count), style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
+            Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
             Icon(if (open) Icons.Filled.ExpandLess else Icons.Filled.ExpandMore, contentDescription = null)
         }
     }

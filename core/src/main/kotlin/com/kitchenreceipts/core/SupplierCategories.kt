@@ -8,11 +8,15 @@ import java.security.MessageDigest
  *
  * [goods]: the supplier's lines are kitchen goods. The others (electricity, fuel, repairs, other expenses) are kept,
  * read and totalled exactly as today; only where their products are shown changes.
+ *
+ * [COPERTI]: what the dining room's tables use for the guests (laundry, table linen, napkins, candles). Tracked as
+ * products like goods (prices, usual orders), but never counted in food cost (see [FoodCost.months]).
  */
 enum class SupplierCategory(val key: String, val goods: Boolean) {
     FOOD("food", true),
     DRINKS("drinks", true),
     SUPPLIES("supplies", true),
+    COPERTI("coperti", true),
     UTILITIES("utilities", false),
     FUEL("fuel", false),
     EQUIPMENT("equipment", false),
@@ -41,10 +45,11 @@ object SupplierCategories {
      * two pages with the same sign count it once); [kinds] counts product rows by the kind of product they name
      * (Category.OTHER for rows of no known kind).
      */
-    data class Hints(val utility: Int = 0, val fuel: Int = 0, val kinds: Map<Category, Int> = emptyMap()) {
+    data class Hints(val utility: Int = 0, val fuel: Int = 0, val kinds: Map<Category, Int> = emptyMap(), val coperti: Int = 0) {
         operator fun plus(o: Hints) = Hints(
             utility or o.utility, fuel or o.fuel,
             (kinds.keys + o.kinds.keys).associateWith { (kinds[it] ?: 0) + (o.kinds[it] ?: 0) },
+            coperti or o.coperti,
         )
     }
 
@@ -68,6 +73,15 @@ object SupplierCategories {
     private val FOOT_ROW = rx("(?i)^\\s*(MP\\d{2}\\b|[IDS]\\s*\\(\\s*esigibilit|esigibilit|riepiloghi)")
     /** A name printed letter by letter ("S A P O N E"): four or more single letters. */
     private val SPACED = rx("(?<![\\p{L}\\p{N}])\\p{L}(?: \\p{L}){3,}(?![\\p{L}\\p{N}])")
+    /**
+     * A laundry or a linen hire: "Lavanderia", "lavaggio tovaglie", "noleggio biancheria", "tovagliato". Not a cleaning
+     * product for laundries ("detersivo per lavanderia").
+     */
+    private val COPERTI_SIGNS = listOf(
+        rx("(?i)(?<!\\bper\\s)(?<!\\bda\\s)\\blavanderi[ae]\\b"),
+        rx("(?i)\\b(lavaggio|lavaggi|noleggio|nolo)\\s+(di\\s+|della\\s+|delle\\s+)?(tovagli\\p{L}*|biancheri\\p{L}*|coprimacchi\\p{L}*|tovagliat\\p{L}*)"),
+        rx("(?i)\\b(biancheria\\s+da\\s+tavola|tovagliato|coprimacchi\\p{L}*)\\b"),
+    )
     private val FOOD = setOf(
         Category.FRUIT_VEG, Category.MEAT, Category.FISH, Category.CURED_MEATS, Category.DAIRY_EGGS, Category.BAKERY,
         Category.DRY_GOODS, Category.FROZEN,
@@ -84,20 +98,25 @@ object SupplierCategories {
             if (FUEL_NOMENCLATURE.containsMatchIn(r) && LITRES.containsMatchIn(r)) fuel = fuel or 2
             if (FUEL_WORD.containsMatchIn(r) && LITRES.containsMatchIn(r)) fuel = fuel or 4
         }
-        val kinds = rows.map { r -> SPACED.replace(r) { m -> m.value.replace(" ", "") } }
+        val joined = rows.map { r -> SPACED.replace(r) { m -> m.value.replace(" ", "") } }
+        val kinds = joined
             .filter { PRODUCT_LINE.containsMatchIn(it) && !FOOT_ROW.containsMatchIn(it) }
             .map { Categories.guess(it) }
             .groupingBy { it }.eachCount()
-        return Hints(utility, fuel, kinds)
+        var coperti = 0
+        for ((bit, sign) in COPERTI_SIGNS.withIndex()) if (joined.any { sign.containsMatchIn(it) }) coperti = coperti or (1 shl bit)
+        return Hints(utility, fuel, kinds, coperti)
     }
 
     /**
      * Utilities on two or more different signs; otherwise fuel (before the product guesser, which reads some fuel
-     * abbreviations as food); otherwise the kind of 60% or more of the product rows; otherwise nothing.
+     * abbreviations as food); otherwise a laundry or linen hire (before the guesser, which reads table linen as
+     * disposables); otherwise the kind of 60% or more of the product rows; otherwise nothing.
      */
     fun suggest(h: Hints): SupplierCategory? {
         if (Integer.bitCount(h.utility) >= 2) return SupplierCategory.UTILITIES
         if (h.fuel != 0) return SupplierCategory.FUEL
+        if (h.coperti != 0) return SupplierCategory.COPERTI
         // Every product row counts, the ones of no known kind too: a hardware supplier with two misread rows is no food one.
         val total = h.kinds.values.sum()
         if (h.kinds.filterKeys { it != Category.OTHER }.values.sum() < 2) return null

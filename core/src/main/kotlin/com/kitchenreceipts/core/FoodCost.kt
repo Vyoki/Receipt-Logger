@@ -19,6 +19,7 @@ data class PricedPurchase(
     val vatRate: BigDecimal?,
     val category: Category? = null,
     val lineItemId: Long = 0,
+    val sellerId: Long? = null,
 )
 
 /** What one unit of a product costs, without VAT, and where that comes from. */
@@ -331,7 +332,7 @@ object FoodCost {
         val month: YearMonth,
         /** Bought, VAT excluded, per category. */
         val byCategory: Map<Category, Long>,
-        /** Food and drink (everything except cleaning and disposables), VAT excluded. */
+        /** Food and drink (everything except cleaning, disposables and the guests' tables), VAT excluded. */
         val foodAndDrinkCents: Long,
         /** Lines whose VAT could not be taken out (inclusive price without a rate, or unknown basis): counted as printed. */
         val uncertainCents: Long,
@@ -340,14 +341,20 @@ object FoodCost {
         val percent: BigDecimal?,
     )
 
-    val NOT_FOOD = setOf(Category.CLEANING, Category.DISPOSABLES)
+    val NOT_FOOD = setOf(Category.CLEANING, Category.DISPOSABLES, Category.COPERTI)
 
     /**
      * Spending per month and category without VAT, against the revenue the operator typed. Purchases follow
      * deliveries, not what was used: without stock counts a month that stocks up looks dearer than one that uses
-     * up the stock.
+     * up the stock. Every line of a supplier in [copertiSellers] (sorted as the guests' tables) counts as
+     * [Category.COPERTI], whatever its product: never food cost.
      */
-    fun months(purchases: List<PricedPurchase>, revenue: List<MonthRevenue>, months: List<YearMonth>): List<Month> {
+    fun months(
+        purchases: List<PricedPurchase>,
+        revenue: List<MonthRevenue>,
+        months: List<YearMonth>,
+        copertiSellers: Set<Long> = emptySet(),
+    ): List<Month> {
         val byMonth = purchases.filter { it.date != null && it.lineTotalCents != null }.groupBy { YearMonth.from(it.date) }
         return months.map { m ->
             val lines = byMonth[m].orEmpty()
@@ -361,7 +368,7 @@ object FoodCost {
                     else -> { uncertain += p.lineTotalCents; total }
                 }
                 val cents = net.movePointRight(2).setScale(0, RoundingMode.HALF_UP).toLong()
-                val c = p.category ?: Category.OTHER
+                val c = if (p.sellerId != null && p.sellerId in copertiSellers) Category.COPERTI else p.category ?: Category.OTHER
                 cats[c] = (cats[c] ?: 0L) + cents
             }
             val food = cats.filterKeys { it !in NOT_FOOD }.values.sum()

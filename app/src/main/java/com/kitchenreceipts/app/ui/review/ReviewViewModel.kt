@@ -95,11 +95,14 @@ data class ReviewState(
     val chainMove: ChainMove? = null,
     /**
      * What the supplier sells: this invoice's own choice, else remembered by its VAT number (a saved document: by its
-     * name too, as on Sellers); null = not sorted. Where things are shown only: no figure depends on it.
+     * name too, as on Sellers); null = not sorted. Where things are shown only: no amount of the invoice depends on it
+     * (the lines of a Coperti supplier are left out of food cost).
      */
     val supplierCategory: SupplierCategory? = null,
     /** The category chosen last time for a supplier of the same name (no VAT number to be sure): shown, never applied. */
     val categoryChosenBefore: SupplierCategory? = null,
+    /** What the invoice's own lines suggest for a supplier not sorted yet (a laundry: Coperti): shown, never applied. */
+    val categorySuggested: SupplierCategory? = null,
 )
 
 /**
@@ -276,6 +279,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             priceChanges = if (kept != null) priceChanges(draft) else prepared.priceChanges,
             supplierCategory = category,
             categoryChosenBefore = match?.takeIf { !it.known }?.category,
+            categorySuggested = if (category == null) withContext(Dispatchers.Default) {
+                runCatching { com.kitchenreceipts.core.SupplierCategories.suggestFromLines(pending.ocrText.lines()) }.getOrNull()
+            } else null,
         )
         refreshChecks(0)
         // The next invoice of the chain is made ready meanwhile (about a second), so it opens at once.

@@ -552,6 +552,39 @@ class RepositoryTest {
         }
     }
 
+    @Test fun aCopertiSupplierIsTrackedButNeverFoodCost() = withSettings {
+        val sortedDb = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).build()
+        try {
+            val plain = Phone(db, learning = null)
+            val sorted = Phone(sortedDb, LearningStore(memoryFile()))
+            // The second supplier is a linen hire, sorted as Coperti.
+            sorted.repo.rememberCategory(VERDE_VAT, VERDE, SupplierCategory.COPERTI)
+            val a = plain.fill()
+            val b = sorted.fill()
+            // Everything else the app computes is the same; its lines are tracked like goods (price notifications too).
+            assertEquals(a, b)
+            assertTrue(sorted.verdeAlerts.isNotEmpty())
+            assertEquals(setOf("BASILICO FRESCO", "ONERI DI SISTEMA"), sorted.repo.unassignedGroups().first().map { it.description }.toSet())
+
+            // Food cost leaves its lines out: March 35,00 and April 52,00 of the supplier, as Coperti.
+            val months = FoodRepository(sortedDb, sorted.repo.copertiSellerIds()).months(3, today = APRIL.plusDays(20)).first()
+            for ((month, cents) in listOf(java.time.YearMonth.from(MARCH) to 3500L, java.time.YearMonth.from(APRIL) to 5200L)) {
+                val with = months.single { it.month == month }
+                val without = a.months.single { it.month == month }
+                assertEquals(cents, with.byCategory[Category.COPERTI])
+                assertEquals(without.foodAndDrinkCents - cents, with.foodAndDrinkCents)
+            }
+            // Its products are listed apart as Coperti; the food supplier's are not.
+            val coperti = sorted.repo.copertiProductIds().first()
+            assertTrue(sorted.repo.productsOnce().single { it.name == "Quota fissa" }.id in coperti)
+            assertFalse(sorted.repo.productsOnce().single { it.name == "Mozzarella fior di latte" }.id in coperti)
+            assertTrue(sorted.repo.notFoodProductIds().first().isEmpty())
+            assertTrue(plain.repo.copertiProductIds().first().isEmpty())
+        } finally {
+            sortedDb.close()
+        }
+    }
+
     private companion object {
         const val ABC = "ABC S.r.l."
         const val ABC_VAT = "01234567897"

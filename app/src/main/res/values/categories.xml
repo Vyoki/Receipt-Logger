@@ -9,6 +9,9 @@
     <string name="supcat_drinks_ex">wine, beer, water, soft drinks, coffee</string>
     <string name="supcat_supplies">Cleaning &amp; disposables</string>
     <string name="supcat_supplies_ex">detergents, gloves, film, trays</string>
+    <!-- What the dining room's tables use for the guests ("coperti") -->
+    <string name="supcat_coperti">Covers (dining room)</string>
+    <string name="supcat_coperti_ex">table linen, laundry, napkins, candles · not food cost</string>
     <string name="supcat_utilities">Electricity, gas, water, phone</string>
     <string name="supcat_utilities_ex">the monthly bills</string>
     <string name="supcat_fuel">Fuel &amp; transport</string>
@@ -16,7 +19,7 @@
     <string name="supcat_equipment">Repairs, hardware &amp; equipment</string>
     <string name="supcat_equipment_ex">bulbs, tools, repairs, machines</string>
     <string name="supcat_other">Other expenses</string>
-    <string name="supcat_other_ex">accountant, software, laundry, rent</string>
+    <string name="supcat_other_ex">accountant, software, rent, insurance</string>
     <string name="supcat_none">Not sorted yet</string>
     <string name="supcat_decide_later">Decide later</string>
     <string name="supcat_suggested">Suggested</string>
@@ -29,6 +32,8 @@
     <string name="supcat_forget">Forget this supplier\'s category</string>
     <!-- After a supplier's category was changed on Sellers: the supplier, then the category -->
     <string name="supcat_saved_seller">Saved: %1$s is now in “%2$s”. No amounts change.</string>
+    <string name="supcat_saved_seller_from_coperti">Saved: %1$s is now in “%2$s”. Its lines count in food cost again; no invoice amount changes.</string>
+    <string name="supcat_saved_seller_coperti">Saved: %1$s is now in “%2$s”. Its lines are left out of food cost; no invoice amount changes.</string>
     <!-- A section of a list: the category and how many are in it -->
     <string name="supcat_section">%1$s (%2$d)</string>
 
@@ -46,6 +51,11 @@
     <string name="products_not_food_show">Show them</string>
     <string name="products_not_food_hide">Hide them</string>
     <string name="products_not_food_hint">Bought only from suppliers of electricity, fuel, repairs or other expenses. Every total still counts them as before.</string>
+    <!-- The products for the guests' tables, listed apart -->
+    <string name="products_coperti">Covers (dining room) (%1$d)</string>
+    <string name="products_coperti_hint">For the guests\' tables: bought from suppliers sorted as Covers, or set on the product. Tracked like your other products, never counted in food cost.</string>
+    <!-- A product category: for the guests' tables -->
+    <string name="cat_coperti">Covers (dining room)</string>
     <string name="sellers_filter_all">All</string>
     <string name="sellers_not_sorted_count">Not sorted (%1$d)</string>
 </resources>

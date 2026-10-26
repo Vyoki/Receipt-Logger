@@ -9,6 +9,8 @@
     <string name="supcat_drinks_ex">vino, birra, acqua, bibite, caffè</string>
     <string name="supcat_supplies">Pulizia e monouso</string>
     <string name="supcat_supplies_ex">detersivi, guanti, pellicola, vaschette</string>
+    <string name="supcat_coperti">Coperti</string>
+    <string name="supcat_coperti_ex">tovaglie, lavanderia, tovaglioli, candele · fuori dal food cost</string>
     <string name="supcat_utilities">Luce, gas, acqua, telefono</string>
     <string name="supcat_utilities_ex">le bollette</string>
     <string name="supcat_fuel">Carburante e trasporti</string>
@@ -16,7 +18,7 @@
     <string name="supcat_equipment">Manutenzione, ferramenta e attrezzature</string>
     <string name="supcat_equipment_ex">lampadine, attrezzi, riparazioni, macchinari</string>
     <string name="supcat_other">Altre spese</string>
-    <string name="supcat_other_ex">commercialista, software, lavanderia, affitto</string>
+    <string name="supcat_other_ex">commercialista, software, affitto, assicurazione</string>
     <string name="supcat_none">Da classificare</string>
     <string name="supcat_decide_later">Decidi dopo</string>
     <string name="supcat_suggested">Suggerito</string>
@@ -29,6 +31,8 @@
     <string name="supcat_forget">Dimentica la categoria di questo fornitore</string>
     <!-- After a supplier's category was changed on Sellers: the supplier, then the category -->
     <string name="supcat_saved_seller">Salvato: %1$s ora è in “%2$s”. Nessun importo cambia.</string>
+    <string name="supcat_saved_seller_from_coperti">Salvato: %1$s ora è in “%2$s”. Le sue righe tornano nel food cost; nessun importo delle fatture cambia.</string>
+    <string name="supcat_saved_seller_coperti">Salvato: %1$s ora è in “%2$s”. Le sue righe restano fuori dal food cost; nessun importo delle fatture cambia.</string>
     <!-- A section of a list: the category and how many are in it -->
     <string name="supcat_section">%1$s (%2$d)</string>
 
@@ -46,6 +50,9 @@
     <string name="products_not_food_show">Mostrali</string>
     <string name="products_not_food_hide">Nascondili</string>
     <string name="products_not_food_hint">Comprati solo da fornitori di luce, carburante, manutenzione o altre spese. Tutti i totali li contano come prima.</string>
+    <string name="products_coperti">Coperti (%1$d)</string>
+    <string name="products_coperti_hint">Per i tavoli degli ospiti: comprati da fornitori dei Coperti, o scelti sul prodotto. Seguiti come gli altri prodotti, mai contati nel food cost.</string>
+    <string name="cat_coperti">Coperti</string>
     <string name="sellers_filter_all">Tutti</string>
     <string name="sellers_not_sorted_count">Da classificare (%1$d)</string>
 </resources>
