@@ -143,6 +143,9 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     private var ocrSellerRaw: String? = null
     /** The document as the app read it (to learn the supplier's layout from what the operator confirms). */
     private var readParsed: com.kitchenreceipts.core.ParsedDocument? = null
+    /** Every page was the PDF's own text; the supplier was recognised (for the checker's cases). */
+    private var readAllText: Boolean? = null
+    private var readKnownSupplier = false
     private var supplierKey: String? = null
     /** An invoice cut from a file of many whose pages need a look (see ImportJob.flags): held for the operator. */
     private var bundleFlags: Set<String> = emptySet()
@@ -258,6 +261,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         val match = if (category == null) withContext(Dispatchers.Default) { c.preparer.categoryMatch(pending.ocrText, prepared.draft.seller.text) } else null
         ocrPages = pending.rawLines
         readParsed = pending.parsed
+        readAllText = pending.rawLines.isNotEmpty() && pending.textLayerPages.size >= pending.rawLines.size
+        readKnownSupplier = prepared.recognition != null
         ocrWidths = pending.ocrWidths
         ocrHeights = pending.ocrHeights
         initialDraft = prepared.initialDraft
@@ -669,6 +674,12 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                 finalDraft.items.forEach { i -> i.newProductName?.let { n -> runCatching { c.learning.learnName(i.description.text, n) } } }
                 // How this supplier prints its documents (number format, lots, headings), for next time.
                 readParsed?.let { read -> runCatching { c.learning.addLayout(key, com.kitchenreceipts.core.SupplierLayouts.learn(read, finalDraft)) } }
+                // What the checker model learns from: each value as first shown, and whether the operator kept it.
+                val shown = baseDraft
+                if (!auto && shown != null) runCatching {
+                    val reading = com.kitchenreceipts.core.CheckerCases.Reading(readAllText, ocrPages.size.coerceAtLeast(1), readKnownSupplier)
+                    c.checkerLog.record(com.kitchenreceipts.core.CheckerCases.cases(java.util.UUID.randomUUID().toString(), shown, finalDraft, readParsed, reading))
+                }.onFailure { c.log.error("checkerLog", it) }
             }
         }
     }

@@ -233,6 +233,9 @@ fun SettingsScreen(onBack: () -> Unit, onBackup: () -> Unit = {}) {
             // ---------------------------------------------------------------- training examples for the app's AI
             TrainingSection(c)
 
+            // ---------------------------------------------------------------- what the checker model learns from
+            CheckerSection(c)
+
             // ---------------------------------------------------------------- FUNCTION X (temporary, remove with functionx/)
             com.kitchenreceipts.app.functionx.FunctionXSection(c)
 

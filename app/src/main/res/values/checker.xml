@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Settings: what the small checker model learns from (the values of checked invoices, numbers only) -->
+    <string name="checker_title">Teach the checker</string>
+    <string name="checker_hint">Every invoice you check and save teaches the checker: the phone notes how each value was read and whether you kept it or corrected it. Numbers only: no supplier, amount or text of your documents. The checker can be trained from a few hundred invoices, in your own Google Colab; until it makes no mistakes on invoices it has not seen, nothing changes in the app.</string>
+    <!-- How many checked invoices, and how many of their values, are noted so far -->
+    <string name="checker_count">So far: %1$d invoices checked (%2$d values).</string>
+    <string name="checker_none">Nothing yet: check and save some invoices first.</string>
+    <string name="checker_share">Send the checker data</string>
+    <string name="checker_failed">The file could not be made. Try again.</string>
+</resources>

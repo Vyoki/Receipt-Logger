@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="checker_title">Insegna al controllore</string>
+    <string name="checker_hint">Ogni fattura che controlli e salvi insegna al controllore: il telefono annota come è stato letto ogni valore e se l\'hai tenuto o corretto. Solo numeri: nessun fornitore, importo o testo dei tuoi documenti. Il controllore si può addestrare con qualche centinaio di fatture, nel tuo Google Colab; finché sbaglia su fatture che non ha visto, nell\'app non cambia nulla.</string>
+    <string name="checker_count">Finora: %1$d fatture controllate (%2$d valori).</string>
+    <string name="checker_none">Ancora niente: prima controlla e salva qualche fattura.</string>
+    <string name="checker_share">Invia i dati del controllore</string>
+    <string name="checker_failed">Non è stato possibile preparare il file. Riprova.</string>
+</resources>
