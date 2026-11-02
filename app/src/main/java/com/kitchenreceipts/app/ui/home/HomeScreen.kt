@@ -68,7 +68,10 @@ import kotlinx.coroutines.flow.stateIn
 class HomeViewModel(repo: ReceiptRepository, checks: com.kitchenreceipts.app.data.ChecksRepository) : ViewModel() {
     val recent: StateFlow<List<DocumentListRow>?> =
         repo.recentDocuments(10).stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), null)
-    val attention: StateFlow<Int> = checks.attention().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
+    // What Checks lists for a look, price jumps not marked fine included.
+    val attention: StateFlow<Int> = kotlinx.coroutines.flow.combine(checks.attention(), repo.priceJumps(), checks.dismissed()) { a, jumps, done ->
+        a + jumps.count { com.kitchenreceipts.core.PriceWatch.jumpKey(it) !in done }
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0)
     val expiring: StateFlow<List<com.kitchenreceipts.core.ExpiringLine>> =
         checks.expiring().stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 }

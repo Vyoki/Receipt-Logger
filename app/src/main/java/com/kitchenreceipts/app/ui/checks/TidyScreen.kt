@@ -3,8 +3,9 @@ package com.kitchenreceipts.app.ui.checks
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
@@ -45,9 +46,14 @@ class TidyViewModel(repo: ReceiptRepository) : ViewModel() {
 }
 
 /**
- * Doubts left to tidy on invoices the app saved because their money is proven (see core Tidy): a lot read unsure or
- * not read, a name that may go on over the next printed line. Each is settled with one tap, or by opening the invoice.
+ * Doubts left to tidy on invoices the app saved because their money is proven (see core Tidy): a lot or a unit read
+ * unsure or not read, a name that may go on over the next printed line, a new supplier's name (its VAT number checked).
+ * Each is settled with one tap, or by opening the invoice.
  */
+/** The units offered in one tap for a line printed without one. */
+private val UNITS = listOf("kg", "pz", "l")
+
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun TidyScreen(onBack: () -> Unit, onEdit: (Long) -> Unit) {
     val c = appContainer()
@@ -70,32 +76,42 @@ fun TidyScreen(onBack: () -> Unit, onEdit: (Long) -> Unit) {
                                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,
                             )
                             for (m in Tidy.of(ItemMark.decode(r.marks))) {
-                                fun settle(keep: Boolean) {
+                                fun settle(keep: Boolean, chosen: String? = null) {
                                     scope.launch {
-                                        c.repository.settleTidy(r, m, keep)
-                                        c.log.event("TIDY", "field" to m.code, "keep" to keep)
+                                        c.repository.settleTidy(r, m, keep, chosen)
+                                        c.log.event("TIDY", "field" to m.code, "keep" to keep, "chosen" to (chosen != null))
                                     }
                                 }
                                 val read = Tidy.suggestion(m)
                                 Text(
                                     when {
                                         m.code == Tidy.NAME -> stringResource(R.string.tidy_name)
+                                        m.code == Tidy.SUPPLIER -> stringResource(R.string.tidy_supplier, m.meaning)
                                         m.code == Tidy.EXPIRY && read != null -> stringResource(R.string.tidy_expiry_unsure, read)
                                         m.code == Tidy.EXPIRY -> stringResource(R.string.tidy_expiry_none)
+                                        m.code == Tidy.UNIT && read != null -> stringResource(R.string.tidy_unit_unsure, read)
+                                        m.code == Tidy.UNIT -> stringResource(R.string.tidy_unit_none)
                                         read != null -> stringResource(R.string.tidy_lot_unsure, read)
                                         else -> stringResource(R.string.tidy_lot_none)
                                     },
                                     style = MaterialTheme.typography.bodyMedium, fontWeight = FontWeight.SemiBold,
                                 )
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                                FlowRow(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                                     when {
-                                        m.code == Tidy.NAME -> OutlinedButton(onClick = { settle(true) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                        m.code == Tidy.NAME || m.code == Tidy.SUPPLIER -> OutlinedButton(onClick = { settle(true) }, modifier = Modifier.heightIn(min = 48.dp)) {
                                             Text(stringResource(R.string.tidy_name_ok))
                                         }
                                         read != null -> {
                                             OutlinedButton(onClick = { settle(true) }, modifier = Modifier.heightIn(min = 48.dp)) {
                                                 Text(stringResource(R.string.tidy_keep, read))
                                             }
+                                            TextButton(onClick = { settle(false) }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                                Text(stringResource(R.string.tidy_leave_empty))
+                                            }
+                                        }
+                                        // No unit printed: the common ones in one tap, or left empty.
+                                        m.code == Tidy.UNIT -> {
+                                            for (u in UNITS) OutlinedButton(onClick = { settle(true, u) }, modifier = Modifier.heightIn(min = 48.dp)) { Text(u) }
                                             TextButton(onClick = { settle(false) }, modifier = Modifier.heightIn(min = 48.dp)) {
                                                 Text(stringResource(R.string.tidy_leave_empty))
                                             }

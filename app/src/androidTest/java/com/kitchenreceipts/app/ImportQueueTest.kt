@@ -486,10 +486,10 @@ class ImportQueueTest {
     }
 
     /**
-     * "Check again" and "Read again" on the file's screen always say what came of them, also when nothing was saved,
-     * and leave an invoice the operator corrected as it is.
+     * "Read again" on the file's screen always says what came of it, also when nothing was saved, and leaves an
+     * invoice the operator corrected as it is.
      */
-    @Test fun checkAgainAndReadAgainAlwaysSayWhatCameOfThem() = runBlocking<Unit> {
+    @Test fun readAgainAlwaysSaysWhatCameOfIt() = runBlocking<Unit> {
         plansDir.deleteRecursively()
         jobsDir.deleteRecursively()
         Reading().use { r ->
@@ -500,10 +500,9 @@ class ImportQueueTest {
             // 2/2031 corrected and left by the operator.
             val draft = r.queue.draftFile(r.jobOf(id, "2/2031")).apply { parentFile?.mkdirs(); writeText("0\n{}") }
             // Saving by itself is off: nothing can be saved, and the result says so.
-            r.store.recheckWaiting(id)
+            r.store.readWaitingAgain(id)
             until("checked") { r.store.run.value == null && r.store.runResult.value != null }
             val checked = r.store.runResult.value!!
-            assertEquals(false, checked.read)
             assertEquals(2, checked.checked)
             assertEquals(0, checked.saved)
             assertEquals(2, checked.still)
@@ -513,7 +512,7 @@ class ImportQueueTest {
             // says so. The corrected one is untouched.
             settings.autoSave = true
             r.store.readWaitingAgain(id)
-            until("read again") { r.store.run.value == null && r.store.runResult.value?.read == true }
+            until("read again") { r.store.run.value == null && r.store.runResult.value?.seq != checked.seq }
             val read = r.store.runResult.value!!
             assertEquals(2, read.checked)
             assertEquals(1, read.saved)

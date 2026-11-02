@@ -43,6 +43,7 @@ data class TidyRow(
     val description: String,
     val lot: String?,
     val expiry: LocalDate?,
+    val unit: String?,
     val marks: String?,
     val sellerName: String,
     val documentDate: LocalDate?,
@@ -113,6 +114,9 @@ data class SellerStatsRow(
 )
 
 /** A product and a supplier it was bought from. */
+/** A unit on a saved line, with its price (see DocumentDao.unitsOf). */
+data class UnitRow(val unit: String, val unitPrice: java.math.BigDecimal?, val vatBasis: VatBasis)
+
 data class ProductSellerRow(val productId: Long, val sellerId: Long)
 
 data class SellerAliasRow(val aliasKey: String, val sellerId: Long)
@@ -185,16 +189,16 @@ interface DocumentDao {
     /** Saved lines with a doubt to tidy: a mark of kind "tidy" (core Tidy.KIND) in their marks, newest documents first. */
     @Query(
         "SELECT li.id AS lineId, li.document_id AS documentId, li.original_description AS description, li.lot_number AS lot, " +
-            "li.expiry_date AS expiry, li.marks AS marks, s.name AS sellerName, d.document_date AS documentDate, d.document_number AS documentNumber " +
+            "li.expiry_date AS expiry, li.unit AS unit, li.marks AS marks, s.name AS sellerName, d.document_date AS documentDate, d.document_number AS documentNumber " +
             "FROM line_items li JOIN documents d ON d.id = li.document_id JOIN sellers s ON s.id = d.seller_id " +
             "WHERE li.marks LIKE '%tidy' || char(9) || '%' " +
             "ORDER BY (d.document_date IS NULL), d.document_date DESC, d.id DESC, li.position",
     )
     fun tidyLines(): Flow<List<TidyRow>>
 
-    /** A line's marks, lot and expiry after one of its doubts was settled. */
-    @Query("UPDATE line_items SET marks = :marks, lot_number = :lot, expiry_date = :expiry WHERE id = :id")
-    suspend fun setTidied(id: Long, marks: String?, lot: String?, expiry: LocalDate?)
+    /** A line's marks, lot, expiry and unit after one of its doubts was settled. */
+    @Query("UPDATE line_items SET marks = :marks, lot_number = :lot, expiry_date = :expiry, unit = :unit WHERE id = :id")
+    suspend fun setTidied(id: Long, marks: String?, lot: String?, expiry: LocalDate?, unit: String?)
 
     @Query(
         "SELECT li.*, p.name AS product_name FROM line_items li LEFT JOIN products p ON p.id = li.product_id " +
@@ -357,6 +361,14 @@ interface SellerDao {
     fun upsertAlias(alias: SellerAliasEntity)
 
     /** VAT basis of this supplier's most recent documents (most recent first). */
+    /** This supplier's saved lines of [productId] with a unit, newest first (a unit not read is taken from them). */
+    @Query(
+        "SELECT li.unit AS unit, li.unit_price AS unitPrice, d.vat_basis AS vatBasis FROM line_items li JOIN documents d ON d.id = li.document_id " +
+            "WHERE d.seller_id = :sellerId AND li.product_id = :productId AND li.unit IS NOT NULL AND TRIM(li.unit) != '' " +
+            "ORDER BY d.document_date DESC, d.id DESC",
+    )
+    suspend fun unitsOf(sellerId: Long, productId: Long): List<UnitRow>
+
     @Query("SELECT vat_basis FROM documents WHERE seller_id = :sellerId ORDER BY created_at DESC LIMIT 5")
     suspend fun recentVatBases(sellerId: Long): List<VatBasis>
 

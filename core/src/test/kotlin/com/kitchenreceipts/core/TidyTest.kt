@@ -54,7 +54,49 @@ class TidyTest {
         val wrongSum = proven.copy(total = DraftField("34,44"))
         assertFalse(Tidy.onlyTidyLeft(wrongSum))
         assertTrue(AutoAccept.reasons(wrongSum).isNotEmpty())
-        val unsureUnit = proven.copy(items = listOf(proven.items[0].copy(unit = DraftField("kg", uncertain = true)), proven.items[1]))
-        assertFalse(Tidy.onlyTidyLeft(unsureUnit))
+        // A quantity read unsure that its line's arithmetic does not prove (3 x 8,90 is not 17,80).
+        val unsureQty = proven.copy(items = listOf(proven.items[0].copy(quantity = DraftField("3", uncertain = true)), proven.items[1]))
+        assertFalse(Tidy.onlyTidyLeft(unsureQty))
+        // The VAT printed (taxable and total differ) but not read: missing, not to tidy.
+        assertFalse(Tidy.onlyTidyLeft(proven.copy(vat = DraftField(""))))
+    }
+
+    @Test fun aUnitUnsureOrNotPrintedIsLeftToTidyWhenTheMoneyIsProven() {
+        // Unsure: saved off the line, the reading kept to suggest; not printed: marked, the invoice not held.
+        val unsure = proven.copy(items = listOf(proven.items[0].copy(unit = DraftField("kg", uncertain = true)), proven.items[1]))
+        assertTrue(Tidy.onlyTidyLeft(unsure))
+        val saved = Tidy.prepareForSave(unsure).items[0]
+        assertEquals("", saved.unit.text)
+        assertTrue(ItemMark(Tidy.KIND, Tidy.UNIT, "kg") in Tidy.of(saved))
+        val missing = proven.copy(items = listOf(proven.items[0].copy(unit = DraftField("")), proven.items[1]))
+        assertTrue(ReviewReason.INCOMPLETE_ITEMS !in AutoAccept.reasons(missing))
+        assertTrue(ItemMark(Tidy.KIND, Tidy.UNIT, Tidy.NONE_READ) in Tidy.of(Tidy.prepareForSave(missing).items[0]))
+        // A quantity missing is no unit to tidy: still incomplete.
+        val noQty = proven.copy(items = listOf(proven.items[0].copy(quantity = DraftField(""), unit = DraftField("")), proven.items[1]))
+        assertTrue(ReviewReason.INCOMPLETE_ITEMS in AutoAccept.reasons(noQty))
+    }
+
+    @Test fun aNewSuppliersNameReadWithItsCheckedVatNumberIsLeftToTidy() {
+        val newSupplier = proven.copy(seller = DraftField("ABE S.r.l.", uncertain = true))
+        // Without a VAT number read with the name: the name holds the invoice.
+        assertTrue(ReviewReason.UNCERTAIN_VALUES in AutoAccept.reasons(newSupplier))
+        // With it (check digits right): saved, the name kept as read and listed to tidy once.
+        val checked = newSupplier.copy(sellerVatChecked = true)
+        assertTrue(AutoAccept.reasons(checked).isEmpty())
+        val saved = Tidy.prepareForSave(checked)
+        assertFalse(saved.seller.uncertain)
+        assertEquals("ABE S.r.l.", saved.seller.text)
+        assertTrue(ItemMark(Tidy.KIND, Tidy.SUPPLIER, "ABE S.r.l.") in Tidy.of(saved.items[0]))
+        // Opened again for editing: the name is shown as a doubt.
+        assertTrue(Tidy.restore(saved).seller.uncertain)
+    }
+
+    @Test fun theVatAmountIsProvenByItsLinesAndRates() {
+        // 17,80 + 12,60 at 10%: 3,04. Nothing printed proves the total (no total line): the lines' rates do.
+        val d = proven.copy(total = DraftField(""), vat = DraftField("3,04", uncertain = true))
+        assertEquals(304L to 1, AutoAccept.vatFromRates(d))
+        assertFalse(AutoAccept.settleProven(d).vat.uncertain)
+        // A VAT that the rates do not give stays to check.
+        assertTrue(AutoAccept.settleProven(d.copy(vat = DraftField("3,40", uncertain = true))).vat.uncertain)
     }
 }

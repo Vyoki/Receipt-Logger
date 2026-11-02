@@ -230,7 +230,7 @@ data class CreditEntity(
     @ColumnInfo(name = "closed_at") val closedAt: Long? = null,
 )
 
-/** v8: notices the operator has dealt with ("checked, it's fine", "used up"): not shown again. */
+/** v8: notices the operator has dealt with ("checked, it's fine", "used up"): not shown again. Also the app's own marks (a document whose price jumps Checks lists). */
 @Entity(tableName = "dismissed")
 data class DismissedEntity(
     @PrimaryKey val notice: String,

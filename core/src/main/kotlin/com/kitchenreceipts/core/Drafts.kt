@@ -130,6 +130,8 @@ data class DocumentDraft(
     val sellerAlternatives: List<String> = emptyList(),
     /** What the document's own sums say about the reading: lines recovered or dropped, packages, pages (see [Reconcile]). */
     val checks: Reconcile.Report? = null,
+    /** The supplier's VAT number was read with its name, its check digits right (see ParsedDocument.supplierVat). */
+    val sellerVatChecked: Boolean = false,
 ) {
     val uncertainCount: Int
         // The currency is shown highlighted when another one is printed, but never counts as a check by itself.
@@ -144,6 +146,7 @@ data class DocumentDraft(
             val dec = { d: BigDecimal -> ItalianNumbers.toEditText(d) }
             return DocumentDraft(
                 seller = f(p.sellerName) { it },
+                sellerVatChecked = p.supplierVat != null,
                 date = f(p.documentDate) { ItalianDates.format(it) },
                 number = f(p.documentNumber) { it },
                 currency = f(p.currency) { it },

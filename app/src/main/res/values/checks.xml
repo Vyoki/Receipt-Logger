@@ -84,4 +84,7 @@
     <string name="expiry_home_hint">Next: %1$s</string>
     <string name="charge_line_note">Discount or charge: counted in the total, not a product.</string>
     <string name="charge_line_is_product">It is a product: assign it</string>
+    <string name="jumps_title">Price jumps</string>
+    <string name="jumps_hint">Saved by the app because every amount checks out, but a price is 30% or more away from what you paid before.</string>
+    <string name="jumps_row">%1$s → %2$s per %3$s (%4$s%%)</string>
 </resources>

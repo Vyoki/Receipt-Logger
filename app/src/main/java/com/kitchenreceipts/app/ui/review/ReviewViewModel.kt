@@ -331,7 +331,8 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         }
         val items = repo.itemsOnce(id)
         val cents = { v: Long? -> DraftField(ItalianNumbers.centsToEditText(v)) }
-        val draft = DocumentDraft(
+        // Doubts left to tidy on the saved lines (and a new supplier's name) are shown again as doubts (see core Tidy).
+        val draft = com.kitchenreceipts.core.Tidy.restore(DocumentDraft(
             seller = DraftField(sellerName),
             date = DraftField(doc.documentDate?.let(ItalianDates::format) ?: ""),
             number = DraftField(doc.documentNumber ?: ""),
@@ -342,8 +343,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             vatBasis = doc.vatBasis,
             items = items.map { row ->
                 val it = row.item
-                // Doubts left to tidy on the saved line are shown again as doubts (see core Tidy).
-                com.kitchenreceipts.core.Tidy.restore(LineItemDraft(
+                LineItemDraft(
                     key = nextKey++,
                     description = DraftField(it.originalDescription),
                     productId = it.productId,
@@ -359,11 +359,11 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
                     packSize = DraftField(it.packSize ?: ""),
                     discount = DraftField(it.discount ?: ""),
                     marks = ItemMark.decode(it.marks),
-                ))
+                )
             },
             // Not saved with the document: a document prints lots when one of its lines has one.
             lotsPrinted = items.any { it.item.lotNumber != null },
-        )
+        ))
         initialDraft = draft
         keptStamp = doc.updatedAt
         baseDraft = draft

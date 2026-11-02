@@ -530,8 +530,8 @@ private fun Reading(plan: BundlePlan, secondsLeft: Long, vm: BundleViewModel, on
     if (n.toCheck > 0) {
         Text(pluralStringResource(R.plurals.bundle_card_to_check, n.toCheck, n.toCheck), style = MaterialTheme.typography.bodyMedium, color = Palette.Orange)
     }
-    // After an update: the ones waiting read again with today's reading, or checked again with today's rules; those that
-    // now prove themselves are saved. While it runs it says how far it is; when done, what came of it (also nothing).
+    // After an update: the ones waiting read again with today's reading and rules; those that now prove themselves are
+    // saved. While it runs it says how far it is; when done, what came of it (also nothing), and why the rest wait.
     val run by vm.run.collectAsStateWithLifecycle()
     val held by vm.rechecking.collectAsStateWithLifecycle()
     val result by vm.runResult.collectAsStateWithLifecycle()
@@ -539,17 +539,13 @@ private fun Reading(plan: BundlePlan, secondsLeft: Long, vm: BundleViewModel, on
     if (mine != null) {
         val done = mine.ids.count { it !in held }
         LinearProgressIndicator(progress = { if (mine.ids.isEmpty()) 1f else done.toFloat() / mine.ids.size }, modifier = Modifier.fillMaxWidth())
-        Text(
-            stringResource(if (mine.read) R.string.bundle_reread_running else R.string.bundle_recheck_running, done, mine.ids.size),
-            style = MaterialTheme.typography.bodyLarge,
-        )
+        Text(stringResource(R.string.bundle_reread_running, done, mine.ids.size), style = MaterialTheme.typography.bodyLarge)
     } else if (n.toCheck > 0 && n.reading == 0) {
         BigButton(stringResource(R.string.bundle_reread), null, onClick = vm::readAgain, primary = false)
-        BigButton(stringResource(R.string.bundle_recheck), null, onClick = vm::recheckWaiting, primary = false)
     }
     result?.takeIf { it.planId == plan.id && mine == null }?.let { r ->
         val lines = buildList {
-            add(stringResource(if (r.read) R.string.bundle_reread_done else R.string.bundle_recheck_done, r.checked, r.saved, r.still))
+            add(stringResource(R.string.bundle_reread_done, r.checked, r.saved, r.still))
             if (r.reasons.isNotEmpty()) {
                 add(stringResource(R.string.bundle_run_reason, r.reasons.map { (reason, n) -> "${com.kitchenreceipts.app.ui.reviewReasonText(reason)} ($n)" }.joinToString("; ")))
             }
@@ -557,6 +553,17 @@ private fun Reading(plan: BundlePlan, secondsLeft: Long, vm: BundleViewModel, on
             if (r.skipped > 0) add(pluralStringResource(R.plurals.bundle_run_skipped, r.skipped, r.skipped))
         }
         Text(lines.joinToString("\n"), style = MaterialTheme.typography.bodyLarge)
+        // Why the rest wait, counted on this phone: where the pages' words came from, what is unsure, why sums fail.
+        val details = buildList {
+            if (r.textPages + r.cameraPages > 0) add(stringResource(R.string.bundle_run_pages, r.textPages, r.cameraPages))
+            if (r.doubts.isNotEmpty()) {
+                add(stringResource(R.string.bundle_run_doubts, r.doubts.map { (kind, n) -> "${com.kitchenreceipts.app.ui.doubtText(kind)} ($n)" }.joinToString("; ")))
+            }
+            if (r.sumCauses.isNotEmpty()) {
+                add(stringResource(R.string.bundle_run_sums, r.sumCauses.map { (cause, n) -> "${com.kitchenreceipts.app.ui.sumCauseText(cause)} ($n)" }.joinToString("; ")))
+            }
+        }
+        if (details.isNotEmpty()) Text(details.joinToString("\n"), style = MaterialTheme.typography.bodyMedium, color = Palette.TextDim)
     }
     if (n.stopped > 0 && n.reading == 0) BigButton(pluralStringResource(R.plurals.bundle_read_rest, n.stopped, n.stopped), null, onClick = vm::readRest, primary = false)
     BigButton(stringResource(R.string.bundle_home), null, onClick = onHome, primary = false)

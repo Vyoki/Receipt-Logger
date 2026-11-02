@@ -102,6 +102,12 @@ class DraftPreparer(
             items = runCatching { repo.autoAssign(draft.seller.text, draft.items, settings.autoLinkProducts) }
                 .onFailure { log.error("autoAssign", it) }.getOrDefault(draft.items),
         )
+        // A unit not printed (or read unsure): the one this supplier's earlier invoices give the same product.
+        runCatching { repo.unitsFromHistory(draft.seller.text, draft.vatBasis, draft.items) }.onFailure { log.error("unitsFromHistory", it) }.getOrNull()?.let { withUnits ->
+            val filled = withUnits.zip(draft.items).count { (a, b) -> a.unit.text != b.unit.text || a.unit.uncertain != b.unit.uncertain }
+            if (filled > 0) log.event("UNIT_FROM_HISTORY", "lines" to filled)
+            draft = draft.copy(items = withUnits)
+        }
         // Quantity and price the wrong way round? The product's own price history tells.
         runCatching { repo.fixSwappedQuantities(draft.items) }.getOrNull()?.let { fixed ->
             val swapped = fixed.zip(draft.items).count { (a, b) -> a.quantity.text != b.quantity.text }
@@ -117,9 +123,11 @@ class DraftPreparer(
             if (settled > 0) log.event("CHOICE_REMEMBERED", "lines" to settled)
         }
         val changes = priceChanges(draft, null)
-        // A price far from what was paid before is plausible but unusual: never changed, but not saved without a look.
-        val reasons = AutoAccept.reasons(draft, bundleFlags) +
-            (if (PriceWatch.unusual(changes).isNotEmpty()) listOf(ReviewReason.UNUSUAL_PRICE) else emptyList())
+        // A price far from what was paid before is plausible but unusual: never changed. On a document held for a check
+        // anyway it is one more thing to look at; on one whose reading proves itself it does not hold it: the document is
+        // saved and the jump is raised in Checks (see PriceWatch.jumps).
+        val held = AutoAccept.reasons(draft, bundleFlags)
+        val reasons = held + (if (held.isNotEmpty() && PriceWatch.unusual(changes).isNotEmpty()) listOf(ReviewReason.UNUSUAL_PRICE) else emptyList())
         logParsed(pending, draft, recognition, reasons, changes)
         val category = supplierCategory(pending.ocrText, draft.seller.text)
         return PreparedDraft(draft, initial, recognition, reasons, changes, ocrSellerRaw, supplierKey, category)
@@ -190,6 +198,8 @@ class DraftPreparer(
             ),
         )
         log.event("SAVED", "doc" to id, "new" to true, "auto" to true, "items" to valid.items.size, "priceChanges" to p.priceChanges.size)
+        // A price jump does not hold a document whose reading proves itself: it is listed in Checks.
+        if (PriceWatch.unusual(p.priceChanges).isNotEmpty()) runCatching { repo.raisePriceJumps(id) }.onFailure { log.error("raisePriceJumps", it) }
         learning?.addExamples(p.supplierKey, SupplierMemory.examplesFrom(p.draft))
         runCatching { learning?.addLayout(p.supplierKey, com.kitchenreceipts.core.SupplierLayouts.learn(pending.parsed, p.draft)) }
         return id

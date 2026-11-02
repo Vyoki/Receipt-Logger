@@ -68,6 +68,16 @@ object PriceWatch {
 
     fun unusual(changes: List<PriceChange>): List<PriceChange> = alerts(changes, UNUSUAL_THRESHOLD)
 
+    /**
+     * The unusual changes (see [unusual]) on documents among [documents] (those saved lately), for Checks: a price jump
+     * no longer holds a document whose money is proven, it is raised there instead. Newest first.
+     */
+    fun jumps(history: List<PriceChange>, documents: Set<Long>): List<PriceChange> =
+        unusual(history.filter { it.newDocumentId in documents }).sortedWith(compareByDescending<PriceChange> { it.newDate }.thenByDescending { it.newDocumentId })
+
+    /** The key a price jump is marked "fine" under in Checks. */
+    fun jumpKey(c: PriceChange): String = "pj:${c.newDocumentId}:${c.productId}"
+
     /** The changes worth a notification, biggest first. */
     fun alerts(changes: List<PriceChange>, threshold: BigDecimal = ALERT_THRESHOLD): List<PriceChange> =
         changes.filter { it.percent.abs() >= threshold }.sortedByDescending { it.percent.abs() }

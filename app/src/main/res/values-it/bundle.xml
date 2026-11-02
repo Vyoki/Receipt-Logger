@@ -245,9 +245,7 @@
     <string name="bundle_show_all">Mostra tutte le fatture</string>
     <string name="bundle_time_left">Ancora circa %1$s</string>
     <string name="bundle_reread">Rileggi con la nuova lettura</string>
-    <string name="bundle_recheck_running">Ricontrollo… %1$d di %2$d</string>
     <string name="bundle_reread_running">Rilettura… %1$d di %2$d</string>
-    <string name="bundle_recheck_done">Ricontrollate %1$d: %2$d salvate dall\'app, %3$d ancora da controllare.</string>
     <string name="bundle_reread_done">Rilette %1$d: %2$d salvate dall\'app, %3$d ancora da controllare.</string>
     <string name="bundle_run_reason">Soprattutto: %1$s</string>
     <plurals name="bundle_run_skipped">
@@ -258,4 +256,31 @@
         <item quantity="one">%d trattenuta perché potrebbe ripetere un documento già salvato.</item>
         <item quantity="other">%d trattenute perché potrebbero ripetere documenti già salvati.</item>
     </plurals>
+    <string name="bundle_run_pages">Pagine: %1$d dal testo del PDF, %2$d lette dalla fotocamera.</string>
+    <string name="bundle_run_doubts">Incerti: %1$s</string>
+    <string name="bundle_run_sums">Somme che non tornano: %1$s</string>
+    <string name="doubt_supplier">fornitore</string>
+    <string name="doubt_number">numero</string>
+    <string name="doubt_date">data</string>
+    <string name="doubt_taxable">imponibile</string>
+    <string name="doubt_vat">IVA</string>
+    <string name="doubt_total">totale</string>
+    <string name="doubt_vat_basis">prezzi con o senza IVA</string>
+    <string name="doubt_name">nome prodotto</string>
+    <string name="doubt_quantity">quantità</string>
+    <string name="doubt_unit">unità</string>
+    <string name="doubt_price">prezzo</string>
+    <string name="doubt_amount">importo riga</string>
+    <string name="doubt_vat_rate">aliquota IVA</string>
+    <string name="doubt_lot">lotto</string>
+    <string name="doubt_expiry">scadenza</string>
+    <string name="doubt_pack">confezione</string>
+    <string name="doubt_discount">sconto</string>
+    <string name="sum_cents">pochi centesimi di differenza</string>
+    <string name="sum_amount_misread">importo di una riga letto male</string>
+    <string name="sum_line_twice">una riga letta due volte</string>
+    <string name="sum_line_extra">una riga che non è un prodotto</string>
+    <string name="sum_discount_sign">uno sconto contato al contrario</string>
+    <string name="sum_lines_short">righe mancanti</string>
+    <string name="sum_lines_over">le righe danno di più</string>
 </resources>

@@ -189,6 +189,42 @@ fun reviewReasonText(r: ReviewReason): String = stringResource(
     },
 )
 
+/** A kind of value left unsure (core ReadingDetails.doubts), in the operator's words. */
+@Composable
+fun doubtText(kind: String): String = when (kind) {
+    com.kitchenreceipts.core.ReadingDetails.SUPPLIER -> stringResource(R.string.doubt_supplier)
+    com.kitchenreceipts.core.ReadingDetails.NUMBER -> stringResource(R.string.doubt_number)
+    com.kitchenreceipts.core.ReadingDetails.DATE -> stringResource(R.string.doubt_date)
+    com.kitchenreceipts.core.ReadingDetails.TAXABLE -> stringResource(R.string.doubt_taxable)
+    com.kitchenreceipts.core.ReadingDetails.VAT -> stringResource(R.string.doubt_vat)
+    com.kitchenreceipts.core.ReadingDetails.TOTAL -> stringResource(R.string.doubt_total)
+    com.kitchenreceipts.core.ReadingDetails.VAT_BASIS -> stringResource(R.string.doubt_vat_basis)
+    com.kitchenreceipts.core.ReadingDetails.NAME -> stringResource(R.string.doubt_name)
+    com.kitchenreceipts.core.ReadingDetails.QUANTITY -> stringResource(R.string.doubt_quantity)
+    com.kitchenreceipts.core.ReadingDetails.UNIT -> stringResource(R.string.doubt_unit)
+    com.kitchenreceipts.core.ReadingDetails.PRICE -> stringResource(R.string.doubt_price)
+    com.kitchenreceipts.core.ReadingDetails.AMOUNT -> stringResource(R.string.doubt_amount)
+    com.kitchenreceipts.core.ReadingDetails.VAT_RATE -> stringResource(R.string.doubt_vat_rate)
+    com.kitchenreceipts.core.ReadingDetails.LOT -> stringResource(R.string.doubt_lot)
+    com.kitchenreceipts.core.ReadingDetails.EXPIRY -> stringResource(R.string.doubt_expiry)
+    com.kitchenreceipts.core.ReadingDetails.PACK -> stringResource(R.string.doubt_pack)
+    com.kitchenreceipts.core.ReadingDetails.DISCOUNT -> stringResource(R.string.doubt_discount)
+    else -> kind
+}
+
+/** Why the lines do not add up (core ReadingDetails.SumCause name), in the operator's words. */
+@Composable
+fun sumCauseText(cause: String): String = when (com.kitchenreceipts.core.ReadingDetails.SumCause.entries.firstOrNull { it.name == cause }) {
+    com.kitchenreceipts.core.ReadingDetails.SumCause.CENTS -> stringResource(R.string.sum_cents)
+    com.kitchenreceipts.core.ReadingDetails.SumCause.AMOUNT_MISREAD -> stringResource(R.string.sum_amount_misread)
+    com.kitchenreceipts.core.ReadingDetails.SumCause.LINE_TWICE -> stringResource(R.string.sum_line_twice)
+    com.kitchenreceipts.core.ReadingDetails.SumCause.LINE_EXTRA -> stringResource(R.string.sum_line_extra)
+    com.kitchenreceipts.core.ReadingDetails.SumCause.DISCOUNT_SIGN -> stringResource(R.string.sum_discount_sign)
+    com.kitchenreceipts.core.ReadingDetails.SumCause.LINES_SHORT -> stringResource(R.string.sum_lines_short)
+    com.kitchenreceipts.core.ReadingDetails.SumCause.LINES_OVER -> stringResource(R.string.sum_lines_over)
+    null -> cause
+}
+
 @Composable
 fun periodKindLabel(k: PeriodKind): String = stringResource(
     when (k) {

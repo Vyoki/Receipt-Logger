@@ -165,8 +165,12 @@ object HeaderEvidence {
         val best = merged.first()
         if (best.score < 3) return null
         val second = merged.getOrNull(1)?.score ?: 0
-        val sure = best.score >= 7 && best.score - second >= 3
-        return Extracted(best.value, if (sure) Confidence.HIGH else Confidence.LOW, best.source.substringAfter(": "))
+        // "DOC.N. 129 554101": another group of digits right after the value on its line, the number may be both.
+        val line = best.source.substringAfter(": ")
+        val at = line.indexOf(best.value)
+        val goesOn = at >= 0 && rx("^\\s+\\d{3,}(?![\\d,.:/-])").containsMatchIn(line.substring(at + best.value.length))
+        val sure = best.score >= 7 && best.score - second >= 3 && !goesOn
+        return Extracted(best.value, if (sure) Confidence.HIGH else Confidence.LOW, line)
     }
 
     /** Every candidate for the document number with its score and reasons, best first (for troubleshooting too). */

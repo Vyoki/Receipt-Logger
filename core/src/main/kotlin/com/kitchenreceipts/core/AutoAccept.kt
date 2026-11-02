@@ -63,7 +63,9 @@ object AutoAccept {
         // Discount and charge lines need only their amount (no quantity, unit or VAT rate of their own).
         val goods = d.items.filter { !it.isCharge }
         val someRates = goods.any { it.vatRate.text.isNotBlank() }
-        if (goods.any { it.description.isMissing || ItalianNumbers.parse(it.quantity.text) == null || it.unit.isMissing } ||
+        // A unit not printed does not hold a document whose money is proven: it is left to tidy (see Tidy.unitMissing).
+        val unitsToTidy = onlyTidy || (d.items.any(Tidy::unitMissing) && Tidy.onlyTidyLeft(d))
+        if (goods.any { it.description.isMissing || ItalianNumbers.parse(it.quantity.text) == null || (it.unit.isMissing && !unitsToTidy) } ||
             d.items.any { cents(it.lineTotal.text) == null } ||
             (someRates && goods.any { it.vatRate.text.isBlank() })
         ) {
@@ -150,8 +152,36 @@ object AutoAccept {
             items = d.items.map { it.copy(quantity = clearQuantity(it.quantity), unitPrice = clearPrice(it.unitPrice), lineTotal = clear(it.lineTotal), discount = clear(it.discount)) },
             subtotal = settle(d.subtotal, sub != null && kotlin.math.abs(sub - sum) <= tolerance),
             total = settle(d.total, tot != null && (kotlin.math.abs(tot - sum) <= tolerance || (sub != null && vat != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance))),
-            vat = settle(d.vat, vat != null && sub != null && tot != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance),
+            vat = settle(d.vat, vat != null && (
+                (sub != null && tot != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance) ||
+                    // The VAT its lines give: each rate's lines x rate, rounded per rate (a cent per rate for rounding).
+                    vatFromRates(d)?.let { (cents, rates) -> kotlin.math.abs(cents - vat) <= rates } == true
+                )),
         )
+    }
+
+    /**
+     * The VAT the lines give, and the number of rates: each rate's lines added up, times the rate (prices without VAT),
+     * or the VAT inside them (prices with VAT), rounded per rate. Null when a line has no amount or no rate, or the VAT
+     * basis is not known: then nothing is proven this way.
+     */
+    fun vatFromRates(d: DocumentDraft): Pair<Long, Int>? {
+        if (d.items.isEmpty() || d.vatBasis == VatBasis.UNKNOWN || d.vatBasisUncertain) return null
+        val byRate = HashMap<BigDecimal, Long>()
+        for (l in d.items) {
+            val cents = cents(l.lineTotal.text) ?: return null
+            val rate = ItalianNumbers.parse(l.vatRate.text)?.stripTrailingZeros() ?: return null
+            if (rate.signum() < 0 || rate > BigDecimal(30)) return null
+            byRate[rate] = (byRate[rate] ?: 0L) + cents
+        }
+        val hundred = BigDecimal(100)
+        val vat = byRate.entries.sumOf { (rate, cents) ->
+            val base = BigDecimal(cents)
+            val v = if (d.vatBasis == VatBasis.INCLUSIVE) base.multiply(rate).divide(hundred.add(rate), 0, java.math.RoundingMode.HALF_UP)
+            else base.multiply(rate).divide(hundred, 0, java.math.RoundingMode.HALF_UP)
+            v.toLong()
+        }
+        return vat to byRate.size
     }
 
     /**

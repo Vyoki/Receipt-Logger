@@ -41,6 +41,7 @@ class Scorecard {
     var docs = 0
     var autoRight = 0
     var autoWrong = 0
+    var tidyWrongNames = 0
     var allRight = 0
     /** Wrong values not highlighted, lines read that are not on the document included. */
     var silent = 0
@@ -80,10 +81,13 @@ class Scorecard {
         val outcomes = mutableListOf<Outcome>()
         // Lots the app leaves off the line when it saves by itself (unsure or not read): listed to tidy, never saved wrong.
         var tidyLots = 0
+        var tidySupplierWrong = false
         fun field(name: String, f: DraftField, right: Boolean) {
             val o = outcome(right, f)
             stat(name).add(o); stat("all fields").add(o); outcomes += o
             if (name == "lot" && o == Outcome.FLAGGED && (f.uncertain || (draft.lotsPrinted && draft.items.any { it.lot.text.isNotBlank() }))) tidyLots++
+            // A new supplier's name read with its VAT number: saved, listed to tidy (flagged, never silent).
+            if (name == "supplier" && o == Outcome.FLAGGED && f.uncertain && draft.sellerVatChecked) { tidyLots++; tidySupplierWrong = true }
             if (o == Outcome.SILENT) silent++
             if (o == Outcome.SILENT || o == Outcome.FLAGGED) problems += "$name: '${f.text}' ${if (o == Outcome.SILENT) "SILENT" else "flagged"}"
         }
@@ -156,6 +160,8 @@ class Scorecard {
         val tidiedRight = outcomes.none { it == Outcome.SILENT } && outcomes.count { it == Outcome.FLAGGED } == tidyLots && tidyLots > 0
         val wrong = !(right || (auto && tidiedRight)) || mustNotSave
         if (auto && !wrong) autoRight++
+        // Saved with the supplier's name wrong but listed to tidy: no silent error, but counted apart.
+        if (auto && !wrong && tidySupplierWrong) tidyWrongNames++
         if (auto && wrong) { autoWrong++; if (!right) problems += "SAVED WITHOUT REVIEW WITH ERRORS" }
         if (problems.isNotEmpty()) worst += "${doc.name}: " + problems.take(6).joinToString("; ")
         if (auto && wrong) savedWithErrors += "${doc.name}: " + problems.joinToString("; ")
@@ -165,6 +171,7 @@ class Scorecard {
     fun report(title: String): String = buildString {
         append("== $title: $docs documents\n")
         append("documents fully right: ${pct(allRight)}  saved without review: right ${pct(autoRight)}, WITH ERRORS ${pct(autoWrong)}\n")
+        if (tidyWrongNames > 0) append("saved with the supplier's name misread, listed to tidy: $tidyWrongNames\n")
         if (heldBack.isNotEmpty()) append("fully right but sent to review, because: ").append(heldBack.entries.joinToString(", ") { "${it.key} ${it.value}" }).append('\n')
         append("unexplained words (item table, supplier box): $unexplainedWords ($unexplainedNumbers with digits), in ${pct(docsWithUnexplained)} of documents\n")
         append(String.format("%-12s %7s %7s %7s %7s %7s\n", "field", "right", "sure", "check", "fixed", "SILENT"))

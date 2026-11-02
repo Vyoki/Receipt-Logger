@@ -64,7 +64,19 @@ data class ImportJob(
     /** For the list once read: values still unchecked, and why it needs a look (also when its reading is not in memory). */
     val uncertainCount: Int = 0,
     val reasons: List<ReviewReason> = emptyList(),
-)
+    /** Once read: pages read from the PDF's own text, and pages read in all (the others by the camera reading). */
+    val textPages: Int? = null,
+    val pagesRead: Int? = null,
+    /** Once read: the kinds of values left unsure (core ReadingDetails.doubts), and why the lines do not add up. */
+    val doubts: Set<String> = emptySet(),
+    val sumCause: String? = null,
+) {
+    /** The same job with what its reading [pending] (prepared as [d]) says about its pages and its doubts. */
+    fun withDetails(pending: PendingImport, d: com.kitchenreceipts.core.DocumentDraft): ImportJob = copy(
+        textPages = pending.textLayerPages.size, pagesRead = pending.pagesRead,
+        doubts = com.kitchenreceipts.core.ReadingDetails.doubts(d), sumCause = com.kitchenreceipts.core.ReadingDetails.sumCause(d)?.name,
+    )
+}
 
 /**
  * What happened to a job, for whoever keeps track of a file of many invoices (see [ImportQueue.listener]): the queue
@@ -410,7 +422,7 @@ class ImportQueue(
                 itemCount = d.items.size,
                 uncertainCount = d.uncertainCount,
                 reasons = prepared.reasons,
-            )
+            ).withDetails(pending, d)
             if (lazy) keep(j.id, pending)
             update(j)
             if (savedId != null) dropReading(j.id) // saved: the reading is kept with the document (ReadingArchive)
@@ -457,6 +469,22 @@ class ImportQueue(
 
     /** Job [id] is open in a review or holds the operator's corrections: the app leaves it as it is. */
     fun isOperatorsOwn(id: String): Boolean = operatorsOwn(id)
+
+    /**
+     * Job [id] is read from exact text: an e-invoice file, or a PDF with pages of its own text (read again from the
+     * file in a moment, see [readAgain]). A job read by the camera is checked again from its stored reading instead
+     * ([recheck]): the same words, today's rules, no camera reading again.
+     */
+    fun readsFromText(id: String): Boolean {
+        val j = job(id) ?: return false
+        if (j.file.mimeType == FileStore.MIME_XML) return true
+        j.textPages?.let { return it > 0 }
+        // Read by an older version: its stored reading says which pages came from the PDF's text.
+        return runCatching {
+            val f = File(File(dir, id), "reading.properties")
+            f.exists() && !Properties().apply { f.inputStream().use { load(it) } }.getProperty("textPages").isNullOrBlank()
+        }.getOrDefault(false)
+    }
 
     /**
      * Reads the waiting jobs [ids] again from their files, with today's reading, exactly as a first reading (the
@@ -534,7 +562,7 @@ class ImportQueue(
                 (job(id) ?: return null).copy(
                     sellerName = d.seller.text.ifBlank { null }, totalCents = com.kitchenreceipts.core.ItalianNumbers.parseCents(d.total.text),
                     itemCount = d.items.size, uncertainCount = d.uncertainCount, reasons = prepared.reasons,
-                ),
+                ).withDetails(pending, d),
             )
             return null
         }
@@ -543,7 +571,7 @@ class ImportQueue(
             status = JobStatus.SAVED, pending = null, savedDocumentId = savedId, progress = null,
             sellerName = d.seller.text.ifBlank { null }, totalCents = com.kitchenreceipts.core.ItalianNumbers.parseCents(d.total.text),
             itemCount = d.items.size, uncertainCount = d.uncertainCount, reasons = prepared.reasons,
-        )
+        ).withDetails(pending, d)
         synchronized(kept) { kept.remove(id) }
         if (job(id) != null) update(done)
         dropReading(id)
@@ -597,6 +625,10 @@ class ImportQueue(
         if (job.flags.isNotEmpty()) p["flags"] = job.flags.sorted().joinToString(",")
         if (job.uncertainCount > 0) p["uncertain"] = job.uncertainCount.toString()
         if (job.reasons.isNotEmpty()) p["reasons"] = job.reasons.joinToString(",") { it.name }
+        job.textPages?.let { p["textPages"] = it.toString() }
+        job.pagesRead?.let { p["pagesRead"] = it.toString() }
+        if (job.doubts.isNotEmpty()) p["doubts"] = job.doubts.joinToString(",")
+        job.sumCause?.let { p["sumCause"] = it }
         // Written aside, then put in place in one step: the app stopped mid-write never leaves a cut file (a job
         // whose details cannot be read is lost from the queue, and its photo with it).
         runCatching {
@@ -631,6 +663,11 @@ class ImportQueue(
             uncertainCount = p.getProperty("uncertain")?.toIntOrNull() ?: 0,
             // A reason this version does not know (written by a newer one) is left out.
             reasons = p.getProperty("reasons").orEmpty().split(',').mapNotNull { n -> ReviewReason.entries.firstOrNull { it.name == n.trim() } },
+            // Written since this version (older jobs: not known).
+            textPages = p.getProperty("textPages")?.toIntOrNull(),
+            pagesRead = p.getProperty("pagesRead")?.toIntOrNull(),
+            doubts = p.getProperty("doubts").orEmpty().split(',').map { it.trim() }.filter { it.isNotEmpty() }.toSet(),
+            sumCause = p.getProperty("sumCause")?.ifBlank { null },
         )
     }
 

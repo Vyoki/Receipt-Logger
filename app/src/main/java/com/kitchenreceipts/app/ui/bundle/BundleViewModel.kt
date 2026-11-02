@@ -148,13 +148,10 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
     /** "5 more from this supplier saved by the app" (see BundleStore.rechecked). */
     val rechecked: StateFlow<BundleStore.Rechecked?> = store.rechecked
 
-    /** The invoices still to check, checked again with the current rules (see BundleStore.recheckWaiting). */
-    fun recheckWaiting() = store.recheckWaiting(planId)
-
-    /** The invoices still to check, read again from their files with today's reading (see BundleStore.readWaitingAgain). */
+    /** The invoices still to check, read again with today's reading and rules (see BundleStore.readWaitingAgain). */
     fun readAgain() = store.readWaitingAgain(planId)
 
-    /** A check again / read again going on, and the last one's result (see BundleStore.Run). */
+    /** A read again going on, and the last one's result (see BundleStore.Run). */
     val run: StateFlow<BundleStore.Run?> = store.run
     val runResult: StateFlow<BundleStore.RunResult?> = store.runResult
 

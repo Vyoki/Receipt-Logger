@@ -292,7 +292,10 @@ object ReceiptParser {
             // Lots at the end of the product names ("... AB500168"): offered, or taken once learned for this supplier.
             val named = runCatching { LotsInNames.apply(coded, o.layout) }.getOrDefault(coded)
             val lotted = runCatching { LotsByPosition.apply(named, pages, o.ownVatNumber) }.getOrDefault(named)
-            val handled = Handwriting.mark(lotted, pages).copy(supplierVatSource = vatSource)
+            val handled = Handwriting.mark(lotted, pages).copy(
+                supplierVatSource = vatSource,
+                supplierVat = runCatching { vatWithName(lotted.sellerName?.value, supplier, layouts, text, o.ownVatNumber) }.getOrNull(),
+            )
             // A reverse-charge form (TD16-TD19): logged net of the VAT it prints (see ReverseCharge).
             val marked2 = runCatching { ReverseCharge.fromText(text)?.let { ReverseCharge.apply(handled, it) } }.getOrNull() ?: handled
             return if (repeats.isEmpty()) marked2 else marked2.copy(warnings = marked2.warnings + ParseWarning.DUPLICATE_PAGE)
@@ -305,6 +308,27 @@ object ReceiptParser {
         val learned = runCatching { options.layoutLookup.invoke(key) }.getOrNull() ?: return plain
         val withLayout = read(options.copy(layout = learned, layoutLookup = null))
         return if (quality(withLayout) >= quality(plain)) withLayout else plain
+    }
+
+    private fun nameKey(s: String) = s.uppercase().filter(Char::isLetterOrDigit)
+
+    /**
+     * The supplier's VAT number printed with the name shown, its check digits right: in the supplier's own box (an
+     * Italian or another EU country's number), or (an Italian number) on a line at most six under a line that prints
+     * the name, on the same page. Null otherwise.
+     */
+    private fun vatWithName(name: String?, supplier: Parties.Supplier?, layouts: List<LayoutRows.Layout>, text: String, own: String?): String? {
+        val key = name?.let(::nameKey)?.takeIf { k -> k.count(Char::isLetter) >= 3 } ?: return null
+        val boxName = supplier?.name?.value?.let(::nameKey)
+        if (supplier?.vatNumber != null && boxName == key) return supplier.vatNumber
+        val vat = SellerProfiles.supplierVatNumber(text, own) ?: return null
+        for (layout in layouts) {
+            val lines = layout.text.lines()
+            val at = lines.indexOfFirst { SellerProfiles.repairDigits(it).replace(" ", "").contains(vat) }
+            if (at < 0) continue
+            if ((maxOf(0, at - 6)..at).any { nameKey(lines[it]).contains(key) }) return vat
+        }
+        return null
     }
 
     /**
@@ -1079,7 +1103,9 @@ object ReceiptParser {
                 val value = m.groupValues[1].trimEnd('/', '-')
                 if (value.any { it.isDigit() } && ItalianDates.findDates(value).isEmpty() && plausibleDocNumber(value)) {
                     consumed += i
-                    return Extracted(value, Confidence.HIGH, line)
+                    // "DOC.N. 129 554101": another group of digits right after it, the number may be both: shown for a check.
+                    val goesOn = rx("^\\s+\\d{3,}(?![\\d,.:/-])").containsMatchIn(line.substring(m.groups[1]!!.range.last + 1))
+                    return Extracted(value, if (goesOn) Confidence.LOW else Confidence.HIGH, line)
                 }
             }
         }

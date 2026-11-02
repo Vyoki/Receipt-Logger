@@ -758,6 +758,9 @@
     <string name="tidy_lot_none">Nessun lotto letto (le altre righe lo hanno)</string>
     <string name="tidy_expiry_unsure">Scadenza incerta: letta «%1$s»</string>
     <string name="tidy_expiry_none">Nessuna scadenza letta</string>
+    <string name="tidy_supplier">Nuovo fornitore, partita IVA verificata: nome letto «%1$s»</string>
+    <string name="tidy_unit_unsure">Unità incerta: letta «%1$s»</string>
+    <string name="tidy_unit_none">Unità non stampata</string>
     <string name="tidy_keep">Tieni %1$s</string>
     <string name="tidy_leave_empty">Lascia vuoto</string>
     <string name="tidy_none_printed">Non stampato</string>
@@ -766,6 +769,5 @@
         <item quantity="one">%d piccola cosa da sistemare</item>
         <item quantity="other">%d piccole cose da sistemare</item>
     </plurals>
-    <string name="tidy_home_hint">Su fatture salvate dall\'app: un lotto o un nome prodotto da confermare</string>
-    <string name="bundle_recheck">Ricontrolla con le nuove regole</string>
+    <string name="tidy_home_hint">Su fatture salvate dall\'app: un lotto, un\'unità o un nome da confermare</string>
 </resources>

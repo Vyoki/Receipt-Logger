@@ -176,6 +176,12 @@ data class ParsedDocument(
     val reconciled: Reconcile.Report? = null,
     /** Where the supplier's VAT number was read; null when none was found (or not looked for). */
     val supplierVatSource: SupplierVatSource? = null,
+    /**
+     * The supplier's VAT number, its check digits right (Italian or another EU country's), printed with the supplier's
+     * name: in the supplier's own box, or a few lines under the name. The supplier is known by it, whatever the spelling
+     * read of its name (see Tidy).
+     */
+    val supplierVat: String? = null,
 ) {
     companion object {
         val EMPTY = ParsedDocument(

@@ -106,18 +106,24 @@ class BundleStore(
     data class Rechecked(val planId: String, val count: Int, val seq: Long)
 
     /**
-     * A "check again" ([read] false) or "read again" of a file's invoices waiting to be checked: [ids] the ones done now
-     * (each held by the queue until it is done), [skipped] the ones the operator corrected, left as they are.
+     * A "read again" of a file's invoices waiting to be checked: [ids] the ones done now (each held by the queue until it
+     * is done), [skipped] the ones the operator corrected, left as they are.
      */
-    data class Run(val planId: String, val read: Boolean, val ids: List<String>, val skipped: Int)
+    data class Run(val planId: String, val ids: List<String>, val skipped: Int)
 
     /**
      * What a [Run] did: [checked] invoices, [saved] by the app, [still] to check, the commonest [reasons] (with counts),
      * and [duplicates]: ones with nothing left to check, held only because they may repeat a document already saved.
+     * The details, counted on the phone: pages read from the PDF's own text and by the camera ([textPages],
+     * [cameraPages], over the invoices checked), and over those still to check the commonest values left unsure
+     * ([doubts], core ReadingDetails kinds) and why their lines do not add up ([sumCauses], ReadingDetails.SumCause).
      */
     data class RunResult(
-        val planId: String, val read: Boolean, val checked: Int, val saved: Int, val still: Int, val skipped: Int,
+        val planId: String, val checked: Int, val saved: Int, val still: Int, val skipped: Int,
         val reasons: List<Pair<com.kitchenreceipts.core.ReviewReason, Int>>, val seq: Long, val duplicates: Int = 0,
+        val textPages: Int = 0, val cameraPages: Int = 0,
+        val doubts: List<Pair<String, Int>> = emptyList(),
+        val sumCauses: List<Pair<String, Int>> = emptyList(),
     )
 
     private val _run = MutableStateFlow<Run?>(null)
@@ -616,51 +622,39 @@ class BundleStore(
         plan(id)?.invoices?.filter { it.outcome == InvoiceOutcome.READY || it.outcome == InvoiceOutcome.CHECK_LATER }?.mapNotNull { it.jobId }.orEmpty()
 
     /**
-     * The file's invoices still to check, checked again with the app's current rules: after an update, those whose
-     * reading now proves itself are saved by the app. Nothing is read again (see ImportQueue.recheck). Its progress is
-     * [run]; its result, also when nothing was saved, is [runResult].
-     */
-    fun recheckWaiting(id: String) {
-        if (_run.value != null) return
-        val jobs = waitingJobs(id)
-        val (own, todo) = jobs.partition { queue.isOperatorsOwn(it) }
-        log.event("BUNDLE_RECHECK_ALL", "bundle" to id.take(8), "jobs" to todo.size, "corrected" to own.size)
-        queue.holdForRecheck(todo)
-        _run.value = Run(id, read = false, ids = todo, skipped = own.size)
-        scope.launch {
-            val saved = try {
-                queue.recheck(todo)
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                log.error("bundleRecheckAll", e)
-                emptyList()
-            }
-            finishRun(id, read = false, todo, own.size)
-            if (saved.isNotEmpty() && plan(id)?.announced == true) runCatching { dishesCheck(saved) }.onFailure { log.error("dishAlerts", it) }
-        }
-    }
-
-    /**
-     * The file's invoices still to check, read again from their own files with today's reading (a PDF's own text, no
-     * camera reading or AI where the page needs none), exactly as a first reading: the duplicate guard and the rules
-     * for saving by itself apply. The ones the operator corrected are left as they are. Progress [run], result [runResult].
+     * "Read again": the file's invoices still to check, read again with today's reading and rules, exactly as a first
+     * reading (the duplicate guard and the rules for saving by itself apply); those that now prove themselves are saved.
+     * An invoice of exact text (a PDF's own text, an e-invoice) is read again from its file, in a moment; one read by
+     * the camera is checked again from its stored reading (the same words, no camera reading again). The ones the
+     * operator corrected are left as they are. Its progress is [run]; its result, also when nothing was saved, [runResult].
      */
     fun readWaitingAgain(id: String) {
         if (_run.value != null) return
         val jobs = waitingJobs(id)
         val own = jobs.filter { queue.isOperatorsOwn(it) }
-        val todo = queue.readAgain(jobs - own.toSet())
-        log.event("BUNDLE_READ_AGAIN", "bundle" to id.take(8), "jobs" to todo.size, "corrected" to own.size)
-        _run.value = Run(id, read = true, ids = todo, skipped = own.size)
+        val (fromText, fromStore) = (jobs - own.toSet()).partition { queue.readsFromText(it) }
+        queue.holdForRecheck(fromStore)
+        val reread = queue.readAgain(fromText)
+        val todo = reread + fromStore
+        log.event("BUNDLE_READ_AGAIN", "bundle" to id.take(8), "fromText" to reread.size, "fromStore" to fromStore.size, "corrected" to own.size)
+        _run.value = Run(id, ids = todo, skipped = own.size)
         scope.launch {
-            // Each job is held by the queue until its new reading is done.
+            val saved = try {
+                queue.recheck(fromStore)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.error("bundleReadAgain", e)
+                emptyList()
+            }
+            // Each job read again is held by the queue until its new reading is done.
             queue.rechecking.first { held -> todo.none { it in held } }
-            finishRun(id, read = true, todo, own.size)
+            finishRun(id, todo, own.size)
+            if (saved.isNotEmpty() && plan(id)?.announced == true) runCatching { dishesCheck(saved) }.onFailure { log.error("dishAlerts", it) }
         }
     }
 
-    private fun finishRun(id: String, read: Boolean, todo: List<String>, skipped: Int) {
+    private fun finishRun(id: String, todo: List<String>, skipped: Int) {
         val jobs = todo.mapNotNull { queue.job(it) }
         // Still for the operator: to check, or (rarely) not readable this time.
         val still = jobs.filter { it.status == JobStatus.READY || it.status == JobStatus.FAILED }
@@ -669,11 +663,21 @@ class BundleStore(
         val top = counts.take(3).map { it.key to it.value }
         // Nothing to check, saving by itself on, and still waiting: held by the duplicate guard.
         val duplicates = if (settings.autoSave) still.count { it.status == JobStatus.READY && it.reasons.isEmpty() } else 0
-        _runResult.value = RunResult(id, read, todo.size, saved, still.size, skipped, top, recheckSeq.incrementAndGet(), duplicates)
+        // Pages: those read from the PDF's text, and the rest of those read (by the camera reading).
+        val textPages = jobs.sumOf { it.textPages ?: 0 }
+        val cameraPages = jobs.sumOf { j -> j.pagesRead?.let { (it - (j.textPages ?: 0)).coerceAtLeast(0) } ?: 0 }
+        val doubts = still.flatMap { it.doubts }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }
+        val causes = still.mapNotNull { it.sumCause }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }
+        _runResult.value = RunResult(
+            id, todo.size, saved, still.size, skipped, top, recheckSeq.incrementAndGet(), duplicates,
+            textPages, cameraPages, doubts.take(5).map { it.key to it.value }, causes.take(3).map { it.key to it.value },
+        )
         _run.value = null
         log.event(
-            if (read) "BUNDLE_READ_AGAIN_DONE" else "BUNDLE_RECHECK_ALL_DONE", "bundle" to id.take(8), "jobs" to todo.size, "saved" to saved,
+            "BUNDLE_READ_AGAIN_DONE", "bundle" to id.take(8), "jobs" to todo.size, "saved" to saved,
             "still" to still.size, "reasons" to counts.joinToString(",") { "${it.key.name}=${it.value}" },
+            "textPages" to textPages, "cameraPages" to cameraPages,
+            "doubts" to doubts.joinToString(",") { "${it.key}=${it.value}" }, "sumCauses" to causes.joinToString(",") { "${it.key}=${it.value}" },
         )
     }
 

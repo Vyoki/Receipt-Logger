@@ -81,4 +81,7 @@
     <string name="expiry_home_hint">Prossimo: %1$s</string>
     <string name="charge_line_note">Sconto o spesa: conta nel totale, non è un prodotto.</string>
     <string name="charge_line_is_product">È un prodotto: assegnalo</string>
+    <string name="jumps_title">Salti di prezzo</string>
+    <string name="jumps_hint">Salvate dall\'app perché tutti gli importi tornano, ma un prezzo si scosta del 30% o più da quanto pagato prima.</string>
+    <string name="jumps_row">%1$s → %2$s al %3$s (%4$s%%)</string>
 </resources>

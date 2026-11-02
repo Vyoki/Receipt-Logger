@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.emitAll
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.flowOn
+import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.withContext
 import java.math.BigDecimal
@@ -131,16 +132,19 @@ class ReceiptRepository(
      * One doubt of a saved line settled: [keep] puts a lot or expiry the app read unsure on the line (a missing lot
      * stays empty), or keeps a name as printed; otherwise the line stays as it is. Either way the doubt is gone.
      */
-    suspend fun settleTidy(row: TidyRow, mark: ItemMark, keep: Boolean) {
+    suspend fun settleTidy(row: TidyRow, mark: ItemMark, keep: Boolean, chosen: String? = null) {
         val marks = ItemMark.decode(row.marks).filterNot { it == mark }
         var lot = row.lot
         var expiry = row.expiry
-        val read = com.kitchenreceipts.core.Tidy.suggestion(mark)
+        var unit = row.unit
+        // [chosen]: a value the operator picked (a unit); otherwise the reading kept in the mark.
+        val read = chosen ?: com.kitchenreceipts.core.Tidy.suggestion(mark)
         if (keep && read != null) when (mark.code) {
             com.kitchenreceipts.core.Tidy.LOT -> lot = read
             com.kitchenreceipts.core.Tidy.EXPIRY -> expiry = com.kitchenreceipts.core.ItalianDates.parse(read) ?: expiry
+            com.kitchenreceipts.core.Tidy.UNIT -> unit = read
         }
-        documents.setTidied(row.lineId, ItemMark.encode(marks), lot, expiry)
+        documents.setTidied(row.lineId, ItemMark.encode(marks), lot, expiry, unit)
     }
     suspend fun documentOnce(id: Long) = documents.documentById(id)
     suspend fun itemsOnce(id: Long) = documents.itemsOnce(id)
@@ -653,6 +657,32 @@ class ReceiptRepository(
     }
 
     /**
+     * A goods line with no unit read (or one read unsure), linked to a product this supplier sold before under the same
+     * description (ProductSource.REMEMBERED): the unit this supplier's earlier invoices give that product, when they
+     * always give the same one and the price per that unit is within 30% of the last one paid (a carton priced as a
+     * kilo would not be). An unsure reading that disagrees with them keeps its doubt.
+     */
+    suspend fun unitsFromHistory(sellerName: String, vatBasis: VatBasis, items: List<LineItemDraft>): List<LineItemDraft> {
+        if (sellerName.isBlank() || items.none { it.productId != null && (it.unit.isMissing || it.unit.uncertain) }) return items
+        val sellerId = sellers.findByNormalizedSuspend(normalizeSeller(sellerName))?.id ?: return items
+        return items.map { l ->
+            val pid = l.productId
+            if (pid == null || l.isCharge || l.productSource != com.kitchenreceipts.core.ProductSource.REMEMBERED) return@map l
+            if (!(l.unit.isMissing || l.unit.uncertain)) return@map l
+            val rows = sellers.unitsOf(sellerId, pid)
+            val unit = rows.map { it.unit.trim() }.distinctBy { it.lowercase() }.singleOrNull() ?: return@map l
+            if (l.unit.uncertain && l.unit.text.isNotBlank() && !l.unit.text.trim().equals(unit, ignoreCase = true)) return@map l
+            val price = com.kitchenreceipts.core.ItalianNumbers.parse(l.unitPrice.text)
+            val last = rows.firstOrNull { it.vatBasis == vatBasis && it.unitPrice != null && it.unitPrice.signum() > 0 }?.unitPrice
+            if (price != null && last != null) {
+                val ratio = price.divide(last, 4, java.math.RoundingMode.HALF_UP)
+                if (ratio < BigDecimal("0.7") || ratio > BigDecimal("1.3")) return@map l
+            }
+            l.copy(unit = com.kitchenreceipts.core.DraftField(unit, uncertain = false, source = "as on this supplier's earlier invoices"))
+        }
+    }
+
+    /**
      * Links every line of a new scan to a product without asking, where that is safe:
      * 1. what the operator linked before for this supplier (article code, then description);
      * 2. a product recognised despite spelling differences, abbreviations or misreadings;
@@ -756,6 +786,21 @@ class ReceiptRepository(
         val history = purchasesOf(ids).map { it.toPricePoint() }
         return history.filter { it.documentId == documentId }.mapNotNull { PriceWatch.compare(it, history) }
     }
+
+    /**
+     * Price jumps (30% or more) on the documents the app saved by itself (see [raisePriceJumps]), newest first: a jump
+     * no longer holds a document whose reading proves itself, so it is raised in Checks instead.
+     */
+    @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
+    fun priceJumps(): Flow<List<PriceChange>> = db.checksDao().dismissed()
+        .map { notices -> notices.filter { it.startsWith(JUMPS_RAISED) }.mapNotNull { it.removePrefix(JUMPS_RAISED).toLongOrNull() }.toSet() }
+        .distinctUntilChanged()
+        .flatMapLatest { ids -> if (ids.isEmpty()) flowOf(emptyList()) else priceHistory().map { PriceWatch.jumps(it, ids) } }
+        .flowOn(Dispatchers.Default)
+
+    /** A document the app saved by itself with a price jump on it: its jumps are listed in Checks (kept with the notices). */
+    suspend fun raisePriceJumps(documentId: Long) =
+        db.checksDao().dismiss(com.kitchenreceipts.app.data.DismissedEntity(JUMPS_RAISED + documentId, System.currentTimeMillis()))
 
     /** Every price change in the purchase history, most recent first. */
     fun priceHistory(): Flow<List<PriceChange>> = documents.allPurchases().distinctUntilChanged().map { rows ->
@@ -867,6 +912,9 @@ class ReceiptRepository(
     }
 
     companion object {
+        /** The notice that marks a document's price jumps to list in Checks (see [raisePriceJumps]). */
+        const val JUMPS_RAISED = "pj-raise:"
+
         fun normalizeSeller(name: String): String =
             DuplicateDetector.normalizeSeller(name) ?: name.trim().lowercase()
     }

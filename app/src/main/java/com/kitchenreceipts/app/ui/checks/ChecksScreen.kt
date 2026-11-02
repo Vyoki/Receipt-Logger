@@ -63,8 +63,10 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
-class ChecksViewModel(checks: ChecksRepository, sellers: Flow<List<SellerEntity>>) : ViewModel() {
+class ChecksViewModel(checks: ChecksRepository, sellers: Flow<List<SellerEntity>>, jumps: Flow<List<com.kitchenreceipts.core.PriceChange>>) : ViewModel() {
     private val started = SharingStarted.WhileSubscribed(5000)
+    /** Price jumps on documents saved lately (see ReceiptRepository.priceJumps). */
+    val jumps: StateFlow<List<com.kitchenreceipts.core.PriceChange>> = jumps.stateIn(viewModelScope, started, emptyList())
     val over: StateFlow<List<Pair<OverCharge, CheckedLineRow>>?> = checks.overCharges().stateIn(viewModelScope, started, null)
     val invoices: StateFlow<List<InvoiceCheck>?> = checks.invoiceChecks().stateIn(viewModelScope, started, null)
     val credits: StateFlow<List<CreditRow>> = checks.openCredits().stateIn(viewModelScope, started, emptyList())
@@ -86,7 +88,8 @@ private val CreditDraftSaver = androidx.compose.runtime.saveable.Saver<CreditDra
 @Composable
 fun ChecksScreen(onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenProduct: (Long) -> Unit) {
     val c = appContainer()
-    val vm = appViewModel { ChecksViewModel(it.checks, it.repository.sellers()) }
+    val vm = appViewModel { ChecksViewModel(it.checks, it.repository.sellers(), it.repository.priceJumps()) }
+    val jumps by vm.jumps.collectAsStateWithLifecycle()
     val over by vm.over.collectAsStateWithLifecycle()
     val invoices by vm.invoices.collectAsStateWithLifecycle()
     val credits by vm.credits.collectAsStateWithLifecycle()
@@ -114,10 +117,36 @@ fun ChecksScreen(onBack: () -> Unit, onOpenDocument: (Long) -> Unit, onOpenProdu
             val diffs = ic.differences.filter { showHidden || it.key(ic.invoiceId) !in dismissed }
             ic.copy(differences = diffs).takeIf { diffs.isNotEmpty() || ic.missing.isNotEmpty() }
         }
-        val hiddenCount = overAll.count { it.first.key() in dismissed } + invAll.sumOf { ic -> ic.differences.count { it.key(ic.invoiceId) in dismissed } }
+        val jumpsShown = jumps.filter { showHidden || com.kitchenreceipts.core.PriceWatch.jumpKey(it) !in dismissed }
+        val hiddenCount = overAll.count { it.first.key() in dismissed } + invAll.sumOf { ic -> ic.differences.count { it.key(ic.invoiceId) in dismissed } } +
+            jumps.count { com.kitchenreceipts.core.PriceWatch.jumpKey(it) in dismissed }
         LazyColumn(Modifier.padding(padding), contentPadding = PaddingValues(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
             item("intro") { Text(stringResource(R.string.checks_intro), style = MaterialTheme.typography.bodySmall, color = Palette.Orange) }
-            if (overShown.isEmpty() && invShown.isEmpty() && credits.isEmpty()) item("none") { EmptyState(stringResource(R.string.checks_none)) }
+            if (overShown.isEmpty() && invShown.isEmpty() && credits.isEmpty() && jumpsShown.isEmpty()) item("none") { EmptyState(stringResource(R.string.checks_none)) }
+
+            // ---------------------------------------------------------------- price jumps (saved, raised here)
+            if (jumpsShown.isNotEmpty()) {
+                item("jumpT") { SectionTitle(stringResource(R.string.jumps_title)) }
+                item("jumpH") { Text(stringResource(R.string.jumps_hint), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim) }
+                items(jumpsShown, key = { "j" + com.kitchenreceipts.core.PriceWatch.jumpKey(it) }) { j ->
+                    val key = com.kitchenreceipts.core.PriceWatch.jumpKey(j)
+                    val hidden = key in dismissed
+                    ClickCard(onClick = { onOpenDocument(j.newDocumentId) }) {
+                        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                            Text(j.productName, style = MaterialTheme.typography.titleMedium, color = if (hidden) Palette.TextDim else MaterialTheme.colorScheme.onSurface)
+                            Text(j.newSeller + " · " + fmtDate(j.newDate), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
+                            Text(
+                                stringResource(R.string.jumps_row, price(j.oldPrice), price(j.newPrice), j.unit, (if (j.isIncrease) "+" else "") + ItalianNumbers.formatDecimal(j.percent, maxScale = 1)),
+                                style = MaterialTheme.typography.bodyMedium, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
+                                color = if (j.isIncrease) Palette.Orange else MaterialTheme.colorScheme.onSurface,
+                            )
+                            TextButton(onClick = { scope.launch { if (hidden) c.checks.undismiss(key) else c.checks.dismiss(key) } }, modifier = Modifier.heightIn(min = 48.dp)) {
+                                Text(stringResource(R.string.checks_fine))
+                            }
+                        }
+                    }
+                }
+            }
 
             // ---------------------------------------------------------------- agreed prices
             if (overShown.isNotEmpty()) {

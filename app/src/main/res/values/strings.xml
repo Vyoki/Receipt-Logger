@@ -770,6 +770,9 @@
     <string name="tidy_lot_none">No lot read (the other lines have one)</string>
     <string name="tidy_expiry_unsure">Expiry not sure: read “%1$s”</string>
     <string name="tidy_expiry_none">No expiry read</string>
+    <string name="tidy_supplier">New supplier, VAT number checked: name read as “%1$s”</string>
+    <string name="tidy_unit_unsure">Unit not sure: read “%1$s”</string>
+    <string name="tidy_unit_none">No unit printed</string>
     <string name="tidy_keep">Keep %1$s</string>
     <string name="tidy_leave_empty">Leave empty</string>
     <string name="tidy_none_printed">None printed</string>
@@ -778,6 +781,5 @@
         <item quantity="one">%d small thing to tidy</item>
         <item quantity="other">%d small things to tidy</item>
     </plurals>
-    <string name="tidy_home_hint">On invoices the app saved: a lot or a product name to confirm</string>
-    <string name="bundle_recheck">Check again with the new rules</string>
+    <string name="tidy_home_hint">On invoices the app saved: a lot, a unit or a name to confirm</string>
 </resources>

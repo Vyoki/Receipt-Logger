@@ -245,9 +245,7 @@
     <string name="bundle_show_all">Show all invoices</string>
     <string name="bundle_time_left">About %1$s to go</string>
     <string name="bundle_reread">Read again with the new reading</string>
-    <string name="bundle_recheck_running">Checking again… %1$d of %2$d</string>
     <string name="bundle_reread_running">Reading again… %1$d of %2$d</string>
-    <string name="bundle_recheck_done">Checked %1$d: %2$d saved by the app, %3$d still to check.</string>
     <string name="bundle_reread_done">Read again %1$d: %2$d saved by the app, %3$d still to check.</string>
     <string name="bundle_run_reason">Mostly: %1$s</string>
     <plurals name="bundle_run_skipped">
@@ -258,4 +256,31 @@
         <item quantity="one">%d held because it may repeat a document already saved.</item>
         <item quantity="other">%d held because they may repeat documents already saved.</item>
     </plurals>
+    <string name="bundle_run_pages">Pages: %1$d from the PDF’s own text, %2$d read by the camera.</string>
+    <string name="bundle_run_doubts">Unsure: %1$s</string>
+    <string name="bundle_run_sums">Not adding up: %1$s</string>
+    <string name="doubt_supplier">supplier</string>
+    <string name="doubt_number">number</string>
+    <string name="doubt_date">date</string>
+    <string name="doubt_taxable">taxable amount</string>
+    <string name="doubt_vat">VAT</string>
+    <string name="doubt_total">total</string>
+    <string name="doubt_vat_basis">prices with or without VAT</string>
+    <string name="doubt_name">product name</string>
+    <string name="doubt_quantity">quantity</string>
+    <string name="doubt_unit">unit</string>
+    <string name="doubt_price">price</string>
+    <string name="doubt_amount">line amount</string>
+    <string name="doubt_vat_rate">VAT rate</string>
+    <string name="doubt_lot">lot</string>
+    <string name="doubt_expiry">expiry</string>
+    <string name="doubt_pack">pack</string>
+    <string name="doubt_discount">discount</string>
+    <string name="sum_cents">a few cents apart</string>
+    <string name="sum_amount_misread">a line’s amount misread</string>
+    <string name="sum_line_twice">a line read twice</string>
+    <string name="sum_line_extra">a line that is not a product</string>
+    <string name="sum_discount_sign">a discount counted the wrong way</string>
+    <string name="sum_lines_short">lines missing</string>
+    <string name="sum_lines_over">the lines add up to more</string>
 </resources>
