@@ -149,10 +149,14 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
     val rechecked: StateFlow<BundleStore.Rechecked?> = store.rechecked
 
     /** The invoices still to check, checked again with the current rules (see BundleStore.recheckWaiting). */
-    fun recheckWaiting() {
-        store.recheckWaiting(planId)
-        c.log.event("BUNDLE_RECHECK_ALL", "bundle" to planId.take(8))
-    }
+    fun recheckWaiting() = store.recheckWaiting(planId)
+
+    /** The invoices still to check, read again from their files with today's reading (see BundleStore.readWaitingAgain). */
+    fun readAgain() = store.readWaitingAgain(planId)
+
+    /** A check again / read again going on, and the last one's result (see BundleStore.Run). */
+    val run: StateFlow<BundleStore.Run?> = store.run
+    val runResult: StateFlow<BundleStore.RunResult?> = store.runResult
 
     fun recheckedShown(r: BundleStore.Rechecked) = store.shown(r)
 

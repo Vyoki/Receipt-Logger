@@ -244,8 +244,14 @@
     <string name="bundle_prices_only">Fatture con prezzi cambiati</string>
     <string name="bundle_show_all">Mostra tutte le fatture</string>
     <string name="bundle_time_left">Ancora circa %1$s</string>
-    <plurals name="bundle_rechecked_all">
-        <item quantity="one">Un\'altra fattura salvata dall\'app con le nuove regole</item>
-        <item quantity="other">Altre %d fatture salvate dall\'app con le nuove regole</item>
+    <string name="bundle_reread">Rileggi con la nuova lettura</string>
+    <string name="bundle_recheck_running">Ricontrollo… %1$d di %2$d</string>
+    <string name="bundle_reread_running">Rilettura… %1$d di %2$d</string>
+    <string name="bundle_recheck_done">Ricontrollate %1$d: %2$d salvate dall\'app, %3$d ancora da controllare.</string>
+    <string name="bundle_reread_done">Rilette %1$d: %2$d salvate dall\'app, %3$d ancora da controllare.</string>
+    <string name="bundle_run_reason">Soprattutto: %1$s</string>
+    <plurals name="bundle_run_skipped">
+        <item quantity="one">%d che avevi corretto è rimasta com\'era.</item>
+        <item quantity="other">%d che avevi corretto sono rimaste com\'erano.</item>
     </plurals>
 </resources>

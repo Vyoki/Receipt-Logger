@@ -344,6 +344,8 @@ class ImportQueue(
                     job.join()
                     current = null
                     currentId = null
+                    // Read again on request (see readAgain): done, whatever came of it.
+                    _rechecking.update { it - next.id }
                 }
             }
         }
@@ -452,6 +454,30 @@ class ImportQueue(
      * The app never saves such a job by itself, and never drops what was kept with it.
      */
     private fun operatorsOwn(id: String): Boolean = id in inReview || draftFile(id).exists()
+
+    /** Job [id] is open in a review or holds the operator's corrections: the app leaves it as it is. */
+    fun isOperatorsOwn(id: String): Boolean = operatorsOwn(id)
+
+    /**
+     * Reads the waiting jobs [ids] again from their files, with today's reading, exactly as a first reading (the
+     * duplicate guard and the rules for saving by itself apply). A job not waiting, open in a review or corrected by the
+     * operator is left as it is. Each job queued is held ([rechecking]) until its new reading is done, so it is not
+     * opened meanwhile. Returns the jobs queued.
+     */
+    fun readAgain(ids: List<String>): List<String> {
+        val todo = ids.filter { id -> job(id)?.status == JobStatus.READY && !operatorsOwn(id) }
+        if (todo.isEmpty()) return todo
+        _rechecking.update { it + todo }
+        for (id in todo) {
+            val j = job(id) ?: continue
+            synchronized(kept) { kept.remove(id) }
+            dropReading(id)
+            update(j.copy(status = JobStatus.QUEUED, pending = null, progress = null, attempts = 0, error = null))
+        }
+        startWorker()
+        wake.trySend(Unit)
+        return todo
+    }
 
     /** The jobs [ids] are about to be checked again ([recheck]): from now on they are not opened for a check meanwhile. */
     fun holdForRecheck(ids: Collection<String>) = _rechecking.update { it + ids }

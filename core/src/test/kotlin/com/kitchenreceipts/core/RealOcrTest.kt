@@ -69,7 +69,9 @@ class RealOcrTest {
         assertEquals("conf", pomodoro.unit?.value)
         assertDec("6", pomodoro.quantity?.value)
         assertTrue(d.lineItems.none { it.originalDescription.contains("Totale", ignoreCase = true) })
-        assertNull(d.currency)
+        // No currency printed: the euro, as sure (no other currency is printed either).
+        assertEquals("EUR", d.currency?.value)
+        assertEquals(Confidence.HIGH, d.currency?.confidence)
     }
 
     @Test fun ownBusinessIsNeverTheSeller() {

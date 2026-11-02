@@ -175,6 +175,21 @@ object ReceiptParser {
     private val INCLUSIVE_HINT = Regex("(?i)\\b(di\\s+cui\\s+iva|iva\\s+inclusa|iva\\s+compresa|prezzi\\s+ivati|ivato|compresa\\s+iva|incl\\.?\\s+iva)\\b")
     private val EXCLUSIVE_HINT = Regex("(?i)(\\biva\\s+esclusa\\b|\\+\\s*iva\\b|\\bal\\s+netto\\s+(?:di\\s+)?iva\\b|\\bprezzi\\s+netti\\b|\\besclusa\\s+iva\\b)")
     private val CURRENCY = Regex("(?i)(€|\\beur\\b|\\beuro\\b)")
+    /** Another currency printed: Swiss francs, US dollars, pounds sterling. */
+    private val OTHER_CURRENCY = Regex("(?<![A-Za-z])(CHF|USD|US\\$|GBP|£|\\$)(?![A-Za-z])")
+
+    /**
+     * The document's currency: EUR when printed, and when no other currency is printed (the suppliers are Italian), as
+     * sure. Another currency printed (CHF, USD, GBP, £, $) is shown for a check: that one when no euro is printed, else
+     * the euro. A currency never holds a document by itself (see DocumentDraft.uncertainCount).
+     */
+    internal fun currencyOf(text: String): Extracted<String> {
+        val euro = CURRENCY.find(text)
+        val other = OTHER_CURRENCY.find(text) ?: return Extracted("EUR", Confidence.HIGH, euro?.value ?: "no other currency printed")
+        val code = when (other.value.uppercase()) { "CHF" -> "CHF"; "GBP", "£" -> "GBP"; else -> "USD" }
+        return if (euro != null) Extracted("EUR", Confidence.LOW, "${euro.value} and ${other.value} printed")
+        else Extracted(code, Confidence.LOW, "${other.value} printed")
+    }
     private val PERCENT = Regex("[-+]?\\d{1,3}(?:[.,]\\d{1,2})?\\s?%")
     private val AMOUNT_IN_TEXT = Regex("(?<![\\w/.,])-?\\d{1,3}(?:\\.\\d{3})+(?:,\\d{1,4})?(?![\\w/])|(?<![\\w/.,])-?\\d+(?:[.,]\\d{1,4})?-?(?![\\w/.,]*\\d)")
     private val QTY_WITH_UNIT = Regex("^(\\d+(?:[.,]\\d{1,3})?)([A-Za-z]{1,10}\\.?)$")
@@ -426,7 +441,7 @@ object ReceiptParser {
             if (today != null && d.confidence == Confidence.HIGH && (d.value.isAfter(today.plusDays(1)) || d.value.isBefore(today.minusYears(2)))) d.copy(confidence = Confidence.LOW) else d
         }
         val seller = HeaderEvidence.seller(pages, options) ?: findSellerOnPages(pages, options)
-        val currency = CURRENCY.find(text)?.let { Extracted("EUR", Confidence.HIGH, it.value) }
+        val currency = currencyOf(text)
 
         // ------------------------------------------------------------ totals
         var subtotal: Extracted<Long>? = null

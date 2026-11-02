@@ -101,7 +101,9 @@ class ReceiptParserTest {
         assertNull(d.totalCents)
         assertNull(d.vatCents)
         assertNull("nothing says whether prices include VAT", d.vatBasis)
-        assertNull("no € sign or EUR label in the text", d.currency)
+        // No € sign or EUR label in the text, and no other currency: the euro, as sure.
+        assertEquals("EUR", d.currency?.value)
+        assertEquals(Confidence.HIGH, d.currency?.confidence)
 
         assertEquals(5, d.lineItems.size)
         assertEquals("PSM-0325", d.lineItems[0].lotNumber?.value)
@@ -194,5 +196,20 @@ class ReceiptParserTest {
         assertEquals(LocalDate.of(2031, 2, 28), date("ABC S.r.l.\nRiferimento amministrazione Data 28/02/2031\nTOTALE 2,00")?.value)
         // The document's own "Fattura n. 5 del ..." is its date.
         assertEquals(LocalDate.of(2031, 2, 28), date("ABC S.r.l.\nFattura n. 5 del 28/02/2031\nTOTALE 2,00")?.value)
+    }
+    @Test fun theCurrencyIsTheEuroUnlessAnotherIsPrinted() {
+        fun cur(text: String) = ReceiptParser.parse("ABC S.r.l.\n$text\nPASSATA 2 1,00 2,00\nTOTALE 2,00").currency
+        assertEquals(Extracted("EUR", Confidence.HIGH, "€"), cur("Totale € 2,00"))
+        assertEquals("EUR", cur("Fattura n. 5 del 28/02/2031")?.value)
+        assertEquals(Confidence.HIGH, cur("Fattura n. 5 del 28/02/2031")?.confidence)
+        // Another currency printed: that one, shown for a check; with the euro printed too, the euro, shown for a check.
+        assertEquals(Extracted("CHF", Confidence.LOW, "CHF printed"), cur("Importi in CHF"))
+        assertEquals("GBP", cur("Total £ 2,00")?.value)
+        assertEquals("USD", cur("Amount USD 2,00")?.value)
+        assertEquals(Confidence.LOW, cur("Totale EUR 2,00 (USD 2,15)")?.confidence)
+        assertEquals("EUR", cur("Totale EUR 2,00 (USD 2,15)")?.value)
+        // Never a check by itself: a currency shown for a check does not count among the values to look at.
+        val d = DocumentDraft(currency = DraftField("CHF", uncertain = true))
+        assertEquals(0, d.uncertainCount)
     }
 }

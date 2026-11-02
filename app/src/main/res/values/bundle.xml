@@ -244,8 +244,14 @@
     <string name="bundle_prices_only">Invoices whose prices changed</string>
     <string name="bundle_show_all">Show all invoices</string>
     <string name="bundle_time_left">About %1$s to go</string>
-    <plurals name="bundle_rechecked_all">
-        <item quantity="one">%d more saved by the app with the new rules</item>
-        <item quantity="other">%d more saved by the app with the new rules</item>
+    <string name="bundle_reread">Read again with the new reading</string>
+    <string name="bundle_recheck_running">Checking again… %1$d of %2$d</string>
+    <string name="bundle_reread_running">Reading again… %1$d of %2$d</string>
+    <string name="bundle_recheck_done">Checked %1$d: %2$d saved by the app, %3$d still to check.</string>
+    <string name="bundle_reread_done">Read again %1$d: %2$d saved by the app, %3$d still to check.</string>
+    <string name="bundle_run_reason">Mostly: %1$s</string>
+    <plurals name="bundle_run_skipped">
+        <item quantity="one">%d you corrected was left as it was.</item>
+        <item quantity="other">%d you corrected were left as they were.</item>
     </plurals>
 </resources>

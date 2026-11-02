@@ -132,7 +132,8 @@ data class DocumentDraft(
     val checks: Reconcile.Report? = null,
 ) {
     val uncertainCount: Int
-        get() = listOf(seller, date, number, currency, subtotal, vat, total).count { it.uncertain } +
+        // The currency is shown highlighted when another one is printed, but never counts as a check by itself.
+        get() = listOf(seller, date, number, subtotal, vat, total).count { it.uncertain } +
             (if (vatBasisUncertain) 1 else 0) + items.sumOf { it.uncertainCount }
 
     companion object {

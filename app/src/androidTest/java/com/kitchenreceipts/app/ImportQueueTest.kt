@@ -486,6 +486,45 @@ class ImportQueueTest {
     }
 
     /**
+     * "Check again" and "Read again" on the file's screen always say what came of them, also when nothing was saved,
+     * and leave an invoice the operator corrected as it is.
+     */
+    @Test fun checkAgainAndReadAgainAlwaysSayWhatCameOfThem() = runBlocking<Unit> {
+        plansDir.deleteRecursively()
+        jobsDir.deleteRecursively()
+        Reading().use { r ->
+            settings.autoSave = false
+            val id = r.bundle("run.zip", listOf(abc("1/2031"), abc("2/2031"), verde("3/2031")))
+            r.store.confirm(id)
+            until("all read") { r.plan(id).invoices.all { it.outcome == InvoiceOutcome.READY } }
+            // 2/2031 corrected and left by the operator.
+            val draft = r.queue.draftFile(r.jobOf(id, "2/2031")).apply { parentFile?.mkdirs(); writeText("0\n{}") }
+            // Saving by itself is off: nothing can be saved, and the result says so.
+            r.store.recheckWaiting(id)
+            until("checked") { r.store.run.value == null && r.store.runResult.value != null }
+            val checked = r.store.runResult.value!!
+            assertEquals(false, checked.read)
+            assertEquals(2, checked.checked)
+            assertEquals(0, checked.saved)
+            assertEquals(2, checked.still)
+            assertEquals(1, checked.skipped)
+            // Read again with saving by itself on: the two read again are saved, the corrected one is untouched.
+            settings.autoSave = true
+            r.store.readWaitingAgain(id)
+            until("read again") { r.store.run.value == null && r.store.runResult.value?.read == true }
+            val read = r.store.runResult.value!!
+            assertEquals(2, read.checked)
+            assertEquals(2, read.saved)
+            assertEquals(0, read.still)
+            assertEquals(1, read.skipped)
+            assertTrue(r.queue.rechecking.value.isEmpty())
+            assertEquals(JobStatus.READY, r.queue.job(r.jobOf(id, "2/2031"))!!.status)
+            assertTrue(draft.isFile)
+            until("saved in the plan") { r.outcomeOf(id, "1/2031") == InvoiceOutcome.SAVED_BY_APP && r.outcomeOf(id, "3/2031") == InvoiceOutcome.SAVED_BY_APP }
+        }
+    }
+
+    /**
      * The check again never throws away what the operator did: an invoice of the same supplier they corrected and
      * left (the corrections kept on the phone), or put off with "Check later", stays for them to check, with its
      * corrections; another one of that supplier is still checked again and saved by the app.

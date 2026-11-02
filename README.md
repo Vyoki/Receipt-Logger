@@ -101,6 +101,7 @@ The CI builds are all signed with one fixed key, kept in the repository's secret
    - For each line item: original description, **Assign product**, quantity, unit, unit price, line total, discount, lot, VAT %, and expiry (kept separate from the lot).
    - A line whose quantity × price does not give its amount says so, with a **Use qty × price = …** chip. It is only applied if you tap it.
    - **Save** checks the fields; a field marked red clears as soon as it is fixed, and Save scrolls to the first line to fix. It then lists in one question whatever still does not check out (possible duplicates, values still unchecked, lines not adding up, a missing date or total...) before anything is written. Corrections are kept if you leave the screen before saving.
+   - **Currency**: EUR unless another currency is printed (CHF, USD, GBP, £, $): then that one is shown highlighted. The currency alone never holds a document or counts as a value to check.
    - **To tidy**: an invoice whose supplier, number, date and every amount are proven is saved by the app even when a product's name may go on over the next printed line, or a lot or expiry was read unsure or not at all. A doubtful lot or expiry is saved off the line (never as if it were sure), the reading kept as a suggestion. The home card *N small things to tidy* lists them: keep the reading, leave it empty, confirm the name, or open the invoice. Core: `Tidy.kt` (`TidyTest`).
 4. **Documents**: search by seller, number, product description or lot. Filter by seller, month or a specific day. The **Sellers** button at the top lists the suppliers with document count, total spent and last document. Open a document to see its original and its line items, edit it, delete it, or open the original in another app. "Lot not recorded" shows only on documents that print lots, never on a charge line.
 5. **Products**: descriptions that have no product yet are listed at the top; assign them in bulk. Each product shows its weighted average cost, with its unit, VAT basis and number of purchases. The detail screen shows price history (each row links to its source document), unit conversions and remembered descriptions.
@@ -442,6 +443,11 @@ Settings ▸ Network has three modes:
   - with the quantity bought (kg and l added together, other units kept apart unless you defined a conversion), the spend (kept apart by VAT basis), the number of purchases, and the **usual amount per period** (average of up to 6 earlier periods).
 
   Categories are guessed from an Italian keyword dictionary, reading the product name first ("PAT.SACCHI" is potatoes, not bags) and supplier abbreviations ("BISC.", "CIP.", "PARM."); each category has its own icon. Change one on the product screen: a category you chose is never changed by the app, and the app learns from it — the word of the name the guess hinged on now means your category for every product with that word, from any supplier (phone only; cleared with *Learned from you*).
+
+**A file's invoices still to check, after an update** (on the file's screen):
+- **Read again with the new reading**: each one is read again from its own file on the phone, exactly as a first reading (a PDF's own text, the duplicate guard, the rules for saving by itself); those that now prove themselves are saved.
+- **Check again with the new rules**: the reading kept is checked again, without reading anything again.
+- Both say how far they are while they run, and when done what came of it, also when nothing was saved: "Read again 168: 120 saved by the app, 48 still to check. Mostly: …", with the commonest reasons and their counts. An invoice you corrected is left as it is.
 
 ## 7c-2. Reading in the background
 

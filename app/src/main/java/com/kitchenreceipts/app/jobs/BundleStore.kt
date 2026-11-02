@@ -28,6 +28,7 @@ import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -102,8 +103,26 @@ class BundleStore(
     private val _missing = MutableStateFlow<Set<String>>(emptySet())
 
     /** [count] more invoices of one supplier were saved by the app after the operator saved its first one ([seq]: which time). */
-    /** [all]: the file's invoices to check were checked again with the app's current rules (not one supplier's). */
-    data class Rechecked(val planId: String, val count: Int, val seq: Long, val all: Boolean = false)
+    data class Rechecked(val planId: String, val count: Int, val seq: Long)
+
+    /**
+     * A "check again" ([read] false) or "read again" of a file's invoices waiting to be checked: [ids] the ones done now
+     * (each held by the queue until it is done), [skipped] the ones the operator corrected, left as they are.
+     */
+    data class Run(val planId: String, val read: Boolean, val ids: List<String>, val skipped: Int)
+
+    /** What a [Run] did: [checked] invoices, [saved] by the app, [still] to check, and the commonest [reasons] (with counts). */
+    data class RunResult(
+        val planId: String, val read: Boolean, val checked: Int, val saved: Int, val still: Int, val skipped: Int,
+        val reasons: List<Pair<com.kitchenreceipts.core.ReviewReason, Int>>, val seq: Long,
+    )
+
+    private val _run = MutableStateFlow<Run?>(null)
+    /** The run going on now, if any (one at a time). */
+    val run: StateFlow<Run?> = _run.asStateFlow()
+    private val _runResult = MutableStateFlow<RunResult?>(null)
+    /** The last run's result, shown until another run starts. */
+    val runResult: StateFlow<RunResult?> = _runResult.asStateFlow()
 
     private val _rechecked = MutableStateFlow<Rechecked?>(null)
 
@@ -589,18 +608,72 @@ class BundleStore(
         return BundleWizard.positionInChain(p, p.invoices.indexOfFirst { it.jobId == jobId })
     }
 
-    /** Checks the supplier's other invoices again after the operator saved its first one (see BundleWizard.recheckAfterSave). */
+    /** The jobs of the file's invoices waiting to be checked (now or later). */
+    private fun waitingJobs(id: String): List<String> =
+        plan(id)?.invoices?.filter { it.outcome == InvoiceOutcome.READY || it.outcome == InvoiceOutcome.CHECK_LATER }?.mapNotNull { it.jobId }.orEmpty()
+
     /**
      * The file's invoices still to check, checked again with the app's current rules: after an update, those whose
-     * reading now proves itself are saved by the app. Nothing is read again (see ImportQueue.recheck).
+     * reading now proves itself are saved by the app. Nothing is read again (see ImportQueue.recheck). Its progress is
+     * [run]; its result, also when nothing was saved, is [runResult].
      */
     fun recheckWaiting(id: String) {
-        val p = plan(id) ?: return
-        val jobs = p.invoices.filter { it.outcome == InvoiceOutcome.READY || it.outcome == InvoiceOutcome.CHECK_LATER }.mapNotNull { it.jobId }
-        if (jobs.isNotEmpty()) recheckSoon(id, jobs, all = true)
+        if (_run.value != null) return
+        val jobs = waitingJobs(id)
+        val (own, todo) = jobs.partition { queue.isOperatorsOwn(it) }
+        log.event("BUNDLE_RECHECK_ALL", "bundle" to id.take(8), "jobs" to todo.size, "corrected" to own.size)
+        queue.holdForRecheck(todo)
+        _run.value = Run(id, read = false, ids = todo, skipped = own.size)
+        scope.launch {
+            val saved = try {
+                queue.recheck(todo)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log.error("bundleRecheckAll", e)
+                emptyList()
+            }
+            finishRun(id, read = false, todo, own.size)
+            if (saved.isNotEmpty() && plan(id)?.announced == true) runCatching { dishesCheck(saved) }.onFailure { log.error("dishAlerts", it) }
+        }
     }
 
-    private fun recheckSoon(id: String, jobs: List<String>, all: Boolean = false) {
+    /**
+     * The file's invoices still to check, read again from their own files with today's reading (a PDF's own text, no
+     * camera reading or AI where the page needs none), exactly as a first reading: the duplicate guard and the rules
+     * for saving by itself apply. The ones the operator corrected are left as they are. Progress [run], result [runResult].
+     */
+    fun readWaitingAgain(id: String) {
+        if (_run.value != null) return
+        val jobs = waitingJobs(id)
+        val own = jobs.filter { queue.isOperatorsOwn(it) }
+        val todo = queue.readAgain(jobs - own.toSet())
+        log.event("BUNDLE_READ_AGAIN", "bundle" to id.take(8), "jobs" to todo.size, "corrected" to own.size)
+        _run.value = Run(id, read = true, ids = todo, skipped = own.size)
+        scope.launch {
+            // Each job is held by the queue until its new reading is done.
+            queue.rechecking.first { held -> todo.none { it in held } }
+            finishRun(id, read = true, todo, own.size)
+        }
+    }
+
+    private fun finishRun(id: String, read: Boolean, todo: List<String>, skipped: Int) {
+        val jobs = todo.mapNotNull { queue.job(it) }
+        // Still for the operator: to check, or (rarely) not readable this time.
+        val still = jobs.filter { it.status == JobStatus.READY || it.status == JobStatus.FAILED }
+        val saved = jobs.count { it.status == JobStatus.SAVED }
+        val counts = still.flatMap { it.reasons }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }
+        val top = counts.take(3).map { it.key to it.value }
+        _runResult.value = RunResult(id, read, todo.size, saved, still.size, skipped, top, recheckSeq.incrementAndGet())
+        _run.value = null
+        log.event(
+            if (read) "BUNDLE_READ_AGAIN_DONE" else "BUNDLE_RECHECK_ALL_DONE", "bundle" to id.take(8), "jobs" to todo.size, "saved" to saved,
+            "still" to still.size, "reasons" to counts.joinToString(",") { "${it.key.name}=${it.value}" },
+        )
+    }
+
+    /** Checks the supplier's other invoices again after the operator saved its first one (see BundleWizard.recheckAfterSave). */
+    private fun recheckSoon(id: String, jobs: List<String>) {
         log.event("BUNDLE_RECHECK", "bundle" to id.take(8), "jobs" to jobs.size)
         // At once: the chain does not open one of them while it waits to be checked again.
         queue.holdForRecheck(jobs)
@@ -608,7 +681,7 @@ class BundleStore(
             try {
                 val saved = queue.recheck(jobs)
                 if (saved.isEmpty()) return@launch
-                _rechecked.value = Rechecked(id, saved.size, recheckSeq.incrementAndGet(), all)
+                _rechecked.value = Rechecked(id, saved.size, recheckSeq.incrementAndGet())
                 // Before the file's result, those are checked with it (once); after it, these alone, once.
                 if (plan(id)?.announced == true) runCatching { dishesCheck(saved) }.onFailure { log.error("dishAlerts", it) }
             } catch (e: CancellationException) {
