@@ -508,19 +508,24 @@ class ImportQueueTest {
             assertEquals(0, checked.saved)
             assertEquals(2, checked.still)
             assertEquals(1, checked.skipped)
-            // Read again with saving by itself on: the two read again are saved, the corrected one is untouched.
+            // Read again with saving by itself on: the first one read again is saved. The second has the same date and
+            // total (the invented invoices all do), so the duplicate guard holds it for the operator, and the result
+            // says so. The corrected one is untouched.
             settings.autoSave = true
             r.store.readWaitingAgain(id)
             until("read again") { r.store.run.value == null && r.store.runResult.value?.read == true }
             val read = r.store.runResult.value!!
             assertEquals(2, read.checked)
-            assertEquals(2, read.saved)
-            assertEquals(0, read.still)
+            assertEquals(1, read.saved)
+            assertEquals(1, read.still)
+            assertEquals(1, read.duplicates)
             assertEquals(1, read.skipped)
             assertTrue(r.queue.rechecking.value.isEmpty())
             assertEquals(JobStatus.READY, r.queue.job(r.jobOf(id, "2/2031"))!!.status)
             assertTrue(draft.isFile)
-            until("saved in the plan") { r.outcomeOf(id, "1/2031") == InvoiceOutcome.SAVED_BY_APP && r.outcomeOf(id, "3/2031") == InvoiceOutcome.SAVED_BY_APP }
+            until("saved in the plan") {
+                listOf("1/2031", "3/2031").map { r.outcomeOf(id, it) }.sorted() == listOf(InvoiceOutcome.READY, InvoiceOutcome.SAVED_BY_APP).sorted()
+            }
         }
     }
 

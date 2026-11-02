@@ -488,9 +488,13 @@ class ScreenshotTest {
             shot("41-photo-viewer-zoomed")
             tap(close)
             assertTrue("the photo did not close. On screen: ${everyWindow()}", waitFor(zoomIn, false))
-            // Back closes it too.
-            assertTrue(clickTextIn(PEEK_DATE))
-            assertTrue(waitFor(photo, true))
+            // Back closes it too. The date field is usually still being edited (its photo button still there); right
+            // after the photo closes the screen may take a moment to answer a tap, so it is tapped again a few times.
+            if (!waitFor(photo, true)) {
+                val again = (1..3).any { clickTextIn(PEEK_DATE) || run { Thread.sleep(500); false } }
+                assertTrue("the date field could not be tapped again. On screen: ${screenDump()}", again)
+            }
+            assertTrue("no photo icon after the photo closed. On screen: ${screenDump()}", waitFor(photo, true))
             tap(photo)
             assertTrue(waitFor(zoomIn, true))
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)

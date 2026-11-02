@@ -254,4 +254,8 @@
         <item quantity="one">%d you corrected was left as it was.</item>
         <item quantity="other">%d you corrected were left as they were.</item>
     </plurals>
+    <plurals name="bundle_run_duplicates">
+        <item quantity="one">%d held because it may repeat a document already saved.</item>
+        <item quantity="other">%d held because they may repeat documents already saved.</item>
+    </plurals>
 </resources>

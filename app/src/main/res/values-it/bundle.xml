@@ -254,4 +254,8 @@
         <item quantity="one">%d che avevi corretto è rimasta com\'era.</item>
         <item quantity="other">%d che avevi corretto sono rimaste com\'erano.</item>
     </plurals>
+    <plurals name="bundle_run_duplicates">
+        <item quantity="one">%d trattenuta perché potrebbe ripetere un documento già salvato.</item>
+        <item quantity="other">%d trattenute perché potrebbero ripetere documenti già salvati.</item>
+    </plurals>
 </resources>

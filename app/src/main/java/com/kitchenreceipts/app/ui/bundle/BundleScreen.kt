@@ -553,6 +553,7 @@ private fun Reading(plan: BundlePlan, secondsLeft: Long, vm: BundleViewModel, on
             if (r.reasons.isNotEmpty()) {
                 add(stringResource(R.string.bundle_run_reason, r.reasons.map { (reason, n) -> "${com.kitchenreceipts.app.ui.reviewReasonText(reason)} ($n)" }.joinToString("; ")))
             }
+            if (r.duplicates > 0) add(pluralStringResource(R.plurals.bundle_run_duplicates, r.duplicates, r.duplicates))
             if (r.skipped > 0) add(pluralStringResource(R.plurals.bundle_run_skipped, r.skipped, r.skipped))
         }
         Text(lines.joinToString("\n"), style = MaterialTheme.typography.bodyLarge)

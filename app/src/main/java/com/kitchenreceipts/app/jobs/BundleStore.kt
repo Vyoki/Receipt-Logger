@@ -111,10 +111,13 @@ class BundleStore(
      */
     data class Run(val planId: String, val read: Boolean, val ids: List<String>, val skipped: Int)
 
-    /** What a [Run] did: [checked] invoices, [saved] by the app, [still] to check, and the commonest [reasons] (with counts). */
+    /**
+     * What a [Run] did: [checked] invoices, [saved] by the app, [still] to check, the commonest [reasons] (with counts),
+     * and [duplicates]: ones with nothing left to check, held only because they may repeat a document already saved.
+     */
     data class RunResult(
         val planId: String, val read: Boolean, val checked: Int, val saved: Int, val still: Int, val skipped: Int,
-        val reasons: List<Pair<com.kitchenreceipts.core.ReviewReason, Int>>, val seq: Long,
+        val reasons: List<Pair<com.kitchenreceipts.core.ReviewReason, Int>>, val seq: Long, val duplicates: Int = 0,
     )
 
     private val _run = MutableStateFlow<Run?>(null)
@@ -664,7 +667,9 @@ class BundleStore(
         val saved = jobs.count { it.status == JobStatus.SAVED }
         val counts = still.flatMap { it.reasons }.groupingBy { it }.eachCount().entries.sortedByDescending { it.value }
         val top = counts.take(3).map { it.key to it.value }
-        _runResult.value = RunResult(id, read, todo.size, saved, still.size, skipped, top, recheckSeq.incrementAndGet())
+        // Nothing to check, saving by itself on, and still waiting: held by the duplicate guard.
+        val duplicates = if (settings.autoSave) still.count { it.status == JobStatus.READY && it.reasons.isEmpty() } else 0
+        _runResult.value = RunResult(id, read, todo.size, saved, still.size, skipped, top, recheckSeq.incrementAndGet(), duplicates)
         _run.value = null
         log.event(
             if (read) "BUNDLE_READ_AGAIN_DONE" else "BUNDLE_RECHECK_ALL_DONE", "bundle" to id.take(8), "jobs" to todo.size, "saved" to saved,
