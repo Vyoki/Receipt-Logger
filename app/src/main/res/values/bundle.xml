@@ -114,7 +114,7 @@
     <string name="bundle_new_starts_here">A new invoice starts here</string>
     <string name="bundle_flag_no_total">No “Totale documento” found: pages may be missing</string>
     <string name="bundle_flag_several">Looks like more than one invoice on the same pages: left out unless you tick it</string>
-    <string name="bundle_flag_long">Long invoice: only the first 20 of %1$d pages will be read</string>
+    <string name="bundle_flag_long">Long invoice: only the first 200 of %1$d pages will be read</string>
     <string name="bundle_flag_no_supplier">Supplier not found on the page</string>
     <string name="bundle_flag_start_unsure">Not sure this is where the invoice starts</string>
     <string name="bundle_maybe_saved">Maybe already saved</string>
@@ -244,4 +244,8 @@
     <string name="bundle_prices_only">Invoices whose prices changed</string>
     <string name="bundle_show_all">Show all invoices</string>
     <string name="bundle_time_left">About %1$s to go</string>
+    <plurals name="bundle_rechecked_all">
+        <item quantity="one">%d more saved by the app with the new rules</item>
+        <item quantity="other">%d more saved by the app with the new rules</item>
+    </plurals>
 </resources>

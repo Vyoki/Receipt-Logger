@@ -29,6 +29,16 @@ class TextLayerTest {
         assertEquals(listOf("TOTALE IMPONIBILE", "TOTALE DOCUMENTO"), lines.filter { it.top == 600 }.map { it.text })
     }
 
+    @Test fun theTextAloneIsUsedOnlyWhenItReadsLikeADocument() {
+        // A page that draws no picture is read from its own text alone: it must read like a document.
+        assertTrue(TextLayer.readsAlone(TextLayer.lines(page)))
+        // A font that maps its letters to others: the same page, every letter shifted, names no word documents print.
+        val shifted = page.map { g -> g.copy(text = g.text.map { c -> if (c.isLetter()) c + 1 else c }.joinToString("")) }
+        assertFalse(TextLayer.readsAlone(TextLayer.lines(shifted)))
+        // Too little text (a page number).
+        assertFalse(TextLayer.readsAlone(TextLayer.lines(put("Pag. 1", 100f, 100f))))
+    }
+
     @Test fun letterheadPictureComesFromTheOcr() {
         val text = TextLayer.lines(page)
         val seen = listOf(

@@ -131,11 +131,9 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
         else BundleWizard.toRead(plan)
         // An e-invoice is read from its own values: no pages to read, no AI.
         if (plan.file.isBlank()) return read.size.toLong()
-        val pages = read.sumOf { minOf(it.pageCount, InvoiceBundle.PAGE_LIMIT) }
-        // The AI is spared on invoices whose printed total the VAT summary proves (their lines are then checked by
-        // their sums too); it is counted for the others. A guess from the look-through; the reading itself decides.
-        val withAi = if (c.settings.aiSkipProvenExactText) read.count { !it.totalProven } else read.size
-        return ReadingTime.seconds(c.settings, pages, withAi, ai)
+        val pages = read.sumOf { minOf(it.pageCount, InvoiceBundle.TEXT_PAGE_LIMIT) }
+        // A file of many invoices is one the app reads from its own text: the AI never reads it again.
+        return ReadingTime.seconds(c.settings, pages, 0, ai)
     }
 
     // ------------------------------------------------------------------ the file's list while it is read
@@ -149,6 +147,12 @@ class BundleViewModel(private val c: AppContainer, val planId: String) : ViewMod
 
     /** "5 more from this supplier saved by the app" (see BundleStore.rechecked). */
     val rechecked: StateFlow<BundleStore.Rechecked?> = store.rechecked
+
+    /** The invoices still to check, checked again with the current rules (see BundleStore.recheckWaiting). */
+    fun recheckWaiting() {
+        store.recheckWaiting(planId)
+        c.log.event("BUNDLE_RECHECK_ALL", "bundle" to planId.take(8))
+    }
 
     fun recheckedShown(r: BundleStore.Rechecked) = store.shown(r)
 

@@ -378,7 +378,7 @@
     <string name="ai_phone_weak">May be too slow or run out of memory.</string>
     <string name="ai_installed">Installed: %1$s (%2$s GB)</string>
     <string name="ai_when">When to use it</string>
-    <string name="ai_mode_needed">Double-check every document: header, totals and key lines (recommended)</string>
+    <string name="ai_mode_needed">Double-check photos whose reading does not prove itself (recommended)</string>
     <string name="ai_mode_always">Read every page in full (much slower)</string>
     <string name="ai_mode_off">Off</string>
     <string name="ai_test">Test</string>
@@ -756,6 +756,28 @@
     <string name="warn_checked_by_totals">The document\'s totals made the app add or leave out lines (listed above the lines): check them before saving.</string>
     <string name="reason_checked_by_totals">Lines added or left out to make the totals add up: check them.</string>
     <string name="warn_reverse_charge">Reverse-charge form (TD16–TD19): the VAT it prints is yours to self-assess and deduct, not paid to the supplier. It is logged without that VAT: total = taxable amount, lines as amounts only.</string>
+    <string name="warn_pages_not_read">A long scanned document: only its first 20 pages were read. Check the rest on the original.</string>
+    <string name="reason_pages_not_read">Only the first 20 pages were read.</string>
     <string name="reason_reverse_charge">Reverse-charge form: logged without the VAT it prints.</string>
     <string name="training_older">%1$d of them were saved before this version, which did not yet keep what the export needs (the size of the photo as read). Documents saved from now on can be used.</string>
+    <!-- Doubts left to tidy on invoices the app saved (core Tidy) -->
+    <string name="tidy_title">To tidy</string>
+    <string name="tidy_hint">Invoices the app saved because every amount checks out. Only these details were unsure: settle them when you have a minute.</string>
+    <string name="tidy_none">Nothing to tidy.</string>
+    <string name="tidy_name">The name may go on over the next printed line</string>
+    <string name="tidy_name_ok">Name is right</string>
+    <string name="tidy_lot_unsure">Lot not sure: read “%1$s”</string>
+    <string name="tidy_lot_none">No lot read (the other lines have one)</string>
+    <string name="tidy_expiry_unsure">Expiry not sure: read “%1$s”</string>
+    <string name="tidy_expiry_none">No expiry read</string>
+    <string name="tidy_keep">Keep %1$s</string>
+    <string name="tidy_leave_empty">Leave empty</string>
+    <string name="tidy_none_printed">None printed</string>
+    <string name="tidy_open">Open invoice</string>
+    <plurals name="tidy_home">
+        <item quantity="one">%d small thing to tidy</item>
+        <item quantity="other">%d small things to tidy</item>
+    </plurals>
+    <string name="tidy_home_hint">On invoices the app saved: a lot or a product name to confirm</string>
+    <string name="bundle_recheck">Check again with the new rules</string>
 </resources>

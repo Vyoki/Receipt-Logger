@@ -53,6 +53,7 @@
     <string name="products_coperti">Coperti (%1$d)</string>
     <string name="products_coperti_hint">Per i tavoli degli ospiti: comprati da fornitori dei Coperti, o scelti sul prodotto. Seguiti come gli altri prodotti, mai contati nel food cost.</string>
     <string name="cat_coperti">Coperti</string>
+    <string name="cat_fees">Spese e commissioni</string>
     <string name="sellers_filter_all">Tutti</string>
     <string name="sellers_not_sorted_count">Da classificare (%1$d)</string>
 </resources>

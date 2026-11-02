@@ -170,7 +170,8 @@ class InvoiceBundleTest {
         val pages = EInvoicePrintoutFixture.pages(long)
         assertEquals(25, pages.size)
         val found = InvoiceBundle.find(pages, CUSTOMER_VAT).single()
-        assertEquals(setOf(Flag.OVER_PAGE_LIMIT), found.flags)
+        // Its own text, read in full: no reason to hold it (only past InvoiceBundle.TEXT_PAGE_LIMIT pages).
+        assertEquals(emptySet<Flag>(), found.flags)
         assertTrue(found.totalProven)
     }
 

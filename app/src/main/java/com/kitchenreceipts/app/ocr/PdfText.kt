@@ -3,6 +3,9 @@ package com.kitchenreceipts.app.ocr
 import com.kitchenreceipts.core.TextLayer
 import com.tom_roush.pdfbox.io.MemoryUsageSetting
 import com.tom_roush.pdfbox.pdmodel.PDDocument
+import com.tom_roush.pdfbox.pdmodel.PDResources
+import com.tom_roush.pdfbox.pdmodel.graphics.form.PDFormXObject
+import com.tom_roush.pdfbox.pdmodel.graphics.image.PDImageXObject
 import com.tom_roush.pdfbox.pdmodel.encryption.InvalidPasswordException
 import com.tom_roush.pdfbox.text.PDFTextStripper
 import com.tom_roush.pdfbox.text.TextPosition
@@ -34,6 +37,47 @@ object PdfText {
             if (pageIndex !in 0 until doc.numberOfPages) null else pageGlyphs(doc, pageIndex)
         }
     }.getOrNull()
+
+    /**
+     * A PDF opened once for all its pages (opening it again for each page reads the whole file each time). Not for
+     * use from two threads at once; close it when done.
+     */
+    class Doc internal constructor(private val doc: PDDocument) : java.io.Closeable {
+        val pageCount: Int get() = doc.numberOfPages
+
+        /** As [PdfText.glyphs], from the open file. */
+        fun glyphs(pageIndex: Int): List<TextLayer.Glyph>? = if (pageIndex !in 0 until doc.numberOfPages) null else pageGlyphs(doc, pageIndex)
+
+        /** Width / height of the page. */
+        fun aspect(pageIndex: Int): Float = runCatching {
+            val box = doc.getPage(pageIndex).cropBox
+            if (box.width > 0 && box.height > 0) box.width / box.height else null
+        }.getOrNull() ?: A4_ASPECT
+
+        /**
+         * The page draws a picture (a scan, a letterhead or a stamp printed as an image): its text may not be all that
+         * is printed, so the camera reading still has a part to play. True when that cannot be told.
+         */
+        fun hasPictures(pageIndex: Int): Boolean = runCatching { pictures(doc.getPage(pageIndex).resources, 0) }.getOrDefault(true)
+
+        override fun close() = doc.close()
+    }
+
+    /** The file opened for [Doc]; null when it cannot be (protected, damaged). */
+    fun open(file: File): Doc? = runCatching { Doc(PDDocument.load(file)) }.getOrNull()
+
+    private fun pictures(res: PDResources?, depth: Int): Boolean {
+        if (res == null) return false
+        if (depth > 5) return true
+        for (name in res.xObjectNames) {
+            when (val x = res.getXObject(name)) {
+                is PDImageXObject -> return true
+                is PDFormXObject -> if (pictures(x.resources, depth + 1)) return true
+                else -> {}
+            }
+        }
+        return false
+    }
 
     /**
      * Every page from [from] on, with the file opened once (a file of hundreds of invoices is looked through in

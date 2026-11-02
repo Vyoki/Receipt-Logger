@@ -33,6 +33,9 @@ class PageRenderer(private val files: FileStore) {
     /** The stored file's bytes (an e-invoice is read from its XML, not from pictures). */
     fun bytes(relativePath: String): ByteArray = files.file(relativePath).readBytes()
 
+    /** A stored PDF opened once to read the text of its pages (see PdfText.Doc); null when it cannot be opened. */
+    fun openPdf(relativePath: String): com.kitchenreceipts.app.ocr.PdfText.Doc? = com.kitchenreceipts.app.ocr.PdfText.open(files.file(relativePath))
+
     /** The text a digital PDF carries on a page (see PdfText); null when there is none to use. */
     fun pdfText(relativePath: String, pageIndex: Int): List<com.kitchenreceipts.core.TextLayer.Glyph>? =
         com.kitchenreceipts.app.ocr.PdfText.glyphs(files.file(relativePath), pageIndex)

@@ -304,7 +304,7 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
             } else {
                 Text(stringResource(R.string.no_product_assigned), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            val marks = com.kitchenreceipts.core.ItemMark.decode(it.marks)
+            val marks = com.kitchenreceipts.core.Tidy.without(com.kitchenreceipts.core.ItemMark.decode(it.marks))
             if (marks.isNotEmpty()) {
                 Text(com.kitchenreceipts.app.ui.review.marksLine(marks), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }

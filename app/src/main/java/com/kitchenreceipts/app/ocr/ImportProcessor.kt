@@ -127,10 +127,6 @@ class AiUse(
     val style: com.kitchenreceipts.core.AiTasks.Style = com.kitchenreceipts.core.AiTasks.Style.FULL,
     /** The model chooses which open question comes next (the trained model); otherwise the app's order. */
     val agent: Boolean = false,
-    /** On exact text only the supplier, header and totals are double-checked (AppSettings.aiLightOnExactText). */
-    val lightOnExactText: Boolean = false,
-    /** No AI double-check on exact text whose money is proven (AppSettings.aiSkipProvenExactText). */
-    val skipProvenExactText: Boolean = false,
 )
 
 /**
@@ -156,15 +152,49 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
         /** The PDF's own text of each page (see PdfText), read once for every pass; null = none to use. */
         private val text = HashMap<Int, List<com.kitchenreceipts.core.TextLayer.Glyph>?>()
 
+        /** The PDF, opened once for all its pages (null: not a PDF, or it cannot be opened). */
+        private var pdf: PdfText.Doc? = null
+        private var pdfOpened = false
+        private fun pdf(): PdfText.Doc? {
+            if (!pdfOpened) {
+                pdfOpened = true
+                if (file.mimeType == com.kitchenreceipts.app.files.FileStore.MIME_PDF) pdf = runCatching { renderer.openPdf(file.relativePath) }.getOrNull()
+            }
+            return pdf
+        }
+
         suspend fun textOf(i: Int): List<com.kitchenreceipts.core.TextLayer.Glyph>? {
             if (file.mimeType != com.kitchenreceipts.app.files.FileStore.MIME_PDF) return null
-            return text.getOrPut(i) { withContext(Dispatchers.IO) { renderer.pdfText(file.relativePath, i) } }
+            return text.getOrPut(i) { withContext(Dispatchers.IO) { runCatching { pdf()?.glyphs(i) }.getOrNull() } }
+        }
+
+        /**
+         * Page [i] read from the PDF's own text alone, at the size the camera reading would use: a page that draws no
+         * picture, whose text reads like a document (see TextLayer.readsAlone). Nothing is printed outside that text,
+         * so the page is neither drawn nor read by the camera reading. Null otherwise.
+         */
+        suspend fun textAlone(i: Int): Triple<List<OcrLine>, Int, Int>? {
+            val glyphs = textOf(i)?.takeIf { it.isNotEmpty() } ?: return null
+            val doc = pdf() ?: return null
+            val (pictures, aspect) = withContext(Dispatchers.IO) { runCatching { doc.hasPictures(i) to doc.aspect(i) }.getOrDefault(true to 1f) }
+            if (pictures) return null
+            val w = OCR_LONG_SIDE
+            val h = (w / aspect).toInt().coerceIn(200, w * 4)
+            val lines = withContext(cpu) { com.kitchenreceipts.core.TextLayer.lines(PdfText.scaled(glyphs, w, h)) }
+            return if (com.kitchenreceipts.core.TextLayer.readsAlone(lines)) Triple(lines, w, h) else null
         }
 
         fun release() {
             bmp?.recycle()
             bmp = null
             page = -1
+        }
+
+        /** Frees the page image and closes the PDF. */
+        fun close() {
+            release()
+            runCatching { pdf?.close() }
+            pdf = null
         }
     }
 
@@ -222,13 +252,14 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
                 readingNote = "read from the e-invoice XML" + (read.documentType?.let { " ($it)" } ?: ""),
             )
         }
-        val pages = minOf(file.pageCount, MAX_OCR_PAGES)
+        // Pages of the PDF's own text cost a moment each; the camera reading stops after MAX_OCR_PAGES pages (readAll).
+        val pages = minOf(file.pageCount, com.kitchenreceipts.core.InvoiceBundle.TEXT_PAGE_LIMIT)
         val images = PageImages(file)
         val shared = ai?.let { SharedReader(it) }
         try {
             return processPages(file, engine, onProgress, options, ai, pages, images, shared, started)
         } finally {
-            images.release()
+            images.close()
             shared?.close()
         }
     }
@@ -245,10 +276,13 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
         started: Long,
     ): PendingImport {
         val first = readAll(images, engine, pages, 1) { p, of -> onProgress(ImportProgress(p, of, 1)) }
+        val pagesMs = System.currentTimeMillis() - started
+        var enhancedMs = 0L
         var best = first
         var passes = 1
         // Pages read from the PDF's own text gain nothing from a sharper image.
         if (first.error == null && first.lines.isNotEmpty() && first.textPages < first.lines.size && !ReceiptParser.isConfident(first.parsed(options)) && engine.worksOffline && engine !== NoOcrEngine) {
+            val t2 = System.currentTimeMillis()
             val second = try {
                 readAll(images, engine, first.lines.size, 2) { p, of -> onProgress(ImportProgress(p, of, 2)) }
             } catch (e: CancellationException) {
@@ -256,6 +290,7 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
             } catch (_: Exception) {
                 null
             }
+            enhancedMs = System.currentTimeMillis() - t2
             passes = 2
             if (second != null && second.error == null &&
                 ReceiptParser.quality(second.parsed(options)) > ReceiptParser.quality(first.parsed(options))
@@ -276,24 +311,28 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
         val aiPicks = mutableListOf<Int>()
         val aiKeys = mutableListOf<String>()
         var aiSpot = false
-        // Every question, as before; unless the owner allowed fewer on exact text (question 1, off by default): every
-        // page is the PDF's own text, agreeing with the OCR, so only the supplier, header and totals are asked about,
-        // for at most 30 s. The lines are still proven by the arithmetic. Not in "always" mode, nor on photos or scans.
-        val light = ai != null && !ai.always && ai.lightOnExactText && best.lines.isNotEmpty() && best.textPages == best.lines.size
-        val scope = if (light) AiScope.HEADER_TOTALS else AiScope.ALL
-        // Exact text whose every amount its own arithmetic proves: the AI would only repeat the sums, at minutes per
-        // invoice. It stays for photos, scans and anything that does not add up (AppSettings.aiSkipProvenExactText).
-        val proven = ai != null && !ai.always && ai.skipProvenExactText && best.error == null && best.lines.isNotEmpty() &&
-            best.textPages == best.lines.size &&
-            withContext(cpu) { runCatching { AutoAccept.moneyProven(DocumentDraft.fromParsed(parsed)) }.getOrDefault(false) }
-        if (proven) aiNote = AI_NOT_NEEDED
+        // Every question the plan has (exact text, where a shorter check was once an option, is no longer asked about).
+        val scope = AiScope.ALL
+        // The PDF's own text on every page: exact, so the AI could only read again what is already known, at minutes per
+        // invoice. Whatever does not add up goes to the operator, who sees the page itself.
+        val exactText = best.error == null && best.lines.isNotEmpty() && best.textPages == best.lines.size
+        // A photo whose reading proves itself: every amount by its own arithmetic, the supplier by places on the page
+        // that agree (or its VAT number), and a date and a number read with confidence. The AI would only confirm it.
+        val provenPhoto = !exactText && best.error == null && best.lines.isNotEmpty() &&
+            parsed.supplierProof?.state == com.kitchenreceipts.core.SupplierProof.State.PROVEN &&
+            parsed.documentDate?.confidence == com.kitchenreceipts.core.Confidence.HIGH &&
+            parsed.documentNumber?.confidence == com.kitchenreceipts.core.Confidence.HIGH &&
+            withContext(cpu) { runCatching { AutoAccept.moneyProven(AutoAccept.settleProven(DocumentDraft.fromParsed(parsed))) }.getOrDefault(false) }
+        val proven = ai != null && !ai.always && (exactText || provenPhoto)
+        if (proven) aiNote = if (exactText) AI_NOT_NEEDED else AI_NOT_NEEDED_PHOTO
+        val aiStarted = System.currentTimeMillis()
         if (ai != null && !proven && shared != null && best.error == null && best.lines.isNotEmpty()) {
             // The AI always takes part: it asks about the doubtful parts (seconds each) and double-checks the header,
             // totals and key lines of every document before the operator sees it. Whole pages only when the regular
             // reading failed too broadly for that, or when the operator asked the AI to read everything.
             // Column headings the app does not know, of a supplier not seen before: one short question first, so the
             // rest of the reading (and the AI's other questions) use the answer. Kept only if it reads the document better.
-            if (!ai.always && !light) {
+            if (!ai.always) {
                 val q = withContext(cpu) { AiTargets.layoutQuestion(best.lines, parsed) }
                 if (q != null) {
                     val (raw, note) = askLayout(images, best, shared, q, onProgress, ai.style)
@@ -311,21 +350,26 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
             aiSpot = planned != null
             aiNote = when {
                 // On exact text, never whole pages: nothing to ask is nothing to ask.
-                planned == null -> if (light) "nothing to ask (exact text)" else runAi(images, best, ai, shared, opts, onProgress, aiRaw, parsed)
+                planned == null -> runAi(images, best, ai, shared, opts, onProgress, aiRaw, parsed)
                 // Nothing the AI could prove (e.g. only an uncertain document number): no minutes spent on it.
                 planned.isEmpty() -> "nothing to ask"
                 else -> runLoop(
                     images, best, shared, parsed, opts, onProgress, aiTargeted, aiPicks, aiKeys, ai, scope, ai.examples(parsed, best.text),
-                    limitMs = if (light) AI_EXACT_TEXT_LIMIT_MS else AI_TIME_LIMIT_MS,
+                    limitMs = AI_TIME_LIMIT_MS,
                 ).second
             }
             layoutNote?.let { aiNote = "$it; $aiNote" }
         }
+        val aiMs = System.currentTimeMillis() - aiStarted
+        // Where the time went, for the reading report (seconds per step on this phone).
+        fun sec(ms: Long) = String.format(java.util.Locale.ROOT, "%.1f s", ms / 1000.0)
+        val times = "time: pages ${sec(pagesMs)}" + (if (passes == 2) ", enhanced pages ${sec(enhancedMs)}" else "") +
+            ", AI ${sec(aiMs)}, all ${sec(System.currentTimeMillis() - started)}"
         return rebuild(
             file, best.lines, best.widths, best.error, if (best.textPages > 0) "PDF text + ${engine.displayName}" else engine.displayName,
             aiRaw, aiNote, aiTargeted,
             "pass ${best.pass} of $passes" + (if (best.pass == 2) " (enhanced image)" else "") +
-                (if (best.textPages > 0) ", text of the PDF on ${best.textPages} of ${best.lines.size} page(s)" else ""),
+                (if (best.textPages > 0) ", text of the PDF on ${best.textPages} of ${best.lines.size} page(s)" else "") + "; $times",
             opts, System.currentTimeMillis() - started, aiSpot, aiLayout,
             // Worked out above from the same reading: not again (the AI's answers are replayed on it).
             preParsed = parsed, aiPicks = aiPicks, aiKeys = aiKeys, heights = best.heights, aiScope = scope, cpu = cpu,
@@ -518,9 +562,24 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
                 merged
             }
         }
+        var drawn = 0
         for (i in 0 until pages) {
             onProgress(i + 1, pages)
             try {
+                // A digital page that draws no picture: its own text is all that is printed (no drawing, no camera
+                // reading; seconds saved on every page).
+                if (pass == 1) {
+                    val alone = runCatching { images.textAlone(i) }.getOrNull()
+                    if (alone != null) {
+                        raw += alone.first
+                        widths += alone.second
+                        heights += alone.third
+                        textSet += i
+                        continue
+                    }
+                }
+                // Pages that need the camera reading take seconds each: the first MAX_OCR_PAGES only (said in the report).
+                if (++drawn > MAX_OCR_PAGES) break
                 // The page image stays with [images] (freed when the next page is read or the document is done).
                 val bmp = images.get(i)
                 if (pass == 1) {
@@ -599,6 +658,10 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
                     parsed = AiReader.merge(parsed, joined.copy(lineItems = AiReader.combineItems(regularPages, aiPages)), text)
                 }
             }
+            // A long scan read only in part: said, and never saved without the operator seeing it.
+            if (file.mimeType == com.kitchenreceipts.app.files.FileStore.MIME_PDF && error == null && lines.size in 1 until file.pageCount) {
+                parsed = parsed.copy(warnings = parsed.warnings + com.kitchenreceipts.core.ParseWarning.PAGES_NOT_READ)
+            }
             PendingImport(
                 file, text, parsed, engineName, lines.size, error, lines, ocrMillis,
                 readingNote = "$readingNote, items read by ${parsed.itemsReadBy}" + (if (parsed.handwritten) ", handwritten or unclear" else "") +
@@ -632,14 +695,14 @@ class ImportProcessor(private val renderer: PageRenderer, private val cpu: Corou
             return if (ReceiptParser.quality(p) > ReceiptParser.quality(base)) p else null
         }
 
-        const val MAX_OCR_PAGES = 20
+        /** Pages read by the camera reading in one document (pages of the PDF's own text are not counted). */
+        const val MAX_OCR_PAGES = com.kitchenreceipts.core.InvoiceBundle.PAGE_LIMIT
         /** The AI's questions stop after this long on one document, on any phone (a slow one asks fewer). */
         const val AI_TIME_LIMIT_MS = 150_000L
-        /** The same on exact text, when only the supplier, header and totals are asked about (AiScope.HEADER_TOTALS). */
-        const val AI_EXACT_TEXT_LIMIT_MS = 30_000L
 
-        /** The note of a reading the AI was spared: exact text, every amount proven. */
-        const val AI_NOT_NEEDED = "not needed: exact text, every amount proven"
+        /** The notes of a reading the AI was spared: the PDF's own text, or a photo whose reading proves itself. */
+        const val AI_NOT_NEEDED = "not needed: the PDF's own text"
+        const val AI_NOT_NEEDED_PHOTO = "not needed: the amounts, the supplier, the date and the number prove themselves"
         /** Whole pages read by the AI, all pages together (a page takes 2 to 5 minutes on a phone). */
         const val AI_PAGES_LIMIT_MS = 10 * 60_000L
         const val OCR_LONG_SIDE = 2400

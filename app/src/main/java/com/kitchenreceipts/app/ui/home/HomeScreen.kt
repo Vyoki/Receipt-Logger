@@ -27,6 +27,7 @@ import androidx.compose.material.icons.filled.QrCode2
 import androidx.compose.material.icons.filled.Restaurant
 import androidx.compose.material.icons.filled.ShoppingCart
 import androidx.compose.material.icons.filled.EventBusy
+import androidx.compose.material.icons.filled.Checklist
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.automirrored.filled.KeyboardArrowRight
 import com.kitchenreceipts.app.ui.components.Button
@@ -89,6 +90,8 @@ fun HomeScreen(
     onLots: () -> Unit = {},
     onFoodCost: () -> Unit = {},
     onOrders: () -> Unit = {},
+    /** Doubts left to tidy on invoices the app saved (see core Tidy). */
+    onTidy: () -> Unit = {},
 ) {
     val vm = appViewModel { HomeViewModel(it.repository, it.checks) }
     val recent by vm.recent.collectAsStateWithLifecycle()
@@ -98,6 +101,7 @@ fun HomeScreen(
     val jobs by c.importQueue.jobs.collectAsStateWithLifecycle()
     val plans by c.bundleStore.plans.collectAsStateWithLifecycle()
     val scans by c.bundleStore.scans.collectAsStateWithLifecycle()
+    val tidy by androidx.compose.runtime.remember { c.repository.tidyLines() }.collectAsStateWithLifecycle(initialValue = emptyList())
     var discarding by remember { mutableStateOf<String?>(null) }
     DiscardJobDialog(discarding) { discarding = null }
 
@@ -119,6 +123,8 @@ fun HomeScreen(
             item("scan") { Box(Modifier.glideIn(0)) { ScanButton(onScan) } }
             if (!recent.isNullOrEmpty()) item("backup") { BackupReminder(onBackup) }
             if (expiring.isNotEmpty()) item("expiring") { ExpiringCard(expiring, onLots) }
+            val tidyCount = tidy.sumOf { com.kitchenreceipts.core.Tidy.of(com.kitchenreceipts.core.ItemMark.decode(it.marks)).size }
+            if (tidyCount > 0) item("tidy") { TidyCard(tidyCount, onTidy) }
             item("menu") {
                 Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     // Suppliers are one tap away inside Documents (its supplier list), not a tile of their own.
@@ -222,6 +228,21 @@ private fun BackupReminder(onClick: () -> Unit) {
                     style = MaterialTheme.typography.titleMedium,
                 )
                 Text(stringResource(R.string.backup_reminder_hint), style = MaterialTheme.typography.bodySmall, color = Palette.Orange)
+            }
+            Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
+        }
+    }
+}
+
+/** Small doubts on invoices the app saved by itself (a lot, a product name): one card, never urgent. */
+@Composable
+private fun TidyCard(count: Int, onClick: () -> Unit) {
+    ClickCard(onClick = onClick) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Filled.Checklist, contentDescription = null, modifier = Modifier.size(28.dp), tint = Palette.PhthaloBright)
+            Column(Modifier.weight(1f).padding(start = 16.dp)) {
+                Text(androidx.compose.ui.res.pluralStringResource(R.plurals.tidy_home, count, count), style = MaterialTheme.typography.titleMedium)
+                Text(stringResource(R.string.tidy_home_hint), style = MaterialTheme.typography.bodySmall, color = Palette.TextDim)
             }
             Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = null, tint = Palette.TextDim)
         }

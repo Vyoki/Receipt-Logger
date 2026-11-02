@@ -311,6 +311,7 @@ class ReportPdf(private val ctx: Context) {
             Category.CLEANING -> R.string.cat_cleaning
             Category.DISPOSABLES -> R.string.cat_disposables
             Category.COPERTI -> R.string.cat_coperti
+            Category.FEES -> R.string.cat_fees
             Category.OTHER -> R.string.cat_other
         },
     )

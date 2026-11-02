@@ -51,6 +51,31 @@ class PdfTextTest {
         assertTrue(row.first { it.text.startsWith("Mandorle") }.left in 140..180)
     }
 
+    @Test fun aPageWithoutPicturesIsReadFromItsTextAloneAndOnePictureChangesThat() {
+        // Text only: the file opened once gives each page's characters, and no picture.
+        val f = TestPdfs.write(File(app.cacheDir, "doc-3.pdf"), 3)
+        PdfText.open(f)!!.use { doc ->
+            assertEquals(3, doc.pageCount)
+            for (i in 0 until 3) {
+                assertEquals("page ${i + 1}", PdfText.glyphs(f, i), doc.glyphs(i))
+                assertTrue(!doc.hasPictures(i))
+            }
+        }
+        f.delete()
+        // A page that draws a picture (a letterhead, a scan): the camera reading still has a part to play.
+        val g = File(app.cacheDir, "picture.pdf")
+        val pdf = PdfDocument()
+        val page = pdf.startPage(PdfDocument.PageInfo.Builder(595, 842, 1).create())
+        val bmp = android.graphics.Bitmap.createBitmap(40, 40, android.graphics.Bitmap.Config.ARGB_8888).apply { eraseColor(android.graphics.Color.RED) }
+        page.canvas.drawBitmap(bmp, 40f, 40f, null)
+        page.canvas.drawText("FATTURA 1 TOTALE 10,00", 40f, 200f, Paint().apply { textSize = 10f })
+        pdf.finishPage(page)
+        g.outputStream().use { pdf.writeTo(it) }
+        pdf.close()
+        PdfText.open(g)!!.use { doc -> assertTrue(doc.hasPictures(0)) }
+        g.delete()
+    }
+
     private fun scanned(f: File, from: Int = 0, isActive: () -> Boolean = { true }): Pair<Int, Map<Int, List<TextLayer.Glyph>?>> {
         var count = -1
         val pages = linkedMapOf<Int, List<TextLayer.Glyph>?>()

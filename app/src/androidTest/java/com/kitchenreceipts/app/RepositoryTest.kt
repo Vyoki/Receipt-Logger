@@ -175,6 +175,28 @@ class RepositoryTest {
         assertEquals(setOf(DuplicateReason.SAME_PURCHASE), back.single().match.reasons)
     }
 
+    @Test fun doubtsLeftToTidyAreListedAndSettled() = runBlocking<Unit> {
+        // Saved by the app with an unsure lot taken off the line (its reading kept as the mark) and a name to confirm.
+        val lot = com.kitchenreceipts.core.ItemMark(com.kitchenreceipts.core.Tidy.KIND, com.kitchenreceipts.core.Tidy.LOT, "L123")
+        val name = com.kitchenreceipts.core.ItemMark(com.kitchenreceipts.core.Tidy.KIND, com.kitchenreceipts.core.Tidy.NAME, "the name may go on")
+        val items = listOf(
+            item("MOZZARELLA", null, "2", "kg", 1780).copy(marks = listOf(lot)),
+            item("PASSATA", null, "12", "pz", 1260).copy(marks = listOf(name)),
+            item("BASILICO", null, "1", "pz", 100),
+        )
+        val id = repo.saveDocument(doc("ABC S.r.l.", "9/2031", items, total = 3140), StoredFile("documents/t1.pdf", "application/pdf", 1, "sha-t1"), null, null)
+        val rows = repo.tidyLines().first()
+        assertEquals(listOf("MOZZARELLA", "PASSATA"), rows.map { it.description })
+        assertTrue(rows.all { it.documentId == id })
+        // Keeping the lot read puts it on the line; the name confirmed as printed leaves the line as it is.
+        repo.settleTidy(rows[0], lot, keep = true)
+        repo.settleTidy(rows[1], name, keep = true)
+        assertTrue(repo.tidyLines().first().isEmpty())
+        val saved = repo.itemsOnce(id)
+        assertEquals("L123", saved.first { it.item.originalDescription == "MOZZARELLA" }.item.lotNumber)
+        assertEquals("PASSATA", saved.first { it.item.originalDescription == "PASSATA" }.item.originalDescription)
+    }
+
     @Test fun aNameJoinedFromTwoPrintedLinesFindsTheProductSavedUnderItsFirstLine() = runBlocking<Unit> {
         // Saved before under the name's first printed line (as the app read a wrapped name before joining it).
         val first = "PROSCIUTTO CRUDO STAGIONATO DI"

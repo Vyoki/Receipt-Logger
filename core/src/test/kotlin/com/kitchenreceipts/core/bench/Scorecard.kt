@@ -78,9 +78,12 @@ class Scorecard {
         val t = doc.truth
         val problems = mutableListOf<String>()
         val outcomes = mutableListOf<Outcome>()
+        // Lots the app leaves off the line when it saves by itself (unsure or not read): listed to tidy, never saved wrong.
+        var tidyLots = 0
         fun field(name: String, f: DraftField, right: Boolean) {
             val o = outcome(right, f)
             stat(name).add(o); stat("all fields").add(o); outcomes += o
+            if (name == "lot" && o == Outcome.FLAGGED && (f.uncertain || (draft.lotsPrinted && draft.items.any { it.lot.text.isNotBlank() }))) tidyLots++
             if (o == Outcome.SILENT) silent++
             if (o == Outcome.SILENT || o == Outcome.FLAGGED) problems += "$name: '${f.text}' ${if (o == Outcome.SILENT) "SILENT" else "flagged"}"
         }
@@ -149,7 +152,9 @@ class Scorecard {
         // A document the app may never save by itself, however well read.
         val mustNotSave = doc.mustReview != null
         if (auto && mustNotSave) problems += "SAVED BY ITSELF ALTHOUGH ${doc.mustReview!!.uppercase()}"
-        val wrong = !right || mustNotSave
+        // Saved by itself, the only values not right are lots it saves without (see Tidy): the save holds no error.
+        val tidiedRight = outcomes.none { it == Outcome.SILENT } && outcomes.count { it == Outcome.FLAGGED } == tidyLots && tidyLots > 0
+        val wrong = !(right || (auto && tidiedRight)) || mustNotSave
         if (auto && !wrong) autoRight++
         if (auto && wrong) { autoWrong++; if (!right) problems += "SAVED WITHOUT REVIEW WITH ERRORS" }
         if (problems.isNotEmpty()) worst += "${doc.name}: " + problems.take(6).joinToString("; ")

@@ -122,7 +122,7 @@ fun BundleScreen(
     LaunchedEffect(rechecked) {
         val r = rechecked?.takeIf { it.planId == planId } ?: return@LaunchedEffect
         vm.recheckedShown(r)
-        snackbar.showSnackbar(res.getQuantityString(R.plurals.bundle_rechecked, r.count, r.count))
+        snackbar.showSnackbar(res.getQuantityString(if (r.all) R.plurals.bundle_rechecked_all else R.plurals.bundle_rechecked, r.count, r.count))
     }
 
     val plan = s.plan
@@ -529,6 +529,8 @@ private fun Reading(plan: BundlePlan, secondsLeft: Long, vm: BundleViewModel, on
     BigButton(stringResource(R.string.bundle_check_next), null, onClick = { next?.let(onReview) }, enabled = next != null)
     if (n.toCheck > 0) {
         Text(pluralStringResource(R.plurals.bundle_card_to_check, n.toCheck, n.toCheck), style = MaterialTheme.typography.bodyMedium, color = Palette.Orange)
+        // After an update: the ones waiting are checked again with the new rules, and those that now prove themselves saved.
+        if (n.reading == 0) BigButton(stringResource(R.string.bundle_recheck), null, onClick = vm::recheckWaiting, primary = false)
     }
     if (n.stopped > 0 && n.reading == 0) BigButton(pluralStringResource(R.plurals.bundle_read_rest, n.stopped, n.stopped), null, onClick = vm::readRest, primary = false)
     BigButton(stringResource(R.string.bundle_home), null, onClick = onHome, primary = false)

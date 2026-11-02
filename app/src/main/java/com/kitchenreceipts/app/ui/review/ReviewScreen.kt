@@ -1227,7 +1227,7 @@ private fun ItemCard(
             }
         }
         // What the page's own codes say about the line ("Storage: F (fresco)"), read from its legend.
-        if (item.marks.isNotEmpty()) {
+        if (com.kitchenreceipts.core.Tidy.without(item.marks).isNotEmpty()) {
             Text(marksLine(item.marks), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -1425,7 +1425,9 @@ private fun ItemInput(
 
 /** "Conservazione: F (fresco) · Gruppo: Merce non alimentare": the page's codes for a line, in the app's language. */
 @Composable
-internal fun marksLine(marks: List<com.kitchenreceipts.core.ItemMark>): String {
+internal fun marksLine(all: List<com.kitchenreceipts.core.ItemMark>): String {
+    // Doubts to tidy are listed on their own screen, not as the line's codes.
+    val marks = com.kitchenreceipts.core.Tidy.without(all)
     val kinds = mapOf("storage" to stringResource(R.string.mark_storage), "group" to stringResource(R.string.mark_group), "code" to stringResource(R.string.mark_code))
     return marks.joinToString(" · ") { m -> (kinds[m.kind] ?: m.kind.replaceFirstChar { it.uppercase() }) + ": " + (m.code?.let { "$it (${m.meaning})" } ?: m.meaning) }
 }

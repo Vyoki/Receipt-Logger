@@ -44,6 +44,7 @@ object Routes {
     const val BACKUP = "backup"
     const val CHECKS = "checks"
     const val LOTS = "lots"
+    const val TIDY = "tidy"
     const val FOOD = "food"
     const val RECIPE = "recipe/{id}"
     const val ORDERS = "orders"
@@ -123,7 +124,11 @@ fun AppNavHost(nav: NavHostController = rememberNavController()) {
                 onLots = { go(Routes.LOTS) },
                 onFoodCost = { go(Routes.FOOD) },
                 onOrders = { go(Routes.ORDERS) },
+                onTidy = { go(Routes.TIDY) },
             )
+        }
+        composable(Routes.TIDY) {
+            com.kitchenreceipts.app.ui.checks.TidyScreen(onBack = back, onEdit = { go(Routes.edit(it)) })
         }
         composable(Routes.SETTINGS) {
             SettingsScreen(onBack = back, onBackup = { go(Routes.BACKUP) })

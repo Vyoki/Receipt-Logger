@@ -29,8 +29,11 @@ object InvoiceBundle {
     /** Why an invoice needs a look before it is read. */
     enum class Flag { NO_TOTAL, SEVERAL_IN_ONE, OVER_PAGE_LIMIT, NO_SUPPLIER, OTHER_BUYER, START_UNSURE, NO_TEXT }
 
-    /** The app reads at most this many pages as one document. */
+    /** The app reads at most this many pages as one document when they need the camera reading (a scan, photos). */
     const val PAGE_LIMIT = 20
+
+    /** Pages of a PDF's own text are read in a moment each: up to this many as one document. */
+    const val TEXT_PAGE_LIMIT = 200
 
     data class VatGroup(val ratePercent: BigDecimal, val taxableCents: Long, val vatCents: Long)
 
@@ -329,7 +332,8 @@ object InvoiceBundle {
                 if (pages.sumOf { it.assoEnds } >= 2 || pages.count { it.sdiSummary } >= 2 || pages.any { it.identityRows >= 2 } || numbers.size >= 2) {
                     add(Flag.SEVERAL_IN_ONE)
                 }
-                if (pages.size > PAGE_LIMIT) add(Flag.OVER_PAGE_LIMIT)
+                // The invoices of a file are cut from its own text: read in full up to the text limit.
+                if (pages.size > TEXT_PAGE_LIMIT) add(Flag.OVER_PAGE_LIMIT)
                 if (vat == null && name == null) add(Flag.NO_SUPPLIER)
                 if (own != null && customer != null && customer != own) add(Flag.OTHER_BUYER)
                 if (start == Start.SDI_FILE || start == Start.SDI_BODY || (start != Start.BY_HAND && prev?.kind == Kind.INVOICE && !prev.ended)) {

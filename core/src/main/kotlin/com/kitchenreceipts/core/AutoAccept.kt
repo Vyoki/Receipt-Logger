@@ -34,6 +34,8 @@ enum class ReviewReason {
     BUNDLE_CHECK,
     /** A reverse-charge form (TD16-TD19): logged without the VAT it prints; the operator sees why once. */
     REVERSE_CHARGE,
+    /** A long scanned document read only in part (its first pages). */
+    PAGES_NOT_READ,
 }
 
 /**
@@ -54,7 +56,9 @@ object AutoAccept {
         val total = cents(d.total.text)
         if (total == null) out += ReviewReason.TOTAL_MISSING
         if (d.items.isEmpty()) out += ReviewReason.NO_ITEMS
-        if (d.uncertainCount > 0) out += ReviewReason.UNCERTAIN_VALUES
+        // Only a product's name, a lot or an expiry in doubt, the rest proven: saved, the doubts left to tidy (see Tidy).
+        val onlyTidy = (d.uncertainCount > 0 || d.lotsPrinted) && Tidy.onlyTidyLeft(d)
+        if (d.uncertainCount > 0 && !onlyTidy) out += ReviewReason.UNCERTAIN_VALUES
         // A VAT rate on some lines but not on others: one was not read.
         // Discount and charge lines need only their amount (no quantity, unit or VAT rate of their own).
         val goods = d.items.filter { !it.isCharge }
@@ -66,7 +70,7 @@ object AutoAccept {
             out += ReviewReason.INCOMPLETE_ITEMS
         }
         // Lots read on some lines but not on others: the missing ones were not read.
-        if (d.lotsPrinted && goods.any { it.lot.text.isNotBlank() } && goods.any { it.lot.text.isBlank() }) out += ReviewReason.LOTS_MISSING
+        if (d.lotsPrinted && goods.any { it.lot.text.isNotBlank() } && goods.any { it.lot.text.isBlank() } && !onlyTidy) out += ReviewReason.LOTS_MISSING
         val sumOk = sumMatches(d)
         if (d.items.isNotEmpty() && total != null && ReviewReason.INCOMPLETE_ITEMS !in out && !sumOk) {
             out += ReviewReason.SUM_MISMATCH
@@ -77,6 +81,7 @@ object AutoAccept {
         if (ParseWarning.PAGES_MISSING in d.warnings) out += ReviewReason.PAGES_MISSING
         if (ParseWarning.CHECKED_BY_TOTALS in d.warnings) out += ReviewReason.CHECKED_BY_TOTALS
         if (ParseWarning.REVERSE_CHARGE in d.warnings) out += ReviewReason.REVERSE_CHARGE
+        if (ParseWarning.PAGES_NOT_READ in d.warnings) out += ReviewReason.PAGES_NOT_READ
         if (d.vatBasis == VatBasis.UNKNOWN && inferVatBasis(d) == null && sumOk) {
             out += ReviewReason.VAT_BASIS_UNKNOWN
         }

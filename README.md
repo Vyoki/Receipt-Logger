@@ -64,7 +64,7 @@ The first time you take a photo, the **camera app** may ask for its own camera p
 
 In Android Studio you can also right-click `core/src/test/kotlin` and choose **Run 'Tests in kotlin'**. The report is written to `core/build/reports/tests/test/index.html`.
 
-**Instrumented tests** (Room migrations 1/2/3/4→5, the repository and on-device OCR; they run on a phone or emulator):
+**Instrumented tests** (every Room migration up to version 11, the repository, PDF text and on-device OCR; they run on a phone or emulator, and in GitHub Actions on an emulator):
 
 ```bash
 ./gradlew :app:connectedDebugAndroidTest
@@ -93,7 +93,7 @@ The CI builds are all signed with one fixed key, kept in the repository's secret
 ## 6. Using the app (kitchen workflow)
 
 1. **Home**: the big **Scan receipt or invoice** button, the documents being read or waiting to be checked (documents the app saved by itself on an earlier day leave the list by themselves), tiles for Documents, Checks, Products, Purchases, Lots and expiry, Orders, Food cost and Monthly reports, and the latest documents. *Stop and delete* and *Discard* on a card ask first.
-2. **Capture**: **Scan** opens the camera straight away. For a long receipt or a multi-page invoice, tap **Add another page** for each part; the photos are saved together as one PDF. Back from the camera, photos already on the phone or a PDF can be picked instead; multi-page PDFs are supported, and the first 20 pages are read automatically. Files shared to the app (a PDF from mail, an e-invoice) are read the same way.
+2. **Capture**: **Scan** shows the ways in first: **Take a photo** (the phone's own camera app, asked for the back camera; a camera app that ignores the request opens the lens it used last), photos already on the phone, or a PDF. For a long receipt or a multi-page invoice, tap **Add another page** for each part; the photos are saved together as one PDF. A PDF with its own text is read in full (up to 200 pages); a scanned PDF's first 20 pages are read, and the document then says so and waits for a check. Files shared to the app (a PDF from mail, an e-invoice) are read the same way.
 3. **Check and save**: the original is at the top (tap it for full screen with pinch-zoom). Below it are the editable fields.
    - **Orange** fields were read with low confidence. Each one shows the text it was read from. Correct it, or tap **✓** if it is right. One-tap replacements are offered under doubtful values.
    - **Amber** fields are **missing**. Nothing is ever guessed, so type the value only if it is printed.
@@ -101,6 +101,7 @@ The CI builds are all signed with one fixed key, kept in the repository's secret
    - For each line item: original description, **Assign product**, quantity, unit, unit price, line total, discount, lot, VAT %, and expiry (kept separate from the lot).
    - A line whose quantity × price does not give its amount says so, with a **Use qty × price = …** chip. It is only applied if you tap it.
    - **Save** checks the fields; a field marked red clears as soon as it is fixed, and Save scrolls to the first line to fix. It then lists in one question whatever still does not check out (possible duplicates, values still unchecked, lines not adding up, a missing date or total...) before anything is written. Corrections are kept if you leave the screen before saving.
+   - **To tidy**: an invoice whose supplier, number, date and every amount are proven is saved by the app even when a product's name may go on over the next printed line, or a lot or expiry was read unsure or not at all. A doubtful lot or expiry is saved off the line (never as if it were sure), the reading kept as a suggestion. The home card *N small things to tidy* lists them: keep the reading, leave it empty, confirm the name, or open the invoice. Core: `Tidy.kt` (`TidyTest`).
 4. **Documents**: search by seller, number, product description or lot. Filter by seller, month or a specific day. The **Sellers** button at the top lists the suppliers with document count, total spent and last document. Open a document to see its original and its line items, edit it, delete it, or open the original in another app. "Lot not recorded" shows only on documents that print lots, never on a charge line.
 5. **Products**: descriptions that have no product yet are listed at the top; assign them in bulk. Each product shows its weighted average cost, with its unit, VAT basis and number of purchases. The detail screen shows price history (each row links to its source document), unit conversions and remembered descriptions.
 6. **Purchases** (it used to be called Inventory: it is what was bought, not a stock count): purchases per period, and price changes.
@@ -188,14 +189,14 @@ OCR is behind the `OcrEngine` interface (`app/.../ocr/OcrEngine.kt`). To change 
 
 ### Database and migrations
 
-- Room database `kitchen_receipts.db`, currently **schema version 11** (v5–v11 are listed in `AppDatabase.kt`):
+- Room database `kitchen_receipts.db`, currently **schema version 11** (every step is in `AppDatabase.kt`; the first ones):
   - v1 had sellers, documents, products, line_items and product_aliases.
   - v2 added `unit_conversions` (`MIGRATION_1_2`).
   - v3 added supplier learning: `sellers.vat_number`, `sellers.header_profile` and `seller_aliases` (`MIGRATION_2_3`).
   - v4 added `products.category` for the inventory (`MIGRATION_3_4`).
 - There is no destructive fallback: a missing migration fails loudly in testing instead of wiping data.
-- `MigrationTest` builds real v1, v2 and v3 files with data, migrates each to v4, and lets Room validate the resulting schema against the entities.
-- Room exports schema JSON to `app/schemas/` on build. Commit that folder, and add a migration plus a test for every future schema change.
+- `MigrationTest` builds a real file of every older version with data, migrates it, and lets Room validate the result against the entities.
+- Room exports the schema JSON to `app/schemas/` on build; version 11's is committed (the versions before it never were). Commit the new file, and add a migration plus a test, for every future schema change.
 - Every line item has a non-null `document_id` foreign key to its source document (`ON DELETE CASCADE`).
 - Originals are copied into app-private storage (`files/documents/`), so a saved record always shows its original, even if the source file is deleted from the phone.
 - Android backup and device transfer are disabled (see 7b): data stays on the phone unless you export or share it.
@@ -242,6 +243,10 @@ Open **Settings** with the gear icon on the Home screen.
 Database schema is now **version 3** (supplier VAT number, letterhead profile, remembered name spellings). Migrations 1→2→3 keep all existing data. They are tested on an Android emulator in GitHub Actions (`instrumented-tests` job).
 
 ## 7b-2. How a scan is read
+
+**A PDF with its own text** (a digital invoice, the e-invoice printouts an accountant sends): each page that draws no picture is read from the PDF's text alone, the file opened once for all its pages. Nothing is drawn, the camera reading does not run and the AI is never asked: a moment per page. The text is used alone only when it reads like a document (`TextLayer.readsAlone`); a page with a picture (a scan, a letterhead printed as an image) is also read by the camera reading, and the PDF's text is used where the two agree. The reading report gives the time of each step on the phone (`time: pages …, AI …, all …`).
+
+For a photo:
 
 1. **Pass 1.** The page is read on the phone (ML Kit), with a box for every word.
 2. **Rows and columns.**
@@ -421,6 +426,8 @@ Settings ▸ Network has three modes:
   - the lines add up to the printed taxable amount or total (this also settles whether prices include VAT);
   - the document is not a possible duplicate.
 
+  A product's name that may go on over the next line, or a lot or expiry in doubt, does not hold a document whose money is proven: it is saved, and the doubt goes to the *To tidy* list (see 6).
+
   If all of this holds, the document is saved straight away and opens with a green "Saved automatically" note. Otherwise the review screen lists exactly what to check. A document read as a credit note is never saved by itself. Turn it off in Settings ▸ *Less typing*.
 - **Saving by hand.** *Save* goes straight through only when nothing is left to look at. Otherwise one question lists what still does not check out (lines not adding up to the total, a missing date or total, a line without quantity, an invoice addressed to another company, a possible duplicate, values not checked); the bar at the bottom says "N things to look at" instead of "All values checked". The same list shows when editing a saved document. A number typed with a single dot and three decimals ("1.500": 1500 or 1,5?) is refused with a note instead of guessed, on every screen where numbers are typed (`ItalianNumbers.parseTyped`).
 - **Price changes.** Each line is compared with the previous purchase of the same product:
@@ -455,7 +462,7 @@ The notification needs the Android notification permission (asked once).
 
 ## 7d. On-phone AI reader (optional)
 
-A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the normal OCR text. It runs **entirely on the phone**, through llama.cpp compiled into the app (CPU, the fastest variant for the phone is picked at start). The app never downloads the model itself: it is downloaded once by the phone's browser and then loaded with the file picker.
+A vision AI model (Qwen3-VL, Apache 2.0) reads the photo together with the normal OCR text. **When it runs**: never on a PDF with its own text (the text is exact); on a photo only when the reading does not prove itself (every amount by its own arithmetic, the supplier by its VAT number or places that agree, a date and a number read with confidence). *Read every page in full* reads whole pages, about 2 to 5 minutes a page. It runs **entirely on the phone**, through llama.cpp compiled into the app (CPU, the fastest variant for the phone is picked at start). The app never downloads the model itself: it is downloaded once by the phone's browser and then loaded with the file picker.
 
 **Setup:** Settings ▸ AI reader:
 1. Choose the model: 2B (recommended, about 1.5 GB) or 4B (about 3 GB).
@@ -526,6 +533,7 @@ The usual rules still apply:
 - Reference-only lines ("Rif. DDT … del …", zero amount) are not items.
 - An invoice addressed to another VAT number is held for review.
 - Credit notes (TD04, TD08) are money back, not purchases, so they are not imported. The app says so instead of adding stock.
+- Reverse-charge forms (TD16–TD19, from the file or a printout): the VAT they print is the buyer's own (self-assessed and deducted), so they are logged net: VAT 0, total = taxable amount, lines as amounts only, with a note in review. The form and the supplier's invoice it names are one purchase: whichever is added second is shown as a duplicate. Core: `ReverseCharge.kt` (`ReverseChargeTest`).
 - The document page shows the invoice laid out as text, and the original XML can be opened from the document.
 
 ## 7g. Office copy for a computer (the owner's Mac)
@@ -591,7 +599,7 @@ Tests: `DeliveryNotesTest`, `ChecksTest` (core), `ChecksRepositoryTest` and `Mig
 
 **Dishes from a spreadsheet** (Food cost ▸ *Import dishes from a spreadsheet*): an Excel `.xlsx` or a CSV with one row per ingredient. Columns are found by their heading, Italian or English, in any order: Piatto/Dish, Portata/Course, Prezzo menu/Price, IVA inclusa, IVA %, Porzioni, Ingrediente, Quantità, Unità, Scarto %, Prezzo ingrediente, Prezzo per; others (notes, formulas) are ignored. The dish name may be only on its first row. Before anything changes the app shows what the import will do: new and updated dishes, ingredients linked to products, rows left out because they have no quantity, every price, VAT or portions value of a dish already in the app that the sheet changes, and (only if the operator switches it on) the dishes not in the file to delete. A dish already in the app keeps its price, VAT and portions where the sheet has no column or an empty cell, and keeps its own ingredient for a row the sheet could not read. Dishes are matched by name, so the kitchen updates its sheet when the menu changes and imports it again. An ingredient keeps the product the operator linked in the app; otherwise it is linked only when exactly one product carries all its words; otherwise it uses the sheet's price. The .xlsx is read as a zip of XML (values as Excel saved them), with no extra library. Core: `MenuSheet.kt` (`MenuSheetTest`, invented fixture `menu_esempio.xlsx`).
 
-**Month by month**: food and drink bought (everything except cleaning and disposables), VAT excluded, per category, against the month's revenue typed by the operator (with or without VAT). Purchases follow deliveries, not consumption, and the screen says so.
+**Month by month**: food and drink bought (everything except cleaning, disposables, the guests' tables and fees: the packaging levy CONAI, bank and collection fees, stamp duty; transport counts), VAT excluded, per category, against the month's revenue typed by the operator (with or without VAT). Purchases follow deliveries, not consumption, and the screen says so.
 
 **Orders** (Home ▸ *Orders*): pick a supplier; the app lists what they delivered in the last 8 weeks, with the usual quantity per delivery, how often, and when last (delivery notes count, an invoice that charges several of them does not count twice). Change the quantities (0 leaves a product out), add a note, and *Send order* opens the share sheet with a plain message. The app does not know the stock: the operator decides.
 
@@ -606,7 +614,7 @@ Core: `FoodCost.kt`, `Reorder.kt` (`FoodCostTest`). Schema v9 adds `recipes`, `r
 - Main target: Italian supplier documents in EUR. Other currencies can be typed as a 3-letter code, but no conversion is done.
 - A seller name is required to save a document, because everything is organised by seller. All other fields are optional and simply stay missing.
 - The review screen keeps the operator's corrections on the phone (`jobs/<job>/draft.json`, or `edits/<document>.json` for a saved document) a moment after each change, and when the screen closes. Going back, the app lock or Android closing the app no longer loses them: the next time the document opens they are back, with a short note. They are deleted when the document is saved or thrown away. A saved document's edits come back only if the document has not been saved again since (core `DraftCodec`, `DraftCodecTest`). Leaving the edit of a saved document with changes asks first. Not tested on a real phone yet.
-- Up to 20 pages per document are OCR'd. All pages are always stored and viewable.
+- Pages with the PDF's own text: up to 200 per document. Pages that need the camera reading (scans, photos): the first 20, and the document then waits for a check. All pages are always stored and viewable.
 - Files over 50 MB are rejected. Supported formats are JPEG, PNG, PDF and e-invoices (.xml, .p7m, .zip). Password-protected PDFs cannot be opened.
 - The signature of a .p7m is not verified (the SdI verified it before delivering the file); only the invoice inside is read.
 - Product averages are recomputed in memory from all purchases, which is fine for thousands of line items. A very large history would need pre-aggregated tables.
@@ -614,19 +622,17 @@ Core: `FoodCost.kt`, `Reorder.kt` (`FoodCostTest`). Schema v9 adds `recipes`, `r
 
 ## 9. What was verified
 
-Built and tested in an environment **without** access to Google's Maven repository or the Android SDK.
-
 | Check | Status |
 |---|---|
-| `:core` compiles (Kotlin 2.0.21) | ✅ verified |
-| `:core` unit tests: 164 tests on synthetic Italian fixtures (invoices, receipts, delivery notes, messy phone OCR) | ✅ all passing |
-| All 34 Room `@Query` statements and the v1→v2 migration SQL run in SQLite against a schema matching the entities | ✅ verified |
-| String resources: every referenced key exists in English and Italian, with matching format arguments | ✅ verified |
-| `:app` Android build (Room/KSP code generation, Compose compilation, APK) | ✅ built by GitHub Actions on every push |
-| Instrumented tests (`MigrationTest`, `RepositoryTest`, `OcrEndToEndTest`) | ✅ run on an Android 11 emulator in GitHub Actions |
-| On-device OCR quality on real photos | ⚠️ not measured |
-
-If the first Android build reports a compile error, it will most likely be a small API mismatch in the Compose UI code. That code was written against the pinned library versions but could not be compiled here.
+| `:core` unit tests (Kotlin 2.0.21): reading, money, duplicates, food cost, e-invoices, CSV, validation | ✅ all passing on every build |
+| Test bench (`core/src/test/.../bench`): 443 invented documents read and scored field by field; the build fails if any group gets worse | ✅ on every build |
+| Room queries and the schema (checked by Room's compiler on every build), every migration up to version 11 (`MigrationTest`) | ✅ GitHub Actions |
+| String resources: every key in English and Italian | ✅ checked before each release |
+| `:app` Android build (Compose, Room, the native AI reader), signed APK on the repository's Releases page | ✅ GitHub Actions |
+| Instrumented tests (`MigrationTest`, `RepositoryTest`, `OcrEndToEndTest`, `PdfTextTest`, screenshots) | ✅ Android emulator in GitHub Actions |
+| Real documents: a private set of real pages (kept out of this public repository) is read by every new build and compared with the last release; a build that reads any page worse is not released | ✅ before each release |
+| Reading time on a phone | ⚠️ shown per document in the reading report (`time: …`), not measured in CI |
+| On-device OCR quality on real photos | ⚠️ not measured systematically |
 
 ## 10. Project layout
 

@@ -46,6 +46,7 @@ fun warningText(w: ParseWarning): String = stringResource(
         ParseWarning.PAGES_MISSING -> R.string.warn_pages_missing
         ParseWarning.CHECKED_BY_TOTALS -> R.string.warn_checked_by_totals
         ParseWarning.REVERSE_CHARGE -> R.string.warn_reverse_charge
+        ParseWarning.PAGES_NOT_READ -> R.string.warn_pages_not_read
     },
 )
 
@@ -114,6 +115,7 @@ fun categoryLabel(c: Category): String = stringResource(
         Category.CLEANING -> R.string.cat_cleaning
         Category.DISPOSABLES -> R.string.cat_disposables
         Category.COPERTI -> R.string.cat_coperti
+        Category.FEES -> R.string.cat_fees
         Category.OTHER -> R.string.cat_other
     },
 )
@@ -183,6 +185,7 @@ fun reviewReasonText(r: ReviewReason): String = stringResource(
         ReviewReason.CHECKED_BY_TOTALS -> R.string.reason_checked_by_totals
         ReviewReason.BUNDLE_CHECK -> R.string.bundle_hold_reason
         ReviewReason.REVERSE_CHARGE -> R.string.reason_reverse_charge
+        ReviewReason.PAGES_NOT_READ -> R.string.reason_pages_not_read
     },
 )
 

@@ -48,6 +48,8 @@ enum class ParseWarning {
      * paid to the supplier. Logged net of VAT, its lines as amounts only.
      */
     REVERSE_CHARGE,
+    /** A long scanned document: only its first pages were read (see InvoiceBundle.PAGE_LIMIT). */
+    PAGES_NOT_READ,
 }
 
 data class ParsedLineItem(

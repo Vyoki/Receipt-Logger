@@ -1,6 +1,7 @@
 package com.kitchenreceipts.core
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class CategoriesTest {
@@ -76,5 +77,18 @@ class CategoriesTest {
         }
         // Already guessed right: nothing to learn.
         assertEquals(null, Categories.wordToLearn("MOZZARELLA 125G", Category.DAIRY_EGGS))
+    }
+    @Test fun feesAreNeverFood() {
+        for (n in listOf("CONTRIBUTO CONAI ASSOLTO", "Spese incasso", "SPESE BANCARIE", "Imposta di bollo", "BOLLO", "Commissioni carta")) {
+            assertEquals(n, Category.FEES, Categories.guess(n))
+        }
+        // Transport is what bringing the food costs; words that only contain the fee words are no fees.
+        assertEquals(Category.OTHER, Categories.guess("SPESE TRASPORTO"))
+        assertTrue(Categories.guess("BOLLITO MISTO") != Category.FEES)
+        assertTrue(Category.FEES in FoodCost.NOT_FOOD)
+        val june = java.time.YearMonth.of(2031, 6)
+        fun line(cat: Category, cents: Long) = PricedPurchase(null, java.time.LocalDate.of(2031, 6, 3), "ABC S.r.l.", null, null, null, cents, VatBasis.EXCLUSIVE, null, cat)
+        val m = FoodCost.months(listOf(line(Category.MEAT, 10000), line(Category.FEES, 250)), emptyList(), listOf(june)).single()
+        assertEquals(10000L, m.foodAndDrinkCents)
     }
 }

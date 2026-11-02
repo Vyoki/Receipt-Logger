@@ -177,7 +177,7 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit, onBundle: (String) -
     var launchError by rememberSaveable { mutableStateOf<String?>(null) }
     val noCameraMsg = stringResource(R.string.no_camera_app)
 
-    val takePicture = rememberLauncherForActivityResult(ActivityResultContracts.TakePicture()) { ok ->
+    val takePicture = rememberLauncherForActivityResult(BackCameraPicture()) { ok ->
         val path = pendingPhoto
         pendingPhoto = null
         if (path != null) {
@@ -210,15 +210,7 @@ fun CaptureScreen(onBack: () -> Unit, onQueued: () -> Unit, onBundle: (String) -
         }
     }
 
-    // Scan opens the camera straight away (one tap less on every scan); back from the camera shows the other ways in
-    // (photos already on the phone, a PDF). Only once: not again after a rotation or coming back from the camera.
-    var cameraOpened by rememberSaveable { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        if (!cameraOpened && photos.isEmpty() && pendingPhoto == null) {
-            cameraOpened = true
-            launchCamera()
-        }
-    }
+    // Scan shows the ways in first (camera, photos already on the phone, a PDF): the camera opens only when chosen.
 
     LaunchedEffect(state.queued) {
         if (state.queued) {
@@ -340,3 +332,16 @@ val IMPORTABLE_TYPES = arrayOf(
     "application/pdf", "text/xml", "application/xml", "application/pkcs7-mime", "application/x-pkcs7-mime",
     "application/zip", "application/x-zip-compressed", "application/octet-stream",
 )
+
+/**
+ * The phone's camera app, asked for the back camera. Android has no standard way to choose the lens of another app's
+ * camera: these are the requests camera apps follow (Samsung's and most others); one that ignores them opens the lens
+ * it used last.
+ */
+private class BackCameraPicture : ActivityResultContracts.TakePicture() {
+    override fun createIntent(context: android.content.Context, input: Uri): android.content.Intent =
+        super.createIntent(context, input)
+            .putExtra("android.intent.extras.CAMERA_FACING", 0) // the back camera (CameraInfo.CAMERA_FACING_BACK)
+            .putExtra("android.intent.extras.LENS_FACING_BACK", 1)
+            .putExtra("android.intent.extra.USE_FRONT_CAMERA", false)
+}

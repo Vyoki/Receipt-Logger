@@ -123,6 +123,25 @@ class ReceiptRepository(
     fun documentDates() = documents.documentDates()
     fun observeDocument(id: Long) = documents.observeDocument(id)
     fun observeItems(id: Long) = documents.observeItems(id)
+
+    /** Saved lines with doubts left to tidy (see core Tidy). */
+    fun tidyLines() = documents.tidyLines()
+
+    /**
+     * One doubt of a saved line settled: [keep] puts a lot or expiry the app read unsure on the line (a missing lot
+     * stays empty), or keeps a name as printed; otherwise the line stays as it is. Either way the doubt is gone.
+     */
+    suspend fun settleTidy(row: TidyRow, mark: ItemMark, keep: Boolean) {
+        val marks = ItemMark.decode(row.marks).filterNot { it == mark }
+        var lot = row.lot
+        var expiry = row.expiry
+        val read = com.kitchenreceipts.core.Tidy.suggestion(mark)
+        if (keep && read != null) when (mark.code) {
+            com.kitchenreceipts.core.Tidy.LOT -> lot = read
+            com.kitchenreceipts.core.Tidy.EXPIRY -> expiry = com.kitchenreceipts.core.ItalianDates.parse(read) ?: expiry
+        }
+        documents.setTidied(row.lineId, ItemMark.encode(marks), lot, expiry)
+    }
     suspend fun documentOnce(id: Long) = documents.documentById(id)
     suspend fun itemsOnce(id: Long) = documents.itemsOnce(id)
 

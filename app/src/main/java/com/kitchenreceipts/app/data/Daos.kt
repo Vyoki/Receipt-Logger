@@ -36,6 +36,19 @@ data class LineItemRow(
     @ColumnInfo(name = "product_name") val productName: String?,
 )
 
+/** A saved line with doubts left to tidy (see core Tidy), with its document's supplier, date and number. */
+data class TidyRow(
+    val lineId: Long,
+    val documentId: Long,
+    val description: String,
+    val lot: String?,
+    val expiry: LocalDate?,
+    val marks: String?,
+    val sellerName: String,
+    val documentDate: LocalDate?,
+    val documentNumber: String?,
+)
+
 data class FingerprintRow(
     val id: Long,
     val sellerName: String,
@@ -168,6 +181,20 @@ interface DocumentDao {
             "WHERE li.document_id = :documentId ORDER BY li.position",
     )
     fun observeItems(documentId: Long): Flow<List<LineItemRow>>
+
+    /** Saved lines with a doubt to tidy: a mark of kind "tidy" (core Tidy.KIND) in their marks, newest documents first. */
+    @Query(
+        "SELECT li.id AS lineId, li.document_id AS documentId, li.original_description AS description, li.lot_number AS lot, " +
+            "li.expiry_date AS expiry, li.marks AS marks, s.name AS sellerName, d.document_date AS documentDate, d.document_number AS documentNumber " +
+            "FROM line_items li JOIN documents d ON d.id = li.document_id JOIN sellers s ON s.id = d.seller_id " +
+            "WHERE li.marks LIKE '%tidy' || char(9) || '%' " +
+            "ORDER BY (d.document_date IS NULL), d.document_date DESC, d.id DESC, li.position",
+    )
+    fun tidyLines(): Flow<List<TidyRow>>
+
+    /** A line's marks, lot and expiry after one of its doubts was settled. */
+    @Query("UPDATE line_items SET marks = :marks, lot_number = :lot, expiry_date = :expiry WHERE id = :id")
+    suspend fun setTidied(id: Long, marks: String?, lot: String?, expiry: LocalDate?)
 
     @Query(
         "SELECT li.*, p.name AS product_name FROM line_items li LEFT JOIN products p ON p.id = li.product_id " +

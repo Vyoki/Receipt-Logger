@@ -102,7 +102,8 @@ class BundleStore(
     private val _missing = MutableStateFlow<Set<String>>(emptySet())
 
     /** [count] more invoices of one supplier were saved by the app after the operator saved its first one ([seq]: which time). */
-    data class Rechecked(val planId: String, val count: Int, val seq: Long)
+    /** [all]: the file's invoices to check were checked again with the app's current rules (not one supplier's). */
+    data class Rechecked(val planId: String, val count: Int, val seq: Long, val all: Boolean = false)
 
     private val _rechecked = MutableStateFlow<Rechecked?>(null)
 
@@ -377,8 +378,9 @@ class BundleStore(
                 }
                 now2
             }
-            // One document, or a file the app cannot look through: read as today when it fits.
-            pages <= InvoiceBundle.PAGE_LIMIT -> {
+            // One document, or a file the app cannot look through: read as one when it fits (a file with its own text
+            // up to the text limit, a scan up to the camera-reading limit).
+            pages <= InvoiceBundle.PAGE_LIMIT || (InvoiceBundle.usable(signals) && pages <= InvoiceBundle.TEXT_PAGE_LIMIT) -> {
                 update(id) { if (it.status == BundleStatus.SCANNING) base else it }
                 readAsOne(id, SOURCE_ONE)
                 plan(id)
@@ -588,7 +590,17 @@ class BundleStore(
     }
 
     /** Checks the supplier's other invoices again after the operator saved its first one (see BundleWizard.recheckAfterSave). */
-    private fun recheckSoon(id: String, jobs: List<String>) {
+    /**
+     * The file's invoices still to check, checked again with the app's current rules: after an update, those whose
+     * reading now proves itself are saved by the app. Nothing is read again (see ImportQueue.recheck).
+     */
+    fun recheckWaiting(id: String) {
+        val p = plan(id) ?: return
+        val jobs = p.invoices.filter { it.outcome == InvoiceOutcome.READY || it.outcome == InvoiceOutcome.CHECK_LATER }.mapNotNull { it.jobId }
+        if (jobs.isNotEmpty()) recheckSoon(id, jobs, all = true)
+    }
+
+    private fun recheckSoon(id: String, jobs: List<String>, all: Boolean = false) {
         log.event("BUNDLE_RECHECK", "bundle" to id.take(8), "jobs" to jobs.size)
         // At once: the chain does not open one of them while it waits to be checked again.
         queue.holdForRecheck(jobs)
@@ -596,7 +608,7 @@ class BundleStore(
             try {
                 val saved = queue.recheck(jobs)
                 if (saved.isEmpty()) return@launch
-                _rechecked.value = Rechecked(id, saved.size, recheckSeq.incrementAndGet())
+                _rechecked.value = Rechecked(id, saved.size, recheckSeq.incrementAndGet(), all)
                 // Before the file's result, those are checked with it (once); after it, these alone, once.
                 if (plan(id)?.announced == true) runCatching { dishesCheck(saved) }.onFailure { log.error("dishAlerts", it) }
             } catch (e: CancellationException) {

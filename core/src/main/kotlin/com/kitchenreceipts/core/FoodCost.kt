@@ -332,7 +332,7 @@ object FoodCost {
         val month: YearMonth,
         /** Bought, VAT excluded, per category. */
         val byCategory: Map<Category, Long>,
-        /** Food and drink (everything except cleaning, disposables and the guests' tables), VAT excluded. */
+        /** Food and drink (everything except cleaning, disposables, the guests' tables and fees), VAT excluded. */
         val foodAndDrinkCents: Long,
         /** Lines whose VAT could not be taken out (inclusive price without a rate, or unknown basis): counted as printed. */
         val uncertainCents: Long,
@@ -341,7 +341,7 @@ object FoodCost {
         val percent: BigDecimal?,
     )
 
-    val NOT_FOOD = setOf(Category.CLEANING, Category.DISPOSABLES, Category.COPERTI)
+    val NOT_FOOD = setOf(Category.CLEANING, Category.DISPOSABLES, Category.COPERTI, Category.FEES)
 
     /**
      * Spending per month and category without VAT, against the revenue the operator typed. Purchases follow

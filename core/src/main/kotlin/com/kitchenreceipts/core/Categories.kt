@@ -17,6 +17,8 @@ enum class Category(val key: String) {
     DISPOSABLES("disposables"),
     /** For the guests' tables (linen, laundry, napkins, candles). Never guessed: chosen, or the supplier's category. */
     COPERTI("coperti"),
+    /** Charges that buy nothing to cook: the packaging levy (CONAI), bank and collection fees, stamp duty. Never food cost. */
+    FEES("fees"),
     OTHER("other"),
     ;
 
@@ -132,7 +134,14 @@ object Categories {
      */
     @Volatile var learned: Map<String, Category> = emptyMap()
 
+    /** The packaging levy, bank and collection fees, stamp duty: charges, never food ("Spese trasporto" is not one). */
+    private val FEE = rx(
+        "(?i)(\\bconai\\b|contributo\\s+ambientale|\\bspese\\s+(?:di\\s+)?(?:incasso|bancarie|banca|bollo|riscossione|insolut\\w*)|" +
+            "\\bcommission[ei]\\b|imposta\\s+di\\s+bollo|marca\\s+da\\s+bollo|^\\W*bollo\\b)",
+    )
+
     fun guess(name: String): Category {
+        if (FEE.containsMatchIn(name)) return Category.FEES
         val words = words(name)
         val text = words.joinToString(" ") { it.text }
         val plain = words.map { it.text }

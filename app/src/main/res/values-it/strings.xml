@@ -366,7 +366,7 @@
     <string name="ai_phone_weak">Potrebbe essere troppo lento o esaurire la memoria.</string>
     <string name="ai_installed">Installato: %1$s (%2$s GB)</string>
     <string name="ai_when">Quando usarlo</string>
-    <string name="ai_mode_needed">Ricontrolla ogni documento: intestazione, totali e righe principali (consigliato)</string>
+    <string name="ai_mode_needed">Ricontrolla le foto la cui lettura non si dimostra da sola (consigliato)</string>
     <string name="ai_mode_always">Leggi ogni pagina per intero (molto più lento)</string>
     <string name="ai_mode_off">Disattivato</string>
     <string name="ai_test">Prova</string>
@@ -744,6 +744,28 @@
     <string name="warn_checked_by_totals">I totali del documento hanno fatto aggiungere o escludere righe (elencate sopra le righe): controllale prima di salvare.</string>
     <string name="reason_checked_by_totals">Righe aggiunte o escluse per far tornare i totali: controllale.</string>
     <string name="warn_reverse_charge">Integrazione/autofattura in reverse charge (TD16–TD19): l\'IVA indicata è a vostro carico (si integra e si detrae), non si paga al fornitore. Registrata senza quell\'IVA: totale = imponibile, righe solo con l\'importo.</string>
+    <string name="warn_pages_not_read">Documento scansionato lungo: sono state lette solo le prime 20 pagine. Controlla il resto sull\'originale.</string>
+    <string name="reason_pages_not_read">Lette solo le prime 20 pagine.</string>
     <string name="reason_reverse_charge">Integrazione in reverse charge: registrata senza l\'IVA indicata.</string>
     <string name="training_older">%1$d sono stati salvati prima di questa versione, che non conservava ancora ciò che serve all\'esportazione (la misura della foto letta). I documenti salvati da ora in poi si possono usare.</string>
+    <!-- Doubts left to tidy on invoices the app saved (core Tidy) -->
+    <string name="tidy_title">Da sistemare</string>
+    <string name="tidy_hint">Fatture salvate dall\'app perché tutti gli importi tornano. Solo questi dettagli erano incerti: sistemali quando hai un minuto.</string>
+    <string name="tidy_none">Niente da sistemare.</string>
+    <string name="tidy_name">Il nome potrebbe continuare sulla riga stampata sotto</string>
+    <string name="tidy_name_ok">Il nome va bene</string>
+    <string name="tidy_lot_unsure">Lotto incerto: letto «%1$s»</string>
+    <string name="tidy_lot_none">Nessun lotto letto (le altre righe lo hanno)</string>
+    <string name="tidy_expiry_unsure">Scadenza incerta: letta «%1$s»</string>
+    <string name="tidy_expiry_none">Nessuna scadenza letta</string>
+    <string name="tidy_keep">Tieni %1$s</string>
+    <string name="tidy_leave_empty">Lascia vuoto</string>
+    <string name="tidy_none_printed">Non stampato</string>
+    <string name="tidy_open">Apri fattura</string>
+    <plurals name="tidy_home">
+        <item quantity="one">%d piccola cosa da sistemare</item>
+        <item quantity="other">%d piccole cose da sistemare</item>
+    </plurals>
+    <string name="tidy_home_hint">Su fatture salvate dall\'app: un lotto o un nome prodotto da confermare</string>
+    <string name="bundle_recheck">Ricontrolla con le nuove regole</string>
 </resources>

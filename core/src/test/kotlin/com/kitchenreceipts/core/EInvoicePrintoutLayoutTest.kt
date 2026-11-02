@@ -328,15 +328,18 @@ class EInvoicePrintoutLayoutTest {
 
     // ------------------------------------------------------------------ a name printed over two lines (C2)
 
-    @Test fun aNameRunningOnHoldsTheSave() {
+    @Test fun aNameRunningOnIsLeftToTidy() {
         val first = meat.lines[0].copy(more = listOf("STAGIONATA DI PROVA"))
         val d = read(meatWith(first))
         assertEquals(listOf(11500L, 6000L, 4800L), d.lineItems.map { it.lineTotalCents?.value })
         assertEquals("the name continues on the next printed line", d.lineItems[0].nameNote)
         assertTrue(d.lineItems.drop(1).all { it.nameNote == null })
-        val draft = DocumentDraft.fromParsed(d)
+        val draft = AutoAccept.settleProven(DocumentDraft.fromParsed(d))
         assertTrue(draft.items[0].description.uncertain)
-        assertTrue(ReviewReason.UNCERTAIN_VALUES in AutoAccept.reasons(draft))
+        // The money proven, the name is the only doubt: no longer a reason to hold the invoice. Saved, the name is
+        // marked on its line to tidy (see Tidy).
+        assertTrue(ReviewReason.UNCERTAIN_VALUES !in AutoAccept.reasons(draft))
+        assertEquals(Tidy.NAME, Tidy.of(Tidy.prepareForSave(draft).items[0]).single { it.code == Tidy.NAME }.code)
         // On a photo the row is dropped as before, with no new hold.
         assertTrue(readPages(EInvoicePrintoutFixture.pages(meatWith(first)), textLayer = false).lineItems.all { it.nameNote == null })
     }

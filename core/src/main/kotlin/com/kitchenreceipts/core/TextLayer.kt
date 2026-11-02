@@ -111,6 +111,23 @@ object TextLayer {
     }
 
     /**
+     * The PDF's own text taken alone, with no camera reading to compare it with (a page that draws no picture, so
+     * nothing printed is outside its text): used only when it looks like text (see [agrees]) and names at least three
+     * of the words documents print ("totale", "IVA", "fattura", "prezzo"...). A font that maps its letters to other
+     * letters gives none of them, and the page is then read by the camera reading as before.
+     */
+    fun readsAlone(text: List<OcrLine>): Boolean {
+        if (!agrees(text, emptyList())) return false
+        val all = text.joinToString(" ") { it.text }
+        return DOC_WORDS.findAll(all).map { it.value.lowercase() }.distinct().count() >= 3
+    }
+
+    private val DOC_WORDS = rx(
+        "(?i)\\b(totale|iva|fattura|imponibile|documento|data|quantit|prezzo|importo|descrizione|cliente|fornitore|pagamento|aliquota|" +
+            "total|invoice|date|price|amount|qty|vat|rechnung|datum|betrag|menge|facture|montant|prix|tva|factura|precio)",
+    )
+
+    /**
      * The page as read: the text layer, plus the OCR's lines that lie where the text layer has nothing (a
      * letterhead or a stamp printed as a picture). When the text layer does not agree with the OCR, the OCR alone.
      */

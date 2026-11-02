@@ -114,7 +114,7 @@
     <string name="bundle_new_starts_here">Qui inizia una nuova fattura</string>
     <string name="bundle_flag_no_total">Nessun “Totale documento”: potrebbero mancare pagine</string>
     <string name="bundle_flag_several">Sembrano più fatture sulle stesse pagine: esclusa se non la selezioni</string>
-    <string name="bundle_flag_long">Fattura lunga: verranno lette solo le prime 20 pagine su %1$d</string>
+    <string name="bundle_flag_long">Fattura lunga: verranno lette solo le prime 200 pagine su %1$d</string>
     <string name="bundle_flag_no_supplier">Fornitore non trovato nella pagina</string>
     <string name="bundle_flag_start_unsure">Non è sicuro che la fattura inizi qui</string>
     <string name="bundle_maybe_saved">Forse già salvata</string>
@@ -244,4 +244,8 @@
     <string name="bundle_prices_only">Fatture con prezzi cambiati</string>
     <string name="bundle_show_all">Mostra tutte le fatture</string>
     <string name="bundle_time_left">Ancora circa %1$s</string>
+    <plurals name="bundle_rechecked_all">
+        <item quantity="one">Un\'altra fattura salvata dall\'app con le nuove regole</item>
+        <item quantity="other">Altre %d fatture salvate dall\'app con le nuove regole</item>
+    </plurals>
 </resources>
