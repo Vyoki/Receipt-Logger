@@ -356,6 +356,18 @@ class EInvoicePrintoutLayoutTest {
         assertTrue(AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(read(off)))).isNotEmpty())
     }
 
+    @Test fun aQuantityWithThousandsRunIntoItsPriceIsSplitByTheAmount() {
+        // "1.234,567890" and "0,40000000" printed so close that the text runs them together: the one split where
+        // quantity x price = the amount (1.234,56789 x 0,4 = 493,83).
+        val glued = EInvoicePrintoutFixture.Line("POD/PDR: IT001E00000009", null, "1.234,5678900,40000000", "MC", "22,00", "493,83", codeType = null)
+        val inv = meat.copy(lines = listOf(glued), groups = listOf(EInvoicePrintoutFixture.Group("22,00", "493,83", "108,64")), total = "602,47")
+        val line = read(inv).lineItems.single()
+        assertEquals(0, line.quantity?.value?.compareTo(BigDecimal("1234.56789")))
+        assertEquals(0, line.unitPrice?.value?.compareTo(BigDecimal("0.4")))
+        assertEquals(49383L, line.lineTotalCents?.value)
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(read(inv)))).toList())
+    }
+
     // ------------------------------------------------------------------ the supplier's VAT number (F7)
 
     @Test fun supplierVatFromItsRoleBox() {

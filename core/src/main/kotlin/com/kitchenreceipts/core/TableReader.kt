@@ -286,8 +286,8 @@ object TableReader {
     private val GLUED_NUMBER = Regex("\\d,\\d+[A-Za-z%]")
     /** "1.627.60" (photographed): thousands groups, then the decimal comma read as a dot. Only quantity x price proves it. */
     private val COMMA_AS_DOT = Regex("^(-?€?\\d{1,3}(?:\\.\\d{3})+)\\.(\\d{2}-?€?)$")
-    /** Quantity and price printed so close that the text runs them together: "19,417475731,68852459". */
-    private val TWO_NUMBERS = Regex("^\\d+,\\d+,\\d+$")
+    /** Quantity and price printed so close that the text runs them together: "19,417475731,68852459", "1.289,5309610,49673002". */
+    private val TWO_NUMBERS = Regex("^\\d+(?:\\.\\d{3})*,\\d+,\\d+$")
     private val NUMBER = Regex("^-?\\d+(?:[.,]\\d+)*(?:%)?$")
     private val LONG_CODE = Regex("^\\d{4,}$")
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
