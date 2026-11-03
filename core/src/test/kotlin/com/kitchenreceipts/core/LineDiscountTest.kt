@@ -89,4 +89,11 @@ class LineDiscountTest {
         val settled = AutoAccept.settleProven(DocumentDraft(seller = DraftField("ABC S.r.l."), items = listOf(item))).items.single()
         assertTrue(settled.discount.uncertain)
     }
+
+    @Test fun shownNextToThePriceWithItsSigns() {
+        assertEquals("-10%", LineDiscount.label("10"))
+        assertEquals("-10%+5%", LineDiscount.label("10+5%"))
+        assertEquals("-12,5%", LineDiscount.label("12,50"))
+        assertEquals(null, LineDiscount.label(""))
+    }
 }

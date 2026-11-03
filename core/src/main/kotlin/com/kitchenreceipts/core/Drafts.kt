@@ -17,6 +17,34 @@ fun preciseSum(amounts: List<BigDecimal?>): Long? {
 }
 
 /**
+ * A unit not printed on the invoice, filled in from this supplier's earlier invoices (the app's unitsFromHistory).
+ * While the line is checked it is told by the unit's source, which names the unit (a unit typed over it no longer
+ * counts); saved, by a mark on the line.
+ */
+object UnitHistory {
+    private const val KIND = "unit"
+
+    /** The source of a unit taken from the supplier's earlier invoices. */
+    fun source(unit: String) = "as on this supplier's earlier invoices: ${unit.trim()}"
+
+    /** The unit is still the one filled in from the supplier's earlier invoices. */
+    fun isFrom(l: LineItemDraft): Boolean = !l.unit.isMissing && l.unit.source == source(l.unit.text)
+
+    /** A saved line's marks say its unit came from the supplier's earlier invoices. */
+    fun isFrom(marks: List<ItemMark>): Boolean = marks.any { it.kind == KIND }
+
+    /** The line's marks to save: with the unit's origin while the unit is the one filled in. */
+    fun marksToSave(l: LineItemDraft): List<ItemMark> = without(l.marks) + listOfNotNull(ItemMark(KIND, null, "earlier invoices").takeIf { isFrom(l) })
+
+    /** A saved line opened again: the unit's origin back on its field, the mark taken off. */
+    fun restore(l: LineItemDraft): LineItemDraft =
+        if (!isFrom(l.marks)) l else l.copy(unit = l.unit.copy(source = source(l.unit.text)), marks = without(l.marks))
+
+    /** [marks] without the unit's origin (what screens list as the line's codes). */
+    fun without(marks: List<ItemMark>): List<ItemMark> = marks.filter { it.kind != KIND }
+}
+
+/**
  * Editable text of one field in the review screen.
  * [uncertain] = extracted with LOW confidence and not yet touched/confirmed by the user.
  * An empty [text] means the value is missing (shown as "missing", never filled in automatically).
@@ -331,7 +359,7 @@ object DraftValidator {
                 packages = packages,
                 packSize = packSize,
                 discount = discount,
-                marks = it.marks,
+                marks = UnitHistory.marksToSave(it),
             )
         }
 

@@ -505,6 +505,7 @@
     </plurals>
     <string name="discount_percent">Sconto %</string>
     <string name="discount_value">sconto %1$s%%</string>
+    <string name="unit_from_history">da storico</string>
     <string name="paid_per_unit">pagato %1$s €/%2$s</string>
     <string name="notif_dish_line">%1$s: %2$s → %3$s (%4$s)</string>
     <plurals name="notif_dish_title">

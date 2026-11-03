@@ -49,6 +49,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -304,15 +305,30 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
             } else {
                 Text(stringResource(R.string.no_product_assigned), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
-            val marks = com.kitchenreceipts.core.Tidy.without(com.kitchenreceipts.core.ItemMark.decode(it.marks))
+            val allMarks = com.kitchenreceipts.core.ItemMark.decode(it.marks)
+            val marks = com.kitchenreceipts.core.UnitHistory.without(com.kitchenreceipts.core.Tidy.without(allMarks))
             if (marks.isNotEmpty()) {
                 Text(com.kitchenreceipts.app.ui.review.marksLine(marks), style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
             val qty = if (it.quantity != null) "${fmtDecimal(it.quantity)} ${it.unit ?: ""}".trim() else null
+            // The unit not printed, taken from this supplier's earlier invoices: a small mark right after it.
+            val fromHistory = it.unit != null && com.kitchenreceipts.core.UnitHistory.isFrom(allMarks)
+            val historyMark = stringResource(R.string.unit_from_history)
+            val muted = MaterialTheme.colorScheme.onSurfaceVariant
+            val small = MaterialTheme.typography.bodySmall.fontSize
+            val price = listOfNotNull(it.unitPrice?.let { p -> "× ${fmtDecimal(p, 4)}" }, com.kitchenreceipts.core.LineDiscount.label(it.discount)).joinToString(" ")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    listOfNotNull(qty, it.unitPrice?.let { p -> "× ${fmtDecimal(p, 4)}" }, it.discount?.let { d -> stringResource(R.string.discount_value, d) })
-                        .joinToString(" ").ifEmpty { "—" },
+                    androidx.compose.ui.text.buildAnnotatedString {
+                        if (qty != null) append(qty)
+                        if (qty != null && fromHistory) {
+                            append(" ")
+                            withStyle(androidx.compose.ui.text.SpanStyle(color = muted, fontSize = small)) { append(historyMark) }
+                        }
+                        if (qty != null && price.isNotEmpty()) append(" ")
+                        append(price)
+                        if (qty == null && price.isEmpty()) append("—")
+                    },
                     modifier = Modifier.weight(1f),
                 )
                 Text(fmtMoney(it.lineTotalCents, currency), fontWeight = FontWeight.SemiBold)

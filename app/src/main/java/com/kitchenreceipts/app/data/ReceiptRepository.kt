@@ -678,7 +678,7 @@ class ReceiptRepository(
                 val ratio = price.divide(last, 4, java.math.RoundingMode.HALF_UP)
                 if (ratio < BigDecimal("0.7") || ratio > BigDecimal("1.3")) return@map l
             }
-            l.copy(unit = com.kitchenreceipts.core.DraftField(unit, uncertain = false, source = "as on this supplier's earlier invoices"))
+            l.copy(unit = com.kitchenreceipts.core.DraftField(unit, uncertain = false, source = com.kitchenreceipts.core.UnitHistory.source(unit)))
         }
     }
 

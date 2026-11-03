@@ -24,6 +24,9 @@ object LineDiscount {
     /** Free goods ("omaggio"): a quantity discounted 100% ([percent]); its amount is 0,00 whatever its price. */
     fun isFree(quantity: BigDecimal?, percent: BigDecimal?): Boolean = quantity != null && percent?.compareTo(HUNDRED) == 0
 
+    /** As shown next to a price: "10" → "-10%", "10+5" → "-10%+5%"; null when it is not a discount. */
+    fun label(text: String?): String? = normalize(text)?.split('+')?.joinToString("+", prefix = "-") { "$it%" }
+
     /** The whole discount in percent ("10+5" → 14,5). */
     fun percent(text: String?): BigDecimal? {
         val n = normalize(text) ?: return null
