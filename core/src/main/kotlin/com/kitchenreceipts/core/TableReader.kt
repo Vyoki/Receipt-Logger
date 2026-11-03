@@ -737,11 +737,8 @@ object TableReader {
                 pendingDescription = null
                 return true
             }
-            // Words that say "no item" (a payment, a carrier, "vendita", a phone number) do not drop a row whose own
-            // columns prove it is one: quantity x price = amount, each in its column ("CACIOTTA MONTE VETTORE",
-            // "CANONE POS ANNUO 1,00 9,90 22,00 9,90"), nor a rounding row with its amount (part of the total), nor a
-            // priced row with its VAT rate or nature code ("Vendita rateale apparati 34,77 N1 34,77": it adds into the
-            // VAT summary; a payment row has no VAT). The VAT summary's rows never are.
+            // Words that say "no item" drop the row, unless its own columns prove a line, it is a rounding row with its
+            // amount, or a priced row with its VAT; a VAT summary row always.
             if (ReceiptParser.isNotAnItemRow(text) && (ReceiptParser.isSummaryRow(text) ||
                     assign(row, header, textLayer).let { c -> buildItem(c, text, header)?.let { provenLine(it) || roundingLine(it) || taxedLine(it, c) } } != true)) {
                 pendingDescription = null; headingNumbers = null; return true
@@ -1059,7 +1056,7 @@ object TableReader {
         fun cell(k: Kind) = cells[k].orEmpty()
         val amountWord = cell(Kind.AMOUNT).lastOrNull { isMoney(it.text) }
         val amount = amountWord?.let { ItalianNumbers.parseCents(it.text.trim('€')) }
-        // Printed with more decimals than cents (an e-invoice): kept exactly, the lines add up by it (see Money).
+        // Printed with more decimals than cents (an e-invoice): kept exactly, the lines add up by it (see preciseSum).
         val exactAmount = amountWord?.let { ItalianNumbers.parse(it.text.trim('€')) }?.takeIf { it.stripTrailingZeros().scale() > 2 }
         var amountRepaired = false
         var qty = cell(Kind.QUANTITY).mapNotNull { numberIn(it.text) }.lastOrNull()
@@ -1125,7 +1122,7 @@ object TableReader {
         }
         var description = cleanDescription(descWords)
         // Free goods ("omaggio"): a row discounted 100% prints no amount; it is 0,00 whatever its price (any price x 0).
-        val free = amount == null && qty != null && discount != null && discount.compareTo(BigDecimal(100)) == 0
+        val free = amount == null && LineDiscount.isFree(qty, discount)
         if (amount == null && !free && (qty == null || price == null)) return null
         if (description.count(Char::isLetter) < 2) description = ""
         // A rounding row ("ARROTONDAMENTO 1,00 -0,01 -0,01"): its amount is what it adds to the total; a quantity and
@@ -1265,7 +1262,6 @@ object TableReader {
         return kotlin.math.abs(ItalianNumbers.toCents(net) - total) <= 2
     }
 
-    /** Two numbers (in printed order) whose product is the amount; the pair nearest the amount wins. */
     /**
      * "19,417475731,68852459" as quantity 19,41747573 and price 1,68852459: the only split of [text] into two numbers
      * whose product is [total] (to the cent). Null when none or more than one split works.
@@ -1285,6 +1281,7 @@ object TableReader {
         return found.singleOrNull()
     }
 
+    /** Two numbers (in printed order) whose product is the amount; the pair nearest the amount wins. */
     private fun pairFor(nums: List<BigDecimal>, total: Long): Pair<BigDecimal, BigDecimal>? {
         for (j in nums.indices.reversed()) for (i in j - 1 downTo 0) {
             if (ReceiptParser.matches(nums[i], nums[j], total)) return nums[i] to nums[j]

@@ -19,9 +19,10 @@ object VatSummary {
      */
     data class Group(
         val ratePercent: BigDecimal, val taxableCents: Long, val vatCents: Long, val source: String, val nature: String? = null,
-        /** Printed in the row before its taxable amount (accessory charges, ARR.): part of the taxable amount, not of the lines. */
-        val extraCents: Long = 0L,
     )
+
+    /** The summary's rows with a VAT rate: a nature row (no VAT, no rate printed on its lines) gives no line a rate. */
+    fun withRate(all: List<Group>): List<Group> = all.filter { it.nature == null }
 
     data class Check(val ratePercent: BigDecimal, val printedCents: Long, val linesCents: Long, val lines: Int) {
         val ok: Boolean get() = kotlin.math.abs(printedCents - linesCents) <= maxOf(1L, lines / 4L)
@@ -72,7 +73,7 @@ object VatSummary {
         // The summary's own rows, one group per rate (its rows added up).
         if (tableRows.isNotEmpty()) {
             return tableRows.groupBy { it.ratePercent to it.nature }.map { (k, g) ->
-                Group(k.first, g.sumOf { it.taxableCents }, g.sumOf { it.vatCents }, g.joinToString(" | ") { it.source }, k.second, g.sumOf { it.extraCents })
+                Group(k.first, g.sumOf { it.taxableCents }, g.sumOf { it.vatCents }, g.joinToString(" | ") { it.source }, k.second)
             }
         }
         // Several rows for one rate: the ones worded like a VAT summary ("ALIQUOTA 10%", "IVA", "IMPONIBILE") win;
@@ -121,16 +122,14 @@ object VatSummary {
             if (nums.size < 2) return null
             val vat = ItalianNumbers.parseCents(nums.last().value) ?: return null
             val taxable = ItalianNumbers.parseCents(nums[nums.size - 2].value) ?: return null
-            val extra = nums.subList(0, nums.size - 2).sumOf { ItalianNumbers.parseCents(it.value) ?: 0L }
-            return if (vat == 0L && taxable != 0L) Group(BigDecimal.ZERO, taxable, 0L, line, nature.value, extra) else null
+            return if (vat == 0L && taxable != 0L) Group(BigDecimal.ZERO, taxable, 0L, line, nature.value) else null
         }
         if (nums.size < 3) return null
         val rate = nums.first().value.takeIf { DECIMAL_RATE.matches(it) || RATE_ONLY.matches(it) }?.let { ItalianNumbers.parse(it) } ?: return null
         val taxable = ItalianNumbers.parseCents(nums[nums.size - 2].value) ?: return null
         val vat = ItalianNumbers.parseCents(nums.last().value) ?: return null
         val expected = BigDecimal(taxable).multiply(rate).divide(BigDecimal(100), 0, RoundingMode.HALF_UP).toLong()
-        val extra = nums.subList(1, nums.size - 2).sumOf { ItalianNumbers.parseCents(it.value) ?: 0L }
-        return if (kotlin.math.abs(expected - vat) <= 1 && taxable != 0L) Group(plain(rate), taxable, vat, line, extraCents = extra) else null
+        return if (kotlin.math.abs(expected - vat) <= 1 && taxable != 0L) Group(plain(rate), taxable, vat, line) else null
     }
 
     /** Amounts in a summary row, signed; a bare "0" is no VAT. */
@@ -150,8 +149,7 @@ object VatSummary {
      * when exactly one way works. The rate is then proven by the summary; nothing is filled in otherwise.
      */
     fun fillMissingRates(items: List<ParsedLineItem>, all: List<Group>): List<ParsedLineItem> {
-        // A nature row (no VAT, no rate printed on its lines) gives no line a rate.
-        val groups = all.filter { it.nature == null }
+        val groups = withRate(all)
         val missing = items.indices.filter { items[it].vatRatePercent == null && items[it].lineTotalCents != null }
         if (missing.isEmpty() || missing.size > 3 || groups.isEmpty() || items.any { it.lineTotalCents == null }) return items
         val rates = groups.map { it.ratePercent }
@@ -181,7 +179,7 @@ object VatSummary {
 
     /** One check per VAT rate of the summary; empty when there is no summary or some lines have no rate. */
     fun check(items: List<ParsedLineItem>, all: List<Group>): List<Check> {
-        val groups = all.filter { it.nature == null }
+        val groups = withRate(all)
         if (groups.size < 1 || items.isEmpty()) return emptyList()
         if (items.any { it.vatRatePercent == null || it.lineTotalCents == null }) return emptyList()
         val byRate = items.groupBy { plain(it.vatRatePercent!!.value) }
@@ -189,8 +187,8 @@ object VatSummary {
         if (byRate.keys.any { k -> groups.none { it.ratePercent.compareTo(k) == 0 } }) return emptyList()
         return groups.map { g ->
             val lines = byRate.entries.firstOrNull { it.key.compareTo(g.ratePercent) == 0 }?.value.orEmpty()
-            // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see Money).
-            Check(g.ratePercent, g.taxableCents, Money.parsedSum(lines) ?: lines.sumOf { it.lineTotalCents!!.value }, lines.size)
+            // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see preciseSum).
+            Check(g.ratePercent, g.taxableCents, preciseSum(lines.map { it.preciseTotal() }) ?: 0L /* no line at this rate */, lines.size)
         }
     }
 }

@@ -163,9 +163,10 @@ object ReceiptParser {
             "totale\\s+documento|importo\\s+bollo|" +
             "tipo\\s+dato|rif\\.?\\s*testo|rif\\.?\\s*numero|rif\\.?\\s*data|valore\\s+(?:testo|numerico|data)|quantit\\S*\\s+del\\s+suddett\\S*\\s+lott\\S*)\\b",
     )
-    /** The VAT summary's own rows ("RIEPILOGHI IVA E TOTALI", "Esigibilità IVA ..."): never items. */
-    /** "Riepiloghi IVA", "Esigibilità immediata" and the stylesheet's own row label "I (esigibilità immediata)" (also D, S). */
-    // "Esigib. non dich. (si presume immediata)": the abbreviated form of the same summary row.
+    /**
+     * The VAT summary's own rows: "Riepiloghi IVA", "Esigibilità immediata", the stylesheet's row label
+     * "I (esigibilità immediata)" (also D, S) and its abbreviated form "Esigib. non dich.". Never items.
+     */
     private val SUMMARY_ROW = Regex("(?i)^\\W*(?:[IDS]\\s*\\(\\s*)?(riepiloghi|esigibilit|esigib\\.)")
     /**
      * Notes printed under fresh produce: origin, class and size ("Prov ITALIA Cat II Cal 40-45", "Origine: Spagna",
@@ -384,7 +385,7 @@ object ReceiptParser {
     internal fun isSummaryRow(line: String): Boolean = SUMMARY_ROW.containsMatchIn(line)
 
     internal fun isNotAnItemRow(line: String): Boolean =
-        NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line) || SUMMARY_ROW.containsMatchIn(line)
+        NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line) || isSummaryRow(line)
 
     /**
      * How well a list of items explains the document: lines where quantity x price = amount count most,
@@ -867,7 +868,7 @@ object ReceiptParser {
         // The document checks itself: rows missed, readings that are no product, unreadable VAT codes, found where
         // exactly one answer makes every VAT rate add up (see Reconcile).
         // Per rate only: a nature row (no VAT) gives no line a rate to be checked against.
-        val (checkedItems, report0) = runCatching { Reconcile.apply(items, groups.filter { it.nature == null }, text) }.getOrElse { items to Reconcile.Report() }
+        val (checkedItems, report0) = runCatching { Reconcile.apply(items, VatSummary.withRate(groups), text) }.getOrElse { items to Reconcile.Report() }
         items = checkedItems
         // Read again (the AI's answers, a second pass): the lines a check added are those still marked, and readings
         // left out earlier stay listed while they are still out.
@@ -891,8 +892,8 @@ object ReceiptParser {
         if (items.any { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings }) warnings += ParseWarning.LINE_TOTAL_MISMATCH
 
         val itemTotals = items.mapNotNull { it.lineTotalCents?.value }
-        // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see Money).
-        val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) Money.parsedSum(items) ?: itemTotals.sum() else null
+        // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see preciseSum).
+        val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) preciseSum(items.map { it.preciseTotal() }) else null
         var subtotal = doc.subtotalCents
         // Several taxable-looking lines ("Subtotaal 717,97" with VAT, "Exclusief BTW 593,36"): the one that makes
         // taxable + VAT = total is the taxable amount.

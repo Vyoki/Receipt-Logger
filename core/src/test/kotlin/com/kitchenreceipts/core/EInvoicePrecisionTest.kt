@@ -49,7 +49,7 @@ class EInvoicePrecisionTest {
         // The run-together quantity and price, split where quantity x price is the amount.
         assertEquals(0, ItalianNumbers.parse(d.items[1].quantity.text)!!.compareTo(BigDecimal("21.8579235")))
         assertEquals(0, ItalianNumbers.parse(d.items[1].unitPrice.text)!!.compareTo(BigDecimal("1.5")))
-        assertEquals(13115L, Money.linesSum(d.items))
+        assertEquals(13115L, preciseSum(d.items.map { it.preciseTotal() }))
         assertTrue(AutoAccept.sumMatches(d))
         assertTrue(AutoAccept.moneyProven(d))
         // The amount typed again by the operator (another value): the exact one no longer counts.

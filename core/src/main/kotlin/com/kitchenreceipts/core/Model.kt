@@ -105,10 +105,17 @@ data class ParsedLineItem(
     val nameFirstLine: String? = null,
     /**
      * The amount exactly as printed when it has more decimals than cents (an e-invoice prints up to 8: "32,78688525");
-     * [lineTotalCents] is it rounded to the cent. The lines add up by their exact amounts (see Money.linesSum).
+     * [lineTotalCents] is it rounded to the cent. The lines add up by their exact amounts (see [preciseSum]).
      */
     val exactTotal: java.math.BigDecimal? = null,
-)
+) {
+    /** The amount for adding up: the exact printed amount when it agrees with [lineTotalCents], else the cents. */
+    fun preciseTotal(): BigDecimal? {
+        val c = lineTotalCents?.value ?: return null
+        val e = exactTotal
+        return if (e != null && ItalianNumbers.toCents(e) == c) e else ItalianNumbers.centsToDecimal(c)
+    }
+}
 
 /** One code the page explains ([kind] "storage", "tipo riga", "group"...): [code] as printed (none for a group line), [meaning] from the page. */
 data class ItemMark(val kind: String, val code: String?, val meaning: String) {

@@ -4,6 +4,19 @@ import java.math.BigDecimal
 import java.time.LocalDate
 
 /**
+ * Lines added up as printed. An e-invoice prints amounts with up to 8 decimals ("32,78688525"); its taxable amount is
+ * their sum rounded once, not the sum of each rounded to the cent (4 x 32,78688525 = 131,15; 4 x 32,79 = 131,16).
+ * [amounts]: each line's [LineItemDraft.preciseTotal] or [ParsedLineItem.preciseTotal]. Null when there are none or a
+ * line has no amount.
+ */
+fun preciseSum(amounts: List<BigDecimal?>): Long? {
+    if (amounts.isEmpty()) return null
+    var sum = BigDecimal.ZERO
+    for (a in amounts) sum += a ?: return null
+    return ItalianNumbers.toCents(sum)
+}
+
+/**
  * Editable text of one field in the review screen.
  * [uncertain] = extracted with LOW confidence and not yet touched/confirmed by the user.
  * An empty [text] means the value is missing (shown as "missing", never filled in automatically).

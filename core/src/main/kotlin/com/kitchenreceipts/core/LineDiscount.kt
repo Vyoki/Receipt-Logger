@@ -21,6 +21,9 @@ object LineDiscount {
         return parts.filter { it.signum() > 0 }.joinToString("+") { ItalianNumbers.toEditText(it.stripTrailingZeros()) }
     }
 
+    /** Free goods ("omaggio"): a quantity discounted 100% ([percent]); its amount is 0,00 whatever its price. */
+    fun isFree(quantity: BigDecimal?, percent: BigDecimal?): Boolean = quantity != null && percent?.compareTo(HUNDRED) == 0
+
     /** The whole discount in percent ("10+5" → 14,5). */
     fun percent(text: String?): BigDecimal? {
         val n = normalize(text) ?: return null
