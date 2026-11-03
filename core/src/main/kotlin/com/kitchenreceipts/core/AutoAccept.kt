@@ -253,7 +253,10 @@ object AutoAccept {
     fun headerAddsUp(d: DocumentDraft, sub: Long, vat: Long, tot: Long): Boolean {
         if (totalsAddUp(sub, vat, tot)) return true
         // Bollo, the totals row's discount or markup, gifts: proven when the document was read (see totalAdjustCents).
-        if (d.totalAdjustCents != 0L && sub + vat + d.totalAdjustCents == tot) return true
+        // Only with every rate's lines equal to that rate's taxable (Reconcile.Report.vatProven), or every line under a
+        // nature code proven by its own summary row (0 % VAT: no rate to check) adding up to the taxable.
+        val byNature = d.items.isNotEmpty() && d.items.all { it.vatNature != null } && vat == 0L && d.linesTotal() == sub
+        if (d.totalAdjustCents != 0L && (d.checks?.vatProven == true || byNature) && sub + vat + d.totalAdjustCents == tot) return true
         val lines = d.linesTotal() ?: return false
         return d.summaryExtraCents != 0L && lines == sub && lines - d.summaryExtraCents + vat == tot
     }

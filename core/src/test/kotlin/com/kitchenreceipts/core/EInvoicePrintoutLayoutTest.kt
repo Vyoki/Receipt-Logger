@@ -308,18 +308,40 @@ class EInvoicePrintoutLayoutTest {
 
     // ------------------------------------------------------------------ totals not proven by the summary (F5)
 
-    @Test fun stampDutyRoundingOrDiscountLeaveTaxableAndVatUnproven() {
-        val src = "VAT summary rows add up to the total under its heading"
+    @Test fun stampDutyRoundingOrDiscountInTheTotalsRowCount() {
+        // Printed in the totals row, they explain the total: taxable + VAT + bollo 2,00, + ARR 0,01, - discount 2,42.
         for (inv in listOf(
             meat.copy(bollo = "2,00", total = "244,42"),
             meat.copy(rounding = "0,01", total = "242,43"),
             meat.copy(docDiscount = "-2,42", total = "240,00"),
         )) {
             val d = read(inv)
-            assertTrue(d.subtotalCents?.source != src && d.vatCents?.source != src)
-            assertTrue(d.totalCents?.confidence != Confidence.HIGH || d.totalCents?.source != src)
-            assertTrue(AutoAccept.reasons(DocumentDraft.fromParsed(d)).isNotEmpty())
+            assertEquals(Confidence.HIGH, d.totalCents?.confidence)
+            assertEquals(inv.total, ItalianNumbers.formatCents(d.totalCents!!.value))
+            assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(d))).toList())
         }
+        // A total that nothing printed explains: taxable and VAT stay unproven, the invoice waits for a check.
+        val d = read(meat.copy(total = "244,42"))
+        assertTrue(AutoAccept.reasons(DocumentDraft.fromParsed(d)).isNotEmpty())
+    }
+
+    @Test fun stampDutyCountsOnAnInvoiceOfNatureLinesOnly() {
+        // No VAT rate at all: the lines' nature (N2.2) proven by its own summary row, then 500,00 + bollo 2,00 = 502,00
+        // proves the money, and the name that may run on is left to tidy instead of holding the invoice.
+        val service = meat.copy(
+            lines = listOf(
+                EInvoicePrintoutFixture.Line("CONSULENZA DI PROVA", "1,00", "300,00", null, "N2.2", "300,00", more = listOf("PER LA CUCINA DI PROVA")),
+                EInvoicePrintoutFixture.Line("SOPRALLUOGO E MISURE DELLA CUCINA DI PROVA", "1,00", "200,00", null, "N2.2", "200,00"),
+            ),
+            groups = listOf(EInvoicePrintoutFixture.Group("N2.2", "500,00", "0")), bollo = "2,00", total = "502,00",
+        )
+        val d = read(service)
+        assertEquals(listOf("N2.2", "N2.2"), d.lineItems.map { it.vatNature })
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(d))).toList())
+        // The lines not proven by their row (the row says 400,00): no nature, nothing proven, the invoice is checked.
+        val unproven = read(service.copy(groups = listOf(EInvoicePrintoutFixture.Group("N2.2", "400,00", "0")), total = "402,00"))
+        assertEquals(listOf(null, null), unproven.lineItems.map { it.vatNature })
+        assertTrue(AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(unproven))).isNotEmpty())
     }
 
     // ------------------------------------------------------------------ the supplier's VAT number (F7)
