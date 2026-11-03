@@ -67,7 +67,7 @@ object AutoAccept {
         val unitsToTidy = onlyTidy || (d.items.any(Tidy::unitMissing) && Tidy.onlyTidyLeft(d))
         if (goods.any { it.description.isMissing || ItalianNumbers.parse(it.quantity.text) == null || (it.unit.isMissing && !unitsToTidy) } ||
             d.items.any { cents(it.lineTotal.text) == null } ||
-            (someRates && goods.any { it.vatRate.text.isBlank() })
+            (someRates && goods.any { it.vatRate.text.isBlank() && it.vatNature == null })
         ) {
             out += ReviewReason.INCOMPLETE_ITEMS
         }
@@ -106,6 +106,14 @@ object AutoAccept {
         // amount. "Subtotal = total" with no VAT printed is a receipt with VAT inside as much as a net one: asked.
         if (subtotal != null && kotlin.math.abs(sum - subtotal) <= tolerance &&
             (total == null || total > subtotal || (vat != null && vat > 0))
+        ) {
+            return VatBasis.EXCLUSIVE
+        }
+        // Every goods line under a nature code (0 % VAT, proven by its summary row) and no VAT on the document: the
+        // prices are the same with or without VAT.
+        val goods = d.items.filter { !it.isCharge }
+        if (goods.isNotEmpty() && goods.all { it.vatNature != null } && subtotal != null && kotlin.math.abs(sum - subtotal) <= tolerance &&
+            (vat == null || vat == 0L) && (total == null || total == subtotal)
         ) {
             return VatBasis.EXCLUSIVE
         }

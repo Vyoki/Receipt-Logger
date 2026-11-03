@@ -108,6 +108,11 @@ data class ParsedLineItem(
      * [lineTotalCents] is it rounded to the cent. The lines add up by their exact amounts (see [preciseSum]).
      */
     val exactTotal: java.math.BigDecimal? = null,
+    /**
+     * The nature code printed in the VAT column instead of a rate ("N2.2": 0 % VAT, not subject), kept only when the
+     * lines of that nature add up to the VAT summary's row of the same nature (see ReceiptParser.finish).
+     */
+    val vatNature: String? = null,
 ) {
     /** The amount for adding up: the exact printed amount when it agrees with [lineTotalCents], else the cents. */
     fun preciseTotal(): BigDecimal? {

@@ -876,6 +876,7 @@ object ReceiptParser {
         // Lots under a "LOTTO" heading, found under (nearly) every product: read where the document prints them.
         items = settleLots(items, text)
         items = lotShapes(items)
+        items = VatSummary.proveNatures(items, groups)
         // A whole number with no unit printed counts pieces ("CARTA FORNO 1 6,90 6,90"); a quantity with decimals and no
         // unit (a weight?) stays empty for the operator. A line that prints a unit the app has no name for ("KWH",
         // "MESE") gets no "pz" either: its unit stays empty rather than made up.

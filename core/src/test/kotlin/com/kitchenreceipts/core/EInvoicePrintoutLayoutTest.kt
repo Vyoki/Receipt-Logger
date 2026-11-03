@@ -91,7 +91,7 @@ class EInvoicePrintoutLayoutTest {
         assertTrue(d.lineItems.none { it.unit?.value == "pz" })
     }
 
-    @Test fun negativeLineKeepsItsMinusAndNatureCodeIsNoRate() {
+    @Test fun negativeLineKeepsItsMinusAndNatureCodeIsItsVat() {
         val d = read(EInvoicePrintoutFixture.ENERGY)
         val rounding = d.lineItems.last()
         // The amount as printed, and the price with its minus: 1 x -0,30 = -0,30 proves the line.
@@ -99,12 +99,20 @@ class EInvoicePrintoutLayoutTest {
         assertEquals(0, rounding.unitPrice?.value?.compareTo(BigDecimal("-0.30")))
         assertEquals(Confidence.HIGH, rounding.unitPrice?.confidence)
         assertTrue(ParseWarning.LINE_TOTAL_MISMATCH !in rounding.warnings)
-        // "N2.2" in the VAT column is no rate: the line has none, and nothing is made up for it.
+        // "N2.2" in the VAT column is no rate but a nature: 0 % VAT, proven by the summary's N2.2 row (-0,30).
         assertEquals(null, rounding.vatRatePercent?.value)
-        // The summary's rows, its nature row (no VAT) included, add up to the total: the total is sure.
+        assertEquals("N2.2", rounding.vatNature)
         assertEquals(Confidence.HIGH, d.totalCents?.confidence)
-        // Still checked by hand: the nature-coded line has no VAT rate (the items are incomplete), nothing else.
-        assertEquals(listOf(ReviewReason.INCOMPLETE_ITEMS), AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(d))).toList())
+        // Every line has its VAT and everything adds up: nothing left to check.
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(d))).toList())
+    }
+
+    @Test fun aNatureWhoseLinesDoNotAddUpToItsRowIsNotProven() {
+        // The summary's N2.2 row says -0,40, the N2.2 line -0,30: the line's VAT is not proven, the bill is checked by hand.
+        val inv = EInvoicePrintoutFixture.ENERGY.let { e -> e.copy(groups = listOf(e.groups[0], e.groups[1].copy(taxable = "-0,40")), total = "255,80") }
+        val d = read(inv)
+        assertEquals(null, d.lineItems.last().vatNature)
+        assertTrue(ReviewReason.INCOMPLETE_ITEMS in AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(d))))
     }
 
     @Test fun soleTraderAndLetterSpacedNames() {

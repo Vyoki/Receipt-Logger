@@ -1222,6 +1222,7 @@ object TableReader {
             lineTotalCents = total?.let { Extracted(it, if (!amountRepaired && (consistent || (qty == null && price == null))) Confidence.HIGH else Confidence.LOW, source) },
             exactTotal = exactAmount?.takeIf { total != null && ItalianNumbers.toCents(it) == total },
             vatRatePercent = vat?.let { Extracted(it.stripTrailingZeros(), Confidence.HIGH, source) },
+            vatNature = if (vat == null) cell(Kind.VAT).firstOrNull { NATURE.matches(it.text.trim()) }?.text?.trim()?.uppercase() else null,
             // A lot cannot be checked by arithmetic: sure only when the OCR said it was sure of it (or the PDF's text).
             lotNumber = lotWord?.let { Extracted(it.text, if (it.conf >= SURE_WORD && it.conf < 1f) Confidence.HIGH else Confidence.LOW, source) },
             expiryDate = null,

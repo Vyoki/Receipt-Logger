@@ -177,6 +177,17 @@ object VatSummary {
         }
     }
 
+    /**
+     * A nature code in a line's VAT column ("N2.2") is 0 % VAT under that nature: kept when the lines of that nature
+     * add up exactly to the summary's row of the same nature, dropped otherwise (the line then has no VAT read).
+     */
+    fun proveNatures(items: List<ParsedLineItem>, all: List<Group>): List<ParsedLineItem> {
+        val byNature = items.filter { it.vatNature != null }.groupBy { it.vatNature!! }
+        if (byNature.isEmpty()) return items
+        val proven = byNature.filter { (n, lines) -> all.any { g -> g.nature.equals(n, ignoreCase = true) && preciseSum(lines.map { it.preciseTotal() }) == g.taxableCents } }.keys
+        return items.map { if (it.vatNature == null || it.vatNature in proven) it else it.copy(vatNature = null) }
+    }
+
     /** One check per VAT rate of the summary; empty when there is no summary or some lines have no rate. */
     fun check(items: List<ParsedLineItem>, all: List<Group>): List<Check> {
         val groups = withRate(all)
