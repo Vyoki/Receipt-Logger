@@ -307,8 +307,9 @@ object DraftValidator {
             val unit = Units.normalize(it.unit.text)
             if ((unit?.length ?: 0) > 15) errors += FieldError("$p.unit", ErrorCode.TOO_LONG)
             val price = optionalDecimal(it.unitPrice.text, "$p.unitPrice", errors)
-            if (price != null && price.signum() < 0) errors += FieldError("$p.unitPrice", ErrorCode.MUST_BE_POSITIVE)
             val lineTotal = optionalCents(it.lineTotal.text, "$p.lineTotal", errors)
+            // A credit line ("Coupon 1 x -108,69 = -108,69") prints its price negative; any other price is positive.
+            if (price != null && price.signum() < 0 && (lineTotal == null || lineTotal >= 0)) errors += FieldError("$p.unitPrice", ErrorCode.MUST_BE_POSITIVE)
             val rate = optionalDecimal(it.vatRate.text, "$p.vatRate", errors)
             if (rate != null && (rate.signum() < 0 || rate > BigDecimal(100))) errors += FieldError("$p.vatRate", ErrorCode.OUT_OF_RANGE)
             val lot = it.lot.text.trim().ifEmpty { null }

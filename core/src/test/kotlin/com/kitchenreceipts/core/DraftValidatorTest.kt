@@ -51,6 +51,14 @@ class DraftValidatorTest {
         assertTrue(FieldError("items[0].vatRate", ErrorCode.OUT_OF_RANGE) in errors)
     }
 
+    @Test fun aNegativePriceIsValidOnlyOnACreditLine() {
+        fun errors(price: String, amount: String) = DraftValidator.validate(DocumentDraft(seller = DraftField("X"), items = listOf(
+            LineItemDraft(1, DraftField("Coupon"), quantity = DraftField("1"), unitPrice = DraftField(price), lineTotal = DraftField(amount)),
+        ))).let { (it as? ValidationResult.Invalid)?.errors.orEmpty() }
+        assertTrue(errors("-108,69", "-108,69").isEmpty())
+        assertTrue(FieldError("items[0].unitPrice", ErrorCode.MUST_BE_POSITIVE) in errors("-108,69", "108,69"))
+    }
+
     @Test fun missingOptionalFieldsStayNull() {
         val r = DraftValidator.validate(DocumentDraft(seller = DraftField("X"), items = listOf(LineItemDraft(1, DraftField("Pane")))))
         val doc = (r as ValidationResult.Valid).document
