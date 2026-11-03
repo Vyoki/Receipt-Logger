@@ -176,6 +176,8 @@ data class DocumentDraft(
     val lotsPrinted: Boolean = true,
     /** VAT groups that do not add up (rate, printed taxable amount, lines' sum), to show the operator where to look. */
     val vatGroupProblems: List<VatSummary.Check> = emptyList(),
+    /** What the VAT summary's rows add to the lines (ARR., cassa previdenziale): part of the taxable amount, no line. */
+    val summaryExtraCents: Long = 0L,
     /** The AI's double-check, if it ran. */
     val aiCheck: AiCheck? = null,
     /** Other spellings of the supplier read on the document when they disagree (see [SupplierProof]): one tap each. */
@@ -185,6 +187,9 @@ data class DocumentDraft(
     /** The supplier's VAT number was read with its name, its check digits right (see ParsedDocument.supplierVat). */
     val sellerVatChecked: Boolean = false,
 ) {
+    /** The lines added up as printed, with what the VAT summary's rows add to them; null when a line has no amount. */
+    fun linesTotal(): Long? = preciseSum(items.map { it.preciseTotal() })?.plus(summaryExtraCents)
+
     val uncertainCount: Int
         // The currency is shown highlighted when another one is printed, but never counts as a check by itself.
         get() = listOf(seller, date, number, subtotal, vat, total).count { it.uncertain } +
@@ -237,6 +242,7 @@ data class DocumentDraft(
                 warnings = p.warnings,
                 lotsPrinted = p.lotsPrinted,
                 vatGroupProblems = p.vatChecks.filter { !it.ok },
+                summaryExtraCents = p.summaryExtraCents,
                 aiCheck = p.aiCheck,
                 sellerAlternatives = p.supplierProof?.takeIf { p.sellerName?.confidence == Confidence.LOW }?.alternatives.orEmpty(),
                 checks = p.reconciled,

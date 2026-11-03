@@ -67,7 +67,7 @@ object ReadingDetails {
         val amounts = d.items.map { ItalianNumbers.parseCents(it.lineTotal.text) ?: return null }
         val targets = listOfNotNull(ItalianNumbers.parseCents(d.subtotal.text), ItalianNumbers.parseCents(d.total.text))
         if (targets.isEmpty()) return null
-        val sum = preciseSum(d.items.map { it.preciseTotal() })!! // every line has an amount (above)
+        val sum = d.linesTotal()!! // every line has an amount (above)
         if (targets.any { kotlin.math.abs(sum - it) <= maxOf(2L, amounts.size.toLong()) }) return SumCause.CENTS
         // A line whose own arithmetic gives the amount that closes the sum.
         val misread = d.items.indices.any { i ->

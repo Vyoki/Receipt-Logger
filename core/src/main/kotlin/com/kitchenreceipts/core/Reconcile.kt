@@ -128,7 +128,7 @@ object Reconcile {
             if (g < 0) return null
             sums[g] = sums[g] + (it.preciseTotal() ?: java.math.BigDecimal.ZERO)
         }
-        return LongArray(groups.size) { groups[it].taxableCents - ItalianNumbers.toCents(sums[it]) }
+        return LongArray(groups.size) { groups[it].taxableCents - groups[it].extraCents - ItalianNumbers.toCents(sums[it]) }
     }
 
     private class Solved(

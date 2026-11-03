@@ -19,6 +19,11 @@ object VatSummary {
      */
     data class Group(
         val ratePercent: BigDecimal, val taxableCents: Long, val vatCents: Long, val source: String, val nature: String? = null,
+        /**
+         * Part of the row's taxable amount that is no line: what the row prints besides it (SPESE ACCESSORIE, ARR.) and
+         * the cassa previdenziale at its rate (DATI CASSA PREVIDENZIALE). Lines + this = the row's taxable amount.
+         */
+        val extraCents: Long = 0L,
     )
 
     /** The summary's rows with a VAT rate: a nature row (no VAT, no rate printed on its lines) gives no line a rate. */
@@ -70,10 +75,12 @@ object VatSummary {
                 }
             }
         }
-        // The summary's own rows, one group per rate (its rows added up).
+        // The summary's own rows, one group per rate (its rows added up), each with the cassa previdenziale at its rate.
         if (tableRows.isNotEmpty()) {
+            val cassa = pensionFund(text)
             return tableRows.groupBy { it.ratePercent to it.nature }.map { (k, g) ->
-                Group(k.first, g.sumOf { it.taxableCents }, g.sumOf { it.vatCents }, g.joinToString(" | ") { it.source }, k.second)
+                val fund = if (k.second == null) cassa.filter { it.first.compareTo(k.first) == 0 }.sumOf { it.second } else 0L
+                Group(k.first, g.sumOf { it.taxableCents }, g.sumOf { it.vatCents }, g.joinToString(" | ") { it.source }, k.second, g.sumOf { it.extraCents } + fund)
             }
         }
         // Several rows for one rate: the ones worded like a VAT summary ("ALIQUOTA 10%", "IVA", "IMPONIBILE") win;
@@ -122,15 +129,43 @@ object VatSummary {
             if (nums.size < 2) return null
             val vat = ItalianNumbers.parseCents(nums.last().value) ?: return null
             val taxable = ItalianNumbers.parseCents(nums[nums.size - 2].value) ?: return null
-            return if (vat == 0L && taxable != 0L) Group(BigDecimal.ZERO, taxable, 0L, line, nature.value) else null
+            val extra = nums.subList(0, nums.size - 2).sumOf { ItalianNumbers.parseCents(it.value) ?: 0L }
+            return if (vat == 0L && taxable != 0L) Group(BigDecimal.ZERO, taxable, 0L, line, nature.value, extra) else null
         }
         if (nums.size < 3) return null
         val rate = nums.first().value.takeIf { DECIMAL_RATE.matches(it) || RATE_ONLY.matches(it) }?.let { ItalianNumbers.parse(it) } ?: return null
         val taxable = ItalianNumbers.parseCents(nums[nums.size - 2].value) ?: return null
         val vat = ItalianNumbers.parseCents(nums.last().value) ?: return null
         val expected = BigDecimal(taxable).multiply(rate).divide(BigDecimal(100), 0, RoundingMode.HALF_UP).toLong()
-        return if (kotlin.math.abs(expected - vat) <= 1 && taxable != 0L) Group(plain(rate), taxable, vat, line) else null
+        val extra = nums.subList(1, nums.size - 2).sumOf { ItalianNumbers.parseCents(it.value) ?: 0L }
+        return if (kotlin.math.abs(expected - vat) <= 1 && taxable != 0L) Group(plain(rate), taxable, vat, line, extraCents = extra) else null
     }
+
+    /**
+     * The cassa previdenziale (DATI CASSA PREVIDENZIALE: IMPONIBILE, %CONTR., %IVA, IMPORTO), as (VAT rate, amount):
+     * the contribution counts in the taxable amount of its rate. A row is taken only when its base x its percentage
+     * is its amount, to the cent.
+     */
+    private fun pensionFund(text: String): List<Pair<BigDecimal, Long>> {
+        val lines = text.lines()
+        val out = mutableListOf<Pair<BigDecimal, Long>>()
+        for ((i, l) in lines.withIndex()) {
+            if (!PENSION_FUND.containsMatchIn(l)) continue
+            for (row in lines.subList(i + 1, minOf(lines.size, i + 4))) {
+                val nums = MONEY.findAll(DOT_DECIMAL.replace(OcrCleanup.cleanLine(row)) { m -> "${m.groupValues[1]},${m.groupValues[2]}" }).map { it.value }.toList()
+                if (nums.size < 4) continue
+                val base = ItalianNumbers.parse(nums[0]) ?: continue
+                val pct = ItalianNumbers.parse(nums[1]) ?: continue
+                val rate = nums[nums.size - 2].takeIf { DECIMAL_RATE.matches(it) }?.let { ItalianNumbers.parse(it)?.let(::plain) } ?: continue
+                val amount = ItalianNumbers.parseCents(nums.last()) ?: continue
+                if (ItalianNumbers.toCents(base.multiply(pct).movePointLeft(2)) != amount) continue
+                out += rate to amount
+                break
+            }
+        }
+        return out
+    }
+    private val PENSION_FUND = Regex("(?i)\\bdati\\s+cassa\\s+previdenziale\\b")
 
     /** Amounts in a summary row, signed; a bare "0" is no VAT. */
     private val TABLE_NUMBER = Regex("(?<![\\d,.])-?\\d{1,3}(?:\\.\\d{3})*,\\d{2}(?![\\d,])|(?<![\\d,.\\w])-?0(?![\\d,.\\w])|(?<![\\d,.\\w])(?:0?4|0?5|10|22)(?![\\d,.\\w])")
@@ -184,7 +219,7 @@ object VatSummary {
     fun proveNatures(items: List<ParsedLineItem>, all: List<Group>): List<ParsedLineItem> {
         val byNature = items.filter { it.vatNature != null }.groupBy { it.vatNature!! }
         if (byNature.isEmpty()) return items
-        val proven = byNature.filter { (n, lines) -> all.any { g -> g.nature.equals(n, ignoreCase = true) && preciseSum(lines.map { it.preciseTotal() }) == g.taxableCents } }.keys
+        val proven = byNature.filter { (n, lines) -> all.any { g -> g.nature.equals(n, ignoreCase = true) && preciseSum(lines.map { it.preciseTotal() })?.plus(g.extraCents) == g.taxableCents } }.keys
         return items.map { if (it.vatNature == null || it.vatNature in proven) it else it.copy(vatNature = null) }
     }
 
@@ -199,7 +234,8 @@ object VatSummary {
         return groups.map { g ->
             val lines = byRate.entries.firstOrNull { it.key.compareTo(g.ratePercent) == 0 }?.value.orEmpty()
             // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see preciseSum).
-            Check(g.ratePercent, g.taxableCents, preciseSum(lines.map { it.preciseTotal() }) ?: 0L /* no line at this rate */, lines.size)
+            // The row's own amounts besides the lines (ARR., cassa previdenziale) count with them.
+            Check(g.ratePercent, g.taxableCents, (preciseSum(lines.map { it.preciseTotal() }) ?: 0L /* no line at this rate */) + g.extraCents, lines.size)
         }
     }
 }

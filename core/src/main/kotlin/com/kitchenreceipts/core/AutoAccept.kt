@@ -97,7 +97,7 @@ object AutoAccept {
      * Null when they add up to neither.
      */
     fun inferVatBasis(d: DocumentDraft): VatBasis? {
-        val sum = preciseSum(d.items.map { it.preciseTotal() }) ?: return null
+        val sum = d.linesTotal() ?: return null
         val tolerance = maxOf(2L, d.items.size.toLong())
         val subtotal = cents(d.subtotal.text)
         val total = cents(d.total.text)
@@ -144,7 +144,7 @@ object AutoAccept {
         val sub = cents(d.subtotal.text); val vat = cents(d.vat.text); val tot = cents(d.total.text)
         val headerOk = sub == null || vat == null || tot == null || totalsAddUp(sub, vat, tot)
         if (!headerOk) return d
-        val sum = preciseSum(d.items.map { it.preciseTotal() })!!
+        val sum = d.linesTotal()!!
         // Settled only to the cent (see sumMatches).
         val tolerance = 0L
         // A value the AI's double-check read differently stays highlighted, whatever the arithmetic says.
@@ -231,7 +231,7 @@ object AutoAccept {
      */
     fun sumMatches(d: DocumentDraft): Boolean {
         // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see preciseSum).
-        val sum = preciseSum(d.items.map { it.preciseTotal() }) ?: return false
+        val sum = d.linesTotal() ?: return false
         return listOfNotNull(cents(d.subtotal.text), cents(d.total.text)).any { sum == it }
     }
 

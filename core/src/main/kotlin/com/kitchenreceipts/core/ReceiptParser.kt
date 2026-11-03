@@ -894,7 +894,9 @@ object ReceiptParser {
 
         val itemTotals = items.mapNotNull { it.lineTotalCents?.value }
         // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see preciseSum).
-        val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) preciseSum(items.map { it.preciseTotal() }) else null
+        // With what the VAT summary's rows add to the lines (ARR., cassa previdenziale): together they are the taxable amount.
+        val summaryExtra = groups.sumOf { it.extraCents }
+        val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) preciseSum(items.map { it.preciseTotal() })?.plus(summaryExtra) else null
         var subtotal = doc.subtotalCents
         // Several taxable-looking lines ("Subtotaal 717,97" with VAT, "Exclusief BTW 593,36"): the one that makes
         // taxable + VAT = total is the taxable amount.
@@ -992,7 +994,7 @@ object ReceiptParser {
         }
         val out = doc.copy(
             lineItems = items, totalCents = total, vatCents = vat, subtotalCents = subtotal, vatBasis = vatBasis, warnings = warnings,
-            vatChecks = vatChecks, lotsPrinted = lotsPrinted, reconciled = report,
+            vatChecks = vatChecks, lotsPrinted = lotsPrinted, reconciled = report, summaryExtraCents = summaryExtra,
         )
         // A reverse-charge form stays logged net whatever this pass read (see ReverseCharge).
         return ReverseCharge.keepNet(out)

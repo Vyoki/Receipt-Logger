@@ -175,6 +175,8 @@ data class ParsedDocument(
     val itemsReadBy: String = "text",
     /** Lines per VAT rate against the printed VAT summary (empty when there is no summary to check). */
     val vatChecks: List<VatSummary.Check> = emptyList(),
+    /** What the VAT summary's rows add to the lines (ARR., cassa previdenziale: see VatSummary.Group.extraCents). */
+    val summaryExtraCents: Long = 0L,
     /** The document prints lot numbers (a lot column or "lotto" anywhere): a line without one is worth a look. */
     val lotsPrinted: Boolean = true,
     /** The AI's double-check of this reading, if it ran. */

@@ -82,6 +82,7 @@ object DraftCodec {
             items = items,
             warnings = hints?.warnings.orEmpty(),
             vatGroupProblems = hints?.vatGroupProblems.orEmpty(),
+            summaryExtraCents = hints?.summaryExtraCents ?: 0L,
             aiCheck = hints?.aiCheck,
             sellerAlternatives = if (seller.uncertain) hints?.sellerAlternatives.orEmpty() else emptyList(),
             checks = hints?.checks,

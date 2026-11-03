@@ -211,10 +211,30 @@ class EInvoicePrecisionTest {
         assertEquals(3745L, p.subtotalCents?.value)
         assertEquals(Confidence.HIGH, p.subtotalCents?.confidence)
         assertEquals(710L, p.vatCents?.value)
-        // The rounding printed in the summary (ARR.) is no line: the lines (31,20 at 22%) stay as printed, so the
-        // invoice waits for a check instead of being saved with a line that is not printed.
+        // The rounding printed in the summary (ARR.) is no line, but part of its row's taxable amount: the lines at 22%
+        // (31,20) with it (-0,05) are the two 22% rows (31,15). No line is made up for it, and the invoice is proven.
         assertEquals(3, p.lineItems.size)
-        assertTrue(!AutoAccept.sumMatches(AutoAccept.settleProven(DocumentDraft.fromParsed(p))))
+        assertEquals(-5L, p.summaryExtraCents)
+        assertTrue(p.vatChecks.isNotEmpty() && p.vatChecks.all { it.ok })
+        val d = AutoAccept.settleProven(DocumentDraft.fromParsed(p))
+        assertTrue(AutoAccept.sumMatches(d))
+        assertTrue(AutoAccept.moneyProven(d))
+    }
+
+    @Test fun theCassaPrevidenzialeCountsInItsRatesTaxable() {
+        // DATI CASSA PREVIDENZIALE: base 300,00, 4 % = 12,00 at 22 %. The lines are 300,00; the 22 % row prints 312,00.
+        val text = """
+            RIEPILOGHI IVA E TOTALI
+            ESIGIBILITÀ IVA / RIFERIMENTI NORMATIVI %IVA SPESE ACCESSORIE ARR. TOTALE IMPONIBILE TOTALE IMPOSTA
+            I (esigibilità immediata) 22,00 312,00 68,64
+            DATI CASSA PREVIDENZIALE IMPONIBILE %CONTR. RITENUTA %IVA IMPORTO
+            TC22 (Cassa di prova) 300,00 4,00 22,00 12,00
+        """.trimIndent()
+        val g = VatSummary.parse(text).single()
+        assertEquals(31200L, g.taxableCents)
+        assertEquals(1200L, g.extraCents)
+        // A contribution whose base x percentage is not its amount is not taken.
+        assertEquals(0L, VatSummary.parse(text.replace("4,00 22,00 12,00", "4,00 22,00 13,00")).single().extraCents)
     }
 
     @Test fun aDateShapedNumberUnderItsHeadingIsTheNumber() {
