@@ -174,6 +174,25 @@ class EInvoicePrecisionTest {
         assertTrue(AutoAccept.moneyProven(d))
     }
 
+    @Test fun theTotalPrintedAtTheTopOfTheNextPageIsRead() {
+        // "IMPORTO BOLLO ... TOTALE DOCUMENTO" ends the page; its value is the first amount of the next page, under the
+        // summary's heading printed again there.
+        val page1 = listOf(
+            listOf(w("ESIGIBILITÀ IVA", 240, 3049, 674), w("%IVA", 890, 3049, 944), w("TOTALE IMPONIBILE", 1493, 3049, 1702), w("TOTALE IMPOSTA", 2032, 3049, 2216)),
+            listOf(w("I (esigibilità immediata)", 84, 3087, 707), w("10,00", 873, 3087, 960), w("80,00", 1733, 3087, 1840), w("8,00", 2279, 3087, 2366)),
+            listOf(w("IMPORTO BOLLO", 238, 3262, 413), w("SCONTO/MAGGIORAZIONE", 779, 3262, 1054), w("ARR.", 1264, 3262, 1315), w("TOTALE DOCUMENTO", 1748, 3262, 1973)),
+        )
+        val page2 = listOf(
+            listOf(w("ESIGIBILITÀ IVA", 240, 177, 674), w("%IVA", 890, 177, 944), w("TOTALE IMPONIBILE", 1493, 177, 1702), w("TOTALE IMPOSTA", 2032, 177, 2216)),
+            listOf(w("88,00", 2260, 214, 2366)),
+            listOf(w("MODALITÀ PAGAMENTO", 318, 335, 568), w("IMPORTO", 1958, 335, 2055)),
+        )
+        val grid = HeaderGrid.read(listOf(LayoutRows.Layout(page1, 0.0), LayoutRows.Layout(page2, 0.0)))
+        assertEquals(8800L, grid.total)
+        // On one page alone nothing is taken for the total.
+        assertEquals(null, HeaderGrid.read(listOf(LayoutRows.Layout(page1, 0.0))).total)
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(

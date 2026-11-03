@@ -104,8 +104,16 @@ object HeaderGrid {
 
     fun read(pages: List<LayoutRows.Layout>): Grid {
         var g = Grid()
+        // A row of totals' labels ending a page ("IMPORTO BOLLO ... TOTALE DOCUMENTO") whose values are printed on the
+        // next page of the invoice, at its top (under the page's own heading lines): read under those labels.
+        var carried: List<Label>? = null
         for (layout in pages) {
             val rows = layout.rows.map { r -> r.filter { it.text.isNotBlank() }.sortedBy { it.left } }
+            val firstValues = rows.indexOfFirst { r -> r.any { money(it.text) != null } }
+            carried?.let { labels -> if (firstValues >= 0) g = readValues(g, labels, rows[firstValues]) }
+            carried = rows.lastOrNull { r -> r.isNotEmpty() }?.takeIf { last ->
+                last.all { kind(it.text) != null } && last.any { kind(it.text) == K.TOTAL } && last.none { money(it.text) != null }
+            }?.let { stack(listOf(it)) }
             for (v in 1 until rows.size) {
                 val values = rows[v]
                 if (values.none { money(it.text) != null || ItalianDates.parse(it.text.trim()) != null }) continue
