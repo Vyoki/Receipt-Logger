@@ -520,7 +520,6 @@ class ScreenshotTest {
             // The date field (at the top of the form, under the page picture).
             assertTrue("no date field. On screen: ${screenDump()}", scrollUntilText(PEEK_DATE) && clickTextIn(PEEK_DATE))
             assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
-            diagFile.delete()
             val tapped = tapInApp(photo, "open1")
             val opened = waitFor(zoomIn, true)
             diag("open1 viewer open=$opened") // DIAGNOSTICS (log only)
