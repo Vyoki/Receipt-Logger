@@ -181,7 +181,7 @@ data class ParsedDocument(
     val vatChecks: List<VatSummary.Check> = emptyList(),
     /** What the VAT summary's rows add to the lines (ARR., cassa previdenziale: see VatSummary.Group.extraCents). */
     val summaryExtraCents: Long = 0L,
-    /** What the total adds to taxable + VAT, all printed: bollo, the totals row's discount or markup, less the gifts. */
+    /** What the total takes off taxable + VAT: the gift lines, in the taxable but not paid (see ReceiptParser.totalsAdjustment). */
     val totalAdjustCents: Long = 0L,
     /** The document prints lot numbers (a lot column or "lotto" anywhere): a line without one is worth a look. */
     val lotsPrinted: Boolean = true,

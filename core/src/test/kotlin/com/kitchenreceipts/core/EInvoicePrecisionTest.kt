@@ -267,9 +267,10 @@ class EInvoicePrecisionTest {
         assertTrue(!AutoAccept.moneyProven(draft(inv.copy(total = "15,10"))))
     }
 
-    @Test fun theTotalCountsGiftsAndTheTotalsRowsDiscount() {
+    @Test fun theTotalLeavesOutTheGiftLines() {
         // A gift line (Tipo dato: OMAGGIO) is in the taxable but not paid: 30,00 + 2,00 gift = 32,00, VAT 10 % 3,20,
-        // total 35,20 - 2,00 = 33,20. A discount in the totals row: 32,00 + 3,20 - 1,20 = 34,00.
+        // total 35,20 - 2,00 = 33,20. A discount in the totals row is no gift: taxable and VAT stay to check
+        // (EInvoicePrintoutLayoutTest.stampDutyRoundingOrDiscountLeaveTaxableAndVatUnproven).
         val gift = Invoice(
             supplierVat = pIva("0234598761"), supplierName = "CARNI DONO PROVA S.R.L.", number = "77", date = "05-05-2031",
             lines = listOf(
@@ -283,8 +284,8 @@ class EInvoicePrecisionTest {
         assertEquals(-200L, g.totalAdjustCents)
         assertTrue(AutoAccept.moneyProven(g))
         val discount = draft(gift.copy(lines = gift.lines.map { it.copy(notes = emptyList()) }, docDiscount = "-1,20", total = "34,00"))
-        assertEquals(-120L, discount.totalAdjustCents)
-        assertTrue(AutoAccept.moneyProven(discount))
+        assertEquals(0L, discount.totalAdjustCents)
+        assertTrue(!AutoAccept.moneyProven(discount))
         // A total that nothing printed explains stays to check.
         assertTrue(!AutoAccept.moneyProven(draft(gift.copy(total = "33,10"))))
     }
