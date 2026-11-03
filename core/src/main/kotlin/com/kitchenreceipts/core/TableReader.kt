@@ -271,7 +271,10 @@ object TableReader {
     /** A lot the reading itself doubts (see the line notes in [readRows]): no other lot on the page makes it sure. */
     internal fun isDoubtedLot(source: String) = source.startsWith(SEVERAL_LOTS) || source.startsWith(NOTE_AWAY)
 
-    private val MONEY = Regex("^-?€?\\d{1,3}(?:\\.\\d{3})*,\\d{2,4}-?€?$|^-?€?\\d+[.,]\\d{2,4}-?€?$")
+    /** An amount: two decimals and more after a comma, as an e-invoice prints them (up to 8: "32,78688525"). */
+    private val MONEY = Regex("^-?€?\\d{1,3}(?:\\.\\d{3})*,\\d{2,8}-?€?$|^-?€?\\d+,\\d{2,8}-?€?$|^-?€?\\d+\\.\\d{2,4}-?€?$")
+    /** Quantity and price printed so close that the text runs them together: "19,417475731,68852459". */
+    private val TWO_NUMBERS = Regex("^\\d+,\\d+,\\d+$")
     private val NUMBER = Regex("^-?\\d+(?:[.,]\\d+)*(?:%)?$")
     private val LONG_CODE = Regex("^\\d{4,}$")
     private val CODE_WITH_COLLI = Regex("^(\\d{5,})(\\d{1,2}[xX×]\\d{1,3})$")
@@ -687,7 +690,12 @@ object TableReader {
                 pendingDescription = null
                 return true
             }
-            if (ReceiptParser.isNotAnItemRow(text)) { pendingDescription = null; headingNumbers = null; return true }
+            // Words that say "no item" (a payment, a carrier, "vendita", a phone number) do not drop a row whose own
+            // columns prove it is one: quantity x price = amount, each in its column ("CACIOTTA MONTE VETTORE",
+            // "CANONE POS ANNUO 1,00 9,90 22,00 9,90"). The VAT summary's rows never are.
+            if (ReceiptParser.isNotAnItemRow(text) && (ReceiptParser.isSummaryRow(text) || buildItem(assign(row, header, textLayer), text, header)?.let(::provenLine) != true)) {
+                pendingDescription = null; headingNumbers = null; return true
+            }
             rowPriced = row.any { isMoney(it.text) }
             // A lot printed alone on the row under its item ("429342"), in a table with a lot column: never an item.
             val codeOnly = row.size <= 2 && row.all { w -> w.text.any(Char::isDigit) && !isMoney(w.text) } && ItalianDates.findDates(text).isEmpty()
@@ -697,7 +705,7 @@ object TableReader {
                 pendingDescription = null
                 return true
             }
-            val cells = assign(row, header)
+            val cells = assign(row, header, textLayer)
             val item = buildItem(cells, text, header)
             // "DDT 77/ZZ del 03-02-2031": another document named among the lines; "Peso netto 12,40": a weight. Never
             // items, unless quantity x price = amount proves a line ("DDT 77/ZZ del 03-02-2031 PANCETTA 2,00 9,20 18,40").
@@ -828,7 +836,7 @@ object TableReader {
      */
     private fun nameEdge(rows: List<List<Word>>, header: Header): Double? {
         val ends = rows.filter { r -> r.any { isMoney(it.text) } }
-            .mapNotNull { r -> assign(r, header)[Kind.DESCRIPTION]?.takeIf { it.isNotEmpty() }?.let { w -> w.maxOf { it.right } to charWidth(w) } }
+            .mapNotNull { r -> assign(r, header, exact = true)[Kind.DESCRIPTION]?.takeIf { it.isNotEmpty() }?.let { w -> w.maxOf { it.right } to charWidth(w) } }
         if (ends.size < 2) return null
         val edge = ends.maxOf { it.first }
         return edge.takeIf { e -> ends.count { (r, c) -> r >= e - 1.5 * c } >= 2 }
@@ -845,7 +853,7 @@ object TableReader {
      */
     private fun wrapsOnto(itemRow: List<Word>?, words: List<Word>, header: Header, nameEdge: Double?): Boolean {
         if (itemRow == null || words.isEmpty()) return false
-        val name = assign(itemRow, header)[Kind.DESCRIPTION].orEmpty()
+        val name = assign(itemRow, header, exact = true)[Kind.DESCRIPTION].orEmpty()
         if (name.isEmpty() || name.any { it.bottom <= it.top } || words.any { it.bottom <= it.top }) return false
         val c = charWidth(name)
         // Cut where the column ends, or at a hyphen ("SALSIC-" over "CIA FRESCA").
@@ -861,9 +869,11 @@ object TableReader {
         return full && sameStart && h > 0 && gap >= -0.1 * h && gap < 0.45 * h && wh in 0.6 * h..1.4 * h
     }
 
-    private fun assign(row: List<Word>, header: Header): Map<Kind, List<Word>> {
+    /** [exact]: the row comes from a PDF's own text, where every word is where it is printed (see [mapRow]). */
+    private fun assign(row: List<Word>, header: Header, exact: Boolean = false): Map<Kind, List<Word>> {
         val cols = header.columns
-        val mapped = mapRow(row, header)
+        // The PDF's own text puts the heading and the words in one exact frame: nothing to line up as on a photo.
+        val mapped = if (exact) row.map { it to it.center } else mapRow(row, header)
         val out = linkedMapOf<Kind, MutableList<Word>>()
         var lastKind: Kind? = null
         var prev: Word? = null
@@ -993,6 +1003,8 @@ object TableReader {
         fun cell(k: Kind) = cells[k].orEmpty()
         val amountWord = cell(Kind.AMOUNT).lastOrNull { isMoney(it.text) }
         val amount = amountWord?.let { ItalianNumbers.parseCents(it.text.trim('€')) }
+        // Printed with more decimals than cents (an e-invoice): kept exactly, the lines add up by it (see Money).
+        val exactAmount = amountWord?.let { ItalianNumbers.parse(it.text.trim('€')) }?.takeIf { it.stripTrailingZeros().scale() > 2 }
         var amountRepaired = false
         var qty = cell(Kind.QUANTITY).mapNotNull { numberIn(it.text) }.lastOrNull()
         // Without a U.M. column, unit words come from neighbouring columns ("CF GR 0,48"): kg/g/l beat packaging codes.
@@ -1052,11 +1064,14 @@ object TableReader {
             unit = if (packHasNumber) "pz" else packUnit
         }
         var description = cleanDescription(descWords)
-        if (amount == null && (qty == null || price == null)) return null
+        // Free goods ("omaggio"): a row discounted 100% prints no amount; it is 0,00 whatever its price (any price x 0).
+        val free = amount == null && qty != null && discount != null && discount.compareTo(BigDecimal(100)) == 0
+        if (amount == null && !free && (qty == null || price == null)) return null
         if (description.count(Char::isLetter) < 2) description = ""
 
         var total = amount
         var consistent = false
+        if (free) { total = 0L; consistent = true }
         var qtyWorkedOut = false
         var priceRepaired = false
         // The decimal comma is the easiest mark for the OCR to lose: "3450" under PREZZO with an amount of 3,45.
@@ -1093,6 +1108,12 @@ object TableReader {
         }
         if (qty != null && price != null && total != null) {
             consistent = ReceiptParser.matches(qty, price, total) || discountMatches(qty, price, discount, total)
+        }
+        if (!consistent && total != null) {
+            // Quantity and price run together into one word ("19,417475731,68852459"): the one split where quantity x
+            // price = amount (an e-invoice prints both with up to 8 decimals; nothing else is tried).
+            val runTogether = (cell(Kind.QUANTITY) + cell(Kind.PRICE)).firstOrNull { TWO_NUMBERS.matches(it.text) }
+            splitByAmount(runTogether?.text, total)?.let { (q, p) -> qty = q; price = p; consistent = true }
         }
         if (!consistent && total != null) {
             // Columns did not line up on this row: fall back to the arithmetic on the numbers as printed.
@@ -1132,6 +1153,7 @@ object TableReader {
             // A repaired decimal comma adds up, but is shown for a look.
             unitPrice = price?.let { Extracted(it, if (priceRepaired) Confidence.LOW else conf, source) },
             lineTotalCents = total?.let { Extracted(it, if (!amountRepaired && (consistent || (qty == null && price == null))) Confidence.HIGH else Confidence.LOW, source) },
+            exactTotal = exactAmount?.takeIf { total != null && ItalianNumbers.toCents(it) == total },
             vatRatePercent = vat?.let { Extracted(it.stripTrailingZeros(), Confidence.HIGH, source) },
             // A lot cannot be checked by arithmetic: sure only when the OCR said it was sure of it (or the PDF's text).
             lotNumber = lotWord?.let { Extracted(it.text, if (it.conf >= SURE_WORD && it.conf < 1f) Confidence.HIGH else Confidence.LOW, source) },
@@ -1143,7 +1165,7 @@ object TableReader {
             // Kept when the amount works out only with it.
             discount = LineDiscount.normalize(discountText)?.takeIf { d ->
                 val q = qty; val p = price; val t = total
-                q != null && p != null && t != null && !ReceiptParser.matches(q, p, t) && LineDiscount.matches(q, p, d, t)
+                free || (q != null && p != null && t != null && !ReceiptParser.matches(q, p, t) && LineDiscount.matches(q, p, d, t))
             }?.let { Extracted(it, Confidence.HIGH, source) },
         )
     }
@@ -1156,8 +1178,11 @@ object TableReader {
 
     /** "10", "10,00", "10+5" (percent, cascaded) -> total discount as a fraction of 100, or null. */
     private fun discountOf(raw: String): BigDecimal? {
-        val parts = raw.trim('%', ' ').split('+').mapNotNull { ItalianNumbers.parse(it.trim('%', ' ')) }
-        if (parts.isEmpty() || parts.any { it.signum() < 0 || it >= BigDecimal(100) }) return null
+        val t = raw.trim()
+        // The "SCONTO O MAGG." column prints a discount signed ("-2.00%", "-0.00%" for none); a surcharge ("+5%") is no discount.
+        if (t.startsWith("+")) return null
+        val parts = t.removePrefix("-").removePrefix("−").trim('%', ' ').split('+').mapNotNull { ItalianNumbers.parse(it.trim('%', ' ')) }
+        if (parts.isEmpty() || parts.any { it.signum() < 0 || it > BigDecimal(100) }) return null
         var keep = BigDecimal.ONE
         for (p in parts) keep = keep.multiply(BigDecimal.ONE.subtract(p.movePointLeft(2)))
         return BigDecimal.ONE.subtract(keep).movePointRight(2)
@@ -1170,6 +1195,25 @@ object TableReader {
     }
 
     /** Two numbers (in printed order) whose product is the amount; the pair nearest the amount wins. */
+    /**
+     * "19,417475731,68852459" as quantity 19,41747573 and price 1,68852459: the only split of [text] into two numbers
+     * whose product is [total] (to the cent). Null when none or more than one split works.
+     */
+    private fun splitByAmount(text: String?, total: Long): Pair<BigDecimal, BigDecimal>? {
+        if (text == null) return null
+        val first = text.indexOf(',')
+        if (first < 1) return null
+        val found = (first + 2 until text.length - 2).mapNotNull { i ->
+            val a = text.substring(0, i); val b = text.substring(i)
+            if (b.first() == ',' || a.last() == ',' || b.count { it == ',' } != 1 || a.count { it == ',' } != 1) return@mapNotNull null
+            if (b.length > 1 && b[0] == '0' && b[1] != ',') return@mapNotNull null
+            val q = ItalianNumbers.parse(a) ?: return@mapNotNull null
+            val p = ItalianNumbers.parse(b) ?: return@mapNotNull null
+            (q to p).takeIf { q.signum() > 0 && p.signum() > 0 && ReceiptParser.matches(q, p, total) }
+        }
+        return found.singleOrNull()
+    }
+
     private fun pairFor(nums: List<BigDecimal>, total: Long): Pair<BigDecimal, BigDecimal>? {
         for (j in nums.indices.reversed()) for (i in j - 1 downTo 0) {
             if (ReceiptParser.matches(nums[i], nums[j], total)) return nums[i] to nums[j]

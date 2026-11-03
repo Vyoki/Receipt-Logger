@@ -16,7 +16,8 @@ object LineDiscount {
         val t = raw?.trim()?.trim('%', ' ', '-')?.replace(" ", "") ?: return null
         if (t.isEmpty()) return null
         val parts = t.split('+').map { p -> ItalianNumbers.parse(p.trim('%')) ?: return null }
-        if (parts.any { it.signum() < 0 || it >= HUNDRED } || parts.all { it.signum() == 0 }) return null
+        // 100: free goods ("omaggio"), the amount is 0,00.
+        if (parts.any { it.signum() < 0 || it > HUNDRED } || parts.all { it.signum() == 0 }) return null
         return parts.filter { it.signum() > 0 }.joinToString("+") { ItalianNumbers.toEditText(it.stripTrailingZeros()) }
     }
 

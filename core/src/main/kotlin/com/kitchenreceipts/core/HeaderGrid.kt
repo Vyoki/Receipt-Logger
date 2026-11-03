@@ -110,9 +110,10 @@ object HeaderGrid {
                 val values = rows[v]
                 if (values.none { money(it.text) != null || ItalianDates.parse(it.text.trim()) != null }) continue
                 if (values.any { it.text.contains('%') && money(it.text.replace("%", "")) != null }) continue
-                // The labels right above (one row), or printed over two or three rows ("Numero / documento"):
-                // the closest reading first, so a value is taken under its own label.
-                for (n in 1..3) {
+                // The labels right above (one row), or printed over two or three lines ("Numero / documento"):
+                // the closest reading first, so a value is taken under its own label. Labels printed staggered over
+                // three lines ("ART." and "DATA" a little above the others) can make four rows of the page.
+                for (n in 1..4) {
                     val from = v - n
                     // A stacked label may hold a short number on its own line ("ART." over "73"): the row is
                     // still a row of labels, and the labels are judged once stacked.
@@ -144,6 +145,9 @@ object HeaderGrid {
         // A row of values: amounts, dates, codes; not a row of descriptions (an item, an address) under the labels used.
         if (placed.any { (col, v) -> kindAt(col).let { it != null && it != K.OTHER } && v.text.split(' ').count { w -> w.count(Char::isLetter) >= 3 } >= 2 }) return g
         val taken = HashSet<Int>()
+        // A date under the date's own heading on this row: a date-shaped value under the number's heading is then the
+        // number ("03/4/2031" printed as the invoice number, its date 04-03-2031 beside it).
+        val dateBeside = placed.any { (col, v) -> kindAt(col) == K.DATE && ItalianDates.parse(v.text.trim()) != null }
         for ((col, v) in placed) {
             if (!taken.add(col)) continue
             val k = kindAt(col) ?: continue
@@ -157,7 +161,7 @@ object HeaderGrid {
                 K.DATE -> if (g.date == null && !reference) ItalianDates.parse(v.text.trim())?.let { g = g.copy(date = it) }
                 K.NUMBER -> if (!reference) {
                     val t = v.text.trim().trim('|', ':', '.')
-                    if (g.number == null && t.any(Char::isDigit) && t.length <= 20 && cents == null && ItalianDates.parse(t) == null) g = g.copy(number = t)
+                    if (g.number == null && t.any(Char::isDigit) && t.length <= 20 && cents == null && (dateBeside || ItalianDates.parse(t) == null)) g = g.copy(number = t)
                 }
                 K.OTHER -> {}
             }

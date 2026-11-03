@@ -249,6 +249,16 @@ Database schema is now **version 3** (supplier VAT number, letterhead profile, r
 
 **A PDF with its own text** (a digital invoice, the e-invoice printouts an accountant sends): each page that draws no picture is read from the PDF's text alone, the file opened once for all its pages. Nothing is drawn, the camera reading does not run and the AI is never asked: a moment per page. The text is used alone only when it reads like a document (`TextLayer.readsAlone`); a page with a picture (a scan, a letterhead printed as an image) is also read by the camera reading, and the PDF's text is used where the two agree. The reading report gives the time of each step on the phone (`time: pages …, AI …, all …`).
 
+**E-invoice printouts read as printed** (core `TableReader`, `VatSummary`, `Money`, `HeaderGrid`; `EInvoicePrecisionTest`):
+- amounts with up to 8 decimals ("32,78688525") are read, and the lines added up exactly and rounded once, as the taxable amount is (4 x 32,78688525 = 131,15, not 131,16);
+- on the PDF's own text each word stays where it is printed (no realignment as for a photo), so a long number stays in its column;
+- a row whose quantity x price = amount, each in its column, is a line whatever words its name holds ("CACIOTTA MONTE VETTORE", "CANONE POS");
+- quantity and price printed so close that they run together ("19,417475731,68852459") are split where they make the amount;
+- a discount printed signed ("-2.00%") is a discount;
+- every row of the VAT summary counts (two rows of one rate, a row without VAT under its nature code "N2.2"): they give the taxable amount and the VAT when they add up to the total;
+- the date and number are read under their labels however the labels are staggered, a number shaped like a date ("03/4/2031") included.
+- free goods (a row discounted 100%, no amount printed) are a line of 0,00.
+
 For a photo:
 
 1. **Pass 1.** The page is read on the phone (ML Kit), with a box for every word.

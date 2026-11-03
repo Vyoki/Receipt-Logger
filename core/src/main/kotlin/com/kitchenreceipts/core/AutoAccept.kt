@@ -97,10 +97,8 @@ object AutoAccept {
      * Null when they add up to neither.
      */
     fun inferVatBasis(d: DocumentDraft): VatBasis? {
-        val lines = d.items.map { cents(it.lineTotal.text) ?: return null }
-        if (lines.isEmpty()) return null
-        val sum = lines.sum()
-        val tolerance = maxOf(2L, lines.size.toLong())
+        val sum = Money.linesSum(d.items) ?: return null
+        val tolerance = maxOf(2L, d.items.size.toLong())
         val subtotal = cents(d.subtotal.text)
         val total = cents(d.total.text)
         val vat = cents(d.vat.text)
@@ -128,6 +126,7 @@ object AutoAccept {
         if (d.items.isEmpty() || !sumMatches(d)) return d
         val lineOk = d.items.all { it ->
             if (it.isCharge) return@all cents(it.lineTotal.text) != null
+            if (freeGoods(it)) return@all true
             val q = ItalianNumbers.parse(it.quantity.text) ?: return@all false
             val p = ItalianNumbers.parse(it.unitPrice.text) ?: return@all false
             val t = cents(it.lineTotal.text) ?: return@all false
@@ -137,7 +136,7 @@ object AutoAccept {
         val sub = cents(d.subtotal.text); val vat = cents(d.vat.text); val tot = cents(d.total.text)
         val headerOk = sub == null || vat == null || tot == null || totalsAddUp(sub, vat, tot)
         if (!headerOk) return d
-        val sum = d.items.sumOf { cents(it.lineTotal.text)!! }
+        val sum = Money.linesSum(d.items)!!
         // Settled only to the cent (see sumMatches).
         val tolerance = 0L
         // A value the AI's double-check read differently stays highlighted, whatever the arithmetic says.
@@ -167,16 +166,16 @@ object AutoAccept {
      */
     fun vatFromRates(d: DocumentDraft): Pair<Long, Int>? {
         if (d.items.isEmpty() || d.vatBasis == VatBasis.UNKNOWN || d.vatBasisUncertain) return null
-        val byRate = HashMap<BigDecimal, Long>()
+        // Each rate's lines added up as printed (exact amounts, see Money), in cents.
+        val byRate = HashMap<BigDecimal, BigDecimal>()
         for (l in d.items) {
-            val cents = cents(l.lineTotal.text) ?: return null
+            val amount = l.preciseTotal() ?: return null
             val rate = ItalianNumbers.parse(l.vatRate.text)?.stripTrailingZeros() ?: return null
             if (rate.signum() < 0 || rate > BigDecimal(30)) return null
-            byRate[rate] = (byRate[rate] ?: 0L) + cents
+            byRate[rate] = (byRate[rate] ?: BigDecimal.ZERO) + amount.movePointRight(2)
         }
         val hundred = BigDecimal(100)
-        val vat = byRate.entries.sumOf { (rate, cents) ->
-            val base = BigDecimal(cents)
+        val vat = byRate.entries.sumOf { (rate, base) ->
             val v = if (d.vatBasis == VatBasis.INCLUSIVE) base.multiply(rate).divide(hundred.add(rate), 0, java.math.RoundingMode.HALF_UP)
             else base.multiply(rate).divide(hundred, 0, java.math.RoundingMode.HALF_UP)
             v.toLong()
@@ -199,7 +198,7 @@ object AutoAccept {
         if (d.warnings.any { it in MONEY_DOUBTS }) return false
         val lineOk = d.items.all {
             if (cents(it.lineTotal.text) == null) return@all false
-            if (it.isCharge) return@all true
+            if (it.isCharge || freeGoods(it)) return@all true
             val q = ItalianNumbers.parse(it.quantity.text) ?: return@all false
             val p = ItalianNumbers.parse(it.unitPrice.text) ?: return@all false
             LineDiscount.matches(q, p, it.discount.text, cents(it.lineTotal.text)!!)
@@ -223,11 +222,15 @@ object AutoAccept {
      * sum a few cents off is a misread digit somewhere (a line or the total), never a proof.
      */
     fun sumMatches(d: DocumentDraft): Boolean {
-        val lines = d.items.map { cents(it.lineTotal.text) ?: return false }
-        if (lines.isEmpty()) return false
-        val sum = lines.sum()
+        // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see Money).
+        val sum = Money.linesSum(d.items) ?: return false
         return listOfNotNull(cents(d.subtotal.text), cents(d.total.text)).any { sum == it }
     }
+
+    /** Free goods: a quantity, discounted 100%, amount 0,00 (any price x 0 is 0: proven without one). */
+    private fun freeGoods(l: LineItemDraft): Boolean =
+        cents(l.lineTotal.text) == 0L && ItalianNumbers.parse(l.quantity.text) != null &&
+            LineDiscount.percent(l.discount.text)?.compareTo(BigDecimal(100)) == 0
 
     private fun cents(text: String): Long? {
         val v = ItalianNumbers.parse(text) ?: return null

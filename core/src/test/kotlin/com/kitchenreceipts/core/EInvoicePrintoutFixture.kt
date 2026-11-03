@@ -25,9 +25,12 @@ internal object EInvoicePrintoutFixture {
         val more: List<String> = emptyList(),
         val letterSpaced: Boolean = false,
         val descX: Int = 643,
+        /** Where the price is printed from, left-aligned with what follows it ("21,40 bottiglie -2.00%"); null: right-aligned. */
+        val priceAt: Int? = null,
     )
 
-    data class Group(val rate: String, val taxable: String, val tax: String, val label: String = "I (esigibilità immediata)")
+    /** [extra]: a rounding printed under "ARR." in the row (part of its taxable amount, not of the lines). */
+    data class Group(val rate: String, val taxable: String, val tax: String, val label: String = "I (esigibilità immediata)", val extra: String? = null)
 
     data class Invoice(
         val supplierVat: String,
@@ -165,7 +168,7 @@ internal object EInvoicePrintoutFixture {
             line.code?.let { c -> page += t(84, y + 1, if (line.codeType != null) "$c ( ${line.codeType} )" else c, cw = 16, h = 26) }
             page += if (line.letterSpaced) letterSpaced(line.descX, y, line.desc) else t(line.descX, y, line.desc)
             line.qty?.let { page += r(1352, y, it) }
-            line.price?.let { page += r(1670, y, it) }
+            line.price?.let { page += if (line.priceAt != null) t(line.priceAt, y, it, cw = 17) else r(1670, y, it) }
             line.unit?.let { page += t(1727, y, it) }
             page += r(2072, y, line.vat)
             line.amount?.let { page += r(2366, y, it) }
@@ -202,6 +205,7 @@ internal object EInvoicePrintoutFixture {
             for (g in inv.groups) {
                 page += t(84, y, g.label, cw = 17)
                 page += r(960, y, g.rate)
+                g.extra?.let { page += r(1330, y, it) }
                 page += r(1840, y, g.taxable)
                 page += r(2366, y, g.tax)
                 y += 58

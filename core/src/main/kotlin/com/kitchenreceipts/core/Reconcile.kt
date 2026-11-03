@@ -120,14 +120,15 @@ object Reconcile {
 
     /** Printed taxable amount minus the lines, per group; null when a line's rate is not in the summary. */
     private fun gaps(items: List<ParsedLineItem>, groups: List<VatSummary.Group>): LongArray? {
-        val gaps = LongArray(groups.size) { groups[it].taxableCents }
+        // Each rate's lines added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see Money).
+        val sums = Array(groups.size) { java.math.BigDecimal.ZERO }
         for (it in items) {
             val rate = it.vatRatePercent?.value ?: continue
             val g = groups.indexOfFirst { gr -> gr.ratePercent.compareTo(rate) == 0 }
             if (g < 0) return null
-            gaps[g] -= it.lineTotalCents?.value ?: 0
+            sums[g] = sums[g] + (Money.exact(it) ?: java.math.BigDecimal.ZERO)
         }
-        return gaps
+        return LongArray(groups.size) { groups[it].taxableCents - ItalianNumbers.toCents(sums[it]) }
     }
 
     private class Solved(

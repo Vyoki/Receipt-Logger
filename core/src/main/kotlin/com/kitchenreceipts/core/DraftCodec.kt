@@ -67,6 +67,8 @@ object DraftCodec {
                 // Offered readings come back only while the operator had not settled the line.
                 choices = if (i["hasChoices"] == true) hint?.choices.orEmpty() else emptyList(),
                 aiRead = hint?.aiRead.orEmpty(),
+                // The amount as printed with more decimals (see LineItemDraft.preciseTotal): used only while the amount shown is it rounded.
+                exactTotal = hint?.exactTotal,
                 nameUnknown = hint?.nameUnknown.orEmpty(),
             )
         }

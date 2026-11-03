@@ -378,6 +378,9 @@ object ReceiptParser {
         return if (buyer != own) d.copy(warnings = d.warnings + ParseWarning.OTHER_BUYER) else d
     }
 
+    /** A row of the VAT summary ("I (esigibilità immediata) 22,00 131,15 28,85"): never an item. */
+    internal fun isSummaryRow(line: String): Boolean = SUMMARY_ROW.containsMatchIn(line)
+
     internal fun isNotAnItemRow(line: String): Boolean =
         NON_ITEM.containsMatchIn(line) || VAT_ID.containsMatchIn(line) || ADDRESS_OR_CONTACT.containsMatchIn(line) || SUMMARY_ROW.containsMatchIn(line)
 
@@ -861,7 +864,8 @@ object ReceiptParser {
         items = colliFromNames(items, text)
         // The document checks itself: rows missed, readings that are no product, unreadable VAT codes, found where
         // exactly one answer makes every VAT rate add up (see Reconcile).
-        val (checkedItems, report0) = runCatching { Reconcile.apply(items, groups, text) }.getOrElse { items to Reconcile.Report() }
+        // Per rate only: a nature row (no VAT) gives no line a rate to be checked against.
+        val (checkedItems, report0) = runCatching { Reconcile.apply(items, groups.filter { it.nature == null }, text) }.getOrElse { items to Reconcile.Report() }
         items = checkedItems
         // Read again (the AI's answers, a second pass): the lines a check added are those still marked, and readings
         // left out earlier stay listed while they are still out.
@@ -885,7 +889,8 @@ object ReceiptParser {
         if (items.any { ParseWarning.LINE_TOTAL_MISMATCH in it.warnings }) warnings += ParseWarning.LINE_TOTAL_MISMATCH
 
         val itemTotals = items.mapNotNull { it.lineTotalCents?.value }
-        val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) itemTotals.sum() else null
+        // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see Money).
+        val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) Money.parsedSum(items) ?: itemTotals.sum() else null
         var subtotal = doc.subtotalCents
         // Several taxable-looking lines ("Subtotaal 717,97" with VAT, "Exclusief BTW 593,36"): the one that makes
         // taxable + VAT = total is the taxable amount.
@@ -896,6 +901,21 @@ object ReceiptParser {
                     labelAmountCents(l.substring(SUBTOTAL.find(l)!!.range.last + 1))?.takeIf { kotlin.math.abs(it + vv.value - tv.value) <= 1 }?.let { it to l }
                 }?.let { (c, l) -> subtotal = Extracted(c, Confidence.HIGH, l) }
             }
+        }
+        // The VAT summary (one row per rate, several rows of a rate added up) gives the taxable amount and the VAT when
+        // its rows add up to the total printed: the three agree, so they are sure. An e-invoice with two rates prints no
+        // one taxable amount, only its rows.
+        run {
+            val tv = total ?: return@run
+            if (groups.isEmpty()) return@run
+            val gTax = groups.sumOf { it.taxableCents }; val gVat = groups.sumOf { it.vatCents }
+            if (gTax + gVat != tv.value) return@run
+            val src = "VAT summary rows (${groups.size}) add up to the total"
+            val sv = subtotal; val vv = vat
+            if (sv != null && sv.confidence == Confidence.HIGH && sv.value != gTax) return@run
+            if (vv != null && vv.confidence == Confidence.HIGH && vv.value != gVat) return@run
+            if (sv == null || sv.confidence == Confidence.LOW) subtotal = Extracted(gTax, Confidence.HIGH, src)
+            if (vv == null || vv.confidence == Confidence.LOW) vat = Extracted(gVat, Confidence.HIGH, src)
         }
         val s0 = subtotal; val v0 = vat; val t0 = total
         // A total worked out as taxable + VAT (no total line read) proves nothing about them: it stays to be checked.

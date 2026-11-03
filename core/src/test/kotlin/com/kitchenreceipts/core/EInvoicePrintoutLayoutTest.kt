@@ -100,8 +100,9 @@ class EInvoicePrintoutLayoutTest {
         assertTrue(rounding.unitPrice?.confidence != Confidence.HIGH || ParseWarning.LINE_TOTAL_MISMATCH in rounding.warnings)
         // "N2.2" in the VAT column is no rate: the line has none, and nothing is made up for it.
         assertEquals(null, rounding.vatRatePercent?.value)
-        // Without the nature row the summary does not add up to the total: the bill is not proven, so it goes to review.
-        assertTrue(d.totalCents?.confidence != Confidence.HIGH)
+        // The summary's rows, its nature row (no VAT) included, add up to the total: the total is sure. The bill still
+        // goes to review: its rounding line does not prove itself (the price read without its sign).
+        assertEquals(Confidence.HIGH, d.totalCents?.confidence)
         assertTrue(AutoAccept.reasons(DocumentDraft.fromParsed(d)).isNotEmpty())
     }
 

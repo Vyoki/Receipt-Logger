@@ -103,6 +103,11 @@ data class ParsedLineItem(
      * earlier documents may have saved the product under.
      */
     val nameFirstLine: String? = null,
+    /**
+     * The amount exactly as printed when it has more decimals than cents (an e-invoice prints up to 8: "32,78688525");
+     * [lineTotalCents] is it rounded to the cent. The lines add up by their exact amounts (see Money.linesSum).
+     */
+    val exactTotal: java.math.BigDecimal? = null,
 )
 
 /** One code the page explains ([kind] "storage", "tipo riga", "group"...): [code] as printed (none for a group line), [meaning] from the page. */

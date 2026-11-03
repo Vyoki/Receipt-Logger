@@ -53,7 +53,16 @@ data class LineItemDraft(
     val marks: List<ItemMark> = emptyList(),
     /** The name's first printed line when it went on to the next one (see ParsedLineItem.nameFirstLine): not saved. */
     val nameFirstLine: String? = null,
+    /** The amount as printed with more decimals than cents (see ParsedLineItem.exactTotal); used while [lineTotal] is it rounded. */
+    val exactTotal: BigDecimal? = null,
 ) {
+    /** The line's amount for adding up: the exact printed amount while the amount shown is it rounded, else the amount shown. */
+    fun preciseTotal(): BigDecimal? {
+        val shown = ItalianNumbers.parse(lineTotal.text) ?: return null
+        val exact = exactTotal ?: return shown
+        return if (ItalianNumbers.toCents(exact) == ItalianNumbers.toCents(shown)) exact else shown
+    }
+
     /**
      * A discount or charge ("Sconto del 4%", "Spese bancarie"), not goods: no product, quantity or unit needed.
      * Also true for such a line of a saved document opened again, worked out from its words and amount.
@@ -178,6 +187,7 @@ data class DocumentDraft(
                         discount = f(it.discount) { d -> d },
                         marks = it.marks,
                         nameFirstLine = it.nameFirstLine,
+                        exactTotal = it.exactTotal,
                     )
                 },
                 warnings = p.warnings,

@@ -181,11 +181,11 @@ class BundleWizardTest {
         assertTrue(meat.sumComplete)
         assertEquals(LocalDate.of(2031, 3, 14), meat.first)
         assertEquals(LocalDate.of(2031, 3, 28), meat.last)
-        // The electricity bill's total is printed but not proven: "€ 0,00 + 1 not checked".
+        // The electricity bill's total is proven by its summary rows (its "N2.2" row without VAT included).
         val energy = groups.getValue(ENERGY.supplierVat)
-        assertEquals(0L, energy.provenCents)
-        assertEquals(1, energy.notProven)
-        assertFalse(energy.sumComplete)
+        assertEquals(25590L, energy.provenCents)
+        assertEquals(0, energy.notProven)
+        assertTrue(energy.sumComplete)
         // A total not found.
         val p = BundleWizard.plan(base.copy(signals = emptyList()), listOf(seg(0, "01234567897", "1"), seg(1, "01234567897", "2", total = null, proven = false)))
         val g = BundleWizard.groupBySupplier(p).single()
@@ -205,8 +205,8 @@ class BundleWizardTest {
         assertEquals(5, s.invoices)
         assertEquals(1, s.creditNotes)
         assertEquals(1, s.leftOut[LeftOut.CREDIT_NOTE])
-        assertEquals(24242L + 9761L + 24242L + 659L, s.provenCents)
-        assertEquals(1, s.notProven)
+        assertEquals(24242L + 9761L + 24242L + 659L + 25590L, s.provenCents)
+        assertEquals(0, s.notProven)
         assertEquals(LocalDate.of(2031, 3, 14), s.first)
         assertEquals(LocalDate.of(2031, 3, 28), s.last)
         assertEquals(mapOf<String?, Int>(null to 5), s.byCategory)

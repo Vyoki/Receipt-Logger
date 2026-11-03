@@ -16,7 +16,9 @@ class LineDiscountTest {
         assertEquals("12,5", LineDiscount.normalize(" 12,50 "))
         assertNull(LineDiscount.normalize(""))
         assertNull(LineDiscount.normalize("0"))
-        assertNull(LineDiscount.normalize("100"))
+        // 100%: free goods ("omaggio"), the amount 0,00; more than 100% is no discount.
+        assertEquals("100", LineDiscount.normalize("100"))
+        assertNull(LineDiscount.normalize("120"))
         assertNull(LineDiscount.normalize("abc"))
         assertEquals(0, BigDecimal("14.5").compareTo(LineDiscount.percent("10+5")))
     }

@@ -13,7 +13,15 @@ import java.math.RoundingMode
  */
 object VatSummary {
 
-    data class Group(val ratePercent: BigDecimal, val taxableCents: Long, val vatCents: Long, val source: String)
+    /**
+     * [nature]: an e-invoice row without VAT under its nature code ("N2.2": not subject), rate 0. It counts in the
+     * document's taxable amount; no line is given its rate, and it is in no check per rate (its lines print no rate).
+     */
+    data class Group(
+        val ratePercent: BigDecimal, val taxableCents: Long, val vatCents: Long, val source: String, val nature: String? = null,
+        /** Printed in the row before its taxable amount (accessory charges, ARR.): part of the taxable amount, not of the lines. */
+        val extraCents: Long = 0L,
+    )
 
     data class Check(val ratePercent: BigDecimal, val printedCents: Long, val linesCents: Long, val lines: Int) {
         val ok: Boolean get() = kotlin.math.abs(printedCents - linesCents) <= maxOf(1L, lines / 4L)
@@ -30,6 +38,9 @@ object VatSummary {
 
     fun parse(text: String): List<Group> {
         val out = mutableListOf<Group>()
+        // Rows under the summary's own heading, each proven by its rate (or VAT 0 under a nature code): all of them
+        // count, several rows of one rate included (another exigibility or legal reference).
+        val tableRows = mutableListOf<Group>()
         var inTable = false
         for (line in text.lines()) {
             val clean = DOT_DECIMAL.replace(OcrCleanup.cleanLine(line)) { m -> "${m.groupValues[1]},${m.groupValues[2]}" }
@@ -37,6 +48,8 @@ object VatSummary {
             // printed with decimals ("10,00"); the arithmetic below still has to prove the row.
             if (SUMMARY_HEADING.findAll(clean).map { it.value.lowercase().take(5) }.distinct().count() >= 2 && MONEY.findAll(clean).none()) { inTable = true; continue }
             if (inTable && SUMMARY_END.containsMatchIn(clean)) inTable = false
+            val row = if (inTable) tableRow(clean, line) else null
+            if (row != null) { tableRows += row; continue }
             // A unit price with three decimals ("10,210") makes it a product line, never a VAT summary row.
             if (UNIT_PRICE.containsMatchIn(clean)) continue
             val money = MONEY.findAll(clean).toList()
@@ -54,6 +67,12 @@ object VatSummary {
                         break@found
                     }
                 }
+            }
+        }
+        // The summary's own rows, one group per rate (its rows added up).
+        if (tableRows.isNotEmpty()) {
+            return tableRows.groupBy { it.ratePercent to it.nature }.map { (k, g) ->
+                Group(k.first, g.sumOf { it.taxableCents }, g.sumOf { it.vatCents }, g.joinToString(" | ") { it.source }, k.second, g.sumOf { it.extraCents })
             }
         }
         // Several rows for one rate: the ones worded like a VAT summary ("ALIQUOTA 10%", "IVA", "IMPONIBILE") win;
@@ -90,6 +109,36 @@ object VatSummary {
         return groups
     }
 
+    /**
+     * A row under the summary's heading: its rate ("22,00", "10") or nature code ("N2.2": no VAT), then its amounts, the
+     * last two being the taxable amount and the VAT ("0" for none). Proven by its rate (VAT = taxable x rate, to the
+     * cent), or VAT 0 under a nature code; null otherwise.
+     */
+    private fun tableRow(clean: String, line: String): Group? {
+        val nums = TABLE_NUMBER.findAll(clean).toList()
+        val nature = NATURE.find(clean)
+        if (nature != null) {
+            if (nums.size < 2) return null
+            val vat = ItalianNumbers.parseCents(nums.last().value) ?: return null
+            val taxable = ItalianNumbers.parseCents(nums[nums.size - 2].value) ?: return null
+            val extra = nums.subList(0, nums.size - 2).sumOf { ItalianNumbers.parseCents(it.value) ?: 0L }
+            return if (vat == 0L && taxable != 0L) Group(BigDecimal.ZERO, taxable, 0L, line, nature.value, extra) else null
+        }
+        if (nums.size < 3) return null
+        val rate = nums.first().value.takeIf { DECIMAL_RATE.matches(it) || RATE_ONLY.matches(it) }?.let { ItalianNumbers.parse(it) } ?: return null
+        val taxable = ItalianNumbers.parseCents(nums[nums.size - 2].value) ?: return null
+        val vat = ItalianNumbers.parseCents(nums.last().value) ?: return null
+        val expected = BigDecimal(taxable).multiply(rate).divide(BigDecimal(100), 0, RoundingMode.HALF_UP).toLong()
+        val extra = nums.subList(1, nums.size - 2).sumOf { ItalianNumbers.parseCents(it.value) ?: 0L }
+        return if (kotlin.math.abs(expected - vat) <= 1 && taxable != 0L) Group(plain(rate), taxable, vat, line, extraCents = extra) else null
+    }
+
+    /** Amounts in a summary row, signed; a bare "0" is no VAT. */
+    private val TABLE_NUMBER = Regex("(?<![\\d,.])-?\\d{1,3}(?:\\.\\d{3})*,\\d{2}(?![\\d,])|(?<![\\d,.\\w])-?0(?![\\d,.\\w])|(?<![\\d,.\\w])(?:0?4|0?5|10|22)(?![\\d,.\\w])")
+    private val RATE_ONLY = Regex("^(?:0?4|0?5|10|22)$")
+    /** An e-invoice's nature code for a line without VAT (exempt, not subject, reverse charge...). */
+    private val NATURE = Regex("(?<![A-Za-z0-9])N[1-7](?:\\.\\d)?(?![A-Za-z0-9.])")
+
     private val SUMMARY_HEADING = Regex("(?i)\\b(imponibil\\w*|imposta|aliquota|%\\s?iva)")
     private val SUMMARY_END = Regex("(?i)\\b(totale\\s+documento|modalit\\S*\\s+pagamento|importo\\s+bollo)\\b")
     private val DECIMAL_RATE = Regex("^(4|5|10|22),00$")
@@ -100,7 +149,9 @@ object VatSummary {
      * Lines without a VAT rate (the rate was printed out of place) get the one rate that makes every VAT group add up,
      * when exactly one way works. The rate is then proven by the summary; nothing is filled in otherwise.
      */
-    fun fillMissingRates(items: List<ParsedLineItem>, groups: List<Group>): List<ParsedLineItem> {
+    fun fillMissingRates(items: List<ParsedLineItem>, all: List<Group>): List<ParsedLineItem> {
+        // A nature row (no VAT, no rate printed on its lines) gives no line a rate.
+        val groups = all.filter { it.nature == null }
         val missing = items.indices.filter { items[it].vatRatePercent == null && items[it].lineTotalCents != null }
         if (missing.isEmpty() || missing.size > 3 || groups.isEmpty() || items.any { it.lineTotalCents == null }) return items
         val rates = groups.map { it.ratePercent }
@@ -129,7 +180,8 @@ object VatSummary {
     }
 
     /** One check per VAT rate of the summary; empty when there is no summary or some lines have no rate. */
-    fun check(items: List<ParsedLineItem>, groups: List<Group>): List<Check> {
+    fun check(items: List<ParsedLineItem>, all: List<Group>): List<Check> {
+        val groups = all.filter { it.nature == null }
         if (groups.size < 1 || items.isEmpty()) return emptyList()
         if (items.any { it.vatRatePercent == null || it.lineTotalCents == null }) return emptyList()
         val byRate = items.groupBy { plain(it.vatRatePercent!!.value) }
@@ -137,7 +189,8 @@ object VatSummary {
         if (byRate.keys.any { k -> groups.none { it.ratePercent.compareTo(k) == 0 } }) return emptyList()
         return groups.map { g ->
             val lines = byRate.entries.firstOrNull { it.key.compareTo(g.ratePercent) == 0 }?.value.orEmpty()
-            Check(g.ratePercent, g.taxableCents, lines.sumOf { it.lineTotalCents!!.value }, lines.size)
+            // Added up as printed (an e-invoice's amounts with up to 8 decimals, rounded once: see Money).
+            Check(g.ratePercent, g.taxableCents, Money.parsedSum(lines) ?: lines.sumOf { it.lineTotalCents!!.value }, lines.size)
         }
     }
 }

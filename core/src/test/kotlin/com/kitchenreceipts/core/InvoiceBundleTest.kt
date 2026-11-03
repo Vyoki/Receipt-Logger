@@ -53,10 +53,10 @@ class InvoiceBundleTest {
         assertEquals(eleven.map { ItalianNumbers.parseCents(it.total) }, found.map { it.printedTotalCents })
         assertTrue(found.all { it.customerVat == CUSTOMER_VAT })
         assertEquals(listOf(9), found.indices.filter { found[it].creditNote })
-        // Every invoice is sure, and every total is proven by its VAT summary except the electricity bill's (its
-        // "N2.2" group is not read).
+        // Every invoice is sure, and every total is proven by its VAT summary (the electricity bill's "N2.2" row
+        // without VAT included).
         assertTrue(found.map { it.flags }.toString(), found.all { it.sure })
-        assertEquals(listOf(3), found.indices.filter { !found[it].totalProven })
+        assertEquals(emptyList<Int>(), found.indices.filter { !found[it].totalProven })
     }
 
     @Test fun oneInvoiceIsNoBundle() {
@@ -190,10 +190,11 @@ class InvoiceBundleTest {
         assertEquals(9761L, w.printedTotalCents)
         assertEquals(3, w.vatGroups.size)
         assertTrue(w.totalProven)
-        // The electricity bill's summary has a group the app does not read (N2.2): the total stays as printed, unproven.
+        // The electricity bill's summary has a row without VAT under its nature code (N2.2): read too, its rows add up
+        // to the total.
         val e = InvoiceBundle.find(EInvoicePrintoutFixture.pages(ENERGY), CUSTOMER_VAT).single()
         assertEquals(25590L, e.printedTotalCents)
-        assertFalse(e.totalProven)
+        assertTrue(e.totalProven)
     }
 
     @Test fun joinAndSplitRoundTrip() {
