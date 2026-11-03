@@ -495,8 +495,11 @@ class ScreenshotTest {
                 assertTrue("the date field could not be tapped again. On screen: ${screenDump()}", again)
             }
             assertTrue("no photo icon after the photo closed. On screen: ${screenDump()}", waitFor(photo, true))
-            tap(photo)
-            assertTrue(waitFor(zoomIn, true))
+            // The closed photo's window may still be going away: a tap now can land on it. Opened again once the app
+            // is idle, and waited for as the first time.
+            inst.waitForIdleSync()
+            val tappedAgain = tap(photo)
+            assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", waitFor(zoomIn, true))
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
         }
