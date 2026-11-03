@@ -77,10 +77,15 @@ object TextLayer {
      * done by printing twice) is the same glyph, dropped. Without overlaps the row is one string, as before.
      */
     private fun strings(row: List<Glyph>): List<List<Glyph>> {
+        val sorted = row.filter { it.text.isNotBlank() }.sortedBy { it.left }
+        // How much neighbouring letters overlap on this row anyway (some writers give glyph boxes wider than their
+        // advance): only an overlap clearly beyond that is text printed over text.
+        val usual = sorted.zipWithNext { a, b -> (a.right - b.left) / min(a.right - a.left, b.right - b.left).coerceAtLeast(0.01f) }
+            .sorted().let { o -> if (o.isEmpty()) 0f else o[o.size / 2].coerceAtLeast(0f) }
         val out = mutableListOf<MutableList<Glyph>>()
         for (g in row.sortedBy { it.left }) {
             val w = g.right - g.left
-            val fits = out.filter { s -> val last = s.last(); g.left >= last.right - 0.1f * min(w, last.right - last.left) }
+            val fits = out.filter { s -> val last = s.last(); g.left >= last.right - (usual + 0.1f) * min(w, last.right - last.left) }
             val twin = out.any { s -> s.any { o -> o.text == g.text && kotlin.math.abs(o.left - g.left) < 0.3f * w && kotlin.math.abs(o.top - g.top) < 0.3f * g.height } }
             if (twin && g.text.isNotBlank()) continue
             (fits.minByOrNull { kotlin.math.abs(g.left - it.last().right) } ?: mutableListOf<Glyph>().also { out += it }) += g

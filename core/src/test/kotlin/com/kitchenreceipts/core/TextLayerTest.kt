@@ -85,4 +85,10 @@ class TextLayerTest {
         val kerned = listOf(TextLayer.Glyph("A", 100f, 100f, 122f, 130f), TextLayer.Glyph("V", 119f, 100f, 141f, 130f), TextLayer.Glyph("E", 141f, 100f, 160f, 130f))
         assertEquals(listOf("AVE"), TextLayer.lines(kerned).map { it.text })
     }
+
+    @Test fun lettersWhoseBoxesAllOverlapAreOneWord() {
+        // Glyph boxes wider than the advance (each letter overlapping the next by a third): ordinary text, one word.
+        val glyphs = "Mandorle".mapIndexed { i, c -> TextLayer.Glyph(c.toString(), 100f + i * 20f, 100f, 100f + i * 20f + 30f, 130f) }
+        assertEquals(listOf("Mandorle"), TextLayer.lines(glyphs).map { it.text })
+    }
 }
