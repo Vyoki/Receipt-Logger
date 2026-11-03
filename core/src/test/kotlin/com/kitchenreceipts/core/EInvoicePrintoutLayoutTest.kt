@@ -103,7 +103,8 @@ class EInvoicePrintoutLayoutTest {
         assertEquals(null, rounding.vatRatePercent?.value)
         // The summary's rows, its nature row (no VAT) included, add up to the total: the total is sure.
         assertEquals(Confidence.HIGH, d.totalCents?.confidence)
-        println("REASONS " + AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(d))))
+        // Still checked by hand: the nature-coded line has no VAT rate (the items are incomplete), nothing else.
+        assertEquals(listOf(ReviewReason.INCOMPLETE_ITEMS), AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(d))).toList())
     }
 
     @Test fun soleTraderAndLetterSpacedNames() {

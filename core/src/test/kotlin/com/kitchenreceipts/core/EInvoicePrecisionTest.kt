@@ -75,14 +75,14 @@ class EInvoicePrecisionTest {
             listOf(w("COD. ARTICOLO", 259, 1266, 425), w("DESCRIZIONE", 888, 1266, 1030), w("QUANTITÀ", 1332, 1266, 1440), w("UM", 1733, 1266, 1766),
                 w("%IVA", 2002, 1266, 2056), w("PREZZO TOTALE", 2115, 1266, 2288)),
             listOf(w("UNITARIO", 1534, 1278, 1635), w("O MAGG.", 1839, 1278, 1932)),
-            listOf(w("99990001", 84, 1360, 212), w("GASOLIO PROVA", 643, 1360, 903), w("46,7345716 1,36803279", 1284, 1360, 1670), w("LT", 1734, 1360, 1764),
-                w("22,00", 1985, 1360, 2072), w("63,93442623", 2164, 1360, 2366)),
+            listOf(w("99990001", 84, 1360, 212), w("GASOLIO PROVA", 643, 1360, 903), w("38,4172615 1,52468193", 1284, 1360, 1670), w("LT", 1734, 1360, 1764),
+                w("22,00", 1985, 1360, 2072), w("58,57410441", 2164, 1360, 2366)),
         )
         val item = TableReader.read(listOf(LayoutRows.Layout(rows, 0.0)), textLayerPages = setOf(0))!!.single()
         assertEquals("GASOLIO PROVA", item.originalDescription)
-        assertEquals(0, item.quantity!!.value.compareTo(BigDecimal("46.7345716")))
-        assertEquals(0, item.unitPrice!!.value.compareTo(BigDecimal("1.36803279")))
-        assertEquals(6393L, item.lineTotalCents!!.value)
+        assertEquals(0, item.quantity!!.value.compareTo(BigDecimal("38.4172615")))
+        assertEquals(0, item.unitPrice!!.value.compareTo(BigDecimal("1.52468193")))
+        assertEquals(5857L, item.lineTotalCents!!.value)
         assertEquals(Confidence.HIGH, item.quantity!!.confidence)
     }
 
