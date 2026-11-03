@@ -193,6 +193,31 @@ class EInvoicePrecisionTest {
         assertEquals(null, HeaderGrid.read(listOf(LayoutRows.Layout(page1, 0.0))).total)
     }
 
+    @Test fun aUtilityBillsLinesAreProvenByTheirVatRates() {
+        // A meter reading with no price printed (only its amount), a price glued to its unit ("0,0410KWH"), and two
+        // N2.2 lines adding up to the N2.2 row: each rate's lines are its taxable amount, so every amount is proven.
+        val inv = Invoice(
+            supplierVat = pIva("0345678912"), supplierName = "ENERGIA PROVA SRL", number = "000920310000099999", date = "18-03-2031",
+            lines = listOf(
+                Line("POD/PDR: IT001E00000009", "1.200,000", "0,1000", "KWH", "22,00", "120,00", code = "11223399", codeType = null),
+                Line("POD/PDR: IT001E00000009", "30,000", null, "KWH", "22,00", "7,50", code = "11223399", codeType = null),
+                Line("POD/PDR: IT001E00000009", "100,000", "0,0410KWH", null, "22,00", "4,10", code = "11223399", codeType = null),
+                Line("POD/PDR: IT001E00000009", "1,00", "-0,50", "CAD", "N2.2", "-0,50", code = "11223399", codeType = null),
+                Line("POD/PDR: IT001E00000009", "1,00", "0,40", "CAD", "N2.2", "0,40", code = "11223399", codeType = null),
+            ),
+            groups = listOf(Group("22,00", "131,60", "28,95"), Group("N2.2", "-0,10", "0")),
+            total = "160,45",
+            payment = "MP09 RID",
+        )
+        val p = read(inv)
+        assertEquals(true, p.reconciled?.vatProven)
+        assertEquals(0, p.lineItems[2].unitPrice?.value?.compareTo(BigDecimal("0.0410")))
+        val d = draft(inv)
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(d).toList())
+        // The quantity of the line with no price stays as printed.
+        assertEquals(0, ItalianNumbers.parse(d.items[1].quantity.text)!!.compareTo(BigDecimal("30")))
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(

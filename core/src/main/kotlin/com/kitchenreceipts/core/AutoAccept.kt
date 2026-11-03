@@ -135,6 +135,7 @@ object AutoAccept {
         val lineOk = d.items.all { it ->
             if (it.isCharge) return@all cents(it.lineTotal.text) != null
             if (freeGoods(it)) return@all true
+            if (amountByVat(d, it)) return@all true
             val q = ItalianNumbers.parse(it.quantity.text) ?: return@all false
             val p = ItalianNumbers.parse(it.unitPrice.text) ?: return@all false
             val t = cents(it.lineTotal.text) ?: return@all false
@@ -206,7 +207,7 @@ object AutoAccept {
         if (d.warnings.any { it in MONEY_DOUBTS }) return false
         val lineOk = d.items.all {
             if (cents(it.lineTotal.text) == null) return@all false
-            if (it.isCharge || freeGoods(it)) return@all true
+            if (it.isCharge || freeGoods(it) || amountByVat(d, it)) return@all true
             val q = ItalianNumbers.parse(it.quantity.text) ?: return@all false
             val p = ItalianNumbers.parse(it.unitPrice.text) ?: return@all false
             LineDiscount.matches(q, p, it.discount.text, cents(it.lineTotal.text)!!)
@@ -234,6 +235,14 @@ object AutoAccept {
         val sum = d.linesTotal() ?: return false
         return listOfNotNull(cents(d.subtotal.text), cents(d.total.text)).any { sum == it }
     }
+
+    /**
+     * A line that prints no unit price (a meter reading, litres of fuel, a service): its amount is its value, proven
+     * when every VAT rate's lines add up exactly to that rate's printed taxable amount (Reconcile.Report.vatProven).
+     * Its quantity is kept as printed; nothing multiplies it.
+     */
+    private fun amountByVat(d: DocumentDraft, l: LineItemDraft): Boolean =
+        l.noPricePrinted && l.unitPrice.isMissing && cents(l.lineTotal.text) != null && d.checks?.vatProven == true
 
     /** Free goods with amount 0,00 (any price x 0 is 0: proven without one), see [LineDiscount.isFree]. */
     private fun freeGoods(l: LineItemDraft): Boolean =

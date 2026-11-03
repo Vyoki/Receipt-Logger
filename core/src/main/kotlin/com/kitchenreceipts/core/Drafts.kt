@@ -81,6 +81,8 @@ data class LineItemDraft(
     val vatRate: DraftField = DraftField(),
     /** 0 % VAT under this nature code, proven by the summary row of that nature (see ParsedLineItem.vatNature). */
     val vatNature: String? = null,
+    /** The line prints no unit price at all (see ParsedLineItem.noPricePrinted). */
+    val noPricePrinted: Boolean = false,
     val lot: DraftField = DraftField(),
     val expiry: DraftField = DraftField(),
     /** "Colli": packages/cartons as printed ("5", "1x6"); kept apart from the name and the quantity. */
@@ -239,6 +241,7 @@ data class DocumentDraft(
                         lineTotal = f(it.lineTotalCents, cents),
                         vatRate = f(it.vatRatePercent, dec),
                         vatNature = it.vatNature,
+                        noPricePrinted = it.noPricePrinted,
                         lot = f(it.lotNumber) { l -> l },
                         expiry = f(it.expiryDate) { d -> ItalianDates.format(d) },
                         packages = f(it.packages) { p -> p },

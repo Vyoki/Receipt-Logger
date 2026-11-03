@@ -227,8 +227,9 @@ object VatSummary {
     fun check(items: List<ParsedLineItem>, all: List<Group>): List<Check> {
         val groups = withRate(all)
         if (groups.size < 1 || items.isEmpty()) return emptyList()
-        if (items.any { it.vatRatePercent == null || it.lineTotalCents == null }) return emptyList()
-        val byRate = items.groupBy { plain(it.vatRatePercent!!.value) }
+        if (items.any { (it.vatRatePercent == null && it.vatNature == null) || it.lineTotalCents == null }) return emptyList()
+        // Lines under a proven nature code are proven by their own row (see proveNatures).
+        val byRate = items.filter { it.vatRatePercent != null }.groupBy { plain(it.vatRatePercent!!.value) }
         // Every rate on the lines must be in the summary, or the summary was not read completely.
         if (byRate.keys.any { k -> groups.none { it.ratePercent.compareTo(k) == 0 } }) return emptyList()
         return groups.map { g ->

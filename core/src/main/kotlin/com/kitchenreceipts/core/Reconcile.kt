@@ -111,9 +111,10 @@ object Reconcile {
         )
     }
 
-    /** Every line has a rate of the summary, and each rate's lines add up to its taxable amount exactly. */
+    /** Every line has a rate of the summary (or a proven nature), and each rate's lines add up to its taxable amount exactly. */
     fun exact(items: List<ParsedLineItem>, groups: List<VatSummary.Group>): Boolean {
-        if (groups.isEmpty() || items.any { it.lineTotalCents == null || it.vatRatePercent == null }) return false
+        // A line under a proven nature code (0 % VAT) is proven by its own summary row.
+        if (groups.isEmpty() || items.any { it.lineTotalCents == null || (it.vatRatePercent == null && it.vatNature == null) }) return false
         val gaps = gaps(items, groups) ?: return false
         return gaps.all { it == 0L }
     }

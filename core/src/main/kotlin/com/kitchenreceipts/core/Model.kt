@@ -113,6 +113,8 @@ data class ParsedLineItem(
      * lines of that nature add up to the VAT summary's row of the same nature (see ReceiptParser.finish).
      */
     val vatNature: String? = null,
+    /** The row prints nothing under the unit price heading (a meter reading, litres, a service): only its amount. */
+    val noPricePrinted: Boolean = false,
 ) {
     /** The amount for adding up: the exact printed amount when it agrees with [lineTotalCents], else the cents. */
     fun preciseTotal(): BigDecimal? {

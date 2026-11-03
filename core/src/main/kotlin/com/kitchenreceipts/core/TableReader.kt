@@ -273,6 +273,10 @@ object TableReader {
 
     /** An amount: two decimals and more after a comma, as an e-invoice prints them (up to 8: "32,78688525"). */
     private val MONEY = Regex("^-?€?\\d{1,3}(?:\\.\\d{3})*,\\d{2,8}-?€?$|^-?€?\\d+,\\d{2,8}-?€?$|^-?€?\\d+\\.\\d{2,4}-?€?$|^-?€?\\d{1,3}(?:\\.\\d{3})+\\.\\d{2}-?€?$")
+    /** A price and its unit printed without a space ("0,2877KW*MESE"). */
+    private val PRICE_WITH_UNIT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{2,8})([A-Za-z][A-Za-z*/.]*)$")
+    /** A number glued to letters or a percentage ("124,80NUMERO-14.50%"): a price is printed there, unread. */
+    private val GLUED_NUMBER = Regex("\\d,\\d+[A-Za-z%]")
     /** "1.627.60" (photographed): thousands groups, then the decimal comma read as a dot. Only quantity x price proves it. */
     private val COMMA_AS_DOT = Regex("^(-?€?\\d{1,3}(?:\\.\\d{3})+)\\.(\\d{2}-?€?)$")
     /** Quantity and price printed so close that the text runs them together: "19,417475731,68852459". */
@@ -755,7 +759,7 @@ object TableReader {
                 return true
             }
             val cells = assign(row, header, textLayer)
-            val item = buildItem(cells, text, header)
+            val item = buildItem(cells, text, header, textLayer)
             // "DDT 77/ZZ del 03-02-2031": another document named among the lines; "Peso netto 12,40": a weight. Never
             // items, unless quantity x price = amount proves a line ("DDT 77/ZZ del 03-02-2031 PANCETTA 2,00 9,20 18,40").
             val reference = LotExtractor.isDeliveryNoteRef(text)
@@ -1054,7 +1058,8 @@ object TableReader {
         return cols.lastIndex
     }
 
-    private fun buildItem(cells: Map<Kind, List<Word>>, source: String, header: Header): ParsedLineItem? {
+    /** [textLayer]: the row is a PDF's own text (every word exactly as printed, see [readRows]). */
+    private fun buildItem(cells: Map<Kind, List<Word>>, source: String, header: Header, textLayer: Boolean = false): ParsedLineItem? {
         fun cell(k: Kind) = cells[k].orEmpty()
         val amountWord = cell(Kind.AMOUNT).lastOrNull { isMoney(it.text) }
         // The decimal comma read as a dot after thousands groups ("1.627.60"): the amount 1.627,60, sure only when
@@ -1172,6 +1177,13 @@ object TableReader {
                 }
             }
         }
+        // A price glued to its unit in the text ("0,2877KW*MESE"): the price when quantity x it is the amount.
+        if (price == null && qty != null && total != null) {
+            cells.filterKeys { it != Kind.QUANTITY && it != Kind.AMOUNT }.values.flatten().firstNotNullOfOrNull { w -> PRICE_WITH_UNIT.matchEntire(w.text.trim()) }?.let { m ->
+                val p = ItalianNumbers.parse(m.groupValues[1])
+                if (p != null && ReceiptParser.matches(qty!!, p, total!!)) { price = p; if (unit == null) unit = m.groupValues[2] }
+            }
+        }
         if (qty != null && price != null && total != null) {
             consistent = ReceiptParser.matches(qty, price, total) || discountMatches(qty, price, discount, total)
             // A price printed with its minus ("-108,69", "0,44-") on a negative amount: the minus is kept when
@@ -1216,11 +1228,16 @@ object TableReader {
             if (unit == "ml") unit = "l"
         }
         val conf = if (consistent) Confidence.HIGH else Confidence.LOW
+        // Nothing printed under the unit price heading, not even a word glued to it ("124,80NUMERO"): only an amount.
+        val noPrice = price == null && cell(Kind.PRICE).isEmpty() && header.columns.any { it.kind == Kind.PRICE } &&
+            cells.values.flatten().none { GLUED_NUMBER.containsMatchIn(it.text) }
         val warnings = if (qty != null && price != null && total != null && !consistent) setOf(ParseWarning.LINE_TOTAL_MISMATCH) else emptySet()
         val lotWord = cell(Kind.LOT).firstOrNull { it.text.any(Char::isDigit) && ItalianDates.findDates(it.text).isEmpty() }
         return ParsedLineItem(
             originalDescription = description,
-            quantity = qty?.let { Extracted(it, if (qtyWorkedOut) Confidence.LOW else conf, source) },
+            // No unit price printed (a meter reading, litres): on a PDF's own text the quantity in its column is exactly as
+            // printed; nothing multiplies it. The amount is then proven by its VAT rate's total (AutoAccept.settleProven).
+            quantity = qty?.let { Extracted(it, if (qtyWorkedOut) Confidence.LOW else if (textLayer && noPrice && cell(Kind.QUANTITY).isNotEmpty()) Confidence.HIGH else conf, source) },
             unit = unit?.let { Extracted(it, conf, source) },
             // A repaired decimal comma adds up, but is shown for a look.
             unitPrice = price?.let { Extracted(it, if (priceRepaired) Confidence.LOW else conf, source) },
@@ -1241,6 +1258,7 @@ object TableReader {
                 free || (q != null && p != null && t != null && !ReceiptParser.matches(q, p, t) && LineDiscount.matches(q, p, d, t))
             }?.let { Extracted(it, Confidence.HIGH, source) },
             adjustment = rounding,
+            noPricePrinted = noPrice,
         )
     }
 

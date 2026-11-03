@@ -861,6 +861,8 @@ object ReceiptParser {
         var items = DescriptionCleanup.apply(LineSolver.settle(doc.lineItems))
         // A line whose VAT rate was printed out of place gets the one rate that makes every VAT group add up.
         items = VatSummary.fillMissingRates(items, groups)
+        // A nature code in the VAT column, kept only when its lines add up to the summary's row of that nature.
+        items = VatSummary.proveNatures(items, groups)
         // Pkgs against the total printed at the foot ("N. COLLI 10").
         items = PackagesCheck.repair(items, text)
         // Pkgs read into the name as a plain number ("112" for 1x2) in a table that prints them as A x B.
@@ -876,7 +878,6 @@ object ReceiptParser {
         // Lots under a "LOTTO" heading, found under (nearly) every product: read where the document prints them.
         items = settleLots(items, text)
         items = lotShapes(items)
-        items = VatSummary.proveNatures(items, groups)
         // A whole number with no unit printed counts pieces ("CARTA FORNO 1 6,90 6,90"); a quantity with decimals and no
         // unit (a weight?) stays empty for the operator. A line that prints a unit the app has no name for ("KWH",
         // "MESE") gets no "pz" either: its unit stays empty rather than made up.
