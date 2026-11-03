@@ -137,6 +137,9 @@ object TableReader {
                 h == null -> { pendingPercent = null }
                 h == H.PERCENT -> pendingPercent = w
                 h == H.CONT -> raw.lastOrNull()?.let { if (w.left - it.right < 3 * (w.right - w.left) + 40) it.right = w.right }
+                // "PREZZO TOTALE" printed as one label: the line's amount, not a price column and an amount column.
+                h == H.AMOUNT && norm(w.text).trim('.') == "totale" && raw.lastOrNull()?.h == H.PRICE &&
+                    w.left - raw.last().right < 2.0 * (w.right - w.left) / maxOf(1, w.text.length) -> raw.last().let { it.h = H.AMOUNT; it.right = w.right }
                 // "DESCRIZIONE ARTICOLO": one heading, not a description and a code column.
                 h == H.ARTICOLO && raw.lastOrNull()?.h == H.DESCRIPTION && w.left - raw.last().right < 2.5 * (w.right - w.left) / maxOf(1, w.text.length) * 3 ->
                     raw.last().right = w.right
@@ -587,7 +590,9 @@ object TableReader {
             val h = heading(w.text) ?: continue
             // "ID LOTTO" under the description heading: lots are printed (on the row under each item).
             if (h == H.LOT) lots = true
-            val idx = cols.indexOfFirst { c -> w.right > c.left - 8 && w.left < c.right + 8 }
+            var idx = cols.indexOfFirst { c -> w.right > c.left - 8 && w.left < c.right + 8 }
+            // "%IVA" printed against the end of "SCONTO O MAGG.": a column of its own, not a wider discount column.
+            if (idx >= 0 && h == H.VAT && cols[idx].kind != Kind.VAT && cols.none { it.kind == Kind.VAT }) idx = -1
             if (idx >= 0) {
                 val c = cols[idx]
                 // "TIPO" over "CONF.": the column holds packaging and pack size ("BT LT 1", "CS KG").
@@ -601,6 +606,11 @@ object TableReader {
                     H.LOT -> Kind.LOT
                     H.EXPIRY -> Kind.EXPIRY
                     H.DISCOUNT -> Kind.DISCOUNT
+                    // A heading the main row lacks, printed on the line over or under it ("PREZZO" over "UNITARIO", the
+                    // main row between them): the column of the numbers under it.
+                    H.PRICE -> Kind.PRICE
+                    H.VAT -> Kind.VAT
+                    H.AMOUNT -> Kind.AMOUNT
                     else -> null
                 } ?: continue
                 if (cols.none { it.kind == kind }) cols += Column(kind, w.left, w.right)
@@ -661,6 +671,11 @@ object TableReader {
     private fun taxedLine(it: ParsedLineItem, cells: Map<Kind, List<Word>>) =
         it.lineTotalCents != null && it.unitPrice != null && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings &&
             cells[Kind.VAT].orEmpty().any { w -> NATURE.matches(w.text.trim()) || numberIn(w.text)?.stripTrailingZeros()?.toPlainString() in VAT_RATES }
+
+    /** No quantity printed and the price is the amount, both sure (see buildItem). */
+    private fun priceIsAmount(it: ParsedLineItem) = it.quantity == null && it.unitPrice?.confidence == Confidence.HIGH &&
+        it.lineTotalCents?.confidence == Confidence.HIGH && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings &&
+        it.unitPrice.value.compareTo(ItalianNumbers.centsToDecimal(it.lineTotalCents.value)) == 0
 
     /** Quantity x price (less the discount) = amount, all three read. */
     private fun provenLine(it: ParsedLineItem) = it.quantity?.confidence == Confidence.HIGH && it.unitPrice?.confidence == Confidence.HIGH &&
@@ -769,7 +784,7 @@ object TableReader {
             // "DDT 77/ZZ del 03-02-2031": another document named among the lines; "Peso netto 12,40": a weight. Never
             // items, unless quantity x price = amount proves a line ("DDT 77/ZZ del 03-02-2031 PANCETTA 2,00 9,20 18,40").
             val reference = LotExtractor.isDeliveryNoteRef(text)
-            if ((reference || (item != null && WEIGHT_LABEL.containsMatchIn(text))) && (item == null || !provenLine(item))) {
+            if ((reference || (item != null && WEIGHT_LABEL.containsMatchIn(text))) && (item == null || !(provenLine(item) || priceIsAmount(item)))) {
                 rowPriced = false; pendingDescription = null
                 return true
             }
@@ -1154,6 +1169,7 @@ object TableReader {
         var perUnitOff: String? = null
         if (free) { total = 0L; consistent = true }
         var qtyWorkedOut = false
+        var noQuantity = false
         var priceRepaired = false
         // The decimal comma is the easiest mark for the OCR to lose: "3450" under PREZZO with an amount of 3,45.
         val priceWord = cell(Kind.PRICE).lastOrNull { numberIn(it.text) != null }?.text
@@ -1230,6 +1246,11 @@ object TableReader {
                 .sortedBy { it.first.left }.map { it.second }
             val fixed = pairFor(nums, total)
             if (fixed != null) { qty = fixed.first; price = fixed.second; consistent = true }
+            // No quantity printed (the PDF's own text: nothing was missed) and the price is the amount, exactly: the
+            // line is proven as printed, its quantity left empty.
+            else if (textLayer && qty == null && cell(Kind.QUANTITY).isEmpty() && price != null && price.compareTo(ItalianNumbers.centsToDecimal(total)) == 0) {
+                consistent = true; noQuantity = true
+            }
             else if (qty == null && price != null && price.signum() > 0) {
                 val q = ItalianNumbers.centsToDecimal(total).divide(price, 3, RoundingMode.HALF_UP)
                 if (q.stripTrailingZeros().scale() <= 0 && q >= BigDecimal.ONE && q <= BigDecimal(500) && ReceiptParser.matches(q, price, total)) {
@@ -1283,6 +1304,7 @@ object TableReader {
             }?.let { Extracted(it, Confidence.HIGH, source) },
             adjustment = rounding,
             noPricePrinted = noPrice,
+            noQuantityPrinted = noQuantity,
         )
     }
 

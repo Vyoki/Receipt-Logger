@@ -322,6 +322,24 @@ class EInvoicePrintoutLayoutTest {
         }
     }
 
+    // ------------------------------------------------------------------ a line with no quantity printed
+
+    @Test fun aLineWithNoQuantityIsReadByItsColumnsAndProvenByPriceEqualsAmount() {
+        // Nothing under QUANTITÀ; 2.000,00 under PREZZO UNITARIO (its heading printed over and under the main heading
+        // row), 10,00 under %IVA, 2.000,00 under PREZZO TOTALE. Never quantity 2000 at price 10.
+        val noQty = EInvoicePrintoutFixture.Line("RIF.DDT 12 DEL 01/02/31 AGNELLO-", null, "2.000,00", null, "10,00", "2.000,00", codeType = null)
+        val inv = meat.copy(lines = listOf(noQty), groups = listOf(EInvoicePrintoutFixture.Group("10,00", "2.000,00", "200,00")), total = "2.200,00")
+        val line = read(inv).lineItems.single()
+        assertEquals(null, line.quantity)
+        assertEquals(0, line.unitPrice?.value?.compareTo(BigDecimal("2000.00")))
+        assertEquals(200000L, line.lineTotalCents?.value)
+        assertEquals(0, line.vatRatePercent?.value?.compareTo(BigDecimal("10")))
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(read(inv)))).toList())
+        // The price not the amount: nothing proves the line, it is checked by hand.
+        val off = inv.copy(lines = listOf(noQty.copy(price = "1.000,00")))
+        assertTrue(AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(read(off)))).isNotEmpty())
+    }
+
     // ------------------------------------------------------------------ the supplier's VAT number (F7)
 
     @Test fun supplierVatFromItsRoleBox() {

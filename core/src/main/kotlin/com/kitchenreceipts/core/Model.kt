@@ -115,6 +115,8 @@ data class ParsedLineItem(
     val vatNature: String? = null,
     /** The row prints nothing under the unit price heading (a meter reading, litres, a service): only its amount. */
     val noPricePrinted: Boolean = false,
+    /** The row prints nothing under the quantity heading and its price is its amount (PDF text only, see TableReader). */
+    val noQuantityPrinted: Boolean = false,
     /** A gift (the e-invoice's "Tipo dato: OMAGGIO" under it): in the taxable amount, not in what is paid. */
     val gift: Boolean = false,
 ) {

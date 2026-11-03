@@ -83,6 +83,8 @@ data class LineItemDraft(
     val vatNature: String? = null,
     /** The line prints no unit price at all (see ParsedLineItem.noPricePrinted). */
     val noPricePrinted: Boolean = false,
+    /** No quantity printed, the price is the amount (see ParsedLineItem.noQuantityPrinted). */
+    val noQuantityPrinted: Boolean = false,
     val lot: DraftField = DraftField(),
     val expiry: DraftField = DraftField(),
     /** "Colli": packages/cartons as printed ("5", "1x6"); kept apart from the name and the quantity. */
@@ -244,6 +246,7 @@ data class DocumentDraft(
                         vatRate = f(it.vatRatePercent, dec),
                         vatNature = it.vatNature,
                         noPricePrinted = it.noPricePrinted,
+                        noQuantityPrinted = it.noQuantityPrinted,
                         lot = f(it.lotNumber) { l -> l },
                         expiry = f(it.expiryDate) { d -> ItalianDates.format(d) },
                         packages = f(it.packages) { p -> p },
