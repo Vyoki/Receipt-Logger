@@ -605,6 +605,12 @@ object TableReader {
     /** [w] stands under the description heading. */
     private fun inDescription(w: Word, header: Header) = header.columns[columnIndex(w.center, header.columns)].kind == Kind.DESCRIPTION
 
+    /** A rounding row ("Arrotondamento", "ARROTONDAMENTI"). */
+    private val ROUNDING = Regex("(?i)\\barrotondament[oi]\\b")
+
+    /** A rounding row read with its amount. */
+    private fun roundingLine(it: ParsedLineItem) = it.lineTotalCents != null && ROUNDING.containsMatchIn(it.originalDescription)
+
     /** Quantity x price (less the discount) = amount, all three read. */
     private fun provenLine(it: ParsedLineItem) = it.quantity?.confidence == Confidence.HIGH && it.unitPrice?.confidence == Confidence.HIGH &&
         it.lineTotalCents != null && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings
@@ -692,8 +698,10 @@ object TableReader {
             }
             // Words that say "no item" (a payment, a carrier, "vendita", a phone number) do not drop a row whose own
             // columns prove it is one: quantity x price = amount, each in its column ("CACIOTTA MONTE VETTORE",
-            // "CANONE POS ANNUO 1,00 9,90 22,00 9,90"). The VAT summary's rows never are.
-            if (ReceiptParser.isNotAnItemRow(text) && (ReceiptParser.isSummaryRow(text) || buildItem(assign(row, header, textLayer), text, header)?.let(::provenLine) != true)) {
+            // "CANONE POS ANNUO 1,00 9,90 22,00 9,90"), nor a rounding row with its amount (part of the total). The VAT
+            // summary's rows never are.
+            if (ReceiptParser.isNotAnItemRow(text) && (ReceiptParser.isSummaryRow(text) ||
+                    buildItem(assign(row, header, textLayer), text, header)?.let { provenLine(it) || roundingLine(it) } != true)) {
                 pendingDescription = null; headingNumbers = null; return true
             }
             rowPriced = row.any { isMoney(it.text) }
@@ -1072,6 +1080,10 @@ object TableReader {
         val free = amount == null && qty != null && discount != null && discount.compareTo(BigDecimal(100)) == 0
         if (amount == null && !free && (qty == null || price == null)) return null
         if (description.count(Char::isLetter) < 2) description = ""
+        // A rounding row ("ARROTONDAMENTO 1,00 -0,01 -0,01"): its amount is what it adds to the total; a quantity and
+        // price printed on it only repeat that amount.
+        val rounding = amount != null && ROUNDING.containsMatchIn(description)
+        if (rounding) { qty = null; price = null; unit = null }
 
         var total = amount
         var consistent = false
@@ -1171,6 +1183,7 @@ object TableReader {
                 val q = qty; val p = price; val t = total
                 free || (q != null && p != null && t != null && !ReceiptParser.matches(q, p, t) && LineDiscount.matches(q, p, d, t))
             }?.let { Extracted(it, Confidence.HIGH, source) },
+            adjustment = rounding,
         )
     }
 

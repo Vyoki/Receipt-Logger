@@ -84,6 +84,23 @@ class EInvoicePrecisionTest {
         assertEquals(Confidence.HIGH, item.quantity!!.confidence)
     }
 
+    @Test fun aRoundingRowIsPartOfTheTotal() {
+        // "ARROTONDAMENTO 1,00 -0,08 -0,08" among the lines: its amount counts, its quantity and price only repeat it.
+        val inv = Invoice(
+            supplierVat = pIva("0789123456"), supplierName = "BUONI PROVA S.R.L.", number = "105", date = "29-12-2030",
+            lines = listOf(
+                Line("BUONI PROVA", "300,00", "8,197", "NR", "22,00", "2.459,10", code = "BUONI"),
+                Line("Arrotondamento", "1,00", "-0,084", "NR", "22,00", "-0,08", code = "ARR"),
+            ),
+            groups = listOf(Group("22,00", "2.459,02", "540,98")),
+            total = "3.000,00",
+        )
+        val d = draft(inv)
+        assertEquals(listOf(245910L, -8L), d.items.map { ItalianNumbers.parseCents(it.lineTotal.text) })
+        assertTrue(d.items[1].isCharge)
+        assertTrue(AutoAccept.moneyProven(d))
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(
