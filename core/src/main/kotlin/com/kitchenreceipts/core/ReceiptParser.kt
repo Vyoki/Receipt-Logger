@@ -381,6 +381,15 @@ object ReceiptParser {
         return if (buyer != own) d.copy(warnings = d.warnings + ParseWarning.OTHER_BUYER) else d
     }
 
+    /** A line read from a row whose last words are one number and a unit ("... 1,00 Pz"): that number is a quantity. */
+    private fun quantityOnly(it: ParsedLineItem): Boolean {
+        if (it.quantity != null || it.unitPrice != null || it.lineTotalCents == null) return false
+        val words = it.lineTotalCents.source.trim().split(Regex("\\s+"))
+        if (words.size < 2 || Units.normalizeKnown(words.last().trimEnd('.')) == null) return false
+        val n = ItalianNumbers.parseCents(words[words.size - 2]) ?: return false
+        return n == it.lineTotalCents.value && words.dropLast(2).none { w -> ItalianNumbers.parseCents(w) != null && w.contains(',') }
+    }
+
     /** A row of the VAT summary ("I (esigibilità immediata) 22,00 131,15 28,85"): never an item. */
     internal fun isSummaryRow(line: String): Boolean = SUMMARY_ROW.containsMatchIn(line)
 
@@ -758,6 +767,11 @@ object ReceiptParser {
             items.clear()
             items += tableItems
             itemsReadBy = "columns"
+        }
+        if (itemsReadBy == "text") {
+            // Read by text: a VAT summary row is no item ("I (esigibilità immediata) 5,00 195,00 9,75"), nor a row whose
+            // only number is a quantity with its unit ("NOTE-Trascorsi 8 gg. ... 1,00 Pz": no price, no amount).
+            items.removeAll { isSummaryRow(it.originalDescription) || quantityOnly(it) }
         }
         if (lotRejected) warnings += ParseWarning.LOT_LOOKS_LIKE_DATE
         return finish(

@@ -218,6 +218,20 @@ class EInvoicePrecisionTest {
         assertEquals(0, ItalianNumbers.parse(d.items[1].quantity.text)!!.compareTo(BigDecimal("30")))
     }
 
+    @Test fun theTextReadingTakesNoSummaryRowAndNoQuantityAloneAsALine() {
+        // Read by text: a VAT summary row and a note printing only "1,00 Pz" are no lines.
+        val text = """
+            FORNITORE PROVA S.R.L.
+            TARTUFO PROVA 2,00 40,00 Kg 5,00 80,00
+            NOTE-Reclami entro 8 giorni 1,00 Pz
+            I (esigibilità immediata) 5,00 80,00 4,00
+            TOTALE DOCUMENTO 84,00
+        """.trimIndent()
+        val d = ReceiptParser.parse(text)
+        assertEquals("text", d.itemsReadBy)
+        assertEquals(listOf(8000L), d.lineItems.map { it.lineTotalCents?.value })
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(
