@@ -457,11 +457,27 @@ class ScreenshotTest {
                 while ((described(d) != null) != shown && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
                 return (described(d) != null) == shown
             }
+            // The window on top at a point of the screen (ua.windows lists them top first).
+            fun topWindowAt(x: Int, y: Int) = ua.windows.firstOrNull { w -> Rect().also { w.getBoundsInScreen(it) }.contains(x, y) }
             // A finger's tap in the middle of the button (as the operator does), not TalkBack's click.
             fun tap(d: String): String {
-                var n = described(d) ?: return "no \"$d\""
-                while (!n.isClickable) n = n.parent ?: break
-                val b = Rect().also { n.getBoundsInScreen(it) }
+                // Tapped once the button's own window is the one on top where it is: a window going away or the keyboard
+                // coming back over it would take the tap (another app's window refuses it).
+                val deadline = SystemClock.uptimeMillis() + 10_000
+                fun button(): AccessibilityNodeInfo? {
+                    var c = described(d) ?: return null
+                    while (!c.isClickable) c = c.parent ?: break
+                    return c
+                }
+                fun boundsOf(c: AccessibilityNodeInfo) = Rect().also { c.getBoundsInScreen(it) }
+                fun covering(c: AccessibilityNodeInfo) = boundsOf(c).let { r -> topWindowAt(r.centerX(), r.centerY())?.takeIf { it.id != c.windowId } }
+                var n = button() ?: return "no \"$d\""
+                while (covering(n) != null && SystemClock.uptimeMillis() < deadline) {
+                    Thread.sleep(150)
+                    n = button() ?: return "no \"$d\""
+                }
+                covering(n)?.let { w -> return "\"$d\" at ${boundsOf(n)} under window \"${w.title}\" (type ${w.type})" }
+                val b = boundsOf(n)
                 val down = SystemClock.uptimeMillis()
                 for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
                     val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, b.exactCenterX(), b.exactCenterY(), 0)
@@ -495,8 +511,8 @@ class ScreenshotTest {
                 assertTrue("the date field could not be tapped again. On screen: ${screenDump()}", again)
             }
             assertTrue("no photo icon after the photo closed. On screen: ${screenDump()}", waitFor(photo, true))
-            // The closed photo's window may still be going away: a tap now can land on it. Opened again once the app
-            // is idle, and waited for as the first time.
+            // The closed photo's window may still be going away, or the keyboard coming back: a tap now can land on
+            // either (see tap). Opened again once the app is idle, and waited for as the first time.
             inst.waitForIdleSync()
             val tappedAgain = tap(photo)
             assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", waitFor(zoomIn, true))
