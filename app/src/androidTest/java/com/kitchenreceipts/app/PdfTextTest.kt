@@ -43,10 +43,18 @@ class PdfTextTest {
 
         val glyphs = PdfText.glyphs(f, 0)
         assertNotNull(glyphs)
-        val lines = TextLayer.lines(PdfText.scaled(glyphs!!, 2400, 3396))
-        assertTrue(lines.joinToString("\n") { it.text }, lines.any { it.text == "FATTURA N. B26 305511 DEL 03/09/2026" })
+        val scaled = PdfText.scaled(glyphs!!, 2400, 3396)
+        val lines = TextLayer.lines(scaled)
+        // The glyphs as the reader gives them (order kept): "text left-right top-bottom", to reproduce a reading in :core.
+        fun dump(from: Float, to: Float) = scaled.filter { it.top in from..to }.joinToString(" ") { g ->
+            "${g.text.replace(" ", "_")}:${"%.1f".format(java.util.Locale.ROOT, g.left)}-${"%.1f".format(java.util.Locale.ROOT, g.right)}/${"%.0f".format(java.util.Locale.ROOT, g.top)}-${"%.0f".format(java.util.Locale.ROOT, g.bottom)}"
+        }
+        val rowY = lines.firstOrNull { it.text.contains("Mand") }?.top?.toFloat() ?: 0f
+        val headY = lines.firstOrNull { it.text.contains("FATTURA") }?.top?.toFloat() ?: 0f
+        val glyphDump = "GLYPHS-ROW " + dump(rowY - 5, rowY + 5) + " || GLYPHS-HEAD " + dump(headY - 5, headY + 5)
+        assertTrue(glyphDump + " || " + lines.joinToString("\n") { it.text }, lines.any { it.text == "FATTURA N. B26 305511 DEL 03/09/2026" })
         val row = lines.filter { it.text in setOf("Mandorle pelate Kg. 1", "1,000", "10,69") }
-        assertEquals(lines.joinToString("\n") { it.text }, 3, row.size)
+        assertEquals(glyphDump + " || " + lines.joinToString("\n") { it.text }, 3, row.size)
         // Placed where printed: 40 pt of 595 → about 161 px of 2400.
         assertTrue(row.first { it.text.startsWith("Mandorle") }.left in 140..180)
     }
