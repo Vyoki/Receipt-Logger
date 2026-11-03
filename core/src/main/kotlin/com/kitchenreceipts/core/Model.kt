@@ -120,11 +120,14 @@ data class ParsedLineItem(
     /** A gift (the e-invoice's "Tipo dato: OMAGGIO" under it): in the taxable amount, not in what is paid. */
     val gift: Boolean = false,
 ) {
-    /** The amount for adding up: the exact printed amount when it agrees with [lineTotalCents], else the cents. */
+    /**
+     * The amount for adding up: the exact amount when it agrees with [lineTotalCents] (rounded to it, or cut to it where
+     * VatSummary.proveTruncated proved that), else the cents.
+     */
     fun preciseTotal(): BigDecimal? {
         val c = lineTotalCents?.value ?: return null
         val e = exactTotal
-        return if (e != null && ItalianNumbers.toCents(e) == c) e else ItalianNumbers.centsToDecimal(c)
+        return if (e != null && (ItalianNumbers.toCents(e) == c || truncatedCents(e) == c)) e else ItalianNumbers.centsToDecimal(c)
     }
 }
 

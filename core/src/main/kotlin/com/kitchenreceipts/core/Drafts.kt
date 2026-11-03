@@ -26,6 +26,9 @@ fun preciseSumByRate(lines: List<Pair<String?, BigDecimal?>>): Long? {
     return lines.groupBy({ it.first }, { it.second }).values.sumOf { preciseSum(it)!! }
 }
 
+/** [amount] cut to the cent, not rounded (16,38524 -> 1638): how some e-invoices print a line's amount. */
+internal fun truncatedCents(amount: BigDecimal): Long = amount.movePointRight(2).setScale(0, java.math.RoundingMode.DOWN).toLong()
+
 /** The key of a line's VAT for [preciseSumByRate]: its rate ("22") or its nature ("N2.2"). */
 internal fun vatKey(rate: BigDecimal?, nature: String?): String? = rate?.stripTrailingZeros()?.toPlainString() ?: nature
 
@@ -120,7 +123,8 @@ data class LineItemDraft(
     fun preciseTotal(): BigDecimal? {
         val shown = ItalianNumbers.parse(lineTotal.text) ?: return null
         val exact = exactTotal ?: return shown
-        return if (ItalianNumbers.toCents(exact) == ItalianNumbers.toCents(shown)) exact else shown
+        val cents = ItalianNumbers.toCents(shown)
+        return if (ItalianNumbers.toCents(exact) == cents || truncatedCents(exact) == cents) exact else shown
     }
 
     /**

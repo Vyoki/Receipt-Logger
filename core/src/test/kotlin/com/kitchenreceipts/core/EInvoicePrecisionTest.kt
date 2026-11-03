@@ -267,6 +267,25 @@ class EInvoicePrecisionTest {
         assertTrue(!AutoAccept.moneyProven(draft(inv.copy(total = "15,10"))))
     }
 
+    @Test fun amountsCutToTheCentAreProvenByTheUnroundedSum() {
+        // Each amount printed as qty x price cut to the cent (16,38524 -> 16,38): the printed amounts add up to 26,11, the
+        // taxable is 26,13 = 16,38524 + 6,54918 + 3,19672 = 26,13114 rounded once, and 26,13 x 22 % = 5,75.
+        fun inv(taxable: String, vat: String, total: String, prices: List<String>) = Invoice(
+            supplierVat = pIva("0345612789"), supplierName = "ABBIGLIAMENTO PROVA S.P.A.", number = "054/1", date = "03-04-2031",
+            lines = prices.mapIndexed { i, p -> Line("CAPO DI PROVA ${i + 1}", "1,00", p, "CA", "22,00", ItalianNumbers.formatCents(ItalianNumbers.parse(p)!!.movePointRight(2).setScale(0, java.math.RoundingMode.DOWN).toLong())) },
+            groups = listOf(Group("22,00", taxable, vat)),
+            total = total,
+        )
+        val cut = draft(inv("26,13", "5,75", "31,88", listOf("16,38524", "6,54918", "3,19672")))
+        assertEquals(listOf("16,38", "6,54", "3,19"), cut.items.map { it.lineTotal.text })
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(cut).toList())
+        // The taxable the sum of the cut amounts' qty x price cut again (4,83606 + 1,88999 + 8,11 = 14,83605, printed
+        // 14,83, not 14,84): not this rule, the invoice is checked by hand.
+        assertTrue(AutoAccept.reasons(draft(inv("14,83", "3,26", "18,09", listOf("4,83606", "1,88999", "8,11000")))).isNotEmpty())
+        // The VAT not the taxable's at the rate (5,74 for 5,75): checked by hand.
+        assertTrue(AutoAccept.reasons(draft(inv("26,13", "5,74", "31,87", listOf("16,38524", "6,54918", "3,19672")))).isNotEmpty())
+    }
+
     @Test fun theTotalLeavesOutTheGiftLines() {
         // A gift line (Tipo dato: OMAGGIO) is in the taxable but not paid: 30,00 + 2,00 gift = 32,00, VAT 10 % 3,20,
         // total 35,20 - 2,00 = 33,20. A discount in the totals row is no gift: taxable and VAT stay to check

@@ -910,6 +910,8 @@ object ReceiptParser {
         items = VatSummary.fillMissingRates(items, groups)
         // A nature code in the VAT column, kept only when its lines add up to the summary's row of that nature.
         items = VatSummary.proveNatures(items, groups)
+        // Amounts printed cut to the cent: a rate's lines added by qty x price, when that is exactly its taxable and VAT.
+        items = VatSummary.proveTruncated(items, groups)
         // Pkgs against the total printed at the foot ("N. COLLI 10").
         items = PackagesCheck.repair(items, text)
         // Pkgs read into the name as a plain number ("112" for 1x2) in a table that prints them as A x B.

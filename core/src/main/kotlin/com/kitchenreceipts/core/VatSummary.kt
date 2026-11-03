@@ -223,6 +223,34 @@ object VatSummary {
         return items.map { if (it.vatNature == null || it.vatNature in proven) it else it.copy(vatNature = null) }
     }
 
+    /**
+     * Amounts printed cut to the cent, not rounded (qty x price 16,38524 printed 16,38): a rate's lines are added by
+     * their qty x price, unrounded, when every line of that rate prints its amount as qty x price cut to the cent, the
+     * sum of qty x price rounded once (half up) is that rate's taxable exactly, and the taxable x the rate rounds to the
+     * rate's VAT. Each line keeps its amount as printed; qty x price becomes its [ParsedLineItem.exactTotal]. A rate
+     * whose printed amounts already add up, or that does not meet all of this, is left as it is.
+     */
+    fun proveTruncated(items: List<ParsedLineItem>, all: List<Group>): List<ParsedLineItem> {
+        var out = items
+        for (g in withRate(all)) {
+            val idx = items.indices.filter { i -> items[i].vatRatePercent?.value?.compareTo(g.ratePercent) == 0 }
+            if (idx.isEmpty()) continue
+            if (preciseSum(idx.map { items[it].preciseTotal() })?.plus(g.extraCents) == g.taxableCents) continue
+            val exact = idx.map { i ->
+                val l = items[i]
+                val q = l.quantity?.value; val p = l.unitPrice?.value; val a = l.lineTotalCents?.value
+                if (q == null || p == null || a == null || l.discount != null) null
+                else q.multiply(p).takeIf { e -> e.movePointRight(2).setScale(0, RoundingMode.DOWN).toLong() == a }
+            }
+            if (exact.any { it == null }) continue
+            val sum = exact.fold(BigDecimal.ZERO) { s, e -> s + e!! }
+            if (ItalianNumbers.toCents(sum) + g.extraCents != g.taxableCents) continue
+            if (ItalianNumbers.toCents(BigDecimal(g.taxableCents).movePointLeft(2).multiply(g.ratePercent).movePointLeft(2)) != g.vatCents) continue
+            out = out.mapIndexed { i, l -> idx.indexOf(i).takeIf { it >= 0 }?.let { k -> l.copy(exactTotal = exact[k]) } ?: l }
+        }
+        return out
+    }
+
     /** One check per VAT rate of the summary; empty when there is no summary or some lines have no rate. */
     fun check(items: List<ParsedLineItem>, all: List<Group>): List<Check> {
         val groups = withRate(all)
