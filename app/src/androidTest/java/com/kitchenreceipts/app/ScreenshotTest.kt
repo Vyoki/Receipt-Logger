@@ -4,6 +4,7 @@ import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
 import android.graphics.Rect
 import android.os.SystemClock
+import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
 import androidx.test.core.app.ActivityScenario
@@ -457,27 +458,15 @@ class ScreenshotTest {
                 while ((described(d) != null) != shown && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
                 return (described(d) != null) == shown
             }
-            // The window on top at a point of the screen (ua.windows lists them top first).
-            fun topWindowAt(x: Int, y: Int) = ua.windows.firstOrNull { w -> Rect().also { w.getBoundsInScreen(it) }.contains(x, y) }
+            fun button(d: String): AccessibilityNodeInfo? {
+                var n = described(d) ?: return null
+                while (!n.isClickable) n = n.parent ?: break
+                return n
+            }
             // A finger's tap in the middle of the button (as the operator does), not TalkBack's click.
             fun tap(d: String): String {
-                // Tapped once the button's own window is the one on top where it is: a window going away or the keyboard
-                // coming back over it would take the tap (another app's window refuses it).
-                val deadline = SystemClock.uptimeMillis() + 10_000
-                fun button(): AccessibilityNodeInfo? {
-                    var c = described(d) ?: return null
-                    while (!c.isClickable) c = c.parent ?: break
-                    return c
-                }
-                fun boundsOf(c: AccessibilityNodeInfo) = Rect().also { c.getBoundsInScreen(it) }
-                fun covering(c: AccessibilityNodeInfo) = boundsOf(c).let { r -> topWindowAt(r.centerX(), r.centerY())?.takeIf { it.id != c.windowId } }
-                var n = button() ?: return "no \"$d\""
-                while (covering(n) != null && SystemClock.uptimeMillis() < deadline) {
-                    Thread.sleep(150)
-                    n = button() ?: return "no \"$d\""
-                }
-                covering(n)?.let { w -> return "\"$d\" at ${boundsOf(n)} under window \"${w.title}\" (type ${w.type})" }
-                val b = boundsOf(n)
+                val n = button(d) ?: return "no \"$d\""
+                val b = Rect().also { n.getBoundsInScreen(it) }
                 val down = SystemClock.uptimeMillis()
                 for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
                     val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, b.exactCenterX(), b.exactCenterY(), 0)
@@ -485,6 +474,26 @@ class ScreenshotTest {
                     e.recycle()
                 }
                 return "tapped \"$d\" at $b (clickable=${n.isClickable})"
+            }
+            // The same tap on a button of the app's own screen, handed to that screen's window. A tap sent to the screen
+            // goes to whatever window is in front at that point: on CI 145 another app's (most likely the keyboard coming
+            // back as the date field takes focus again after the photo closes), which refuses it (INJECT_EVENTS).
+            fun tapInApp(d: String): String {
+                val n = button(d) ?: return "no \"$d\""
+                val b = Rect().also { n.getBoundsInScreen(it) }
+                var handled = false
+                scenario.onActivity { a ->
+                    val root = a.window.decorView
+                    val at = IntArray(2).also { root.getLocationOnScreen(it) }
+                    val down = SystemClock.uptimeMillis()
+                    for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
+                        val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, b.exactCenterX() - at[0], b.exactCenterY() - at[1], 0)
+                        e.source = InputDevice.SOURCE_TOUCHSCREEN
+                        handled = root.dispatchTouchEvent(e) || handled
+                        e.recycle()
+                    }
+                }
+                return "tapped \"$d\" at $b in the app's window (handled=$handled)"
             }
             fun everyWindow() = roots().joinToString(" || ") { r ->
                 collectNodes(r) { it.text != null || it.contentDescription != null }.take(30)
@@ -497,7 +506,7 @@ class ScreenshotTest {
             // The date field (at the top of the form, under the page picture).
             assertTrue("no date field. On screen: ${screenDump()}", scrollUntilText(PEEK_DATE) && clickTextIn(PEEK_DATE))
             assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
-            val tapped = tap(photo)
+            val tapped = tapInApp(photo)
             assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", waitFor(zoomIn, true))
             shot("40-photo-viewer")
             tap(zoomIn)
@@ -511,10 +520,11 @@ class ScreenshotTest {
                 assertTrue("the date field could not be tapped again. On screen: ${screenDump()}", again)
             }
             assertTrue("no photo icon after the photo closed. On screen: ${screenDump()}", waitFor(photo, true))
-            // The closed photo's window may still be going away, or the keyboard coming back: a tap now can land on
-            // either (see tap). Opened again once the app is idle, and waited for as the first time.
+            // The closed photo's window may still be going away, or the keyboard coming back: a tap sent to the screen
+            // could land on either, so it goes to the app's window (see tapInApp). Opened again once the app is idle,
+            // and waited for as the first time.
             inst.waitForIdleSync()
-            val tappedAgain = tap(photo)
+            val tappedAgain = tapInApp(photo)
             assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", waitFor(zoomIn, true))
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
