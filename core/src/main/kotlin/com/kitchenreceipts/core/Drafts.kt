@@ -17,6 +17,19 @@ fun preciseSum(amounts: List<BigDecimal?>): Long? {
 }
 
 /**
+ * Lines added up as the VAT summary does: each VAT rate's (or nature's) amounts unrounded, rounded once per rate,
+ * then the rates added ([lines]: each line's rate or nature, and its amount). With amounts printed to the cent this is
+ * their plain sum. Null when there are none or a line has no amount.
+ */
+fun preciseSumByRate(lines: List<Pair<String?, BigDecimal?>>): Long? {
+    if (lines.isEmpty() || lines.any { it.second == null }) return null
+    return lines.groupBy({ it.first }, { it.second }).values.sumOf { preciseSum(it)!! }
+}
+
+/** The key of a line's VAT for [preciseSumByRate]: its rate ("22") or its nature ("N2.2"). */
+internal fun vatKey(rate: BigDecimal?, nature: String?): String? = rate?.stripTrailingZeros()?.toPlainString() ?: nature
+
+/**
  * A unit not printed on the invoice, filled in from this supplier's earlier invoices (the app's unitsFromHistory).
  * While the line is checked it is told by the unit's source, which names the unit (a unit typed over it no longer
  * counts); saved, by a mark on the line.
@@ -187,8 +200,9 @@ data class DocumentDraft(
     /** The supplier's VAT number was read with its name, its check digits right (see ParsedDocument.supplierVat). */
     val sellerVatChecked: Boolean = false,
 ) {
-    /** The lines added up as printed, with what the VAT summary's rows add to them; null when a line has no amount. */
-    fun linesTotal(): Long? = preciseSum(items.map { it.preciseTotal() })?.plus(summaryExtraCents)
+    /** The lines added up as printed (per VAT rate, see [preciseSumByRate]), with what the VAT summary's rows add to them. */
+    fun linesTotal(): Long? =
+        preciseSumByRate(items.map { vatKey(ItalianNumbers.parse(it.vatRate.text), it.vatNature) to it.preciseTotal() })?.plus(summaryExtraCents)
 
     val uncertainCount: Int
         // The currency is shown highlighted when another one is printed, but never counts as a check by itself.

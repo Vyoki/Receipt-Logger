@@ -156,6 +156,24 @@ class EInvoicePrecisionTest {
         assertEquals(listOf(300L), ReceiptParser.parse(text).lineItems.map { it.lineTotalCents?.value })
     }
 
+    @Test fun highPrecisionAmountsAreRoundedOncePerRate() {
+        // 1,00400 at 22 % and 1,00400 at 10 %: each rate's taxable is 1,00 (rounded once per rate), the document's 2,00.
+        // Added up across the rates before rounding they would give 2,01: never the printed taxable.
+        val inv = Invoice(
+            supplierVat = pIva("0912345671"), supplierName = "DISCOUNT PROVA S.P.A.", number = "L9/101", date = "12-04-2031",
+            lines = listOf(
+                Line("DETERSIVO PROVA", "1,00", "1,00400", "PZ", "22,00", "1,00400"),
+                Line("PANE PROVA", "1,00", "1,00400", "PZ", "10,00", "1,00400"),
+            ),
+            groups = listOf(Group("22,00", "1,00", "0,22"), Group("10,00", "1,00", "0,10")),
+            total = "2,32",
+        )
+        val d = draft(inv)
+        assertEquals(200L, d.linesTotal())
+        assertTrue(AutoAccept.sumMatches(d))
+        assertTrue(AutoAccept.moneyProven(d))
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(
