@@ -86,9 +86,16 @@ class TextLayerTest {
         assertEquals(listOf("AVE"), TextLayer.lines(kerned).map { it.text })
     }
 
-    @Test fun lettersWhoseBoxesAllOverlapAreOneWord() {
-        // Glyph boxes wider than the advance (each letter overlapping the next by a third): ordinary text, one word.
-        val glyphs = "Mandorle".mapIndexed { i, c -> TextLayer.Glyph(c.toString(), 100f + i * 20f, 100f, 100f + i * 20f + 30f, 130f) }
-        assertEquals(listOf("Mandorle"), TextLayer.lines(glyphs).map { it.text })
+    /**
+     * The glyphs the phone's PDF reader gives for a PDF made on the phone (PdfTextTest, CI run 142), in its order: boxes
+     * overlap their neighbours a little, by different amounts. Ordinary text: every word reads as printed.
+     */
+    @Test fun thePhonesPdfGlyphsReadAsPrinted() {
+        fun g(t: String, l: Float, r: Float, top: Float, b: Float) = TextLayer.Glyph(t, l, top, r, b)
+        val row = listOf(g("M", 161.3f, 196.6f, 774f, 815f), g("a", 197.6f, 219.6f, 774f, 815f), g("n", 217.8f, 240.1f, 774f, 815f), g("d", 242.0f, 264.8f, 774f, 815f), g("o", 266.2f, 289.2f, 774f, 815f), g("r", 290.4f, 304.1f, 774f, 815f), g("l", 302.5f, 312.3f, 774f, 815f), g("e", 310.6f, 332.0f, 774f, 815f), g(" ", 330.8f, 340.8f, 774f, 815f), g("p", 338.8f, 361.5f, 774f, 815f), g("e", 363.0f, 384.4f, 774f, 815f), g("l", 383.2f, 393.0f, 774f, 815f), g("a", 391.3f, 413.2f, 774f, 815f), g("t", 411.4f, 424.6f, 774f, 815f), g("e", 423.5f, 444.9f, 774f, 815f), g(" ", 443.7f, 453.7f, 774f, 815f), g("K", 451.8f, 477.1f, 774f, 815f), g("g", 475.4f, 498.1f, 774f, 815f), g(".", 499.6f, 510.3f, 774f, 815f), g(" ", 511.7f, 521.8f, 774f, 815f), g("1", 519.8f, 542.5f, 774f, 815f), g("1", 1210.1f, 1232.8f, 774f, 815f), g(",", 1234.3f, 1242.2f, 774f, 815f), g("0", 1242.4f, 1265.0f, 774f, 815f), g("0", 1266.6f, 1289.2f, 774f, 815f), g("0", 1290.8f, 1313.4f, 774f, 815f), g("1", 1815.1f, 1837.8f, 774f, 815f), g("0", 1839.3f, 1862.0f, 774f, 815f), g(",", 1863.5f, 1871.5f, 774f, 815f), g("6", 1871.6f, 1894.3f, 774f, 815f), g("9", 1895.8f, 1918.5f, 774f, 815f))
+        val head = listOf(g("F", 161.3f, 183.6f, 371f, 411f), g("A", 182.2f, 208.5f, 371f, 411f), g("T", 207.9f, 231.9f, 371f, 411f), g("T", 232.4f, 256.5f, 371f, 411f), g("U", 256.6f, 282.7f, 371f, 411f), g("R", 280.8f, 305.6f, 371f, 411f), g("A", 305.0f, 331.3f, 371f, 411f), g(" ", 333.2f, 343.2f, 371f, 411f), g("N", 341.3f, 370.1f, 371f, 411f), g(".", 369.5f, 380.2f, 371f, 411f), g(" ", 381.6f, 391.6f, 371f, 411f), g("B", 389.7f, 414.8f, 371f, 411f), g("2", 413.9f, 436.6f, 371f, 411f), g("6", 438.1f, 460.8f, 371f, 411f), g(" ", 462.3f, 472.3f, 371f, 411f), g("3", 470.4f, 493.0f, 371f, 411f), g("0", 494.6f, 517.2f, 371f, 411f), g("5", 518.8f, 541.4f, 371f, 411f), g("5", 543.0f, 565.6f, 371f, 411f), g("1", 567.2f, 589.8f, 371f, 411f), g("1", 591.4f, 614.1f, 371f, 411f), g(" ", 615.6f, 625.6f, 371f, 411f), g("D", 623.7f, 650.1f, 371f, 411f), g("E", 651.9f, 674.8f, 371f, 411f), g("L", 676.1f, 697.8f, 371f, 411f), g(" ", 696.3f, 706.3f, 371f, 411f), g("0", 704.3f, 727.0f, 371f, 411f), g("3", 728.5f, 751.2f, 371f, 411f), g("/", 752.7f, 769.4f, 371f, 411f), g("0", 768.9f, 791.5f, 371f, 411f), g("9", 793.1f, 815.7f, 371f, 411f), g("/", 817.3f, 833.9f, 371f, 411f), g("2", 833.4f, 856.1f, 371f, 411f), g("0", 857.6f, 880.3f, 371f, 411f))
+        assertEquals(listOf("Mandorle pelate Kg. 1", "1,000", "10,69"), TextLayer.lines(row).map { it.text })
+        // (the dump stops at "2026"'s "20": the rest of the line is not needed)
+        assertEquals(listOf("FATTURA N. B26 305511 DEL 03/09/20"), TextLayer.lines(head).map { it.text })
     }
 }
