@@ -73,4 +73,16 @@ class TextLayerTest {
         // A page the camera read nothing on still takes the text.
         assertTrue(TextLayer.agrees(TextLayer.lines(page), emptyList()))
     }
+
+    @Test fun textPrintedOverOtherTextIsTwoWords() {
+        // "12,50" and "MISURABILE" drawn on one baseline, the word starting over the price's last digit: read left to
+        // right their letters would interleave ("12,5M0ISURABILE"). They are two words; the row stays one row.
+        fun run(text: String, left: Float, cw: Float) = text.mapIndexed { i, c -> TextLayer.Glyph(c.toString(), left + i * cw, 100f, left + (i + 1) * cw, 130f) }
+        val glyphs = run("1,00", 300f, 19f) + run("12,50", 583f, 19f) + run("MISURABILE", 645f, 21f) + run("22,00", 985f, 19f) + run("12,50", 1279f, 19f)
+        val words = TextLayer.lines(glyphs).flatMap { l -> l.words.ifEmpty { listOf(l) } }.map { it.text }
+        assertTrue(words.toString(), "12,50" in words && "MISURABILE" in words)
+        // Letters tucked under the one before (kerning, "AV") stay one word.
+        val kerned = listOf(TextLayer.Glyph("A", 100f, 100f, 122f, 130f), TextLayer.Glyph("V", 119f, 100f, 141f, 130f), TextLayer.Glyph("E", 141f, 100f, 160f, 130f))
+        assertEquals(listOf("AVE"), TextLayer.lines(kerned).map { it.text })
+    }
 }

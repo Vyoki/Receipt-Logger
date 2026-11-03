@@ -42,26 +42,57 @@ object TextLayer {
         }
         val out = mutableListOf<OcrLine>()
         for (row in rows) {
-            val sorted = row.sortedBy { it.left }
-            val h = sorted.map { it.height }.sorted()[sorted.size / 2]
-            var segment = mutableListOf<MutableList<Glyph>>() // words of the current piece of line
-            var word = mutableListOf<Glyph>()
-            var lastRight = Float.NaN
-            fun closeWord() { if (word.any { it.text.isNotBlank() }) segment += word; word = mutableListOf() }
-            fun closeSegment() { closeWord(); if (segment.isNotEmpty()) out += line(segment); segment = mutableListOf() }
-            for (g in sorted) {
-                if (g.text.isBlank()) { closeWord(); continue }
-                val gap = if (lastRight.isNaN()) 0f else g.left - lastRight
-                when {
-                    gap > 1.0f * h -> closeSegment()
-                    gap > 0.2f * h -> closeWord()
+            val h = row.map { it.height }.sorted()[row.size / 2]
+            // Words: within each string of the row (see [strings]), split at spaces and at gaps.
+            val words = mutableListOf<List<Glyph>>()
+            for (string in strings(row)) {
+                var word = mutableListOf<Glyph>()
+                var lastRight = Float.NaN
+                fun closeWord() { if (word.any { it.text.isNotBlank() }) words += word; word = mutableListOf() }
+                for (g in string) {
+                    if (g.text.isBlank()) { closeWord(); continue }
+                    if (!lastRight.isNaN() && g.left - lastRight > 0.2f * h) closeWord()
+                    word += g
+                    lastRight = max(if (lastRight.isNaN()) g.right else lastRight, g.right)
                 }
-                word += g
-                lastRight = max(if (lastRight.isNaN()) g.right else lastRight, g.right)
+                closeWord()
             }
-            closeSegment()
+            // Pieces of line: the row's words left to right, cut where the gap is wider than a character.
+            var segment = mutableListOf<List<Glyph>>()
+            var lastRight = Float.NaN
+            for (w in words.sortedBy { it.first().left }) {
+                if (!lastRight.isNaN() && w.first().left - lastRight > 1.0f * h) { out += line(segment); segment = mutableListOf() }
+                segment += w
+                lastRight = max(if (lastRight.isNaN()) w.maxOf { it.right } else lastRight, w.maxOf { it.right })
+            }
+            if (segment.isNotEmpty()) out += line(segment)
         }
         return out.sortedWith(compareBy({ it.top }, { it.left }))
+    }
+
+    /**
+     * The strings of one row: text printed over other text on the same baseline ("97,00" with "FRAZIONABI" drawn across
+     * its last digit) would interleave letter by letter when the row is read left to right. A glyph that starts well
+     * inside the previous one (more than kerning) belongs to another string; a glyph drawn again almost in place (bold
+     * done by printing twice) is the same glyph, dropped. Without overlaps the row is one string, as before.
+     */
+    private fun strings(row: List<Glyph>): List<List<Glyph>> {
+        val out = mutableListOf<MutableList<Glyph>>()
+        for (g in row.sortedBy { it.left }) {
+            val w = g.right - g.left
+            val fits = out.filter { s -> val last = s.last(); g.left >= last.right - 0.1f * min(w, last.right - last.left) }
+            val twin = out.any { s -> s.any { o -> o.text == g.text && kotlin.math.abs(o.left - g.left) < 0.3f * w && kotlin.math.abs(o.top - g.top) < 0.3f * g.height } }
+            if (twin && g.text.isNotBlank()) continue
+            (fits.minByOrNull { kotlin.math.abs(g.left - it.last().right) } ?: mutableListOf<Glyph>().also { out += it }) += g
+        }
+        // Two strings only when they cross: one still goes on to the right of where the other starts. A letter tucked
+        // under the one before (kerning, "AV") ends one string where the next begins: they are one.
+        val merged = mutableListOf<MutableList<Glyph>>()
+        for (s in out.sortedBy { it.first().left }) {
+            val into = merged.firstOrNull { m -> m.maxOf { it.left } < s.first().left }
+            if (into != null) into += s else merged += s
+        }
+        return merged.map { it.sortedBy { g -> g.left } }
     }
 
     private fun line(words: List<List<Glyph>>): OcrLine {
