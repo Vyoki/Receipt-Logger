@@ -542,9 +542,9 @@ class ScreenshotTest {
             diag("open2 viewer open=$openedAgain") // DIAGNOSTICS (log only)
             assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", openedAgain)
             // DIAGNOSTICS (log only): the windows and their back dispatch before Back, right after it, and after the wait.
-            scenario.onActivity { diag("back before: ${windowsState(it)}") }
-            inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            scenario.onActivity { diag("back right after: ${windowsState(it)}") }
+            scenario.onActivity { diag("back before: ${windowsState(it)}"); watchViewerKeys(it) }
+            val backSent = inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            scenario.onActivity { diag("back right after: performGlobalAction(BACK)=$backSent; ${windowsState(it)}") }
             val closed = waitFor(zoomIn, false)
             scenario.onActivity { diag("back after wait: viewer closed=$closed; ${windowsState(it)}") }
             assertTrue("Back did not close the photo. On screen: ${everyWindow()}", closed)
@@ -573,6 +573,31 @@ class ScreenshotTest {
             val back = runCatching { v.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher?.hasEnabledCallbacks() }.getOrNull()
             "${v.javaClass.simpleName}(windowFocus=${v.hasWindowFocus()} shown=${v.isShown} back=$back composeFocused=[${composeFocused(v)}])"
         }
+    }
+
+    /**
+     * DIAGNOSTICS (log only), on the main thread: the photo viewer's dialog window gets a pass-through key callback that
+     * logs every Back key reaching it (press or release, whether the window consumed it, its tracking and canceled
+     * flags) and hands every call on to the dialog unchanged.
+     */
+    private fun watchViewerKeys(a: android.app.Activity) {
+        if (android.os.Build.VERSION.SDK_INT < 29) return
+        fun all(v: android.view.View): List<android.view.View> = listOf(v) + ((v as? android.view.ViewGroup)?.let { g -> (0 until g.childCount).flatMap { all(g.getChildAt(it)) } } ?: emptyList())
+        val window = android.view.inspector.WindowInspector.getGlobalWindowViews().filter { it !== a.window.decorView }
+            .flatMap { all(it) }.firstNotNullOfOrNull { it as? androidx.compose.ui.window.DialogWindowProvider }?.window
+            ?: run { diag("back keys: no viewer window found"); return }
+        val original = window.callback
+        window.callback = java.lang.reflect.Proxy.newProxyInstance(
+            android.view.Window.Callback::class.java.classLoader, arrayOf(android.view.Window.Callback::class.java),
+        ) { _, method, args ->
+            val result = if (args == null) method.invoke(original) else method.invoke(original, *args)
+            val e = args?.firstOrNull() as? android.view.KeyEvent
+            if (method.name == "dispatchKeyEvent" && e != null && e.keyCode == android.view.KeyEvent.KEYCODE_BACK) {
+                diag("back key reached the viewer window: ${if (e.action == android.view.KeyEvent.ACTION_DOWN) "press" else "release"} consumed=$result tracking=${e.isTracking} canceled=${e.isCanceled} repeat=${e.repeatCount}")
+            }
+            result
+        } as android.view.Window.Callback
+        diag("back keys: watching the viewer window (${original.javaClass.simpleName})")
     }
 
     /** The Compose roots in the view tree under [root]. */
