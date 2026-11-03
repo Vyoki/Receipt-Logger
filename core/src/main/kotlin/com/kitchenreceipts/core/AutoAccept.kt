@@ -145,7 +145,7 @@ object AutoAccept {
         }
         if (!lineOk) return d
         val sub = cents(d.subtotal.text); val vat = cents(d.vat.text); val tot = cents(d.total.text)
-        val headerOk = sub == null || vat == null || tot == null || totalsAddUp(sub, vat, tot)
+        val headerOk = sub == null || vat == null || tot == null || headerAddsUp(d, sub, vat, tot)
         if (!headerOk) return d
         val sum = d.linesTotal()!!
         // Settled only to the cent (see sumMatches).
@@ -161,9 +161,9 @@ object AutoAccept {
         return d.copy(
             items = d.items.map { it.copy(quantity = clearQuantity(it.quantity), unitPrice = clearPrice(it.unitPrice), lineTotal = clear(it.lineTotal), discount = clear(it.discount)) },
             subtotal = settle(d.subtotal, sub != null && kotlin.math.abs(sub - sum) <= tolerance),
-            total = settle(d.total, tot != null && (kotlin.math.abs(tot - sum) <= tolerance || (sub != null && vat != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance))),
+            total = settle(d.total, tot != null && (kotlin.math.abs(tot - sum) <= tolerance || (sub != null && vat != null && headerAddsUp(d, sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance))),
             vat = settle(d.vat, vat != null && (
-                (sub != null && tot != null && totalsAddUp(sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance) ||
+                (sub != null && tot != null && headerAddsUp(d, sub, vat, tot) && kotlin.math.abs(sub - sum) <= tolerance) ||
                     // The VAT its lines give: each rate's lines x rate, rounded per rate (a cent per rate for rounding).
                     vatFromRates(d)?.let { (cents, rates) -> kotlin.math.abs(cents - vat) <= rates } == true
                 )),
@@ -216,7 +216,7 @@ object AutoAccept {
         }
         if (!lineOk) return false
         val sub = cents(d.subtotal.text); val vat = cents(d.vat.text); val tot = cents(d.total.text) ?: return false
-        if (sub != null && vat != null && !totalsAddUp(sub, vat, tot)) return false
+        if (sub != null && vat != null && !headerAddsUp(d, sub, vat, tot)) return false
         val s = settleProven(d)
         if (s.total.uncertain || s.subtotal.uncertain || s.vat.uncertain) return false
         return s.items.all { !it.lineTotal.uncertain && !it.quantity.uncertain && !it.unitPrice.uncertain && !it.discount.uncertain }
@@ -245,6 +245,16 @@ object AutoAccept {
      */
     private fun amountByVat(d: DocumentDraft, l: LineItemDraft): Boolean =
         l.noPricePrinted && l.unitPrice.isMissing && cents(l.lineTotal.text) != null && d.checks?.vatProven == true
+
+    /**
+     * Taxable + VAT = total; or, with an ARR in the VAT summary's rows, lines + ARR = taxable and lines + VAT = total
+     * (the marketplace way: the rounding goes into the taxable, not into what is paid). Exact to the cent.
+     */
+    fun headerAddsUp(d: DocumentDraft, sub: Long, vat: Long, tot: Long): Boolean {
+        if (totalsAddUp(sub, vat, tot)) return true
+        val lines = d.linesTotal() ?: return false
+        return d.summaryExtraCents != 0L && lines == sub && lines - d.summaryExtraCents + vat == tot
+    }
 
     /** Free goods with amount 0,00 (any price x 0 is 0: proven without one), see [LineDiscount.isFree]. */
     private fun freeGoods(l: LineItemDraft): Boolean =

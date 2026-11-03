@@ -1135,7 +1135,10 @@ object TableReader {
         var description = cleanDescription(descWords)
         // Free goods ("omaggio"): a row discounted 100% prints no amount; it is 0,00 whatever its price (any price x 0).
         val free = amount == null && LineDiscount.isFree(qty, discount)
-        if (amount == null && !free && (qty == null || price == null)) return null
+        // A quantity and only an amount off it in the discount column ("Costi di spedizione 1,00 ... -1,09"), no price, no
+        // amount: a line all the same, its amount left for the operator (not dropped, not made up).
+        val offOnly = amount == null && price == null && qty != null && PER_UNIT_OFF.matches(discountText.trim())
+        if (amount == null && !free && !offOnly && (qty == null || price == null)) return null
         if (description.count(Char::isLetter) < 2) description = ""
         // A rounding row ("ARROTONDAMENTO 1,00 -0,01 -0,01"): its amount is what it adds to the total; a quantity and
         // price printed on it only repeat that amount.

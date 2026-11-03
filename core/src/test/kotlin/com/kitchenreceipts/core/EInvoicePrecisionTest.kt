@@ -252,6 +252,21 @@ class EInvoicePrecisionTest {
         assertTrue(LineDiscount.matches(BigDecimal(2), BigDecimal("50.00"), "12,4€", 7520L))
     }
 
+    @Test fun aMarketplaceTotalIsTheLinesPlusVatWhenTheRowPrintsAnArr() {
+        // Lines 12,37, ARR -0,01: taxable 12,36, 22 % = 2,72. The total is the lines + VAT (15,09), not taxable + VAT.
+        val inv = Invoice(
+            supplierVat = pIva("0123498765"), supplierName = "MERCATO PROVA S.A R.L.", number = "IT0099-1", date = "12-03-2031",
+            lines = listOf(Line("PENNARELLI PROVA", "2,00", "5,05", "PZ", "22,00", "10,10"), Line("Costi di spedizione", "1,00", "2,27", null, "22,00", "2,27")),
+            groups = listOf(Group("22,00", "12,36", "2,72", extra = "-0,01")),
+            total = "15,09",
+        )
+        val d = draft(inv)
+        assertEquals("12,36", d.subtotal.text)
+        assertTrue(AutoAccept.moneyProven(d))
+        // A total that is neither taxable + VAT nor lines + VAT stays to check.
+        assertTrue(!AutoAccept.moneyProven(draft(inv.copy(total = "15,10"))))
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(

@@ -273,7 +273,12 @@ object ReceiptParser {
                 if (d.totalCents != null || gt == null) return@let d
                 val gs = runCatching { VatSummary.parse(text) }.getOrDefault(emptyList())
                 // Not proven (a summary row this reader does not know): the printed total is shown, flagged for a check.
-                if (gs.isEmpty() || gs.sumOf { it.taxableCents + it.vatCents } != gt)
+                // With an ARR in the rows: lines + ARR = taxable and lines + VAT = the total (see finish's addsUp).
+                val lines = d.lineItems.takeIf { l -> l.isNotEmpty() && l.all { it.lineTotalCents != null } }
+                    ?.let { l -> preciseSumByRate(l.map { vatKey(it.vatRatePercent?.value, it.vatNature) to it.preciseTotal() }) }
+                val extra = gs.sumOf { it.extraCents }
+                val byArr = extra != 0L && lines != null && lines + extra == gs.sumOf { it.taxableCents } && lines + gs.sumOf { it.vatCents } == gt
+                if (gs.isEmpty() || (gs.sumOf { it.taxableCents + it.vatCents } != gt && !byArr))
                     return@let d.copy(totalCents = Extracted(gt, Confidence.LOW, "under its heading; the VAT summary does not prove it"))
                 val src = "VAT summary rows add up to the total under its heading"
                 d.copy(subtotalCents = Extracted(gs.sumOf { it.taxableCents }, Confidence.HIGH, src), vatCents = Extracted(gs.sumOf { it.vatCents }, Confidence.HIGH, src),
@@ -913,6 +918,10 @@ object ReceiptParser {
         val summaryExtra = groups.sumOf { it.extraCents }
         val itemsSum = if (itemTotals.size == items.size && items.isNotEmpty()) preciseSumByRate(items.map { vatKey(it.vatRatePercent?.value, it.vatNature) to it.preciseTotal() })?.plus(summaryExtra) else null
         var subtotal = doc.subtotalCents
+        // Taxable + VAT = total; or, when the VAT summary's rows print an ARR (a rounding in the taxable amount), the
+        // total is the lines + VAT while the taxable is the lines + ARR (marketplace invoices): both exactly.
+        fun addsUp(s: Long, v: Long, t: Long) = totalsAddUp(s, v, t) ||
+            (summaryExtra != 0L && itemsSum != null && itemsSum == s && itemsSum - summaryExtra + v == t)
         // Several taxable-looking lines ("Subtotaal 717,97" with VAT, "Exclusief BTW 593,36"): the one that makes
         // taxable + VAT = total is the taxable amount.
         run {
@@ -930,7 +939,7 @@ object ReceiptParser {
             val tv = total ?: return@run
             if (groups.isEmpty()) return@run
             val gTax = groups.sumOf { it.taxableCents }; val gVat = groups.sumOf { it.vatCents }
-            if (gTax + gVat != tv.value) return@run
+            if (!addsUp(gTax, gVat, tv.value)) return@run
             val src = "VAT summary rows (${groups.size}) add up to the total"
             val sv = subtotal; val vv = vat
             if (sv != null && sv.confidence == Confidence.HIGH && sv.value != gTax) return@run
@@ -946,7 +955,7 @@ object ReceiptParser {
             val groupsVat = groups.takeIf { it.isNotEmpty() }?.sumOf { it.vatCents }
             when {
                 // subtotal + VAT = total, to the cent: all three confirm each other.
-                totalsAddUp(s0.value, v0.value, t0.value) -> {
+                addsUp(s0.value, v0.value, t0.value) -> {
                     total = t0.copy(confidence = Confidence.HIGH); vat = v0.copy(confidence = Confidence.HIGH); subtotal = s0.copy(confidence = Confidence.HIGH)
                 }
                 // VAT included in the prices ("di cui IVA", subtotal = total): the VAT is not added on top.
@@ -996,7 +1005,7 @@ object ReceiptParser {
         // Taxable amount and VAT: sure when they add up to the total, or the lines / the VAT summary give the same.
         run {
             val sv = subtotal; val vv = vat; val tv = total
-            val partsAddUp = !derivedTotal && sv != null && vv != null && tv != null && totalsAddUp(sv.value, vv.value, tv.value)
+            val partsAddUp = !derivedTotal && sv != null && vv != null && tv != null && addsUp(sv.value, vv.value, tv.value)
             if (!partsAddUp) {
                 if (sv != null && sv.confidence == Confidence.HIGH &&
                     !(itemsSum != null && kotlin.math.abs(itemsSum - sv.value) <= tolerance) &&
