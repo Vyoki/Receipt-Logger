@@ -432,7 +432,8 @@ private fun PurchaseCard(p: PurchaseRow, onClick: () -> Unit) {
             if (p.discount != null) {
                 val paid = com.kitchenreceipts.app.ui.documents.paidPerUnit(p.quantity, p.lineTotalCents)
                 Text(
-                    stringResource(R.string.discount_value, p.discount) +
+                    // An amount off each unit ("27,05€") is shown as it is, a percentage with its word.
+                    (if (p.discount.endsWith("€")) com.kitchenreceipts.core.LineDiscount.label(p.discount) ?: p.discount else stringResource(R.string.discount_value, p.discount)) +
                         (paid?.let { " · " + stringResource(R.string.paid_per_unit, fmtDecimal(it, 4), p.unit ?: "?") } ?: ""),
                     style = MaterialTheme.typography.bodyMedium,
                 )

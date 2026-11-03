@@ -232,6 +232,26 @@ class EInvoicePrecisionTest {
         assertEquals(listOf(8000L), d.lineItems.map { it.lineTotalCents?.value })
     }
 
+    @Test fun discountsPrintedAsAnAmountOrGluedToThePriceAndFreeGoods() {
+        // "-12,40" in the discount column: an amount off each unit, 2 x (50,00 - 12,40) = 75,20. A price glued to its unit
+        // and discount ("30,00NUMERO-10.00%"): 4 x 30,00 less 10 % = 108,00. A free-goods row: 0,00 at -100 %.
+        val rows = listOf(
+            listOf(w("CODICE", 84, 990, 200), w("DESCRIZIONE", 643, 990, 900), w("QUANTITÀ", 1284, 990, 1400), w("PREZZO", 1550, 990, 1670),
+                w("SCONTO", 1813, 990, 1943), w("IVA", 2000, 990, 2072), w("IMPORTO", 2250, 990, 2366)),
+            listOf(w("20001", 84, 1050, 200), w("LAMPADA PROVA", 643, 1050, 900), w("2,00", 1330, 1050, 1400), w("50,00", 1583, 1050, 1670),
+                w("-12,40", 1840, 1050, 1943), w("22,00", 1985, 1050, 2072), w("75,20", 2279, 1050, 2366)),
+            listOf(w("20002", 84, 1110, 200), w("VINO PROVA 0,75 4,00", 643, 1110, 1400), w("30,00NUMERO-10.00%", 1564, 1110, 1943),
+                w("22,00", 1985, 1110, 2072), w("108,00", 2260, 1110, 2366)),
+            listOf(w("20003", 84, 1170, 200), w("VINO PROVA 0,75 1,00", 643, 1170, 1400), w("NUMERO -100.00%", 1672, 1170, 1943)),
+        )
+        val items = TableReader.read(listOf(LayoutRows.Layout(rows, 0.0)), textLayerPages = setOf(0))!!
+        assertEquals(listOf(7520L, 10800L, 0L), items.map { it.lineTotalCents?.value })
+        assertEquals(listOf("12,4€", "10", "100"), items.map { it.discount?.value })
+        assertTrue(items.take(2).all { it.unitPrice?.confidence == Confidence.HIGH && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings })
+        assertEquals("-12,4 €", LineDiscount.label("12,4€"))
+        assertTrue(LineDiscount.matches(BigDecimal(2), BigDecimal("50.00"), "12,4€", 7520L))
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(

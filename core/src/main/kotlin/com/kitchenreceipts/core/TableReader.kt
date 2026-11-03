@@ -273,8 +273,10 @@ object TableReader {
 
     /** An amount: two decimals and more after a comma, as an e-invoice prints them (up to 8: "32,78688525"). */
     private val MONEY = Regex("^-?€?\\d{1,3}(?:\\.\\d{3})*,\\d{2,8}-?€?$|^-?€?\\d+,\\d{2,8}-?€?$|^-?€?\\d+\\.\\d{2,4}-?€?$|^-?€?\\d{1,3}(?:\\.\\d{3})+\\.\\d{2}-?€?$")
-    /** A price and its unit printed without a space ("0,2877KW*MESE"). */
-    private val PRICE_WITH_UNIT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{2,8})([A-Za-z][A-Za-z*/.]*)$")
+    /** An amount off each unit in the discount column, signed, no percent sign ("-27,05", "-1,6393"). */
+    private val PER_UNIT_OFF = Regex("^[-−]\\d{1,3}(?:\\.\\d{3})*,\\d{2,8}$")
+    /** A price and its unit printed without a space ("0,2877KW*MESE"), maybe the line's discount too ("124,80NUMERO-14.50%"). */
+    private val PRICE_WITH_UNIT = Regex("^(\\d{1,3}(?:\\.\\d{3})*,\\d{2,8})([A-Za-z][A-Za-z*/.]*)(?:[-−](\\d{1,2}(?:[.,]\\d{1,2})?)%)?$")
     /** A number glued to letters or a percentage ("124,80NUMERO-14.50%"): a price is printed there, unread. */
     private val GLUED_NUMBER = Regex("\\d,\\d+[A-Za-z%]")
     /** "1.627.60" (photographed): thousands groups, then the decimal comma read as a dot. Only quantity x price proves it. */
@@ -1142,6 +1144,7 @@ object TableReader {
 
         var total = amount
         var consistent = false
+        var perUnitOff: String? = null
         if (free) { total = 0L; consistent = true }
         var qtyWorkedOut = false
         var priceRepaired = false
@@ -1177,20 +1180,34 @@ object TableReader {
                 }
             }
         }
-        // A price glued to its unit in the text ("0,2877KW*MESE"): the price when quantity x it is the amount.
+        // A price glued to its unit in the text ("0,2877KW*MESE"), and to the line's discount ("124,80NUMERO-14.50%"):
+        // the price (and discount) when quantity x price (less the discount) is the amount.
+        var gluedDiscount: String? = null
         if (price == null && qty != null && total != null) {
             cells.filterKeys { it != Kind.QUANTITY && it != Kind.AMOUNT }.values.flatten().firstNotNullOfOrNull { w -> PRICE_WITH_UNIT.matchEntire(w.text.trim()) }?.let { m ->
                 val p = ItalianNumbers.parse(m.groupValues[1])
-                if (p != null && ReceiptParser.matches(qty!!, p, total!!)) { price = p; if (unit == null) unit = m.groupValues[2] }
+                val d = m.groupValues[3].ifEmpty { null }?.let { LineDiscount.normalize(it) }
+                if (p != null && (if (d == null) ReceiptParser.matches(qty!!, p, total!!) else LineDiscount.matches(qty!!, p, d, total!!))) {
+                    price = p; gluedDiscount = d; if (unit == null) unit = m.groupValues[2]
+                }
             }
         }
         if (qty != null && price != null && total != null) {
-            consistent = ReceiptParser.matches(qty, price, total) || discountMatches(qty, price, discount, total)
+            consistent = ReceiptParser.matches(qty, price, total) || discountMatches(qty, price, discount, total) ||
+                (gluedDiscount != null && LineDiscount.matches(qty, price, gluedDiscount, total))
             // A price printed with its minus ("-108,69", "0,44-") on a negative amount: the minus is kept when
             // quantity x price is that amount only with it.
             val signed = cell(Kind.PRICE).lastOrNull { numberIn(it.text) != null }?.text?.trim('€', ' ')
             if (!consistent && total < 0 && signed != null && (signed.startsWith("-") || signed.endsWith("-")) && ReceiptParser.matches(qty, price.negate(), total)) {
                 price = price.negate(); consistent = true
+            }
+        }
+        if (!consistent && total != null && qty != null && price != null) {
+            // The discount column prints an amount off each unit, signed and without a percent sign ("-27,05"):
+            // kept when quantity x (price - it) is the amount.
+            val off = discountText.trim().takeIf { PER_UNIT_OFF.matches(it) }?.let { ItalianNumbers.parse(it.trim('-', '−')) }
+            if (off != null && off.signum() > 0 && ReceiptParser.matches(qty!!, price!!.subtract(off), total!!)) {
+                consistent = true; perUnitOff = ItalianNumbers.toEditText(off.stripTrailingZeros()) + "€"
             }
         }
         if (!consistent && total != null) {
@@ -1253,7 +1270,7 @@ object TableReader {
             packSize = packSize?.takeIf { unit == "pz" || unit == null }?.let { Extracted(it.text, conf, source) },
             packages = packages?.let { p -> Extracted(p.map { c -> when (c) { 'l', 'I', 'L' -> '1'; 'O' -> '0'; 'X', '×', '*' -> 'x'; else -> c } }.joinToString(""), Confidence.HIGH, source) },
             // Kept when the amount works out only with it.
-            discount = LineDiscount.normalize(discountText)?.takeIf { d ->
+            discount = (perUnitOff ?: gluedDiscount ?: LineDiscount.normalize(discountText))?.takeIf { d ->
                 val q = qty; val p = price; val t = total
                 free || (q != null && p != null && t != null && !ReceiptParser.matches(q, p, t) && LineDiscount.matches(q, p, d, t))
             }?.let { Extracted(it, Confidence.HIGH, source) },

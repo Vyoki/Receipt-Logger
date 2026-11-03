@@ -67,7 +67,8 @@ object AutoAccept {
         val unitsToTidy = onlyTidy || (d.items.any(Tidy::unitMissing) && Tidy.onlyTidyLeft(d))
         if (goods.any { it.description.isMissing || ItalianNumbers.parse(it.quantity.text) == null || (it.unit.isMissing && !unitsToTidy) } ||
             d.items.any { cents(it.lineTotal.text) == null } ||
-            (someRates && goods.any { it.vatRate.text.isBlank() && it.vatNature == null })
+            // Free goods (0,00 at -100%) add nothing to any rate: no rate needed.
+            (someRates && goods.any { it.vatRate.text.isBlank() && it.vatNature == null && !freeGoods(it) })
         ) {
             out += ReviewReason.INCOMPLETE_ITEMS
         }
