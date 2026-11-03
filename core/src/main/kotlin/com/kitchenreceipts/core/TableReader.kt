@@ -951,6 +951,10 @@ object TableReader {
             val left = order[idx - 1]
             while (list.count { isNumeric(it.text) } > 1) {
                 val first = list.first { isNumeric(it.text) }
+                // Two numbers under one number heading, the column on its left a name or a code: a heading was not
+                // read (quantity and price under QUANTITÀ). Both stay numbers; quantity x price = amount decides.
+                val heading = cols.firstOrNull { it.kind == k && first.right > it.left && first.left < it.right }
+                if (left !in NUMBER_KINDS && heading != null) break
                 list.remove(first)
                 cells.getOrPut(left) { mutableListOf() } += first
             }

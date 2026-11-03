@@ -57,6 +57,33 @@ class EInvoicePrecisionTest {
         assertEquals(BigDecimal("33.00"), edited.preciseTotal())
     }
 
+    @Test fun quantityAndPriceUnderOneHeadingAreSplitByTheAmount() {
+        // The heading band in three rows as the PDF's text groups it: "PREZZO" above and "UNITARIO" below the row
+        // of the other labels, so no price column is read. Quantity and price then both stand under QUANTITÀ: the
+        // left one is no part of the name, and quantity x price = amount says which is which (not their decimals).
+        fun w(text: String, l: Int, top: Int, r: Int): OcrLine {
+            val parts = text.split(' ')
+            if (parts.size == 1) return OcrLine(text, l, top, r, top + 22)
+            val cw = (r - l).toDouble() / text.length
+            var at = l.toDouble()
+            return OcrLine(text, l, top, r, top + 22, words = parts.map { p -> OcrLine(p, at.toInt(), top, (at + p.length * cw).toInt(), top + 22).also { at += (p.length + 1) * cw } })
+        }
+        val rows = listOf(
+            listOf(w("PREZZO", 1542, 1253, 1627), w("SCONTO", 1841, 1253, 1930)),
+            listOf(w("COD. ARTICOLO", 259, 1266, 425), w("DESCRIZIONE", 888, 1266, 1030), w("QUANTITÀ", 1332, 1266, 1440), w("UM", 1733, 1266, 1766),
+                w("%IVA", 2002, 1266, 2056), w("PREZZO TOTALE", 2115, 1266, 2288)),
+            listOf(w("UNITARIO", 1534, 1278, 1635), w("O MAGG.", 1839, 1278, 1932)),
+            listOf(w("99990001", 84, 1360, 212), w("GASOLIO PROVA", 643, 1360, 903), w("46,7345716 1,36803279", 1284, 1360, 1670), w("LT", 1734, 1360, 1764),
+                w("22,00", 1985, 1360, 2072), w("63,93442623", 2164, 1360, 2366)),
+        )
+        val item = TableReader.read(listOf(LayoutRows.Layout(rows, 0.0)), textLayerPages = setOf(0))!!.single()
+        assertEquals("GASOLIO PROVA", item.originalDescription)
+        assertEquals(0, item.quantity!!.value.compareTo(BigDecimal("46.7345716")))
+        assertEquals(0, item.unitPrice!!.value.compareTo(BigDecimal("1.36803279")))
+        assertEquals(6393L, item.lineTotalCents!!.value)
+        assertEquals(Confidence.HIGH, item.quantity!!.confidence)
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(
