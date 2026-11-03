@@ -101,6 +101,22 @@ class EInvoicePrecisionTest {
         assertTrue(AutoAccept.moneyProven(d))
     }
 
+    @Test fun aNegativePriceKeepsItsMinus() {
+        // "Coupon 1,00 -20,00 -20,00": quantity x price is the negative amount only with the minus.
+        val inv = Invoice(
+            supplierVat = pIva("0891234567"), supplierName = "ARREDI PROVA S.P.A.", number = "310", date = "12-05-2031",
+            lines = listOf(
+                Line("TAVOLO PROVA", "2,00", "50,00", "PZ", "22,00", "100,00"),
+                Line("Coupon PROVA", "1,00", "-20,00", null, "22,00", "-20,00"),
+            ),
+            groups = listOf(Group("22,00", "80,00", "17,60")),
+            total = "97,60",
+        )
+        val d = draft(inv)
+        assertEquals(0, ItalianNumbers.parse(d.items[1].unitPrice.text)!!.compareTo(BigDecimal("-20.00")))
+        assertTrue(AutoAccept.moneyProven(d))
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(

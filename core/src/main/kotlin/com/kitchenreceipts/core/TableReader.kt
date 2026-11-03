@@ -1124,6 +1124,12 @@ object TableReader {
         }
         if (qty != null && price != null && total != null) {
             consistent = ReceiptParser.matches(qty, price, total) || discountMatches(qty, price, discount, total)
+            // A price printed with its minus ("-108,69", "0,44-") on a negative amount: the minus is kept when
+            // quantity x price is that amount only with it.
+            val signed = cell(Kind.PRICE).lastOrNull { numberIn(it.text) != null }?.text?.trim('€', ' ')
+            if (!consistent && total < 0 && signed != null && (signed.startsWith("-") || signed.endsWith("-")) && ReceiptParser.matches(qty, price.negate(), total)) {
+                price = price.negate(); consistent = true
+            }
         }
         if (!consistent && total != null) {
             // Quantity and price run together into one word ("19,417475731,68852459"): the one split where quantity x
