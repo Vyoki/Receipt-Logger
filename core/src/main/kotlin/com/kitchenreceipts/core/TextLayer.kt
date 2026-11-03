@@ -78,7 +78,16 @@ object TextLayer {
      */
     private fun strings(row: List<Glyph>): List<List<Glyph>> {
         val out = mutableListOf<MutableList<Glyph>>()
-        for (g in row.sortedBy { it.left }) {
+        // Two glyphs starting at the same place (a string printed over the end of another: "1.289,530961" with
+        // "-0,49673002" drawn from its last digit): the one a next glyph starts from goes on, the one nothing follows
+        // ends the string they both follow, so it is placed first.
+        val sorted = row.sortedBy { it.left }.toMutableList()
+        fun followed(g: Glyph) = row.any { c -> c !== g && kotlin.math.abs(c.left - g.right) <= 0.1f * g.height }
+        for (i in 0 until sorted.size - 1) {
+            val a = sorted[i]; val b = sorted[i + 1]
+            if (b.left - a.left < 0.1f * a.height && followed(a) && !followed(b)) { sorted[i] = b; sorted[i + 1] = a }
+        }
+        for (g in sorted) {
             val w = g.right - g.left
             // Measured against the letter's height, not its width: neighbouring boxes overlap a little in ordinary text
             // (kerning, readers giving boxes wider than the advance), a narrow letter as much as a wide one.

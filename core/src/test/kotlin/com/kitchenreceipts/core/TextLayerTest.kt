@@ -86,6 +86,19 @@ class TextLayerTest {
         assertEquals(listOf("AVE"), TextLayer.lines(kerned).map { it.text })
     }
 
+    @Test fun aStringPrintedFromTheLastDigitOfAnotherKeepsThatDigitWhereItBelongs() {
+        // "3.456,789012" and "-0,12345678" drawn on one baseline, the minus where the quantity's last "2" is drawn:
+        // both start at the same place. The price's "0" starts where the minus ends; nothing starts where the "2" ends.
+        val digits = "3.456,789012".mapIndexed { i, c -> TextLayer.Glyph(c.toString(), 1000f + i * 19f, 100f, 1000f + (i + 1) * 19f, 133f) }
+        val at = digits.last().left
+        val minus = TextLayer.Glyph("-", at, 100f, at + 11f, 133f)
+        val price = listOf(minus) + "0,12345678".mapIndexed { i, c -> TextLayer.Glyph(c.toString(), at + 11f + i * 19f, 100f, at + 11f + (i + 1) * 19f, 133f) }
+        // In position order, the minus before the "2" (as a reader may give them).
+        val glyphs = (digits.dropLast(1) + minus + digits.last() + price.drop(1))
+        val words = TextLayer.lines(glyphs).flatMap { l -> l.words.ifEmpty { listOf(l) } }.map { it.text }
+        assertEquals(listOf("3.456,789012", "-0,12345678"), words)
+    }
+
     /**
      * The glyphs the phone's PDF reader gives for a PDF made on the phone (PdfTextTest, CI run 142), in its order: boxes
      * overlap their neighbours a little, by different amounts. Ordinary text: every word reads as printed.
