@@ -33,6 +33,7 @@ import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.junit.runners.MethodSorters
+import androidx.activity.findViewTreeOnBackPressedDispatcherOwner
 import androidx.compose.ui.semantics.getAllSemanticsNodes
 import androidx.compose.ui.semantics.getOrNull
 import java.io.File
@@ -477,37 +478,38 @@ class ScreenshotTest {
                 }
                 return "tapped \"$d\" at $b (clickable=${n.isClickable})"
             }
-            // The same tap on a button of the app's own screen, handed to that screen's window. A tap sent to the screen
-            // goes to whatever window is in front at that point: on CI 145 another app's (most likely the keyboard coming
-            // back as the date field takes focus again after the photo closes), which refuses it (INJECT_EVENTS).
+            // A finger's tap on a button of the app's own screen, handed to that screen's window (a tap sent to the screen
+            // goes to whatever window is in front, which another app's refuses: CI 145), at the place Compose has
+            // the button when the tap is sent (read on the main thread, in the same step). The place accessibility reports
+            // can be a frame behind: as the keyboard opens the form scrolls the field being edited up, and a tap at the
+            // reported place met the bare form (CI 157, 158).
             fun tapInApp(d: String, diagLabel: String = d): String {
-                val n = button(d) ?: return "no \"$d\""
-                val b = Rect().also { n.getBoundsInScreen(it) }
-                var handled = false
+                val reported = button(d)?.let { n -> Rect().also { n.getBoundsInScreen(it) } } // DIAGNOSTICS (log only)
+                var result = "no \"$d\" on the app's screen"
                 scenario.onActivity { a ->
                     val root = a.window.decorView
-                    val at = IntArray(2).also { root.getLocationOnScreen(it) }
-                    // DIAGNOSTICS (log only): read on the main thread, in process, right before the tap (no timing change).
-                    val pt = androidx.compose.ui.geometry.Offset(b.exactCenterX() - at[0], b.exactCenterY() - at[1])
-                    val before = mainState(a, pt) + " decorAt=${at.toList()}"
+                    val node = composeRoots(root).flatMap { it.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false) }
+                        .firstOrNull { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.contains(d) == true }
+                        ?: return@onActivity
+                    val pt = node.boundsInWindow.center
+                    val before = mainState(a, pt) // DIAGNOSTICS (log only)
                     val results = mutableListOf<Boolean>()
                     val down = SystemClock.uptimeMillis()
                     for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
-                        val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, b.exactCenterX() - at[0], b.exactCenterY() - at[1], 0)
+                        val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, pt.x, pt.y, 0)
                         e.source = InputDevice.SOURCE_TOUCHSCREEN
-                        val r = root.dispatchTouchEvent(e)
-                        results += r
-                        handled = r || handled
+                        results += root.dispatchTouchEvent(e)
                         e.recycle()
                     }
-                    val after = mainState(a, pt)
-                    diag("$diagLabel button $b; main before: $before")
-                    diag("$diagLabel main after UP: dispatched DOWN/UP=$results; $after")
+                    // DIAGNOSTICS (log only)
+                    diag("$diagLabel tap at $pt (accessibility reported $reported); main before: $before")
+                    diag("$diagLabel main after UP: dispatched DOWN/UP=$results; ${mainState(a, pt)}")
+                    result = "tapped \"$d\" at $pt in the app's window (handled=${results.any { it }})"
                 }
                 // DIAGNOSTICS (log only), after the tap: the date field and the photo button as accessibility sees them.
                 diag("$diagLabel after: date field " + roots().firstNotNullOfOrNull { r -> findNode(r) { x -> x.text?.toString() == PEEK_DATE } }
                     ?.let { x -> "focused=${x.isFocused}" } + "; photo button there=${described(d) != null}")
-                return "tapped \"$d\" at $b in the app's window (handled=$handled)"
+                return result
             }
             fun everyWindow() = roots().joinToString(" || ") { r ->
                 collectNodes(r) { it.text != null || it.contentDescription != null }.take(30)
@@ -539,25 +541,52 @@ class ScreenshotTest {
             val openedAgain = waitFor(zoomIn, true)
             diag("open2 viewer open=$openedAgain") // DIAGNOSTICS (log only)
             assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", openedAgain)
+            // DIAGNOSTICS (log only): the windows and their back dispatch before Back, right after it, and after the wait.
+            scenario.onActivity { diag("back before: ${windowsState(it)}") }
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
+            scenario.onActivity { diag("back right after: ${windowsState(it)}") }
+            val closed = waitFor(zoomIn, false)
+            scenario.onActivity { diag("back after wait: viewer closed=$closed; ${windowsState(it)}") }
+            assertTrue("Back did not close the photo. On screen: ${everyWindow()}", closed)
         }
     }
 
     // DIAGNOSTICS (log only, CI annotations "Photo viewer diagnostics"): to be removed with the fix.
     private val diagFile get() = File(InstrumentationRegistry.getInstrumentation().targetContext.filesDir, "peek-diag.txt")
     private fun diag(line: String) { runCatching { diagFile.appendText("${SystemClock.uptimeMillis()} $line\n") } }
-    /** On the main thread: window focus, touch mode, the focused view, the keyboard, and what Compose has focused. */
+    /** DIAGNOSTICS (log only): what Compose has focused under [root]. */
+    private fun composeFocused(root: android.view.View): String = runCatching {
+        composeRoots(root).flatMap { it.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false) }
+            .filter { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused) == true }
+            .joinToString { n -> (n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.text ?: n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.joinToString() ?: "?") + "@" + n.boundsInWindow }
+    }.getOrElse { "error ${it.javaClass.simpleName}" }
+
+    /**
+     * DIAGNOSTICS (log only), on the main thread: every window of the app (the screen, the photo viewer's dialog), whether
+     * it has the window focus (the one Back goes to), whether its back dispatcher has a callback, what Compose has
+     * focused in it, and the keyboard.
+     */
+    private fun windowsState(a: android.app.Activity): String {
+        val views = if (android.os.Build.VERSION.SDK_INT >= 29) android.view.inspector.WindowInspector.getGlobalWindowViews() else listOf(a.window.decorView)
+        val ime = androidx.core.view.ViewCompat.getRootWindowInsets(a.window.decorView)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())
+        return "ime=$ime windows=" + views.joinToString(" | ") { v ->
+            val back = runCatching { v.findViewTreeOnBackPressedDispatcherOwner()?.onBackPressedDispatcher?.hasEnabledCallbacks() }.getOrNull()
+            "${v.javaClass.simpleName}(windowFocus=${v.hasWindowFocus()} shown=${v.isShown} back=$back composeFocused=[${composeFocused(v)}])"
+        }
+    }
+
+    /** The Compose roots in the view tree under [root]. */
+    private fun composeRoots(root: android.view.View): List<androidx.compose.ui.platform.ViewRootForTest> {
+        fun all(v: android.view.View): List<android.view.View> = listOf(v) + ((v as? android.view.ViewGroup)?.let { g -> (0 until g.childCount).flatMap { all(g.getChildAt(it)) } } ?: emptyList())
+        return all(root).mapNotNull { it as? androidx.compose.ui.platform.ViewRootForTest }
+    }
+
+    /** DIAGNOSTICS (log only), on the main thread: window focus, touch mode, the focused view, the keyboard, what Compose has focused. */
     private fun mainState(a: android.app.Activity, pt: androidx.compose.ui.geometry.Offset): String {
         val decor = a.window.decorView
         val ime = androidx.core.view.ViewCompat.getRootWindowInsets(decor)?.isVisible(androidx.core.view.WindowInsetsCompat.Type.ime())
-        fun all(v: android.view.View): List<android.view.View> = listOf(v) + ((v as? android.view.ViewGroup)?.let { g -> (0 until g.childCount).flatMap { all(g.getChildAt(it)) } } ?: emptyList())
-        val compose = all(decor).firstNotNullOfOrNull { it as? androidx.compose.ui.platform.ViewRootForTest }
-        val focused = runCatching {
-            compose?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = false)
-                ?.filter { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused) == true }
-                ?.joinToString { n -> (n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.text ?: n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.joinToString() ?: "?") + "@" + n.boundsInWindow }
-        }.getOrElse { "error ${it.javaClass.simpleName}" }
+        val compose = composeRoots(decor).firstOrNull()
+        val focused = composeFocused(decor)
         // What Compose has at the tapped point (window coordinates), innermost last.
         val under = runCatching {
             compose?.semanticsOwner?.getAllSemanticsNodes(mergingEnabled = false)?.filter { it.boundsInWindow.contains(pt) }
