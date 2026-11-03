@@ -87,18 +87,18 @@ class EInvoicePrecisionTest {
     }
 
     @Test fun aRoundingRowIsPartOfTheTotal() {
-        // "ARROTONDAMENTO 1,00 -0,08 -0,08" among the lines: its amount counts, its quantity and price only repeat it.
+        // "Arrotondamento 1,00 -0,063 -0,06" among the lines: its amount counts, its quantity and price only repeat it.
         val inv = Invoice(
-            supplierVat = pIva("0789123456"), supplierName = "BUONI PROVA S.R.L.", number = "105", date = "29-12-2030",
+            supplierVat = pIva("0789123456"), supplierName = "BUONI PROVA S.R.L.", number = "417", date = "29-12-2030",
             lines = listOf(
-                Line("BUONI PROVA", "300,00", "8,197", "NR", "22,00", "2.459,10", code = "BUONI"),
-                Line("Arrotondamento", "1,00", "-0,084", "NR", "22,00", "-0,08", code = "ARR"),
+                Line("BUONI PROVA", "200,00", "6,148", "NR", "22,00", "1.229,60", code = "BUONI"),
+                Line("Arrotondamento", "1,00", "-0,063", "NR", "22,00", "-0,06", code = "ARR"),
             ),
-            groups = listOf(Group("22,00", "2.459,02", "540,98")),
-            total = "3.000,00",
+            groups = listOf(Group("22,00", "1.229,54", "270,50")),
+            total = "1.500,04",
         )
         val d = draft(inv)
-        assertEquals(listOf(245910L, -8L), d.items.map { ItalianNumbers.parseCents(it.lineTotal.text) })
+        assertEquals(listOf(122960L, -6L), d.items.map { ItalianNumbers.parseCents(it.lineTotal.text) })
         assertTrue(d.items[1].isCharge)
         assertTrue(AutoAccept.moneyProven(d))
     }
@@ -121,21 +121,21 @@ class EInvoicePrecisionTest {
 
     @Test fun discountsPrintedOneUnderTheOtherApplyInTurn() {
         // "-10.00%" on the item's row, "-10.00%" and "-4.00%" under it in the same column, a note between them:
-        // 2 x 11,50 = 23,00 x 0,90 x 0,90 x 0,96 = 17,88. Together they are one discount, applied in turn.
+        // 3 x 7,40 = 22,20 x 0,90 x 0,90 x 0,96 = 17,26. Together they are one discount, applied in turn.
         val rows = listOf(
             listOf(w("CODICE", 84, 990, 200), w("DESCRIZIONE", 643, 990, 900), w("QUANTITÀ", 1284, 990, 1400), w("PREZZO", 1550, 990, 1670),
                 w("SCONTO", 1813, 990, 1943), w("IVA", 2000, 990, 2072), w("IMPORTO", 2250, 990, 2366)),
-            listOf(w("10001", 84, 1050, 200), w("MANDORLE PROVA KG 1", 643, 1050, 1000), w("2,00", 1330, 1050, 1400), w("11,50", 1583, 1050, 1670),
-                w("-10.00%", 1813, 1050, 1943), w("10,00", 1985, 1050, 2072), w("17,88", 2279, 1050, 2366)),
+            listOf(w("10001", 84, 1050, 200), w("MANDORLE PROVA KG 1", 643, 1050, 1000), w("3,00", 1330, 1050, 1400), w("7,40", 1602, 1050, 1670),
+                w("-10.00%", 1813, 1050, 1943), w("10,00", 1985, 1050, 2072), w("17,26", 2279, 1050, 2366)),
             listOf(w("Tipo dato: LOTTI", 643, 1092, 900), w("-10.00%", 1813, 1092, 1943)),
             listOf(w("scadenze)", 643, 1126, 777)),
-            listOf(w("Lotto: 26062", 643, 1161, 804), w("-4.00%", 1833, 1161, 1943)),
-            listOf(w("10002", 84, 1212, 200), w("NOCI PROVA KG 1", 643, 1212, 950), w("1,00", 1330, 1212, 1400), w("9,00", 1602, 1212, 1670),
-                w("-5% -5%", 1813, 1212, 1943), w("4,00", 2004, 1212, 2072), w("8,12", 2298, 1212, 2366)),
+            listOf(w("Lotto: 99001", 643, 1161, 804), w("-4.00%", 1833, 1161, 1943)),
+            listOf(w("10002", 84, 1212, 200), w("NOCI PROVA KG 1", 643, 1212, 950), w("1,00", 1330, 1212, 1400), w("6,60", 1602, 1212, 1670),
+                w("-5% -5%", 1813, 1212, 1943), w("4,00", 2004, 1212, 2072), w("5,96", 2298, 1212, 2366)),
         )
         val items = TableReader.read(listOf(LayoutRows.Layout(rows, 0.0)), textLayerPages = setOf(0))!!
         assertEquals(listOf("10+10+4", "5+5"), items.map { it.discount?.value })
-        assertEquals(listOf(1788L, 812L), items.map { it.lineTotalCents?.value })
+        assertEquals(listOf(1726L, 596L), items.map { it.lineTotalCents?.value })
         assertTrue(items.all { it.quantity?.confidence == Confidence.HIGH && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings })
     }
 
@@ -146,12 +146,12 @@ class EInvoicePrecisionTest {
             supplierVat = pIva("0912345678"), supplierName = "TELEFONIA PROVA S.P.A.", number = "7X0001", date = "11-03-2031",
             lines = listOf(
                 Line("Contributo attivazione PROVA", null, "2,00", null, "22,00", "2,00", code = null),
-                Line("Vendita rateale apparati PROVA", null, "34,77", null, "N1", "34,77", code = null),
+                Line("Vendita rateale apparati PROVA", null, "41,30", null, "N1", "41,30", code = null),
             ),
-            groups = listOf(Group("N1", "34,77", "0"), Group("22,00", "2,00", "0,44")),
-            total = "37,21",
+            groups = listOf(Group("N1", "41,30", "0"), Group("22,00", "2,00", "0,44")),
+            total = "43,74",
         )
-        assertEquals(listOf(200L, 3477L), read(inv).lineItems.map { it.lineTotalCents?.value })
+        assertEquals(listOf(200L, 4130L), read(inv).lineItems.map { it.lineTotalCents?.value })
         val text = "PANE PROVA 2 1,50 3,00\nMP05 Bonifico Beneficiario PROVA Data 3,00\nTOTALE DOCUMENTO 3,00"
         assertEquals(listOf(300L), ReceiptParser.parse(text).lineItems.map { it.lineTotalCents?.value })
     }
