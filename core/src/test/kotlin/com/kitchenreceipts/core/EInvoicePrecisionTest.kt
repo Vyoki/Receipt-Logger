@@ -267,6 +267,28 @@ class EInvoicePrecisionTest {
         assertTrue(!AutoAccept.moneyProven(draft(inv.copy(total = "15,10"))))
     }
 
+    @Test fun theTotalCountsGiftsAndTheTotalsRowsDiscount() {
+        // A gift line (Tipo dato: OMAGGIO) is in the taxable but not paid: 30,00 + 2,00 gift = 32,00, VAT 10 % 3,20,
+        // total 35,20 - 2,00 = 33,20. A discount in the totals row: 32,00 + 3,20 - 1,20 = 34,00.
+        val gift = Invoice(
+            supplierVat = pIva("0234598761"), supplierName = "CARNI DONO PROVA S.R.L.", number = "77", date = "05-05-2031",
+            lines = listOf(
+                Line("COSTINE PROVA", "3,00", "10,00", "KG", "10,00", "30,00"),
+                Line("FEGATO PROVA", "1,00", "2,00", "KG", "10,00", "2,00", notes = listOf(EInvoicePrintoutFixture.Note("OMAGGIO", "(OMAGGIO)"))),
+            ),
+            groups = listOf(Group("10,00", "32,00", "3,20")),
+            total = "33,20",
+        )
+        val g = draft(gift)
+        assertEquals(-200L, g.totalAdjustCents)
+        assertTrue(AutoAccept.moneyProven(g))
+        val discount = draft(gift.copy(lines = gift.lines.map { it.copy(notes = emptyList()) }, docDiscount = "-1,20", total = "34,00"))
+        assertEquals(-120L, discount.totalAdjustCents)
+        assertTrue(AutoAccept.moneyProven(discount))
+        // A total that nothing printed explains stays to check.
+        assertTrue(!AutoAccept.moneyProven(draft(gift.copy(total = "33,10"))))
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(

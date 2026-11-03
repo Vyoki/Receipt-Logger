@@ -252,6 +252,8 @@ object AutoAccept {
      */
     fun headerAddsUp(d: DocumentDraft, sub: Long, vat: Long, tot: Long): Boolean {
         if (totalsAddUp(sub, vat, tot)) return true
+        // Bollo, the totals row's discount or markup, gifts: proven when the document was read (see totalAdjustCents).
+        if (d.totalAdjustCents != 0L && sub + vat + d.totalAdjustCents == tot) return true
         val lines = d.linesTotal() ?: return false
         return d.summaryExtraCents != 0L && lines == sub && lines - d.summaryExtraCents + vat == tot
     }

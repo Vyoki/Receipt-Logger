@@ -273,6 +273,8 @@ object TableReader {
 
     /** An amount: two decimals and more after a comma, as an e-invoice prints them (up to 8: "32,78688525"). */
     private val MONEY = Regex("^-?€?\\d{1,3}(?:\\.\\d{3})*,\\d{2,8}-?€?$|^-?€?\\d+,\\d{2,8}-?€?$|^-?€?\\d+\\.\\d{2,4}-?€?$|^-?€?\\d{1,3}(?:\\.\\d{3})+\\.\\d{2}-?€?$")
+    /** The note type of a gift line. */
+    private val GIFT = Regex("(?i)^\\(?omaggi[oi]\\)?$")
     /** An amount off each unit in the discount column, signed, no percent sign ("-27,05", "-1,6393"). */
     private val PER_UNIT_OFF = Regex("^[-−]\\d{1,3}(?:\\.\\d{3})*,\\d{2,8}$")
     /** A price and its unit printed without a space ("0,2877KW*MESE"), maybe the line's discount too ("124,80NUMERO-14.50%"). */
@@ -727,6 +729,8 @@ object TableReader {
             val typeMatch = NOTE_TYPE.find(text)
             if (typeMatch != null) {
                 noteType = typeMatch.groupValues[1].trim(); noteTypeInDescription = noteIn; pendingDescription = null
+                // "Tipo dato: OMAGGIO": the line above is a gift (in the taxable, not paid).
+                if (GIFT.matches(noteType!!) && items.isNotEmpty()) items[items.lastIndex] = items.last().copy(gift = true)
                 return true
             }
             val m = NOTE_VALUE.find(text)

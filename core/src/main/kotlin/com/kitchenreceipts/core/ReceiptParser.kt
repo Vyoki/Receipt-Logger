@@ -278,11 +278,15 @@ object ReceiptParser {
                     ?.let { l -> preciseSumByRate(l.map { vatKey(it.vatRatePercent?.value, it.vatNature) to it.preciseTotal() }) }
                 val extra = gs.sumOf { it.extraCents }
                 val byArr = extra != 0L && lines != null && lines + extra == gs.sumOf { it.taxableCents } && lines + gs.sumOf { it.vatCents } == gt
-                if (gs.isEmpty() || (gs.sumOf { it.taxableCents + it.vatCents } != gt && !byArr))
+                // Bollo, the totals row's discount or markup, and gifts: everything the totals row prints, exactly.
+                val adjust = if (gs.isEmpty() || gs.sumOf { it.taxableCents + it.vatCents } == gt || byArr) 0L
+                    else totalsAdjustment(text, gs.sumOf { it.taxableCents }, d.lineItems, gt)?.takeIf { a -> a != 0L && gs.sumOf { it.taxableCents + it.vatCents } + a == gt } ?: 0L
+                if (gs.isEmpty() || (gs.sumOf { it.taxableCents + it.vatCents } != gt && !byArr && adjust == 0L))
                     return@let d.copy(totalCents = Extracted(gt, Confidence.LOW, "under its heading; the VAT summary does not prove it"))
                 val src = "VAT summary rows add up to the total under its heading"
                 d.copy(subtotalCents = Extracted(gs.sumOf { it.taxableCents }, Confidence.HIGH, src), vatCents = Extracted(gs.sumOf { it.vatCents }, Confidence.HIGH, src),
-                    totalCents = Extracted(gt, Confidence.HIGH, src), warnings = d.warnings - ParseWarning.ITEMS_SUM_MISMATCH - ParseWarning.TOTALS_INCONSISTENT)
+                    totalCents = Extracted(gt, Confidence.HIGH, src), totalAdjustCents = adjust,
+                    warnings = d.warnings - ParseWarning.ITEMS_SUM_MISMATCH - ParseWarning.TOTALS_INCONSISTENT)
             }
             val withParties = Parties.apply(gridded, supplier)
             // The supplier's name is sure only when independent places on the page agree (or the phone knows its VAT).
@@ -385,6 +389,28 @@ object ReceiptParser {
         val buyer = InvoiceBundle.signals(0, page, own).customerVat ?: return d
         return if (buyer != own) d.copy(warnings = d.warnings + ParseWarning.OTHER_BUYER) else d
     }
+
+    /**
+     * What TOTALE DOCUMENTO adds to taxable + VAT, from the totals row ("IMPORTO BOLLO  SCONTO/MAGGIORAZIONE  ARR.
+     * TOTALE DOCUMENTO" and the row of values under it): every amount printed there before the total, signed as printed
+     * (bollo 2,00, a discount -1,71), plus a printed percentage of the taxable ("+4.00%"), less the gift lines (OMAGGIO,
+     * in the taxable but not paid). Null when the row is not found or its last amount is not [total].
+     */
+    private fun totalsAdjustment(text: String, taxable: Long, items: List<ParsedLineItem>, total: Long): Long? {
+        val lines = text.lines()
+        val at = lines.indexOfFirst { TOTALS_ROW_LABELS.containsMatchIn(it) }.takeIf { it >= 0 } ?: return null
+        val values = lines.drop(at + 1).firstOrNull { it.isNotBlank() } ?: return null
+        val money = SIGNED_MONEY.findAll(values).map { it.value }.toList()
+        if (money.isEmpty() || ItalianNumbers.parseCents(money.last()) != total) return null
+        val amounts = money.dropLast(1).sumOf { ItalianNumbers.parseCents(it) ?: return null }
+        val percent = SIGNED_PERCENT.findAll(values).sumOf { m ->
+            ItalianNumbers.toCents(BigDecimal(taxable).movePointLeft(2).multiply(ItalianNumbers.parse(m.groupValues[1]) ?: return null).movePointLeft(2))
+        }
+        return amounts + percent - items.filter { it.gift }.sumOf { it.lineTotalCents?.value ?: return null }
+    }
+    private val TOTALS_ROW_LABELS = Regex("(?i)importo\\s+bollo.*totale\\s+documento")
+    private val SIGNED_MONEY = Regex("(?<![\\d.,%])[-+]?\\d{1,3}(?:\\.\\d{3})*,\\d{2}(?![\\d%])")
+    private val SIGNED_PERCENT = Regex("([-+]\\d{1,2}[.,]\\d{1,2})%")
 
     /** A line read from a row whose last words are one number and a unit ("... 1,00 Pz"): that number is a quantity. */
     private fun quantityOnly(it: ParsedLineItem): Boolean {

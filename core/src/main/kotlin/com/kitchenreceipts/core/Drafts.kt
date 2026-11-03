@@ -193,6 +193,8 @@ data class DocumentDraft(
     val vatGroupProblems: List<VatSummary.Check> = emptyList(),
     /** What the VAT summary's rows add to the lines (ARR., cassa previdenziale): part of the taxable amount, no line. */
     val summaryExtraCents: Long = 0L,
+    /** What the total adds to taxable + VAT, all printed (see ParsedDocument.totalAdjustCents). */
+    val totalAdjustCents: Long = 0L,
     /** The AI's double-check, if it ran. */
     val aiCheck: AiCheck? = null,
     /** Other spellings of the supplier read on the document when they disagree (see [SupplierProof]): one tap each. */
@@ -260,6 +262,7 @@ data class DocumentDraft(
                 lotsPrinted = p.lotsPrinted,
                 vatGroupProblems = p.vatChecks.filter { !it.ok },
                 summaryExtraCents = p.summaryExtraCents,
+                totalAdjustCents = p.totalAdjustCents,
                 aiCheck = p.aiCheck,
                 sellerAlternatives = p.supplierProof?.takeIf { p.sellerName?.confidence == Confidence.LOW }?.alternatives.orEmpty(),
                 checks = p.reconciled,
