@@ -282,4 +282,21 @@ class TableReaderTest {
             assertTrue(items[2].nameDoubt)
         }
     }
+
+    @Test fun aDecimalCommaPhotographedAsADotIsTheAmountWhenTheLineProvesIt() {
+        // "1.483.20": thousands, then the comma read as a dot. 103,00 x 14,40 = 1.483,20 proves it; a line that does
+        // not add up keeps it unsure.
+        fun page(amount: String) = listOf(
+            OcrLine("DESCRIZIONE QUANTITÀ PREZZO IMPORTO", 40, 100, 1400, 130, words = listOf(
+                OcrLine("DESCRIZIONE", 40, 100, 300, 130), OcrLine("QUANTITÀ", 700, 100, 880, 130), OcrLine("PREZZO", 950, 100, 1100, 130), OcrLine("IMPORTO", 1250, 100, 1400, 130))),
+            OcrLine("VITELLO PROVA 103,00 14,40 $amount", 40, 160, 1400, 190, words = listOf(
+                OcrLine("VITELLO", 40, 160, 180, 190), OcrLine("PROVA", 190, 160, 300, 190), OcrLine("103,00", 760, 160, 880, 190),
+                OcrLine("14,40", 1010, 160, 1100, 190), OcrLine(amount, 1260, 160, 1400, 190))),
+        )
+        val proven = TableReader.read(listOf(LayoutRows.layout(page("1.483.20"))))!!.single()
+        assertEquals(148320L, proven.lineTotalCents?.value)
+        assertEquals(Confidence.HIGH, proven.lineTotalCents?.confidence)
+        val unproven = TableReader.read(listOf(LayoutRows.layout(page("1.483.70"))))!!.single()
+        assertTrue(unproven.lineTotalCents?.confidence != Confidence.HIGH)
+    }
 }

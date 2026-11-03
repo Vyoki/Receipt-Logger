@@ -272,7 +272,9 @@ object TableReader {
     internal fun isDoubtedLot(source: String) = source.startsWith(SEVERAL_LOTS) || source.startsWith(NOTE_AWAY)
 
     /** An amount: two decimals and more after a comma, as an e-invoice prints them (up to 8: "32,78688525"). */
-    private val MONEY = Regex("^-?€?\\d{1,3}(?:\\.\\d{3})*,\\d{2,8}-?€?$|^-?€?\\d+,\\d{2,8}-?€?$|^-?€?\\d+\\.\\d{2,4}-?€?$")
+    private val MONEY = Regex("^-?€?\\d{1,3}(?:\\.\\d{3})*,\\d{2,8}-?€?$|^-?€?\\d+,\\d{2,8}-?€?$|^-?€?\\d+\\.\\d{2,4}-?€?$|^-?€?\\d{1,3}(?:\\.\\d{3})+\\.\\d{2}-?€?$")
+    /** "1.627.60" (photographed): thousands groups, then the decimal comma read as a dot. Only quantity x price proves it. */
+    private val COMMA_AS_DOT = Regex("^(-?€?\\d{1,3}(?:\\.\\d{3})+)\\.(\\d{2}-?€?)$")
     /** Quantity and price printed so close that the text runs them together: "19,417475731,68852459". */
     private val TWO_NUMBERS = Regex("^\\d+,\\d+,\\d+$")
     private val NUMBER = Regex("^-?\\d+(?:[.,]\\d+)*(?:%)?$")
@@ -1055,7 +1057,10 @@ object TableReader {
     private fun buildItem(cells: Map<Kind, List<Word>>, source: String, header: Header): ParsedLineItem? {
         fun cell(k: Kind) = cells[k].orEmpty()
         val amountWord = cell(Kind.AMOUNT).lastOrNull { isMoney(it.text) }
-        val amount = amountWord?.let { ItalianNumbers.parseCents(it.text.trim('€')) }
+        // The decimal comma read as a dot after thousands groups ("1.627.60"): the amount 1.627,60, sure only when
+        // quantity x price gives it (below).
+        val commaAsDot = amountWord?.let { COMMA_AS_DOT.matchEntire(it.text.trim()) }
+        val amount = amountWord?.let { w -> ItalianNumbers.parseCents((commaAsDot?.let { m -> m.groupValues[1] + "," + m.groupValues[2] } ?: w.text).trim('€')) }
         // Printed with more decimals than cents (an e-invoice): kept exactly, the lines add up by it (see preciseSum).
         val exactAmount = amountWord?.let { ItalianNumbers.parse(it.text.trim('€')) }?.takeIf { it.stripTrailingZeros().scale() > 2 }
         var amountRepaired = false
@@ -1219,7 +1224,7 @@ object TableReader {
             unit = unit?.let { Extracted(it, conf, source) },
             // A repaired decimal comma adds up, but is shown for a look.
             unitPrice = price?.let { Extracted(it, if (priceRepaired) Confidence.LOW else conf, source) },
-            lineTotalCents = total?.let { Extracted(it, if (!amountRepaired && (consistent || (qty == null && price == null))) Confidence.HIGH else Confidence.LOW, source) },
+            lineTotalCents = total?.let { Extracted(it, if (!amountRepaired && (consistent || (qty == null && price == null && commaAsDot == null))) Confidence.HIGH else Confidence.LOW, source) },
             exactTotal = exactAmount?.takeIf { total != null && ItalianNumbers.toCents(it) == total },
             vatRatePercent = vat?.let { Extracted(it.stripTrailingZeros(), Confidence.HIGH, source) },
             vatNature = if (vat == null) cell(Kind.VAT).firstOrNull { NATURE.matches(it.text.trim()) }?.text?.trim()?.uppercase() else null,
