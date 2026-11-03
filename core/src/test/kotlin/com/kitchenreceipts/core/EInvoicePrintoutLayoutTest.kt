@@ -340,6 +340,22 @@ class EInvoicePrintoutLayoutTest {
         assertTrue(AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(read(off)))).isNotEmpty())
     }
 
+    @Test fun aLumpSumNamedTotaleIsALineWhenItsColumnsProveIt() {
+        // "TOTALE A CORPO ..." is the line's name (a lump sum), its unit "FRAZIONABI": 1,00 x 150,00 = 150,00 at 22 %.
+        val lump = EInvoicePrintoutFixture.Line("TOTALE A CORPO DI PROVA", "1,00", "150,00", "FRAZIONABI", "22,00", "150,00", codeType = null,
+            more = listOf("RIPARAZIONE TRAFILA DI PROVA"))
+        val inv = meat.copy(lines = listOf(lump), groups = listOf(EInvoicePrintoutFixture.Group("22,00", "150,00", "33,00")), total = "183,00")
+        val line = read(inv).lineItems.single()
+        assertEquals(15000L, line.lineTotalCents?.value)
+        assertEquals(0, line.quantity?.value?.compareTo(BigDecimal.ONE))
+        assertEquals(0, line.vatRatePercent?.value?.compareTo(BigDecimal("22")))
+        assertEquals(emptyList<ReviewReason>(), AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(read(inv)))).toList())
+        // Its numbers not adding up (1,00 x 140,00 is not 150,00): a row named TOTALE that ends the table, no line.
+        val off = inv.copy(lines = listOf(lump.copy(price = "140,00")))
+        assertTrue(read(off).lineItems.none { it.lineTotalCents?.value == 15000L && it.quantity != null })
+        assertTrue(AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(read(off)))).isNotEmpty())
+    }
+
     // ------------------------------------------------------------------ the supplier's VAT number (F7)
 
     @Test fun supplierVatFromItsRoleBox() {

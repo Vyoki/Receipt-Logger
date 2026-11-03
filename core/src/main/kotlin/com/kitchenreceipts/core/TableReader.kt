@@ -739,7 +739,10 @@ object TableReader {
         /** Reads one row; false when the table has ended. */
         fun readRow(row: List<Word>): Boolean {
             val text = row.joinToString(" ") { it.text }
-            if (endsTable(text)) return false
+            // A row named "TOTALE ..." ends the table, unless its own columns prove a line: quantity x price = amount
+            // and a VAT rate under its heading ("TOTALE A CORPO ... 1,00 150,00 22,00 150,00", a lump sum).
+            if (endsTable(text) && !(ReceiptParser.onlyTotalWord(text) && !PAYMENT_BLOCK.containsMatchIn(text) &&
+                    assign(row, header, textLayer).let { c -> buildItem(c, text, header, textLayer)?.let { provenLine(it) && taxedLine(it, c) } } == true)) return false
             val noteIn = inDescription(row.first(), header)
             val typeMatch = NOTE_TYPE.find(text)
             if (typeMatch != null) {

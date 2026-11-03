@@ -370,10 +370,14 @@ object ReceiptParser {
     /** "Riporto", "A riportare", "Totale pagina": an amount carried from one page to the next. */
     internal fun isCarryOverRow(line: String): Boolean = CARRY_OVER.containsMatchIn(line)
 
-    internal fun isFooterRow(line: String): Boolean =
+    internal fun isFooterRow(line: String): Boolean = TOTAL_WEAK.containsMatchIn(line) || strongFooter(line)
+
+    /** A footer row only by its first word ("TOTALE A CORPO ..."): nothing else on it says total, taxable or VAT. */
+    internal fun onlyTotalWord(line: String): Boolean = TOTAL_WEAK.containsMatchIn(line) && !strongFooter(line)
+
+    private fun strongFooter(line: String): Boolean =
         CARRY_OVER.containsMatchIn(line) || TOTALS_ROW.containsMatchIn(line) || TOTAL_STRONG.containsMatchIn(line) ||
-            SUBTOTAL.containsMatchIn(line) || VAT_TOTAL.containsMatchIn(line) || TOTAL_WEAK.containsMatchIn(line) ||
-            VAT_SUMMARY_WORD.findAll(line).count() >= 3
+            SUBTOTAL.containsMatchIn(line) || VAT_TOTAL.containsMatchIn(line) || VAT_SUMMARY_WORD.findAll(line).count() >= 3
 
     /** Payment, address, VAT-number rows inside the table area. */
     private val BUYER_BOX = Regex("(?i)(cessionario\\s*/\\s*committente|dati\\s+del\\s+cessionario)")
