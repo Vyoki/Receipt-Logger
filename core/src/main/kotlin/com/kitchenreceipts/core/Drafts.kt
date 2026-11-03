@@ -199,7 +199,7 @@ data class DocumentDraft(
     val vatGroupProblems: List<VatSummary.Check> = emptyList(),
     /** What the VAT summary's rows add to the lines (ARR., cassa previdenziale): part of the taxable amount, no line. */
     val summaryExtraCents: Long = 0L,
-    /** What the total takes off taxable + VAT: the gift lines (see ParsedDocument.totalAdjustCents). */
+    /** What the total adds to taxable + VAT, all printed (see ParsedDocument.totalAdjustCents). */
     val totalAdjustCents: Long = 0L,
     /** The AI's double-check, if it ran. */
     val aiCheck: AiCheck? = null,

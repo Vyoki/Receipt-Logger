@@ -278,9 +278,9 @@ object ReceiptParser {
                     ?.let { l -> preciseSumByRate(l.map { vatKey(it.vatRatePercent?.value, it.vatNature) to it.preciseTotal() }) }
                 val extra = gs.sumOf { it.extraCents }
                 val byArr = extra != 0L && lines != null && lines + extra == gs.sumOf { it.taxableCents } && lines + gs.sumOf { it.vatCents } == gt
-                // Gift lines in the taxable that the total does not charge (see totalsAdjustment), exactly.
+                // Bollo, the totals row's discount or markup, and gifts: everything the totals row prints, exactly.
                 val adjust = if (gs.isEmpty() || gs.sumOf { it.taxableCents + it.vatCents } == gt || byArr) 0L
-                    else totalsAdjustment(text, d.lineItems, gt)?.takeIf { a -> a != 0L && gs.sumOf { it.taxableCents + it.vatCents } + a == gt } ?: 0L
+                    else totalsAdjustment(text, gs.sumOf { it.taxableCents }, d.lineItems, gt)?.takeIf { a -> a != 0L && gs.sumOf { it.taxableCents + it.vatCents } + a == gt } ?: 0L
                 if (gs.isEmpty() || (gs.sumOf { it.taxableCents + it.vatCents } != gt && !byArr && adjust == 0L))
                     return@let d.copy(totalCents = Extracted(gt, Confidence.LOW, "under its heading; the VAT summary does not prove it"))
                 val src = "VAT summary rows add up to the total under its heading"
@@ -395,20 +395,22 @@ object ReceiptParser {
     }
 
     /**
-     * What TOTALE DOCUMENTO takes off taxable + VAT: the gift lines (OMAGGIO, in the taxable but not paid), when the
-     * totals row ("IMPORTO BOLLO  SCONTO/MAGGIORAZIONE  ARR.  TOTALE DOCUMENTO" and the row of values under it) prints
-     * [total] and nothing else besides zeros. A bollo, a rounding, a discount or a markup printed there leaves taxable
-     * and VAT unproven (EInvoicePrintoutLayoutTest.stampDutyRoundingOrDiscountLeaveTaxableAndVatUnproven): null.
+     * What TOTALE DOCUMENTO adds to taxable + VAT, from the totals row ("IMPORTO BOLLO  SCONTO/MAGGIORAZIONE  ARR.
+     * TOTALE DOCUMENTO" and the row of values under it): every amount printed there before the total, signed as printed
+     * (bollo 2,00, a discount -1,71), plus a printed percentage of the taxable ("+4.00%"), less the gift lines (OMAGGIO,
+     * in the taxable but not paid). Null when the row is not found or its last amount is not [total].
      */
-    private fun totalsAdjustment(text: String, items: List<ParsedLineItem>, total: Long): Long? {
+    private fun totalsAdjustment(text: String, taxable: Long, items: List<ParsedLineItem>, total: Long): Long? {
         val lines = text.lines()
         val at = lines.indexOfFirst { TOTALS_ROW_LABELS.containsMatchIn(it) }.takeIf { it >= 0 } ?: return null
         val values = lines.drop(at + 1).firstOrNull { it.isNotBlank() } ?: return null
         val money = SIGNED_MONEY.findAll(values).map { it.value }.toList()
         if (money.isEmpty() || ItalianNumbers.parseCents(money.last()) != total) return null
-        if (money.dropLast(1).any { ItalianNumbers.parseCents(it) != 0L }) return null
-        if (SIGNED_PERCENT.findAll(values).any { m -> ItalianNumbers.parse(m.groupValues[1])?.signum() != 0 }) return null
-        return -items.filter { it.gift }.sumOf { it.lineTotalCents?.value ?: return null }
+        val amounts = money.dropLast(1).sumOf { ItalianNumbers.parseCents(it) ?: return null }
+        val percent = SIGNED_PERCENT.findAll(values).sumOf { m ->
+            ItalianNumbers.toCents(BigDecimal(taxable).movePointLeft(2).multiply(ItalianNumbers.parse(m.groupValues[1]) ?: return null).movePointLeft(2))
+        }
+        return amounts + percent - items.filter { it.gift }.sumOf { it.lineTotalCents?.value ?: return null }
     }
     private val TOTALS_ROW_LABELS = Regex("(?i)importo\\s+bollo.*totale\\s+documento")
     private val SIGNED_MONEY = Regex("(?<![\\d.,%])[-+]?\\d{1,3}(?:\\.\\d{3})*,\\d{2}(?![\\d%])")
