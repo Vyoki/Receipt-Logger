@@ -644,6 +644,14 @@ object TableReader {
     /** A rounding row read with its amount. */
     private fun roundingLine(it: ParsedLineItem) = it.lineTotalCents != null && ROUNDING.containsMatchIn(it.originalDescription)
 
+    /** A VAT nature code ("N1", "N2.2"): an operation without VAT, printed in the VAT column. */
+    private val NATURE = Regex("^N[1-7](?:\\.\\d{1,2})?$")
+
+    /** A priced line that adds up, with a VAT rate or a nature code in its VAT column. */
+    private fun taxedLine(it: ParsedLineItem, cells: Map<Kind, List<Word>>) =
+        it.lineTotalCents != null && it.unitPrice != null && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings &&
+            cells[Kind.VAT].orEmpty().any { w -> NATURE.matches(w.text.trim()) || numberIn(w.text)?.stripTrailingZeros()?.toPlainString() in VAT_RATES }
+
     /** Quantity x price (less the discount) = amount, all three read. */
     private fun provenLine(it: ParsedLineItem) = it.quantity?.confidence == Confidence.HIGH && it.unitPrice?.confidence == Confidence.HIGH &&
         it.lineTotalCents != null && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings
@@ -731,10 +739,11 @@ object TableReader {
             }
             // Words that say "no item" (a payment, a carrier, "vendita", a phone number) do not drop a row whose own
             // columns prove it is one: quantity x price = amount, each in its column ("CACIOTTA MONTE VETTORE",
-            // "CANONE POS ANNUO 1,00 9,90 22,00 9,90"), nor a rounding row with its amount (part of the total). The VAT
-            // summary's rows never are.
+            // "CANONE POS ANNUO 1,00 9,90 22,00 9,90"), nor a rounding row with its amount (part of the total), nor a
+            // priced row with its VAT rate or nature code ("Vendita rateale apparati 34,77 N1 34,77": it adds into the
+            // VAT summary; a payment row has no VAT). The VAT summary's rows never are.
             if (ReceiptParser.isNotAnItemRow(text) && (ReceiptParser.isSummaryRow(text) ||
-                    buildItem(assign(row, header, textLayer), text, header)?.let { provenLine(it) || roundingLine(it) } != true)) {
+                    assign(row, header, textLayer).let { c -> buildItem(c, text, header)?.let { provenLine(it) || roundingLine(it) || taxedLine(it, c) } } != true)) {
                 pendingDescription = null; headingNumbers = null; return true
             }
             rowPriced = row.any { isMoney(it.text) }

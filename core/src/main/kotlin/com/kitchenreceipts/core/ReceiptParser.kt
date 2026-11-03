@@ -153,6 +153,8 @@ object ReceiptParser {
     private val NON_ITEM = Regex(
         "(?i)\\b(resto|contanti|contante|pagamento|pagato|bancomat|carta\\s+di\\s+(?:credito|debito)|pos|ricevuto|documento\\s+commerciale|" +
             "vendita|rt\\b|matricola|arrotondamento|sconto\\s+totale|scadenza\\s+pagamento|iban|abi|cab|banca|" +
+            // Payment terms ("MP05 Bonifico ... Data scadenza 1.016,67", "Rata 2"): the amount due, never a line.
+            "mp\\d{2}|bonifico|data\\s+scadenza|rata|" +
             "trasporto\\s+a\\s+cura|peso\\s+lordo|colli|vettore|causale|aliquota|riepilogo|cassiere|grazie|" +
             "elettronico|non\\s+riscosso|operatore|transazione|" +
             // E-invoice line notes ("Rif. numero: 12,00", "Valore numerico: 3,00", "Quantità del suddetto lotto: 4,00"):

@@ -139,6 +139,23 @@ class EInvoicePrecisionTest {
         assertTrue(items.all { it.quantity?.confidence == Confidence.HIGH && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings })
     }
 
+    @Test fun aPricedRowWithItsVatIsALineAndAPaymentRowIsNot() {
+        // "Vendita" says no item, but a row with its price, its amount and a nature code in the VAT column adds into the
+        // VAT summary: it is a line. A payment row ("MP05 Bonifico ... Data 1.016,67") is the amount due, never a line.
+        val inv = Invoice(
+            supplierVat = pIva("0912345678"), supplierName = "TELEFONIA PROVA S.P.A.", number = "7X0001", date = "11-03-2031",
+            lines = listOf(
+                Line("Contributo attivazione PROVA", null, "2,00", null, "22,00", "2,00", code = null),
+                Line("Vendita rateale apparati PROVA", null, "34,77", null, "N1", "34,77", code = null),
+            ),
+            groups = listOf(Group("N1", "34,77", "0"), Group("22,00", "2,00", "0,44")),
+            total = "37,21",
+        )
+        assertEquals(listOf(200L, 3477L), read(inv).lineItems.map { it.lineTotalCents?.value })
+        val text = "PANE PROVA 2 1,50 3,00\nMP05 Bonifico Beneficiario PROVA Data 3,00\nTOTALE DOCUMENTO 3,00"
+        assertEquals(listOf(300L), ReceiptParser.parse(text).lineItems.map { it.lineTotalCents?.value })
+    }
+
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
         // "VETTORE" (carrier) and "POS" (card terminal) are words of rows that are no item; here they are names.
         val inv = Invoice(
