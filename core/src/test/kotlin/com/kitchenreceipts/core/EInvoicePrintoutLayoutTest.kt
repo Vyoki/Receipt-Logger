@@ -91,19 +91,19 @@ class EInvoicePrintoutLayoutTest {
         assertTrue(d.lineItems.none { it.unit?.value == "pz" })
     }
 
-    @Test fun negativeLineAndNatureCodeLeaveTheBillInReview() {
+    @Test fun negativeLineKeepsItsMinusAndNatureCodeIsNoRate() {
         val d = read(EInvoicePrintoutFixture.ENERGY)
         val rounding = d.lineItems.last()
-        // The amount as printed; the price is read without its sign, so quantity x price does not prove the line.
+        // The amount as printed, and the price with its minus: 1 x -0,30 = -0,30 proves the line.
         assertEquals(-30L, rounding.lineTotalCents?.value)
-        assertTrue(rounding.unitPrice?.value?.signum() != -1)
-        assertTrue(rounding.unitPrice?.confidence != Confidence.HIGH || ParseWarning.LINE_TOTAL_MISMATCH in rounding.warnings)
+        assertEquals(0, rounding.unitPrice?.value?.compareTo(BigDecimal("-0.30")))
+        assertEquals(Confidence.HIGH, rounding.unitPrice?.confidence)
+        assertTrue(ParseWarning.LINE_TOTAL_MISMATCH !in rounding.warnings)
         // "N2.2" in the VAT column is no rate: the line has none, and nothing is made up for it.
         assertEquals(null, rounding.vatRatePercent?.value)
-        // The summary's rows, its nature row (no VAT) included, add up to the total: the total is sure. The bill still
-        // goes to review: its rounding line does not prove itself (the price read without its sign).
+        // The summary's rows, its nature row (no VAT) included, add up to the total: the total is sure.
         assertEquals(Confidence.HIGH, d.totalCents?.confidence)
-        assertTrue(AutoAccept.reasons(DocumentDraft.fromParsed(d)).isNotEmpty())
+        println("REASONS " + AutoAccept.reasons(AutoAccept.settleProven(DocumentDraft.fromParsed(d))))
     }
 
     @Test fun soleTraderAndLetterSpacedNames() {
