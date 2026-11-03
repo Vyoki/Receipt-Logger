@@ -246,7 +246,7 @@ object VatSummary {
             val sum = exact.fold(BigDecimal.ZERO) { s, e -> s + e!! }
             if (ItalianNumbers.toCents(sum) + g.extraCents != g.taxableCents) continue
             if (ItalianNumbers.toCents(BigDecimal(g.taxableCents).movePointLeft(2).multiply(g.ratePercent).movePointLeft(2)) != g.vatCents) continue
-            out = out.mapIndexed { i, l -> idx.indexOf(i).takeIf { it >= 0 }?.let { k -> l.copy(exactTotal = exact[k]) } ?: l }
+            out = out.mapIndexed { i, l -> idx.indexOf(i).takeIf { it >= 0 }?.let { k -> l.copy(exactTotal = exact[k], truncationProven = true) } ?: l }
         }
         return out
     }

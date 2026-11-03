@@ -69,6 +69,7 @@ object DraftCodec {
                 aiRead = hint?.aiRead.orEmpty(),
                 // The amount as printed with more decimals (see LineItemDraft.preciseTotal): used only while the amount shown is it rounded.
                 exactTotal = hint?.exactTotal,
+                truncationProven = hint?.truncationProven == true,
                 nameUnknown = hint?.nameUnknown.orEmpty(),
             )
         }

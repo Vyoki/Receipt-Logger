@@ -286,6 +286,30 @@ class EInvoicePrecisionTest {
         assertTrue(AutoAccept.reasons(draft(inv("26,13", "5,74", "31,87", listOf("16,38524", "6,54918", "3,19672")))).isNotEmpty())
     }
 
+    @Test fun aCutAmountCountsAsPreciseOnlyWhereTheCutWasProven() {
+        // 16,38 shown with an exact 16,38524: rounded that is 16,39, cut it is 16,38. Without a proof of the cut the line
+        // adds up by what it shows; with VatSummary.proveTruncated's proof, by the exact amount. A rounded exact amount
+        // (16,38499) counts either way.
+        fun parsed(exact: String, proven: Boolean) = ParsedLineItem(
+            "CAPO DI PROVA", null, null, null, Extracted(1638L, Confidence.HIGH, "16,38"), null, null, null,
+            exactTotal = BigDecimal(exact), truncationProven = proven,
+        )
+        assertEquals(0, parsed("16.38524", proven = false).preciseTotal()!!.compareTo(BigDecimal("16.38")))
+        assertEquals(0, parsed("16.38524", proven = true).preciseTotal()!!.compareTo(BigDecimal("16.38524")))
+        assertEquals(0, parsed("16.38499", proven = false).preciseTotal()!!.compareTo(BigDecimal("16.38499")))
+        fun draft(exact: String, proven: Boolean) = LineItemDraft(key = 1L, lineTotal = DraftField("16,38"), exactTotal = BigDecimal(exact), truncationProven = proven)
+        assertEquals(0, draft("16.38524", proven = false).preciseTotal()!!.compareTo(BigDecimal("16.38")))
+        assertEquals(0, draft("16.38524", proven = true).preciseTotal()!!.compareTo(BigDecimal("16.38524")))
+        assertEquals(0, draft("16.38499", proven = false).preciseTotal()!!.compareTo(BigDecimal("16.38499")))
+        // proveTruncated marks the lines it proved; a reading of them keeps the mark into the draft.
+        val read = DocumentDraft.fromParsed(read(Invoice(
+            supplierVat = pIva("0345612789"), supplierName = "ABBIGLIAMENTO PROVA S.P.A.", number = "054/2", date = "03-04-2031",
+            lines = listOf(Line("CAPO DI PROVA 1", "1,00", "16,38524", "CA", "22,00", "16,38"), Line("CAPO DI PROVA 2", "1,00", "6,54918", "CA", "22,00", "6,54")),
+            groups = listOf(Group("22,00", "22,93", "5,04")), total = "27,97",
+        )))
+        assertEquals(listOf(true, true), read.items.map { it.truncationProven })
+    }
+
     @Test fun theTotalCountsGiftsAndTheTotalsRowsDiscount() {
         // A gift line (Tipo dato: OMAGGIO) is in the taxable but not paid: 30,00 + 2,00 gift = 32,00, VAT 10 % 3,20,
         // total 35,20 - 2,00 = 33,20. A discount in the totals row: 32,00 + 3,20 - 1,20 = 34,00.

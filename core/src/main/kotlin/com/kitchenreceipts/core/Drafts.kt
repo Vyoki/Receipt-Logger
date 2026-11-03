@@ -118,13 +118,18 @@ data class LineItemDraft(
     val nameFirstLine: String? = null,
     /** The amount as printed with more decimals than cents (see ParsedLineItem.exactTotal); used while [lineTotal] is it rounded. */
     val exactTotal: BigDecimal? = null,
+    /** The amount shown is [exactTotal] cut to the cent, proven for this line (see ParsedLineItem.truncationProven). */
+    val truncationProven: Boolean = false,
 ) {
-    /** The line's amount for adding up: the exact printed amount while the amount shown is it rounded, else the amount shown. */
+    /**
+     * The line's amount for adding up: the exact amount while the amount shown is it rounded, or it cut on a line whose
+     * cut was proven ([truncationProven]); else the amount shown.
+     */
     fun preciseTotal(): BigDecimal? {
         val shown = ItalianNumbers.parse(lineTotal.text) ?: return null
         val exact = exactTotal ?: return shown
         val cents = ItalianNumbers.toCents(shown)
-        return if (ItalianNumbers.toCents(exact) == cents || truncatedCents(exact) == cents) exact else shown
+        return if (ItalianNumbers.toCents(exact) == cents || (truncationProven && truncatedCents(exact) == cents)) exact else shown
     }
 
     /**
@@ -263,6 +268,7 @@ data class DocumentDraft(
                         marks = it.marks,
                         nameFirstLine = it.nameFirstLine,
                         exactTotal = it.exactTotal,
+                        truncationProven = it.truncationProven,
                     )
                 },
                 warnings = p.warnings,
