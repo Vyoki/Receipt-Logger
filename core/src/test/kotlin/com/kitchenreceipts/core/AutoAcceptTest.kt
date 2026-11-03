@@ -91,4 +91,13 @@ class AutoAcceptTest {
         val off = d.copy(subtotal = DraftField("4,45"), total = DraftField("4,80"))
         assertEquals(d.copy(subtotal = off.subtotal, total = off.total).uncertainCount, AutoAccept.settleProven(off).uncertainCount)
     }
+
+    @Test fun aCreditNotesVatIsOnTopToo() {
+        // All negative (a credit note): taxable -100,00, VAT -22,00, total -122,00. The lines add up to the taxable: net prices.
+        val d = DocumentDraft(
+            seller = DraftField("FORNITORE PROVA"), subtotal = DraftField("-100,00"), vat = DraftField("-22,00"), total = DraftField("-122,00"),
+            items = listOf(LineItemDraft(1, DraftField("STORNO PROVA"), quantity = DraftField("1"), unitPrice = DraftField("-100,00"), lineTotal = DraftField("-100,00"), vatRate = DraftField("22"))),
+        )
+        assertEquals(VatBasis.EXCLUSIVE, AutoAccept.inferVatBasis(d))
+    }
 }
