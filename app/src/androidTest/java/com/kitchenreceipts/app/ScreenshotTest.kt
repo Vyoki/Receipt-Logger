@@ -513,17 +513,12 @@ class ScreenshotTest {
             shot("41-photo-viewer-zoomed")
             tap(close)
             assertTrue("the photo did not close. On screen: ${everyWindow()}", waitFor(zoomIn, false))
-            // Back closes it too. The date field is usually still being edited (its photo button still there); right
-            // after the photo closes the screen may take a moment to answer a tap, so it is tapped again a few times.
-            if (!waitFor(photo, true)) {
-                val again = (1..3).any { clickTextIn(PEEK_DATE) || run { Thread.sleep(500); false } }
-                assertTrue("the date field could not be tapped again. On screen: ${screenDump()}", again)
-            }
-            assertTrue("no photo icon after the photo closed. On screen: ${screenDump()}", waitFor(photo, true))
-            // The closed photo's window may still be going away, or the keyboard coming back: a tap sent to the screen
-            // could land on either, so it goes to the app's window (see tapInApp). Opened again once the app is idle,
-            // and waited for as the first time.
-            inst.waitForIdleSync()
+            // Closed, no field is being edited: the keyboard does not come back over the form (it did, and its window
+            // or the form moving under it took the next tap: CI 145, 149). Back closes it too: opened again exactly as
+            // the first time.
+            assertTrue("a field is still being edited after the photo closed. On screen: ${screenDump()}", waitFor(photo, false))
+            assertTrue("the date field could not be tapped again. On screen: ${screenDump()}", clickTextIn(PEEK_DATE))
+            assertTrue("no photo icon in the field being edited again. On screen: ${screenDump()}", waitFor(photo, true))
             val tappedAgain = tapInApp(photo)
             assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", waitFor(zoomIn, true))
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)

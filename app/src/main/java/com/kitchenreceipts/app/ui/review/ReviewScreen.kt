@@ -540,7 +540,9 @@ fun ReviewScreen(
             failed = viewerFailed,
             onPage = { viewingPage = it },
             onOpenOriginal = { viewing = null; onViewOriginal() },
-            onDismiss = { viewing = null },
+            // Closed, no field is left being edited: the field whose photo button opened the viewer takes its focus back as
+            // the viewer opens, and the keyboard then came back over the form when the viewer closed.
+            onDismiss = { focusManager.clearFocus(); viewing = null },
         )
     }
 
