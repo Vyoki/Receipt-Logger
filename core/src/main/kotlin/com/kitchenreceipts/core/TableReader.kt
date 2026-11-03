@@ -365,6 +365,7 @@ object TableReader {
                     body[firstItem] = (body[firstItem] + stray).sortedBy { it.left }
                 }
             }
+            stackDiscounts(body, header)
             var read = readRows(body, header, textLayer)
             // The headings are a hint; the arithmetic decides. When the numbers show the columns better than the
             // headings do ("Prezzo totale" for the amount, "Prezzo / unitario" over two lines, the unit after the
@@ -601,6 +602,38 @@ object TableReader {
 
     /** A row that ends the item table: totals, the VAT summary, the payment block. */
     private fun endsTable(text: String) = ReceiptParser.isFooterRow(text) || PAYMENT_BLOCK.containsMatchIn(text)
+
+    /** A percentage as a discount column prints it: "-10.00%", "5%", "-12,5%". */
+    private val PERCENT = Regex("^[-−]?\\d{1,3}(?:[.,]\\d{1,2})?%$")
+
+    /**
+     * Discounts printed one under the other ("-30.00%" on the item's row, "-74.39%" on the row under it, in the same
+     * column, notes between them): one discount applied in turn, price x (1 - a) x (1 - b). The percentages in that
+     * column on the rows down to the next row with an amount are moved onto the item's row, so the line is proven (or
+     * not) by the whole discount.
+     */
+    private fun stackDiscounts(body: MutableList<List<Word>>, header: Header) {
+        if (header.columns.none { it.kind == Kind.DISCOUNT }) return
+        fun underDiscount(w: Word) = PERCENT.matches(w.text.trim()) && header.columns[columnIndex(w.center, header.columns)].kind == Kind.DISCOUNT
+        var i = 0
+        while (i < body.size) {
+            val row = body[i]
+            if (row.any(::underDiscount) && row.any { isMoney(it.text) }) {
+                var j = i + 1
+                while (j < body.size) {
+                    val next = body[j]
+                    val more = next.filter(::underDiscount)
+                    if (next.any { isMoney(it.text) } || endsTable(next.joinToString(" ") { it.text })) break
+                    if (more.isNotEmpty()) {
+                        body[i] = (body[i] + more).sortedBy { it.left }
+                        body[j] = next - more.toSet()
+                    }
+                    j++
+                }
+            }
+            i++
+        }
+    }
 
     /** [w] stands under the description heading. */
     private fun inDescription(w: Word, header: Header) = header.columns[columnIndex(w.center, header.columns)].kind == Kind.DESCRIPTION
@@ -957,6 +990,8 @@ object TableReader {
             val idx = order.indexOf(k)
             if (idx <= 0) continue
             val left = order[idx - 1]
+            // Percentages in the discount column are discounts in turn ("-10% -5%"), not a number of the next column.
+            if (k == Kind.DISCOUNT && list.filter { isNumeric(it.text) }.all { PERCENT.matches(it.text.trim()) }) continue
             while (list.count { isNumeric(it.text) } > 1) {
                 val first = list.first { isNumeric(it.text) }
                 // Two numbers under one number heading, the column on its left a name or a code: a heading was not
@@ -1030,7 +1065,11 @@ object TableReader {
         // "4,45KG" in the quantity column
         if (unit == null) cell(Kind.QUANTITY).firstNotNullOfOrNull { rx("^[\\d.,]+([A-Za-z]{1,3})\\.?$").find(it.text)?.groupValues?.get(1)?.let(Units::normalizeKnown) }?.let { unit = it }
         var price = cell(Kind.PRICE).mapNotNull { numberIn(it.text) }.lastOrNull()
-        val discountText = cell(Kind.DISCOUNT).joinToString("") { it.text }
+        // Several percentages in the column ("-20.00%" and "-10.00%" stacked): one discount in turn, "20+10".
+        val discountWords = cell(Kind.DISCOUNT)
+        val discountText = if (discountWords.size > 1 && discountWords.all { PERCENT.matches(it.text.trim()) }) {
+            discountWords.joinToString("+") { it.text.trim().trimStart('-', '−') }
+        } else discountWords.joinToString("") { it.text }
         val discount = discountOf(discountText)
         var vat = cell(Kind.VAT).mapNotNull { numberIn(it.text) }.firstOrNull { it.stripTrailingZeros().toPlainString() in VAT_RATES }
 

@@ -57,17 +57,19 @@ class EInvoicePrecisionTest {
         assertEquals(BigDecimal("33.00"), edited.preciseTotal())
     }
 
+    /** A piece of a PDF's own text at its place on the page (words spread over its width). */
+    private fun w(text: String, l: Int, top: Int, r: Int): OcrLine {
+        val parts = text.split(' ')
+        if (parts.size == 1) return OcrLine(text, l, top, r, top + 22)
+        val cw = (r - l).toDouble() / text.length
+        var at = l.toDouble()
+        return OcrLine(text, l, top, r, top + 22, words = parts.map { p -> OcrLine(p, at.toInt(), top, (at + p.length * cw).toInt(), top + 22).also { at += (p.length + 1) * cw } })
+    }
+
     @Test fun quantityAndPriceUnderOneHeadingAreSplitByTheAmount() {
         // The heading band in three rows as the PDF's text groups it: "PREZZO" above and "UNITARIO" below the row
         // of the other labels, so no price column is read. Quantity and price then both stand under QUANTITÀ: the
         // left one is no part of the name, and quantity x price = amount says which is which (not their decimals).
-        fun w(text: String, l: Int, top: Int, r: Int): OcrLine {
-            val parts = text.split(' ')
-            if (parts.size == 1) return OcrLine(text, l, top, r, top + 22)
-            val cw = (r - l).toDouble() / text.length
-            var at = l.toDouble()
-            return OcrLine(text, l, top, r, top + 22, words = parts.map { p -> OcrLine(p, at.toInt(), top, (at + p.length * cw).toInt(), top + 22).also { at += (p.length + 1) * cw } })
-        }
         val rows = listOf(
             listOf(w("PREZZO", 1542, 1253, 1627), w("SCONTO", 1841, 1253, 1930)),
             listOf(w("COD. ARTICOLO", 259, 1266, 425), w("DESCRIZIONE", 888, 1266, 1030), w("QUANTITÀ", 1332, 1266, 1440), w("UM", 1733, 1266, 1766),
@@ -115,6 +117,26 @@ class EInvoicePrecisionTest {
         val d = draft(inv)
         assertEquals(0, ItalianNumbers.parse(d.items[1].unitPrice.text)!!.compareTo(BigDecimal("-20.00")))
         assertTrue(AutoAccept.moneyProven(d))
+    }
+
+    @Test fun discountsPrintedOneUnderTheOtherApplyInTurn() {
+        // "-10.00%" on the item's row, "-10.00%" and "-4.00%" under it in the same column, a note between them:
+        // 2 x 11,50 = 23,00 x 0,90 x 0,90 x 0,96 = 17,88. Together they are one discount, applied in turn.
+        val rows = listOf(
+            listOf(w("CODICE", 84, 990, 200), w("DESCRIZIONE", 643, 990, 900), w("QUANTITÀ", 1284, 990, 1400), w("PREZZO", 1550, 990, 1670),
+                w("SCONTO", 1813, 990, 1943), w("IVA", 2000, 990, 2072), w("IMPORTO", 2250, 990, 2366)),
+            listOf(w("10001", 84, 1050, 200), w("MANDORLE PROVA KG 1", 643, 1050, 1000), w("2,00", 1330, 1050, 1400), w("11,50", 1583, 1050, 1670),
+                w("-10.00%", 1813, 1050, 1943), w("10,00", 1985, 1050, 2072), w("17,88", 2279, 1050, 2366)),
+            listOf(w("Tipo dato: LOTTI", 643, 1092, 900), w("-10.00%", 1813, 1092, 1943)),
+            listOf(w("scadenze)", 643, 1126, 777)),
+            listOf(w("Lotto: 26062", 643, 1161, 804), w("-4.00%", 1833, 1161, 1943)),
+            listOf(w("10002", 84, 1212, 200), w("NOCI PROVA KG 1", 643, 1212, 950), w("1,00", 1330, 1212, 1400), w("9,00", 1602, 1212, 1670),
+                w("-5% -5%", 1813, 1212, 1943), w("4,00", 2004, 1212, 2072), w("8,12", 2298, 1212, 2366)),
+        )
+        val items = TableReader.read(listOf(LayoutRows.Layout(rows, 0.0)), textLayerPages = setOf(0))!!
+        assertEquals(listOf("10+10+4", "5+5"), items.map { it.discount?.value })
+        assertEquals(listOf(1788L, 812L), items.map { it.lineTotalCents?.value })
+        assertTrue(items.all { it.quantity?.confidence == Confidence.HIGH && ParseWarning.LINE_TOTAL_MISMATCH !in it.warnings })
     }
 
     @Test fun aRowsOwnNumbersBeatTheWordsOfItsName() {
