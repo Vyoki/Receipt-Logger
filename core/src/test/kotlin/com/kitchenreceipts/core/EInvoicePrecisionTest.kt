@@ -447,4 +447,21 @@ class EInvoicePrecisionTest {
         assertEquals(LocalDate.of(2031, 3, 14), grid.date)
         assertEquals("77/B", grid.number)
     }
+
+    @Test fun aTableBorderReadAtTheEdgeOfAHeaderValueIsNoPartOfIt() {
+        // A phone screenshot of an e-invoice printout, as ML Kit read it: the boxes and labels of the real reading
+        // (staggered "DATA" over "DOCUMENTO", "coDICE" as read), the cell's right border read as a "|" glued to the
+        // date. The values are invented. Without the border the row is a row of values; the number and date are read
+        // under their headings.
+        val page = listOf(
+            OcrLine("DATA", 722, 365, 749, 372), OcrLine("coDICE DESTINATARIO", 881, 370, 990, 378),
+            OcrLine("TIPOLOGIA DOCUMENTO", 121, 368, 237, 378, 0.9f), OcrLine("NUMERO DOCUMENTO", 481, 370, 586, 378),
+            OcrLine("DOCUMENTO", 704, 376, 765, 384),
+            OcrLine("TD01 fattura", 37, 395, 124, 409, 0.7f), OcrLine("417", 521, 397, 543, 409),
+            OcrLine("12-03-2031|", 695, 395, 777, 410, 1.1f), OcrLine("AB12CD3", 902, 394, 967, 410, 1.8f),
+        )
+        val grid = HeaderGrid.read(listOf(LayoutRows.layout(page)))
+        assertEquals(LocalDate.of(2031, 3, 12), grid.date)
+        assertEquals("417", grid.number)
+    }
 }

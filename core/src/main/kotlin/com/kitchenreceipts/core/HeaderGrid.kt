@@ -55,7 +55,7 @@ object HeaderGrid {
             .replace(rx("^TOTALE(?=[A-Z])"), "TOTALE ")
         if (t.isEmpty()) return null
         // A label with digits ("Art. 73", a misread "%IVA" as "6IVA") is still a label, of nothing the grid uses.
-        if (t.any(Char::isDigit)) return if (money(text) == null && ItalianDates.parse(text.trim()) == null && t.count(Char::isLetter) >= 2) K.OTHER else null
+        if (t.any(Char::isDigit)) return if (money(text) == null && date(text) == null && t.count(Char::isLetter) >= 2) K.OTHER else null
         // A short word ("ar", a misread "Arr.") is a label of nothing the grid uses; a lone sign is nothing.
         if (t.count(Char::isLetter) < 3) return if (t.count(Char::isLetter) >= 1 && money(text) == null) K.OTHER else null
         return when {
@@ -70,9 +70,18 @@ object HeaderGrid {
         }
     }
 
+    /**
+     * A value as printed in its cell: the table's vertical border read as a "|" at the edge of the value
+     * ("08-07-2026|", "0,05|") is no part of it. Only at the edge: a mark inside a value is left alone.
+     */
+    private fun bare(text: String) = text.trim().trim('|', '¦').trim()
+
+    /** A date under a heading, its cell's border left out. */
+    private fun date(text: String) = ItalianDates.parse(bare(text))
+
     private fun money(text: String): Long? {
         // A currency sign the OCR could not read ("? 245,66") is no part of the amount.
-        val cleaned = text.trim().trim('|', '¦').trim().replace(rx("^[^\\p{L}\\p{N}€-]+\\s*(?=\\d)"), "")
+        val cleaned = bare(text).replace(rx("^[^\\p{L}\\p{N}€-]+\\s*(?=\\d)"), "")
         val m = MONEY.matchEntire(cleaned.uppercase()) ?: return null
         return ItalianNumbers.parseCents(m.groupValues[1].replace(" ", ""))
     }
@@ -116,7 +125,7 @@ object HeaderGrid {
             }?.let { stack(listOf(it)) }
             for (v in 1 until rows.size) {
                 val values = rows[v]
-                if (values.none { money(it.text) != null || ItalianDates.parse(it.text.trim()) != null }) continue
+                if (values.none { money(it.text) != null || date(it.text) != null }) continue
                 if (values.any { it.text.contains('%') && money(it.text.replace("%", "")) != null }) continue
                 // The labels right above (one row), or printed over two or three lines ("Numero / documento"):
                 // the closest reading first, so a value is taken under its own label. Labels printed staggered over
@@ -155,7 +164,7 @@ object HeaderGrid {
         val taken = HashSet<Int>()
         // A date under the date's own heading on this row: a date-shaped value under the number's heading is then the
         // number ("03/4/2031" printed as the invoice number, its date 04-03-2031 beside it).
-        val dateBeside = placed.any { (col, v) -> kindAt(col) == K.DATE && ItalianDates.parse(v.text.trim()) != null }
+        val dateBeside = placed.any { (col, v) -> kindAt(col) == K.DATE && date(v.text) != null }
         for ((col, v) in placed) {
             if (!taken.add(col)) continue
             val k = kindAt(col) ?: continue
@@ -166,7 +175,7 @@ object HeaderGrid {
                 K.TOTAL -> if (g.total == null && cents != null) g = g.copy(total = cents)
                 K.GOODS -> if (g.goods == null && cents != null) g = g.copy(goods = cents)
                 K.FEE -> if (cents != null && cents != 0L && g.fees.none { it.first == labels[col].text.trim() }) g = g.copy(fees = g.fees + (labels[col].text.trim() to cents))
-                K.DATE -> if (g.date == null && !reference) ItalianDates.parse(v.text.trim())?.let { g = g.copy(date = it) }
+                K.DATE -> if (g.date == null && !reference) date(v.text)?.let { g = g.copy(date = it) }
                 K.NUMBER -> if (!reference) {
                     val t = v.text.trim().trim('|', ':', '.')
                     if (g.number == null && t.any(Char::isDigit) && t.length <= 20 && cents == null && (dateBeside || ItalianDates.parse(t) == null)) g = g.copy(number = t)
