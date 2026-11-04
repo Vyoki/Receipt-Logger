@@ -52,7 +52,7 @@
     <string name="fix_errors">Fix the %1$d highlighted field(s) before saving.</string>
     <string name="save_failed">Saving failed: %1$s</string>
     <string name="field_missing">Missing – type it if it is printed</string>
-    <string name="field_uncertain">Check this value · read from: “%1$s”. Tap ✓ if correct.</string>
+    <string name="field_uncertain">Check this value. Tap ✓ if it\'s right.</string>
     <string name="confirm_value">Correct</string>
     <string name="document_section">Document</string>
     <string name="seller">Seller</string>

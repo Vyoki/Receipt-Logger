@@ -48,7 +48,7 @@
     <string name="fix_errors">Correggi i %1$d campi evidenziati prima di salvare.</string>
     <string name="save_failed">Salvataggio non riuscito: %1$s</string>
     <string name="field_missing">Mancante – scrivilo se è stampato</string>
-    <string name="field_uncertain">Da verificare · letto da: “%1$s”. Tocca ✓ se è giusto.</string>
+    <string name="field_uncertain">Controlla questo valore. Tocca ✓ se è giusto.</string>
     <string name="confirm_value">Giusto</string>
     <string name="document_section">Documento</string>
     <string name="seller">Fornitore</string>

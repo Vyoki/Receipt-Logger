@@ -304,7 +304,8 @@ fun ReviewField(
     }
     val supporting: String? = when {
         error != null -> error
-        field.uncertain -> stringResource(R.string.field_uncertain, com.kitchenreceipts.app.ui.sourceText(field.source).take(60))
+        // A plain line only: field.source is the reading's own note (it still guides the photo peek), not for the screen.
+        field.uncertain -> stringResource(R.string.field_uncertain)
         field.isMissing && highlightMissing -> missingHint ?: stringResource(R.string.field_missing)
         else -> null
     }

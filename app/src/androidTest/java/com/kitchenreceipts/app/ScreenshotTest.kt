@@ -383,6 +383,77 @@ class ScreenshotTest {
         }
     }
 
+    /**
+     * An invented page photographed once (ABC S.r.l., 2031), read by the app's own queue: its supplier is read from one
+     * place only, so it is a value to check, and the reading's note for it is the parser's own ("unproven by 1:
+     * company_line=..."). Under the field the operator sees a plain line, never that note.
+     */
+    @Test fun aValueToCheckSaysSoPlainly() {
+        val c = app.container
+        val settings = c.settings
+        val autoSave = settings.autoSave
+        var jobId: String? = null
+        try {
+            settings.autoSave = false
+            val page = Bitmap.createBitmap(1240, 1754, Bitmap.Config.ARGB_8888)
+            Canvas(page).apply {
+                drawColor(Color.WHITE)
+                val p = Paint().apply { textSize = 34f; color = Color.BLACK; isAntiAlias = true }
+                listOf(
+                    "ABC S.r.l.", "P.IVA 01234567897", "FATTURA N. 62/2031 DEL 04/02/2031", "DESCRIZIONE QUANTITA PREZZO IMPORTO",
+                    "PATATE GIALLE KG 10,000 0,90 9,00", "CIPOLLE DORATE KG 5,000 1,20 6,00", "TOTALE IMPONIBILE 15,00", "IVA 4% 0,60", "TOTALE DOCUMENTO 15,60",
+                ).forEachIndexed { i, t -> drawText(t, 60f, 140f + i * 90f, p) }
+            }
+            val photo = File(app.cacheDir, "plain-check.jpg")
+            photo.outputStream().use { page.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+            val stored = runBlocking { c.fileStore.storePhotos(listOf(photo)) { BitmapFactory.decodeFile(it.absolutePath) } }
+            val job = runBlocking { c.importQueue.enqueue(stored, "test") }
+            jobId = job.id
+            val ended = setOf(JobStatus.READY, JobStatus.SAVED, JobStatus.FAILED)
+            val done = runBlocking { withTimeoutOrNull(180_000) { c.importQueue.jobs.first { l -> l.any { it.id == job.id && it.status in ended } }.first { it.id == job.id } } }
+            assertTrue("job ${done?.status} ${done?.error}", done?.status == JobStatus.READY)
+            // The reading's own notes on its values ("unproven by 1: company_line=..."), never printed text: what must never
+            // reach the screen. (A note that is only a printed line, "TOTALE DOCUMENTO 15,60", is the photo's own text.)
+            val parsed = runBlocking { c.importQueue.load(job.id) }?.parsed
+            val notes = listOfNotNull(parsed?.sellerName, parsed?.documentNumber, parsed?.documentDate, parsed?.subtotalCents, parsed?.vatCents, parsed?.totalCents)
+                .mapNotNull { it.source?.trim() }.filter { it.contains('=') }
+            assertTrue("no parser note to hide in this reading", notes.isNotEmpty())
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                var plain = ""
+                scenario.onActivity { plain = it.getString(R.string.field_uncertain) }
+                app.container.pendingRoute.value = "review/${job.id}"
+                Thread.sleep(1500)
+                // The whole review, top to bottom: the plain line is shown, the notes never are.
+                val inst = InstrumentationRegistry.getInstrumentation()
+                var shown = false
+                val leaked = mutableListOf<String>()
+                for (page in 0 until 25) {
+                    val root = inst.uiAutomation.rootInActiveWindow ?: run { Thread.sleep(300); null } ?: continue
+                    for (n in collectNodes(root) { it.text != null }) {
+                        val t = n.text.toString()
+                        if (t == plain) shown = true
+                        if (notes.any { t.contains(it) } || t.contains("read from", ignoreCase = true) || t.contains("letto da", ignoreCase = true) ||
+                            Regex("\\w=\\S").containsMatchIn(t)) leaked += t
+                    }
+                    val list = collectNodes(root) { it.isScrollable }.maxByOrNull { n -> Rect().also { n.getBoundsInScreen(it) }.height() } ?: break
+                    if (!list.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) break
+                    Thread.sleep(400)
+                }
+                assertTrue("the plain line \"$plain\" is not shown. On screen: ${screenDump()}", shown)
+                assertTrue("a parser note is on screen: ${leaked.distinct()}", leaked.isEmpty())
+                // From the top again, scrolled to the first value to check, for the picture.
+                app.container.pendingRoute.value = "home"
+                Thread.sleep(500)
+                app.container.pendingRoute.value = "review/${job.id}"
+                assertTrue("no \"$plain\". On screen: ${screenDump()}", scrollUntilText(plain))
+                shot("48-plain-check")
+            }
+        } finally {
+            settings.autoSave = autoSave
+            jobId?.let { c.importQueue.discard(it) }
+        }
+    }
+
     private fun shell(cmd: String) {
         val out = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
         android.os.ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes() }

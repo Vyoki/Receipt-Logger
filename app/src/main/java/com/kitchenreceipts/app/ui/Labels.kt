@@ -263,8 +263,3 @@ fun aiDisagreementText(d: com.kitchenreceipts.core.AiDisagreement): String {
     val where = d.line?.let { stringResource(R.string.ai_field_line, it, what) } ?: what
     return stringResource(R.string.ai_disagreement, where, d.ours, d.ai)
 }
-
-/** The source under a field to check, with the AI's mark ("⚠ AI read …") in the operator's language. */
-@Composable
-fun sourceText(source: String?): String =
-    source?.replace(com.kitchenreceipts.core.AiReader.DISAGREE, stringResource(R.string.ai_read_mark)).orEmpty()
