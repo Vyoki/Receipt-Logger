@@ -12,7 +12,8 @@ import java.text.Normalizer
  *    ("BARI.", "LIEVITAL") becomes the brand, and a repeat of it ("DALLABONA") is dropped;
  * 2. sizes ("500", "GR500", "KG5", "LT.1", "CC.700", "GR.150", "KG.1,775") go to the pack size, not the name;
  * 3. abbreviations of the food trade are written out ("RIG" rigate, "B.AD." bovino adulto, "S/V" sottovuoto,
- *    "P.S." parzialmente scremato, "FORM.STAG." formaggio stagionato...);
+ *    "P.S." parzialmente scremato, "FORM.STAG." formaggio stagionato...), and what the operator taught by naming
+ *    new products ([learned]) comes first;
  * 4. what is still an abbreviation the app does not know ("TR.", "ORLAN.") stays as printed, with its dot, and is
  *    listed in [Clean.unknown], so the name is shown for checking. Nothing is guessed. Pieces of one printed word
  *    that are not written out stay joined as printed ("M.B.GIROTONDI" -> "M.B.Girotondi").
@@ -21,6 +22,9 @@ import java.text.Normalizer
 object ProductNames {
 
     data class Clean(val name: String, val brand: String?, val size: PackSizes.Size?, val unknown: List<String>)
+
+    /** What the operator taught: an abbreviation (lower case, no dot) and the words it stands for (see [learnFromRename]). */
+    @Volatile var learned: Map<String, String> = emptyMap()
 
     /** Abbreviations written out (lower case, without dots). Multi-part keys keep their slash ("s/v", "a/terra"). */
     private val ABBREVIATIONS: Map<String, String> = mapOf(
@@ -74,6 +78,7 @@ object ProductNames {
         var size: PackSizes.Size? = null
         val unknown = mutableListOf<String>()
         val out = mutableListOf<String>()
+        val taught = learned
         val ps = pieces(text)
         // The piece last kept as printed (its index in ps), and the names in out made of several printed pieces
         // (with the index of their last piece).
@@ -91,7 +96,7 @@ object ProductNames {
             // Written in two pieces: "B." + "AD." (bovino adulto), "GR." + "500", "KG" + "1".
             if (next != null) {
                 val pair = k + key(next)
-                val two = ABBREVIATIONS[pair]
+                val two = taught[pair] ?: ABBREVIATIONS[pair]
                 if (two != null && raw.endsWith('.')) { out += two; writtenOut += idx; skip = 1; continue }
                 val unit = Units.normalizeKnown(k)
                 val n = ItalianNumbers.parse(next) ?: next.replace(',', '.').toBigDecimalOrNull()
@@ -126,7 +131,7 @@ object ProductNames {
                 writtenOut += idx
                 continue
             }
-            val known = ABBREVIATIONS[k]
+            val known = taught[k] ?: ABBREVIATIONS[k]
             if (known != null) { out += known; writtenOut += idx; continue }
             // Not written out: kept as printed, an abbreviation with its dot ("TR." -> "Tr."), and a letter piece joined
             // to the letter piece of the same printed word kept just before it ("M." "B." "GIROTONDI" -> "M.B.GIROTONDI").
@@ -202,4 +207,30 @@ object ProductNames {
     private fun titlePart(part: String): String =
         if (part.any { !it.isLetter() && it != '\'' && it != '-' }) part.uppercase()
         else part.lowercase().split('-').joinToString("-") { it.replaceFirstChar { c -> c.titlecase() } }
+
+    /**
+     * What naming a new product teaches: each abbreviation in the printed name and the word of the new name that
+     * starts with it ("TR." and "Tenerissimo" -> "tr" = "tenerissimo"). Only clear pairs; nothing else.
+     */
+    fun learnFromRename(printed: String, newName: String): Map<String, String> {
+        val words = newName.split(' ').filter { it.count(Char::isLetter) >= 3 }
+        val out = mutableMapOf<String, String>()
+        for (piece in pieces(printed)) {
+            val raw = piece.text
+            if (!isAbbreviation(raw) && raw.length > 5) continue
+            val k = key(raw)
+            if (k.length < 2 || k in ABBREVIATIONS || k.any(Char::isDigit)) continue
+            val letters = k.filter(Char::isLetter)
+            // "TR." for Tenerissimo, "SGUSC." for sgusciati: same first letter, the other letters in order.
+            val match = words.filter { w -> val wk = key(w); wk != letters && wk.first() == letters.first() && subsequence(letters, wk) }
+            if (match.size == 1) out[k] = match.single().lowercase()
+        }
+        return out
+    }
+
+    private fun subsequence(a: String, b: String): Boolean {
+        var i = 0
+        for (ch in b) if (i < a.length && a[i] == ch) i++
+        return i == a.length
+    }
 }

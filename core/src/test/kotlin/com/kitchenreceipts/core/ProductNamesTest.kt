@@ -42,6 +42,23 @@ class ProductNamesTest {
         assertEquals(listOf("TR."), beef.unknown)
     }
 
+    @Test fun learnedFromTheOperatorsName() {
+        val taught = ProductNames.learnFromRename("ROASTBEEF B.AD.TR.S/V AB500168", "Roastbeef bovino adulto tenerissimo sottovuoto")
+        assertEquals("tenerissimo", taught["tr"])
+        try {
+            ProductNames.learned = taught
+            val beef = c("ROASTBEEF B.AD.TR.S/V AB500170")
+            assertEquals("Roastbeef Bovino Adulto Tenerissimo Sottovuoto AB500170", beef.name)
+            assertTrue(beef.unknown.isEmpty())
+            // What was taught is written out like the list's own words: the joined pieces around it keep their rules.
+            ProductNames.learned = ProductNames.learnFromRename("BIBITA M.B.GIROT.PESCA", "Bibita M.B. Girotondo pesca")
+            assertEquals("girotondo", ProductNames.learned["girot"])
+            assertEquals("Bibita M.B Girotondo Pesca", c("BIBITA M.B.GIROT.PESCA").name)
+        } finally {
+            ProductNames.learned = emptyMap()
+        }
+    }
+
     @Test fun anAbbreviationNotWrittenOutKeepsItsDotsAndStaysJoinedAsPrinted() {
         val biscuits = c("BISCOTTI M.B.GIROTONDI GR.800")
         assertEquals("Biscotti M.B.Girotondi", biscuits.name)

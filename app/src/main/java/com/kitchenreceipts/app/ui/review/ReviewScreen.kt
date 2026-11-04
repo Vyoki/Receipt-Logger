@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AssistChip
 import com.kitchenreceipts.app.ui.components.Button
+import com.kitchenreceipts.core.ReviewReason
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
 import androidx.compose.material3.DatePickerDialog
@@ -689,9 +690,10 @@ private fun ReasonsCard(state: ReviewState, onSamePage: (Boolean) -> Unit) {
             Text(stringResource(R.string.reasons_title), fontWeight = FontWeight.SemiBold)
             state.reviewReasons.forEach { Text("• " + reviewReasonText(it), style = MaterialTheme.typography.bodyMedium) }
             // A photo that repeats a page: the operator says whether it is the same page twice or a page is missing.
-            if (state.isNew && com.kitchenreceipts.core.ReviewReason.DUPLICATE_PAGE in state.reviewReasons) when (state.samePage) {
+            if (state.isNew && ReviewReason.DUPLICATE_PAGE in state.reviewReasons) when (state.samePage) {
                 null -> Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(stringResource(R.string.same_page_question), fontWeight = FontWeight.SemiBold)
+                    if (state.samePageFailed) Text(stringResource(R.string.same_page_failed), style = MaterialTheme.typography.bodyMedium)
                     Button(onClick = { onSamePage(true) }, enabled = !state.saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.same_page_yes)) }
                     OutlinedButton(onClick = { onSamePage(false) }, enabled = !state.saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.same_page_no)) }
                 }

@@ -572,6 +572,7 @@
     <string name="same_page_question">Stessa pagina due volte?</string>
     <string name="same_page_yes">Sì, leggila una volta</string>
     <string name="same_page_no">No, manca una pagina</string>
+    <string name="same_page_failed">Non è stato possibile togliere la foto ripetuta: non è cambiato niente. Riprova, oppure elimina questa lettura e rifai le foto.</string>
     <string name="doc_number_short">n. %1$s</string>
     <string name="next_to_check">Prossimo da controllare · %1$d</string>
     <string name="lines_all_fine">Tutte le righe tornano.</string>

@@ -7,6 +7,7 @@ import com.kitchenreceipts.app.AppContainer
 import com.kitchenreceipts.app.data.DuplicateInfo
 import com.kitchenreceipts.app.data.ProductEntity
 import com.kitchenreceipts.app.data.ProductNameTakenException
+import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.files.StoredFile
 import com.kitchenreceipts.app.data.SellerLearning
 import com.kitchenreceipts.app.data.SellerRecognition
@@ -17,6 +18,11 @@ import com.kitchenreceipts.core.Confidence
 import com.kitchenreceipts.core.PriceChange
 import com.kitchenreceipts.core.ReviewReason
 import com.kitchenreceipts.core.Corrections
+import com.kitchenreceipts.core.DocKind
+import com.kitchenreceipts.core.DocumentKinds
+import com.kitchenreceipts.core.DuplicatePages
+import com.kitchenreceipts.core.ParseWarning
+import com.kitchenreceipts.core.Tidy
 import com.kitchenreceipts.core.DocumentDraft
 import com.kitchenreceipts.core.Extracted
 import com.kitchenreceipts.core.SellerMatchReason
@@ -104,6 +110,8 @@ data class ReviewState(
      * "Yes, read it once" (the repeat dropped, the checks run again), false = "No, a page is missing" (held as before).
      */
     val samePage: Boolean? = null,
+    /** "Yes, read it once" could not take the repeated photo out of the stored file: nothing changed, it stays held. */
+    val samePageFailed: Boolean = false,
     /** The category chosen last time for a supplier of the same name (no VAT number to be sure): shown, never applied. */
     val categoryChosenBefore: SupplierCategory? = null,
     /** What the invoice's own lines suggest for a supplier not sorted yet (a laundry: Coperti): shown, never applied. */
@@ -601,28 +609,29 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
      */
     fun samePageYes() {
         val s = _state.value
-        if (!s.isNew || s.samePage != null || com.kitchenreceipts.core.ParseWarning.DUPLICATE_PAGE !in s.draft.warnings || s.saving || s.savedId != null) return
-        _state.update { it.copy(saving = true) }
+        if (!s.isNew || s.samePage != null || ParseWarning.DUPLICATE_PAGE !in s.draft.warnings || s.saving || s.savedId != null) return
+        _state.update { it.copy(saving = true, samePageFailed = false) }
         viewModelScope.launch {
-            val repeats = withContext(Dispatchers.Default) { runCatching { com.kitchenreceipts.core.DuplicatePages.find(ocrPages).keys }.getOrDefault(emptySet()) }
+            val repeats = withContext(Dispatchers.Default) { runCatching { DuplicatePages.find(ocrPages).keys }.getOrDefault(emptySet()) }
             val file = storedFile
-            // One photo per page: the pages of the stored file are the pages read.
-            val kept = if (file != null && repeats.isNotEmpty() && file.mimeType == com.kitchenreceipts.app.files.FileStore.MIME_PDF && file.pageCount == ocrPages.size) {
+            // One photo per page: the pages of the stored file are the pages read. Otherwise the photo cannot be told
+            // apart in the file, and a saved invoice must never keep the extra page: nothing changes, it stays held.
+            val kept = if (file != null && repeats.isNotEmpty() && file.mimeType == FileStore.MIME_PDF && file.pageCount == ocrPages.size) {
                 runCatching { c.fileStore.withoutPages(file, repeats) }.onFailure { c.log.error("samePage", it) }.getOrNull()
             } else null
-            if (kept != null && file != null) {
-                storedFile = kept
-                fun <T> drop(l: List<T>) = if (l.size == file.pageCount) l.filterIndexed { i, _ -> i !in repeats } else l
-                ocrPages = drop(ocrPages); ocrWidths = drop(ocrWidths); ocrHeights = drop(ocrHeights)
+            if (kept == null || file == null) {
+                c.log.event("SAME_PAGE", "answer" to "yes", "dropped" to 0, "repeats" to repeats.size, "pages" to (file?.pageCount ?: 0))
+                _state.update { it.copy(saving = false, samePageFailed = true) }
+                return@launch
             }
+            storedFile = kept
+            fun <T> drop(l: List<T>) = if (l.size == file.pageCount) l.filterIndexed { i, _ -> i !in repeats } else l
+            ocrPages = drop(ocrPages); ocrWidths = drop(ocrWidths); ocrHeights = drop(ocrHeights)
             val draft = AutoAccept.samePageTwice(_state.value.draft)
             val reasons = withContext(Dispatchers.Default) { AutoAccept.reasons(draft, bundleFlags) }
-            c.log.event("SAME_PAGE", "answer" to "yes", "dropped" to (if (kept != null) repeats.size else 0), "reasons" to reasons.joinToString(","))
+            c.log.event("SAME_PAGE", "answer" to "yes", "dropped" to repeats.size, "reasons" to reasons.joinToString(","))
             _state.update {
-                it.copy(
-                    draft = draft, reviewReasons = reasons, samePage = true, saving = false,
-                    filePath = kept?.relativePath ?: it.filePath, pageCount = kept?.pageCount ?: it.pageCount,
-                )
+                it.copy(draft = draft, reviewReasons = reasons, samePage = true, saving = false, filePath = kept.relativePath, pageCount = kept.pageCount)
             }
             if (reasons.isEmpty()) saveIfProven(draft)
         }
@@ -638,7 +647,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
     /** Saved as the app saves a proven document by itself (see DraftPreparer.autoSave); otherwise left to the operator. */
     private suspend fun saveIfProven(draft: DocumentDraft) {
         if (!c.settings.autoSave) return
-        val tidied = com.kitchenreceipts.core.Tidy.prepareForSave(draft)
+        val tidied = Tidy.prepareForSave(draft)
         val valid = (DraftValidator.validate(tidied) as? ValidationResult.Valid)?.document ?: return
         val dups = try {
             withContext(Dispatchers.Default) { repo.findDuplicates(valid, storedFile?.sha256, documentId, ocrText ?: docOcrText, c.settings.ownVatNumber) }
@@ -649,7 +658,7 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
         }
         if (dups.isNotEmpty()) return
         // A credit note is subtracted from spending: never saved without the operator seeing it.
-        if (com.kitchenreceipts.core.DocumentKinds.detect(ocrText.orEmpty()) == com.kitchenreceipts.core.DocKind.CREDIT_NOTE) return
+        if (DocumentKinds.detect(ocrText.orEmpty()) == DocKind.CREDIT_NOTE) return
         _state.update { it.copy(draft = tidied) }
         save(valid, auto = true)
     }

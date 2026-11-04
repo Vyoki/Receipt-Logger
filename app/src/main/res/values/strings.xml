@@ -584,6 +584,7 @@
     <string name="same_page_question">Same page twice?</string>
     <string name="same_page_yes">Yes, read it once</string>
     <string name="same_page_no">No, a page is missing</string>
+    <string name="same_page_failed">The repeated photo could not be taken out, so nothing changed. Try again, or delete this reading and take the photos again.</string>
     <string name="doc_number_short">no. %1$s</string>
     <string name="next_to_check">Next to check · %1$d</string>
     <string name="lines_all_fine">Every line checks out.</string>

@@ -2,6 +2,10 @@ package com.kitchenreceipts.app
 
 import android.accessibilityservice.AccessibilityService
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.Rect
 import android.os.SystemClock
 import android.view.InputDevice
@@ -14,6 +18,7 @@ import androidx.test.platform.app.InstrumentationRegistry
 import com.kitchenreceipts.app.data.SellerLearning
 import com.kitchenreceipts.app.files.EInvoiceEntry
 import com.kitchenreceipts.app.files.StoredFile
+import com.kitchenreceipts.app.jobs.JobStatus
 import com.kitchenreceipts.app.settings.AppSettings
 import com.kitchenreceipts.core.BundleStatus
 import com.kitchenreceipts.core.BundleWizard
@@ -318,9 +323,9 @@ class ScreenshotTest {
         try {
             settings.autoSave = false
             val page = Bitmap.createBitmap(1240, 1754, Bitmap.Config.ARGB_8888)
-            android.graphics.Canvas(page).apply {
-                drawColor(android.graphics.Color.WHITE)
-                val p = android.graphics.Paint().apply { textSize = 34f; color = android.graphics.Color.BLACK; isAntiAlias = true }
+            Canvas(page).apply {
+                drawColor(Color.WHITE)
+                val p = Paint().apply { textSize = 34f; color = Color.BLACK; isAntiAlias = true }
                 listOf(
                     "ABC S.r.l.", "P.IVA 01234567897", "FATTURA N. 61/2031 DEL 03/02/2031", "DESCRIZIONE QUANTITA PREZZO IMPORTO",
                     "PATATE GIALLE KG 10,000 0,90 9,00", "CIPOLLE DORATE KG 5,000 1,20 6,00", "CAROTE NOVELLE KG 4,000 1,10 4,40",
@@ -330,12 +335,12 @@ class ScreenshotTest {
             }
             val photo = File(app.cacheDir, "same-page.jpg")
             photo.outputStream().use { page.compress(Bitmap.CompressFormat.JPEG, 95, it) }
-            val stored = runBlocking { c.fileStore.storePhotos(listOf(photo, photo)) { android.graphics.BitmapFactory.decodeFile(it.absolutePath) } }
+            val stored = runBlocking { c.fileStore.storePhotos(listOf(photo, photo)) { BitmapFactory.decodeFile(it.absolutePath) } }
             val job = runBlocking { c.importQueue.enqueue(stored, "test") }
             jobId = job.id
-            val ended = setOf(com.kitchenreceipts.app.jobs.JobStatus.READY, com.kitchenreceipts.app.jobs.JobStatus.SAVED, com.kitchenreceipts.app.jobs.JobStatus.FAILED)
+            val ended = setOf(JobStatus.READY, JobStatus.SAVED, JobStatus.FAILED)
             val done = runBlocking { withTimeoutOrNull(180_000) { c.importQueue.jobs.first { l -> l.any { it.id == job.id && it.status in ended } }.first { it.id == job.id } } }
-            assertTrue("job ${done?.status} ${done?.error}", done?.status == com.kitchenreceipts.app.jobs.JobStatus.READY)
+            assertTrue("job ${done?.status} ${done?.error}", done?.status == JobStatus.READY)
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 var question = ""
                 var yes = ""
