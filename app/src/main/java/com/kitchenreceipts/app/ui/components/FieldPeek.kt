@@ -84,6 +84,42 @@ class PeekImage(
     val exact: Boolean,
 )
 
+/**
+ * TEMPORARY (item q2b): the KR-IME log of a review screen with a photo. Lines are kept in memory from the screen's start
+ * and written to screens/kr-ime.txt (next to the test's screenshots) from its first photo tap on, for 30 s.
+ */
+object KrIme {
+    private val buffer = ArrayList<String>()
+    private var file: java.io.File? = null
+    private var stopAt = Long.MAX_VALUE
+    @Synchronized fun begin() {
+        buffer.clear()
+        file = null
+        stopAt = Long.MAX_VALUE
+    }
+    @Synchronized fun log(s: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (now > stopAt) return
+        val line = "$now $s"
+        android.util.Log.i("KR-IME", line)
+        val f = file
+        if (f == null) {
+            buffer += line
+            if (buffer.size > 300) buffer.removeAt(0)
+        } else {
+            runCatching { f.appendText(line + "\n") }
+        }
+    }
+    @Synchronized fun photoTapped(filesDir: java.io.File) {
+        if (file != null) return
+        val f = java.io.File(filesDir, "screens/kr-ime.txt").apply { parentFile?.mkdirs() }
+        runCatching { f.writeText(buffer.joinToString("") { it + "\n" }) }
+        buffer.clear()
+        file = f
+        stopAt = android.os.SystemClock.uptimeMillis() + 30_000
+    }
+}
+
 /** "See on the photo": under a value to check (the replacements' row), and in a field being edited (its icon). */
 @Composable
 fun PeekChip(onClick: () -> Unit) {
@@ -125,7 +161,8 @@ fun FieldPhotoViewer(
     onDismiss: () -> Unit,
 ) {
     // Registered after the screen's own Back: while the viewer is open, Back closes it.
-    BackHandler(onBack = onDismiss)
+    BackHandler(onBack = { KrIme.log("viewer: Back"); onDismiss() }) // TEMPORARY log (item q2b)
+    androidx.compose.runtime.DisposableEffect(Unit) { KrIme.log("viewer shown"); onDispose { KrIme.log("viewer gone") } } // TEMPORARY (item q2b)
     Surface(
         Modifier.fillMaxSize(),
         // A Surface takes every touch on it: nothing reaches the form under the viewer.
@@ -142,7 +179,7 @@ fun FieldPhotoViewer(
                     title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).semantics { heading() },
                 )
-                IconButton(onClick = onDismiss, modifier = Modifier.size(56.dp)) {
+                IconButton(onClick = { KrIme.log("viewer: Close tapped"); onDismiss() }, modifier = Modifier.size(56.dp)) { // TEMPORARY log (item q2b)
                     Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.close))
                 }
             }
@@ -222,7 +259,7 @@ private fun PageView(label: String, img: PeekImage, onPage: (Int) -> Unit, modif
                 IconButton(onClick = { view = PeekView.zoom(view, 1f / ZOOM_STEP, cx, cy, frame) }, modifier = Modifier.size(56.dp)) {
                     Icon(Icons.Outlined.ZoomOut, contentDescription = stringResource(R.string.peek_zoom_out))
                 }
-                IconButton(onClick = { view = PeekView.zoom(view, ZOOM_STEP, cx, cy, frame) }, modifier = Modifier.size(56.dp)) {
+                IconButton(onClick = { KrIme.log("viewer: zoom in tapped"); view = PeekView.zoom(view, ZOOM_STEP, cx, cy, frame) }, modifier = Modifier.size(56.dp)) { // TEMPORARY log (item q2b)
                     Icon(Icons.Outlined.ZoomIn, contentDescription = stringResource(R.string.peek_zoom_in))
                 }
                 if (img.mark != null) {

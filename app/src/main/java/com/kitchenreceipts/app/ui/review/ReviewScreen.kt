@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
 import com.kitchenreceipts.app.ui.components.FieldPhotoViewer
+import com.kitchenreceipts.app.ui.components.KrIme
+import androidx.compose.ui.semantics.getAllSemanticsNodes
+import androidx.compose.ui.semantics.getOrNull
 import com.kitchenreceipts.app.ui.components.LocalFieldPeek
 import com.kitchenreceipts.app.ui.components.PeekImage
 import com.kitchenreceipts.app.ui.components.PeekRequest
@@ -252,7 +255,15 @@ fun ReviewScreen(
         viewerFailed = false
         if (r == null) return@LaunchedEffect
         val page = viewingPage
-        val img = runCatching { if (page == null) vm.peek(r) else vm.peekPage(page) }.getOrNull()
+        val krStart = android.os.SystemClock.uptimeMillis() // TEMPORARY (item q2b)
+        KrIme.log("photo image: drawing starts (${r.label}, page=$page)") // TEMPORARY (item q2b)
+        val krImg = runCatching { if (page == null) vm.peek(r) else vm.peekPage(page) } // TEMPORARY (item q2b): result logged
+        KrIme.log( // TEMPORARY (item q2b)
+            "photo image after ${android.os.SystemClock.uptimeMillis() - krStart} ms: " +
+                (krImg.exceptionOrNull()?.let { "failed: $it" } ?: if (krImg.getOrNull() != null) "drawn" else "none") +
+                if (coroutineContext[kotlinx.coroutines.Job]?.isActive == false) " (this load was cancelled)" else "",
+        )
+        val img = krImg.getOrNull()
         viewerImage = img
         viewerFailed = img == null
     }
@@ -304,14 +315,63 @@ fun ReviewScreen(
     // KEYBOARD_CLOSE_MS at most, so the photo button never does nothing. A keyboard still up over the viewer took its
     // taps and its first Back.
     var asked by remember { mutableStateOf<PeekRequest?>(null) }
-    val onPeek: (PeekRequest) -> Unit = remember { { r -> asked = r } }
+    // TEMPORARY (item q2b): the KR-IME log (see KrIme); its state line is set below, where isImeVisible is known.
+    val krFiles = androidx.compose.ui.platform.LocalContext.current.filesDir
+    val krState = remember { arrayOfNulls<() -> String>(1) }
+    val onPeek: (PeekRequest) -> Unit = remember {
+        { r ->
+            KrIme.photoTapped(krFiles) // TEMPORARY (item q2b)
+            KrIme.log("photo button tapped, onPeek (${r.label}): ${krState[0]?.invoke()}") // TEMPORARY (item q2b)
+            asked = r
+        }
+    }
     val imeUp by rememberUpdatedState(WindowInsets.isImeVisible)
+    // TEMPORARY (item q2b): what the app sees at each logged event.
+    val krView = androidx.compose.ui.platform.LocalView.current
+    krState[0] = {
+        val imm = krView.context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+        val focused = (krView as? androidx.compose.ui.platform.ViewRootForTest)?.semanticsOwner
+            ?.getAllSemanticsNodes(mergingEnabled = false)
+            ?.filter { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused) == true }
+            ?.joinToString { n ->
+                n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.let { "text field \"$it\"" }
+                    ?: n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.firstOrNull()?.let { "[$it]" }
+                    ?: "node ${n.id}"
+            }?.ifEmpty { "none" } ?: "?"
+        val insetsIme = if (android.os.Build.VERSION.SDK_INT >= 30) krView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) else null
+        "focus=[$focused] isImeVisible=$imeUp insetsIme=$insetsIme acceptingText=${imm?.isAcceptingText} " +
+            "active=${imm?.isActive(krView)} viewFocused=${krView.isFocused} asked=${asked?.label} viewing=${viewing?.label}"
+    }
+    LaunchedEffect(state.filePath != null) { // TEMPORARY (item q2b)
+        if (state.filePath != null) { KrIme.begin(); KrIme.log("review screen with a photo: ${krState[0]?.invoke()}") }
+    }
+    LaunchedEffect(Unit) { // TEMPORARY (item q2b): the photo flow's state, logged when it changes
+        launch { snapshotFlow { imeUp }.collect { KrIme.log("keyboard isImeVisible=$it: ${krState[0]?.invoke()}") } }
+        launch { snapshotFlow { asked?.label }.collect { KrIme.log("asked=$it") } }
+        launch {
+            snapshotFlow { Triple(viewing?.label, viewerImage != null, viewerFailed) }
+                .collect { (v, i, f) -> KrIme.log("viewing=$v image=$i failed=$f") }
+        }
+    }
+    androidx.compose.runtime.DisposableEffect(Unit) { // TEMPORARY (item q2b)
+        val l = android.view.ViewTreeObserver.OnGlobalFocusChangeListener { old, new ->
+            KrIme.log("view focus: ${old?.javaClass?.simpleName} -> ${new?.javaClass?.simpleName}")
+        }
+        krView.viewTreeObserver.addOnGlobalFocusChangeListener(l)
+        onDispose { krView.viewTreeObserver.removeOnGlobalFocusChangeListener(l); KrIme.log("screen left") }
+    }
     LaunchedEffect(asked) {
         val r = asked ?: return@LaunchedEffect
         focusManager.clearFocus()
-        withTimeoutOrNull(KEYBOARD_CLOSE_MS) { snapshotFlow { imeUp }.first { !it } }
+        KrIme.log("clearFocus returned: ${krState[0]?.invoke()}") // TEMPORARY (item q2b)
+        val krWait = android.os.SystemClock.uptimeMillis() // TEMPORARY (item q2b)
+        val krClosed = withTimeoutOrNull(KEYBOARD_CLOSE_MS) { snapshotFlow { imeUp }.first { !it } }
+        KrIme.log( // TEMPORARY (item q2b)
+            "keyboard wait ended after ${android.os.SystemClock.uptimeMillis() - krWait} ms: " + if (krClosed != null) "isImeVisible false" else "cap reached",
+        )
         viewingPage = null
         viewing = r
+        KrIme.log("viewing set: ${krState[0]?.invoke()}") // TEMPORARY (item q2b)
         asked = null
     }
     // A replacement under every value the app could not settle (worked out by the view model as the operator edits).
