@@ -301,6 +301,35 @@ class RepositoryTest {
         assertEquals(galletti.id, repo.rememberedProduct("Cash and Carry Esempio", "BISC0TTI M.BIANC0 GALLETT1 800", "2046225"))
     }
 
+    @Test fun aRenameSticksForTheSuppliersArticleCodeAndNotForAnotherSupplier() = runBlocking<Unit> {
+        val code = "4471203"
+        // Supplier A's first invoice: the line (article code 4471203) becomes a new product, which the operator renames.
+        val first = ValidLineItem("PASSATA DI POMODORO 700G", null, BigDecimal("12"), "pz", null, 1260, null, null, null, code, newProductName = "PASSATA DI POMODORO 700G")
+        repo.saveDocument(doc("Alfa Prova S.r.l.", "1", listOf(first), 1260), StoredFile("documents/rn1.jpg", "image/jpeg", 1, "sha-rn1"), null, null)
+        val product = repo.productsOnce().single()
+        repo.renameProduct(product.id, "Passata rustica")
+        // Supplier B exists with an invoice of its own.
+        val oil = ValidLineItem("OLIO DI SEMI DI GIRASOLE LT 1", null, BigDecimal("6"), "pz", null, 1500, null, null, null, newProductName = "OLIO DI SEMI DI GIRASOLE LT 1")
+        repo.saveDocument(doc("Beta Prova S.r.l.", "9", listOf(oil), 1500), StoredFile("documents/rn2.jpg", "image/jpeg", 1, "sha-rn2"), null, null)
+
+        // Supplier A's next invoice: same code, the description misread. Linked by the code to the renamed product.
+        val misread = LineItemDraft(1, DraftField("PASSATA D1 POMODORO 700G"), quantity = DraftField("6"), unit = DraftField("pz"), lineTotal = DraftField("6,30"), itemCode = code)
+        val linked = repo.autoAssign("Alfa Prova S.r.l.", listOf(misread), createNew = true).single()
+        assertEquals(product.id, linked.productId)
+        assertEquals(ProductSource.REMEMBERED, linked.productSource)
+        val line = ValidLineItem("PASSATA D1 POMODORO 700G", linked.productId, BigDecimal("6"), "pz", null, 630, null, null, null, code)
+        val second = repo.saveDocument(doc("Alfa Prova S.r.l.", "2", listOf(line), 630), StoredFile("documents/rn3.jpg", "image/jpeg", 1, "sha-rn3"), null, null)
+        val saved = repo.itemsOnce(second).single()
+        assertEquals(product.id, saved.item.productId)
+        assertEquals("Passata rustica", saved.productName)
+
+        // Supplier B prints the same code on another article: another supplier's codes are its own.
+        val elsewhere = LineItemDraft(1, DraftField("FARINA DI GRANO TENERO 00 KG 1"), quantity = DraftField("10"), unit = DraftField("pz"), lineTotal = DraftField("8,00"), itemCode = code)
+        val b = repo.autoAssign("Beta Prova S.r.l.", listOf(elsewhere), createNew = true).single()
+        assertTrue("seller B's line linked to seller A's product by the code", b.productId != product.id)
+        assertTrue(b.productSource != ProductSource.REMEMBERED)
+    }
+
     @Test fun newProductsAreCreatedOnSaveAndTyposFindThemAgain() = runBlocking<Unit> {
         val first = ValidLineItem("SALE MARINO GROSSO GR.1000", null, BigDecimal("10"), "pz", null, 422, null, null, null, newProductName = "Sale marino grosso gr.1000")
         repo.saveDocument(doc("Grossista Uno", "1", listOf(first)), StoredFile("documents/n1.jpg", "image/jpeg", 1, "sha-n1"), null, null)

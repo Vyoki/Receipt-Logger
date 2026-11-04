@@ -299,10 +299,11 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
     val it = row.item
     Panel {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            ProductNameText(it.originalDescription)
             val pid = it.productId
+            // A linked line reads as its product (the operator's name for it), with the size printed on the invoice.
+            ProductNameText(if (pid != null && row.productName != null) row.productName else it.originalDescription, sizeFrom = it.originalDescription)
             if (pid != null && row.productName != null) {
-                AssistChip(onClick = { onOpenProduct(pid) }, label = { Text(stringResource(R.string.product_is, com.kitchenreceipts.core.ProductName.split(row.productName).name)) })
+                AssistChip(onClick = { onOpenProduct(pid) }, label = { Text(stringResource(R.string.product)) })
             } else {
                 Text(stringResource(R.string.no_product_assigned), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
