@@ -12,18 +12,15 @@ import java.text.Normalizer
  *    ("BARI.", "LIEVITAL") becomes the brand, and a repeat of it ("DALLABONA") is dropped;
  * 2. sizes ("500", "GR500", "KG5", "LT.1", "CC.700", "GR.150", "KG.1,775") go to the pack size, not the name;
  * 3. abbreviations of the food trade are written out ("RIG" rigate, "B.AD." bovino adulto, "S/V" sottovuoto,
- *    "P.S." parzialmente scremato, "FORM.STAG." formaggio stagionato...), and what the operator taught by renaming
- *    products ([learned]) comes first;
- * 4. what is still an abbreviation the app does not know ("TR.", "ORLAN.") stays as printed and is listed in
- *    [Clean.unknown], so the name is shown for checking. Nothing is guessed.
+ *    "P.S." parzialmente scremato, "FORM.STAG." formaggio stagionato...);
+ * 4. what is still an abbreviation the app does not know ("TR.", "ORLAN.") stays as printed, with its dot, and is
+ *    listed in [Clean.unknown], so the name is shown for checking. Nothing is guessed. Pieces of one printed word
+ *    that are not written out stay joined as printed ("M.B.GIROTONDI" -> "M.B.Girotondi").
  * The printed text is always kept elsewhere (the line's description, the supplier's article code).
  */
 object ProductNames {
 
     data class Clean(val name: String, val brand: String?, val size: PackSizes.Size?, val unknown: List<String>)
-
-    /** What the operator taught: an abbreviation (lower case, no dot) and the words it stands for. */
-    @Volatile var learned: Map<String, String> = emptyMap()
 
     /** Abbreviations written out (lower case, without dots). Multi-part keys keep their slash ("s/v", "a/terra"). */
     private val ABBREVIATIONS: Map<String, String> = mapOf(
@@ -72,18 +69,22 @@ object ProductNames {
         var size: PackSizes.Size? = null
         val unknown = mutableListOf<String>()
         val out = mutableListOf<String>()
-        val taught = learned
         val ps = pieces(text)
+        // The piece last kept as printed (its index in ps), and the names in out made of several printed pieces
+        // (with the index of their last piece).
+        var lastKept = -2
+        val joined = mutableMapOf<Int, Int>()
         var skip = 0
-        for ((idx, raw) in ps.withIndex()) {
+        for ((idx, piece) in ps.withIndex()) {
             if (skip > 0) { skip--; continue }
+            val raw = piece.text
             val k = key(raw)
             if (k.isEmpty()) continue
-            val next = ps.getOrNull(idx + 1)
+            val next = ps.getOrNull(idx + 1)?.text
             // Written in two pieces: "B." + "AD." (bovino adulto), "GR." + "500", "KG" + "1".
             if (next != null) {
                 val pair = k + key(next)
-                val two = taught[pair] ?: ABBREVIATIONS[pair]
+                val two = ABBREVIATIONS[pair]
                 if (two != null && raw.endsWith('.')) { out += two; skip = 1; continue }
                 val unit = Units.normalizeKnown(k)
                 val n = ItalianNumbers.parse(next) ?: next.replace(',', '.').toBigDecimalOrNull()
@@ -117,24 +118,38 @@ object ProductNames {
                 if (out.none { key(it) == brandKey }) out += brand!!
                 continue
             }
-            val known = taught[k] ?: ABBREVIATIONS[k]
-            when {
-                known != null -> out += known
-                isAbbreviation(raw) -> { out += raw.trimEnd('.'); unknown += raw }
-                else -> out += raw
+            val known = ABBREVIATIONS[k]
+            if (known != null) { out += known; continue }
+            // Not written out: kept as printed, an abbreviation with its dot ("TR." -> "Tr."), and joined to the piece
+            // of the same printed word kept just before it ("M." "B." "GIROTONDI" -> "M.B.GIROTONDI").
+            if (isAbbreviation(raw)) unknown += raw
+            if (lastKept == idx - 1 && ps[lastKept].word == piece.word) {
+                out[out.lastIndex] = out.last() + raw
+                joined[out.lastIndex] = idx
+            } else {
+                out += raw
             }
+            lastKept = idx
         }
+        // A joined name's last dot, when more of its printed word follows, only parted it from the next piece
+        // ("S.BENE.NAT." -> "S.Bene Naturale"); at the end of the printed word it stays ("M.B." -> "M.B.").
+        for ((i, last) in joined) if (ps.getOrNull(last + 1)?.word == ps[last].word) out[i] = out[i].trimEnd('.')
         val name = titleCase(out.joinToString(" ").replace(rx("\\s+"), " ").trim())
         return Clean(name.ifBlank { titleCase(text) }, brand?.let { b -> if (b.count(Char::isLetter) <= 3) b.uppercase() else titleCase(b) }, if (packSizeHint != null && (Units.dimension(packSizeHint.unit) != null || size == null)) packSizeHint else size ?: packSizeHint, unknown)
     }
 
+    /** A piece of the name and the printed word it was cut from. */
+    private data class Piece(val text: String, val word: Int)
+
     /** Words of the name; "BARI.PIPETTE" and "FORM.STAG.ITA" are several words, "S/V" and "A/TERRA" one. */
-    private fun pieces(text: String): List<String> =
-        text.split(' ').filter { it.isNotBlank() }.flatMap { w ->
-            if (SIZE.matches(w.trimEnd('.')) || CUT_NUMBER.matches(w) || w.count { it == '.' } == 0) listOf(w)
+    private fun pieces(text: String): List<Piece> =
+        text.split(' ').filter { it.isNotBlank() }.flatMapIndexed { i, w ->
+            val cut = if (SIZE.matches(w.trimEnd('.')) || CUT_NUMBER.matches(w) || w.count { it == '.' } == 0) listOf(w)
             else if (rx("^(?i)[a-z]\\.[a-z]{1,2}\\.?$").matches(w)) listOf(w) // "B.AD.", "P.S" written as one
             else rx("[^.]+\\.?").findAll(w).map { it.value }.toList()
-        }.flatMap { w -> if (rx("^(?i)(rig)(\\d+)$").matches(w)) listOf(w.substring(0, 3), w.substring(3)) else listOf(w) }
+            cut.flatMap { p -> if (rx("^(?i)(rig)(\\d+)$").matches(p)) listOf(p.substring(0, 3), p.substring(3)) else listOf(p) }
+                .map { Piece(it, i) }
+        }
 
     /** Lower case, accents and dots removed: "B.AD." -> "bad", "S/V" -> "s/v". */
     private fun key(s: String): String =
@@ -150,35 +165,15 @@ object ProductNames {
             w in setOf("DOP", "IGP", "UHT", "BIO", "IGT", "DOC", "DOCG") -> w
             i > 0 && w.lowercase() in SMALL_WORDS -> w.lowercase()
             w.startsWith("n.") || rx("^x\\d+$").matches(w) -> w
-            // "C+C", "1/16", "25X25": codes and measures stay as printed.
-            w.any { !it.isLetter() && it != '.' && it != '\'' && it != '-' } -> w.uppercase()
-            // "M.BIGAZZI" -> "M.Bigazzi", "VITE-POLLO" -> "Vite-Pollo"
-            else -> w.lowercase().split('.').joinToString(".") { part -> part.split('-').joinToString("-") { it.replaceFirstChar { c -> c.titlecase() } } }
+            // "P.LLE", "F.LLI": a letter and the word's last letters, written as such a contraction is ("P.lle").
+            rx("^(?i)[a-z]\\.[b-df-hj-np-tv-z][a-z]{1,2}$").matches(w) -> w.substring(0, 2).uppercase() + w.substring(2).lowercase()
+            // "M.BIGAZZI" -> "M.Bigazzi", "SP.CALAMAR.500" -> "Sp.Calamar.500": each part on its own.
+            else -> w.split('.').joinToString(".") { part -> titlePart(part) }
         }
     }.joinToString(" ")
 
-    /**
-     * What a rename by the operator teaches: each abbreviation in the printed name and the word of the new name that
-     * starts with it ("TR." and "Tenerissimo" -> "tr" = "tenerissimo"). Only clear pairs; nothing else.
-     */
-    fun learnFromRename(printed: String, newName: String): Map<String, String> {
-        val words = newName.split(' ').filter { it.count(Char::isLetter) >= 3 }
-        val out = mutableMapOf<String, String>()
-        for (raw in pieces(printed)) {
-            if (!isAbbreviation(raw) && raw.length > 5) continue
-            val k = key(raw)
-            if (k.length < 2 || k in ABBREVIATIONS || k.any(Char::isDigit)) continue
-            val letters = k.filter(Char::isLetter)
-            // "TR." for Tenerissimo, "SGUSC." for sgusciati: same first letter, the other letters in order.
-            val match = words.filter { w -> val wk = key(w); wk != letters && wk.first() == letters.first() && subsequence(letters, wk) }
-            if (match.size == 1) out[k] = match.single().lowercase()
-        }
-        return out
-    }
-
-    private fun subsequence(a: String, b: String): Boolean {
-        var i = 0
-        for (ch in b) if (i < a.length && a[i] == ch) i++
-        return i == a.length
-    }
+    /** "C+C", "1/16", "25X25": codes and measures stay as printed; "VITE-POLLO" -> "Vite-Pollo". */
+    private fun titlePart(part: String): String =
+        if (part.any { !it.isLetter() && it != '\'' && it != '-' }) part.uppercase()
+        else part.lowercase().split('-').joinToString("-") { it.replaceFirstChar { c -> c.titlecase() } }
 }

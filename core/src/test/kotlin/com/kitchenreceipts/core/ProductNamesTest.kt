@@ -31,27 +31,27 @@ class ProductNamesTest {
         assertEquals("Latte Grifo Rosso Parzialmente Scremato Slim", milk.name)
         assertEquals("ABC", milk.brand)
 
-        assertEquals("Uova Allevate a Terra per Pasta x6 Orlan", c("UOVA A/TERRA P/PASTA X6 ORLAN.").name)
+        assertEquals("Uova Allevate a Terra per Pasta x6 Orlan.", c("UOVA A/TERRA P/PASTA X6 ORLAN.").name)
         assertEquals("Sambuca Molinari", c("SAMBUCA MOLINARI CC.700 - MOLINARI").name)
         assertEquals("700 ml", c("SAMBUCA MOLINARI CC.700 - MOLINARI").size?.text)
     }
 
     @Test fun unknownAbbreviationsAreShownNotGuessed() {
         val beef = c("ROASTBEEF B.AD.TR.S/V AB500168")
-        assertEquals("Roastbeef Bovino Adulto Tr Sottovuoto AB500168", beef.name)
+        assertEquals("Roastbeef Bovino Adulto Tr. Sottovuoto AB500168", beef.name)
         assertEquals(listOf("TR."), beef.unknown)
     }
 
-    @Test fun learnedFromTheOperatorsName() {
-        val taught = ProductNames.learnFromRename("ROASTBEEF B.AD.TR.S/V AB500168", "Roastbeef bovino adulto tenerissimo sottovuoto")
-        assertEquals("tenerissimo", taught["tr"])
-        try {
-            ProductNames.learned = taught
-            val beef = c("ROASTBEEF B.AD.TR.S/V AB500170")
-            assertEquals("Roastbeef Bovino Adulto Tenerissimo Sottovuoto AB500170", beef.name)
-            assertTrue(beef.unknown.isEmpty())
-        } finally {
-            ProductNames.learned = emptyMap()
-        }
+    @Test fun anAbbreviationNotWrittenOutKeepsItsDotsAndStaysJoinedAsPrinted() {
+        val biscuits = c("BISCOTTI M.B.GIROTONDI GR.800")
+        assertEquals("Biscotti M.B.Girotondi", biscuits.name)
+        assertEquals(listOf("M.", "B."), biscuits.unknown)
+        assertEquals("Legna da Ardere P.lle", c("LEGNA DA ARDERE P.LLE").name)
+        // A piece written out still becomes its word, apart from the pieces kept as printed.
+        assertEquals("Ace Pavimen. Igienizzante Talco", c("ACE PAVIMEN.IGIENIZ.TALCO LT.1").name)
+        assertEquals("Acqua Minerale S.Bene Naturale", c("ACQUA MINERA.S.BENE.NAT. LT.2").name)
+        assertEquals("Biscotti Pandistelle M/BIANCO 700", c("BISC.PANDISTELLE M/BIANCO 700").name)
+        // At the end of the printed word the last dot stays.
+        assertEquals("Biscotti M.B. Molinetti", c("BISC.M.B. MOLINETTI G.800").name)
     }
 }
