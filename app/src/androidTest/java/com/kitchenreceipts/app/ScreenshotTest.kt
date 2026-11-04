@@ -722,6 +722,8 @@ class ScreenshotTest {
                 while (!test(edited()) && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
                 return edited()
             }
+            // A keyboard window on screen (it would sit over the photo and take its taps and its first Back).
+            fun keyboardShown() = ua.windows.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
             fun button(d: String): AccessibilityNodeInfo? {
                 var n = described(d) ?: return null
                 while (!n.isClickable) n = n.parent ?: break
@@ -777,6 +779,7 @@ class ScreenshotTest {
             assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
             val tapped = tapInApp(photo)
             assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", waitFor(zoomIn, true))
+            assertTrue("a keyboard is on screen over the photo. On screen: ${everyWindow()}", !keyboardShown())
             shot("40-photo-viewer")
             tap(zoomIn)
             shot("41-photo-viewer-zoomed")
@@ -790,6 +793,7 @@ class ScreenshotTest {
             assertTrue("no photo icon in the field being edited again. On screen: ${screenDump()}", waitFor(photo, true))
             val tappedAgain = tapInApp(photo)
             assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", waitFor(zoomIn, true))
+            assertTrue("a keyboard is on screen over the photo opened again. On screen: ${everyWindow()}", !keyboardShown())
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
             // Closed by Back as by Close: no field is being edited, and the form under it works again: the date field

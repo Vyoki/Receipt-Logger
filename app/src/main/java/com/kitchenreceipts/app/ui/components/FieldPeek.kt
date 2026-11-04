@@ -52,7 +52,6 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.heading
@@ -115,8 +114,8 @@ fun PeekIconButton(onClick: () -> Unit) {
  *
  * Drawn over the screen in the screen's own window (the caller puts it last, above the form), not in a dialog: a
  * dialog is a second window, and the field being edited kept its focus and the keyboard in the first one, which took
- * the first Back (the viewer stayed open). Here focus moves into the viewer as it opens, so the field stops being
- * edited and the keyboard closes the normal way; Back closes the viewer; taps never reach the form under it.
+ * the first Back (the viewer stayed open). The caller shows it only once no field is being edited and the keyboard is
+ * gone; it then holds the focus itself while open. Back closes it; taps never reach the form under it.
  */
 @Composable
 fun FieldPhotoViewer(
@@ -127,14 +126,10 @@ fun FieldPhotoViewer(
     onOpenOriginal: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val keyboard = LocalSoftwareKeyboardController.current
     val focus = remember { FocusRequester() }
     // Registered after the screen's own Back: while the viewer is open, Back closes it.
     BackHandler(onBack = onDismiss)
-    LaunchedEffect(Unit) {
-        focus.requestFocus()
-        keyboard?.hide()
-    }
+    LaunchedEffect(Unit) { focus.requestFocus() }
     Surface(
         Modifier.fillMaxSize()
             // The viewer holds the focus while open: no field under it is being edited.

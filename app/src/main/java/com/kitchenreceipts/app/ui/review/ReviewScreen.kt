@@ -24,7 +24,10 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -65,8 +68,10 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalFocusManager
@@ -143,6 +148,7 @@ import com.kitchenreceipts.core.headerNeedsLook
 import com.kitchenreceipts.core.lineRows
 import com.kitchenreceipts.core.needsLook
 import com.kitchenreceipts.core.nextToCheck
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneOffset
@@ -152,6 +158,7 @@ import java.time.ZoneOffset
  * that file's chain: "Invoice 3 of 25 to check" under the top bar, "Check later", and after Save the next one opens
  * by itself ([onChain]: the next job, or null for the file's list).
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun ReviewScreen(
     documentId: Long?,
@@ -291,8 +298,20 @@ fun ReviewScreen(
     }
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
-    // The keyboard closes: the photo has the whole screen.
-    val onPeek: (PeekRequest) -> Unit = remember { { r -> focusManager.clearFocus(); viewingPage = null; viewing = r } }
+    // Asked from a field being edited: the field gives up its focus first (after the tap, which would take it back:
+    // the photo button is inside the field), and the photo is shown only once the keyboard is gone. A keyboard still
+    // up over the viewer took its taps and its first Back.
+    var asked by remember { mutableStateOf<PeekRequest?>(null) }
+    val onPeek: (PeekRequest) -> Unit = remember { { r -> asked = r } }
+    val imeUp by rememberUpdatedState(WindowInsets.isImeVisible)
+    LaunchedEffect(asked) {
+        val r = asked ?: return@LaunchedEffect
+        focusManager.clearFocus()
+        snapshotFlow { imeUp }.first { !it }
+        viewingPage = null
+        viewing = r
+        asked = null
+    }
     // A replacement under every value the app could not settle (worked out by the view model as the operator edits).
     val replacements = state.replacements
     val toCheck = rows.count { r -> (r is CardRow && r.item.needsLook(state.errors, state.draft.lotsPrinted)) || (r is TopRow && r.key == HEADER && state.draft.headerNeedsLook(state.errors)) }
