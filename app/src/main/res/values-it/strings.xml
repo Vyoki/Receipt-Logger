@@ -44,7 +44,6 @@
     <string name="ocr_failed">Il testo non è stato letto automaticamente. Compila i campi a mano guardando l\'originale.</string>
     <string name="ocr_nothing_found">Nessun testo riconosciuto. Controlla la foto o compila i campi a mano.</string>
     <string name="ocr_pages_limited">Lette automaticamente solo le prime %1$d pagine su %2$d.</string>
-    <string name="read_by">Letto da: %1$s. Confronta sempre con l\'originale.</string>
     <string name="fix_errors">Correggi i %1$d campi evidenziati prima di salvare.</string>
     <string name="save_failed">Salvataggio non riuscito: %1$s</string>
     <string name="field_missing">Mancante – scrivilo se è stampato</string>
@@ -574,7 +573,6 @@
     <string name="same_page_no">No, manca una pagina</string>
     <string name="same_page_failed">Non è stato possibile togliere la foto ripetuta: non è cambiato niente. Riprova, oppure elimina questa lettura e rifai le foto.</string>
     <string name="doc_number_short">n. %1$s</string>
-    <string name="next_to_check">Prossimo da controllare · %1$d</string>
     <string name="lines_all_fine">Tutte le righe tornano.</string>
     <plurals name="lines_to_check">
         <item quantity="one">%1$d riga da controllare: le altre sono raccolte.</item>
@@ -700,7 +698,6 @@
     <string name="ai_field_value">Valore</string>
     <string name="ai_field_line">Riga %1$d, %2$s</string>
     <string name="ai_disagreement">%1$s: %2$s · IA %3$s</string>
-    <string name="ai_read_mark">⚠ l\'IA ha letto</string>
     <string name="file_unsupported">Questo file non si può leggere. Usa una foto (JPEG o PNG), un PDF o una fattura elettronica (.xml, .p7m, .zip).</string>
     <string name="file_no_einvoice">Nessuna fattura elettronica in questo file.</string>
     <string name="file_einvoice_damaged">Non è stato possibile leggere la fattura elettronica (potrebbe essere danneggiata).</string>

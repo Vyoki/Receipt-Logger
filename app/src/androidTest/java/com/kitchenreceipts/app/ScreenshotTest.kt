@@ -454,6 +454,94 @@ class ScreenshotTest {
         }
     }
 
+    /**
+     * Nothing floats over the form: the bottom bar's count is the one tap to the next thing to check. An invented page
+     * read by the app's own queue; scrolled to the Date field and to the last field, the jump control (found by what
+     * its tap does) never overlaps a field; and no OCR engine is named on the screen. ABC S.r.l., 2031; put away after.
+     */
+    @Test fun nothingHidesUnderTheJumpAndNoEngineIsNamed() {
+        val c = app.container
+        val settings = c.settings
+        val autoSave = settings.autoSave
+        var jobId: String? = null
+        try {
+            settings.autoSave = false
+            val page = Bitmap.createBitmap(1240, 1754, Bitmap.Config.ARGB_8888)
+            Canvas(page).apply {
+                drawColor(Color.WHITE)
+                val p = Paint().apply { textSize = 34f; color = Color.BLACK; isAntiAlias = true }
+                listOf(
+                    "ABC S.r.l.", "P.IVA 01234567897", "FATTURA N. 63/2031 DEL 05/02/2031", "DESCRIZIONE QUANTITA PREZZO IMPORTO",
+                    "PATATE GIALLE KG 10,000 0,90 9,00", "CIPOLLE DORATE KG 5,000 1,20 6,00", "CAROTE NOVELLE KG 4,000 1,10 4,40",
+                    "TOTALE IMPONIBILE 19,40", "IVA 4% 0,78", "TOTALE DOCUMENTO 20,18",
+                ).forEachIndexed { i, t -> drawText(t, 60f, 140f + i * 90f, p) }
+            }
+            val photo = File(app.cacheDir, "jump-check.jpg")
+            photo.outputStream().use { page.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+            val stored = runBlocking { c.fileStore.storePhotos(listOf(photo)) { BitmapFactory.decodeFile(it.absolutePath) } }
+            val job = runBlocking { c.importQueue.enqueue(stored, "test") }
+            jobId = job.id
+            val ended = setOf(JobStatus.READY, JobStatus.SAVED, JobStatus.FAILED)
+            val done = runBlocking { withTimeoutOrNull(180_000) { c.importQueue.jobs.first { l -> l.any { it.id == job.id && it.status in ended } }.first { it.id == job.id } } }
+            assertTrue("job ${done?.status} ${done?.error}", done?.status == JobStatus.READY)
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                var next = ""
+                var date = ""
+                scenario.onActivity { next = it.getString(R.string.jump_next_check); date = it.getString(R.string.date) }
+                app.container.pendingRoute.value = "review/${job.id}"
+                Thread.sleep(1500)
+                val inst = InstrumentationRegistry.getInstrumentation()
+                fun root() = inst.uiAutomation.rootInActiveWindow
+                fun bounds(n: AccessibilityNodeInfo) = Rect().also { n.getBoundsInScreen(it) }
+                // The jump control: the one thing on screen whose tap is "Next to check".
+                fun jump(): Rect? = root()?.let { r ->
+                    collectNodes(r) { n -> n.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK && it.label?.toString() == next } }.firstOrNull()?.let(::bounds)
+                }
+                fun fields(): List<Rect> = root()?.let { r -> collectNodes(r) { it.isEditable }.map(::bounds).filter { !it.isEmpty } }.orEmpty()
+                // No engine named anywhere on the review, top to bottom.
+                val engines = listOf("ML Kit", "MLKit", "Tesseract")
+                val named = mutableListOf<String>()
+                for (step in 0 until 25) {
+                    val r = root() ?: run { Thread.sleep(300); null } ?: continue
+                    collectNodes(r) { it.text != null }.map { it.text.toString() }.filter { t -> engines.any { t.contains(it, ignoreCase = true) } }.let { named += it }
+                    val list = collectNodes(r) { it.isScrollable }.maxByOrNull { n -> bounds(n).height() } ?: break
+                    if (!list.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) break
+                    Thread.sleep(400)
+                }
+                assertTrue("an OCR engine is named on screen: ${named.distinct()}", named.isEmpty())
+                // Scrolled to the Date field: in full view, and the jump control is not over it.
+                app.container.pendingRoute.value = "home"
+                Thread.sleep(500)
+                app.container.pendingRoute.value = "review/${job.id}"
+                assertTrue("no \"$date\" field. On screen: ${screenDump()}", scrollUntilText(date))
+                Thread.sleep(500)
+                val j1 = jump()
+                assertNotNull("no control whose tap is \"$next\". On screen: ${screenDump()}", j1)
+                val dateField = root()?.let { r -> findNode(r) { it.text?.toString() == date } }?.let { n ->
+                    var e: AccessibilityNodeInfo? = n
+                    while (e != null && !e.isEditable) e = e.parent
+                    e?.let(::bounds)
+                } ?: fields().firstOrNull()
+                assertNotNull("the Date field was not found. On screen: ${screenDump()}", dateField)
+                assertTrue("the jump control $j1 covers the Date field $dateField", !Rect.intersects(j1!!, dateField!!))
+                shot("49-review-date-clear")
+                // Scrolled to the end: the last field on screen is not under the jump control either.
+                scrollToEnd()
+                Thread.sleep(500)
+                val j2 = jump()
+                assertNotNull("no control whose tap is \"$next\" at the end. On screen: ${screenDump()}", j2)
+                val last = fields().maxByOrNull { it.bottom }
+                assertNotNull("no field at the end. On screen: ${screenDump()}", last)
+                assertTrue("the jump control $j2 covers the last field $last", !Rect.intersects(j2!!, last!!))
+                fields().forEach { f -> assertTrue("the jump control $j2 covers a field $f", !Rect.intersects(j2, f)) }
+                shot("50-review-bottom-clear")
+            }
+        } finally {
+            settings.autoSave = autoSave
+            jobId?.let { c.importQueue.discard(it) }
+        }
+    }
+
     private fun shell(cmd: String) {
         val out = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
         android.os.ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes() }

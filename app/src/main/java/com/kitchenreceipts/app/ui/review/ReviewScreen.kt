@@ -96,6 +96,7 @@ import com.kitchenreceipts.app.ui.components.JumpChip
 import com.kitchenreceipts.app.ui.components.JumpChips
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.foundation.clickable
 import com.kitchenreceipts.app.ui.components.PriceChangesCard
 import com.kitchenreceipts.app.ui.categoryLabel
 import com.kitchenreceipts.app.ui.reviewReasonText
@@ -127,7 +128,6 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.animation.togetherWith
 import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ExpandMore
-import androidx.compose.material.icons.filled.KeyboardDoubleArrowDown
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
@@ -404,31 +404,12 @@ fun ReviewScreen(
                 }
             }
         },
-        floatingActionButton = {
-            // One tap to the next thing to check, instead of scrolling through the lines that are fine.
-            AnimatedVisibility(
-                visible = !state.loading && state.fatal == null && state.savedId == null && toCheck > 0,
-                enter = androidx.compose.animation.scaleIn() + androidx.compose.animation.fadeIn(),
-                exit = androidx.compose.animation.scaleOut() + androidx.compose.animation.fadeOut(),
-            ) {
-                androidx.compose.material3.ExtendedFloatingActionButton(
-                    onClick = {
-                        nextToCheck(rows, listState.firstVisibleItemIndex, state.draft, state.errors, HEADER)?.let { i -> goTo(i, rows[i].key) }
-                    },
-                    containerColor = LocalStatusColors.current.uncertainBorder,
-                    contentColor = com.kitchenreceipts.app.ui.theme.Palette.Black,
-                    icon = { Icon(Icons.Filled.KeyboardDoubleArrowDown, contentDescription = null) },
-                    text = {
-                        androidx.compose.animation.AnimatedContent(toCheck, label = "toCheck") { n ->
-                            Text(stringResource(R.string.next_to_check, n), fontWeight = FontWeight.SemiBold)
-                        }
-                    },
-                )
-            }
-        },
         bottomBar = {
             if (!state.loading && state.fatal == null && state.savedId == null) {
                 SaveBar(
+                    // The count is the one tap to the next thing to check (nothing floats over the form).
+                    onNext = if (toCheck > 0) ({ nextToCheck(rows, listState.firstVisibleItemIndex, state.draft, state.errors, HEADER)?.let { i -> goTo(i, rows[i].key) } }) else null,
+                    nextLabel = labelNext,
                     uncertain = state.draft.uncertainCount,
                     open = openReasons(state.reviewReasons).size,
                     errors = state.errors.size,
@@ -812,14 +793,6 @@ private fun StatusBanner(state: ReviewState) {
                 style = MaterialTheme.typography.bodyMedium,
             )
         }
-    }
-    if (state.engineName != null && state.ocrError == null) {
-        Text(
-            stringResource(R.string.read_by, state.engineName),
-            style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
-            modifier = Modifier.padding(top = 4.dp),
-        )
     }
 }
 
@@ -1338,7 +1311,7 @@ private fun ItemCard(
 }
 
 @Composable
-private fun SaveBar(uncertain: Int, open: Int, errors: Int, saving: Boolean, onSave: () -> Unit) {
+private fun SaveBar(onNext: (() -> Unit)?, nextLabel: String, uncertain: Int, open: Int, errors: Int, saving: Boolean, onSave: () -> Unit) {
     // Black bar with a hairline on top: the save button stands out on its own.
     Surface(color = MaterialTheme.colorScheme.background) { Column {
         androidx.compose.material3.HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
@@ -1356,7 +1329,11 @@ private fun SaveBar(uncertain: Int, open: Int, errors: Int, saving: Boolean, onS
             }
             androidx.compose.animation.AnimatedContent(
                 label,
-                modifier = Modifier.weight(1f),
+                // Tapped, it goes to the next thing to check (a 48dp target; TalkBack says what the tap does).
+                modifier = Modifier.weight(1f).heightIn(min = 48.dp).let { m ->
+                    if (onNext != null) m.clickable(onClickLabel = nextLabel, role = androidx.compose.ui.semantics.Role.Button) { onNext() } else m
+                },
+                contentAlignment = Alignment.CenterStart,
                 transitionSpec = {
                     (androidx.compose.animation.slideInVertically { it } + androidx.compose.animation.fadeIn()) togetherWith
                         (androidx.compose.animation.slideOutVertically { -it } + androidx.compose.animation.fadeOut())

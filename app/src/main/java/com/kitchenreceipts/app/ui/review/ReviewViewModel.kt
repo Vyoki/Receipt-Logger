@@ -72,7 +72,6 @@ data class ReviewState(
     val filePath: String? = null,
     val mimeType: String? = null,
     val pageCount: Int = 1,
-    val engineName: String? = null,
     val ocrError: String? = null,
     val pagesRead: Int = 0,
     /** Recognised text (and raw OCR lines for a new import), for checking or sharing. */
@@ -291,7 +290,6 @@ class ReviewViewModel(private val c: AppContainer, private val documentId: Long?
             isNew = true, draft = draft, restored = kept != null,
             kind = com.kitchenreceipts.core.DocumentKinds.detect(pending.ocrText),
             filePath = pending.file.relativePath, mimeType = pending.file.mimeType, pageCount = pending.file.pageCount,
-            engineName = pending.engineName,
             ocrError = pending.ocrError, pagesRead = pending.pagesRead,
             recognisedText = pending.debugReport(),
             recognition = prepared.recognition,

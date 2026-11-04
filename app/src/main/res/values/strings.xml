@@ -48,7 +48,6 @@
     <string name="ocr_failed">The text could not be read automatically. Fill in the fields by hand while looking at the original.</string>
     <string name="ocr_nothing_found">No text was recognised. Check the photo, or fill in the fields by hand.</string>
     <string name="ocr_pages_limited">Only the first %1$d of %2$d pages were read automatically.</string>
-    <string name="read_by">Read by: %1$s. Always compare with the original.</string>
     <string name="fix_errors">Fix the %1$d highlighted field(s) before saving.</string>
     <string name="save_failed">Saving failed: %1$s</string>
     <string name="field_missing">Missing – type it if it is printed</string>
@@ -586,7 +585,6 @@
     <string name="same_page_no">No, a page is missing</string>
     <string name="same_page_failed">The repeated photo could not be taken out, so nothing changed. Try again, or delete this reading and take the photos again.</string>
     <string name="doc_number_short">no. %1$s</string>
-    <string name="next_to_check">Next to check · %1$d</string>
     <string name="lines_all_fine">Every line checks out.</string>
     <plurals name="lines_to_check">
         <item quantity="one">%1$d line to check: the others are folded.</item>
@@ -712,7 +710,6 @@
     <string name="ai_field_value">Value</string>
     <string name="ai_field_line">Line %1$d, %2$s</string>
     <string name="ai_disagreement">%1$s: %2$s · AI %3$s</string>
-    <string name="ai_read_mark">⚠ the AI read</string>
     <string name="file_unsupported">This file cannot be read. Use a photo (JPEG or PNG), a PDF, or an e-invoice (.xml, .p7m, .zip).</string>
     <string name="file_no_einvoice">No e-invoice found in this file.</string>
     <string name="file_einvoice_damaged">The e-invoice could not be read (it may be damaged).</string>
