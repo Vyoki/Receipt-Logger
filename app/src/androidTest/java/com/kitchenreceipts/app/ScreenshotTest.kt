@@ -11,6 +11,7 @@ import android.os.SystemClock
 import android.view.InputDevice
 import android.view.MotionEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import android.view.accessibility.AccessibilityWindowInfo
 import androidx.test.core.app.ActivityScenario
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -724,22 +725,38 @@ class ScreenshotTest {
             }
             // A keyboard window on screen (it would sit over the photo and take its taps and its first Back).
             fun keyboardShown() = ua.windows.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-            fun button(d: String): AccessibilityNodeInfo? {
-                var n = described(d) ?: return null
-                while (!n.isClickable) n = n.parent ?: break
-                return n
-            }
-            // A finger's tap in the middle of the button (as the operator does), not TalkBack's click.
-            fun tap(d: String): String {
-                val n = button(d) ?: return "no \"$d\""
-                val b = Rect().also { n.getBoundsInScreen(it) }
-                val down = SystemClock.uptimeMillis()
-                for (action in listOf(MotionEvent.ACTION_DOWN, MotionEvent.ACTION_UP)) {
-                    val e = MotionEvent.obtain(down, SystemClock.uptimeMillis(), action, b.exactCenterX(), b.exactCenterY(), 0)
-                    inst.sendPointerSync(e)
-                    e.recycle()
+            // Every window on screen, top first: what it is, its layer, its app, where it is, and whether it has the focus.
+            fun windowDump(ws: List<AccessibilityWindowInfo>) = ws.sortedByDescending { it.layer }.joinToString(" | ") { w ->
+                val type = when (w.type) {
+                    AccessibilityWindowInfo.TYPE_APPLICATION -> "application"
+                    AccessibilityWindowInfo.TYPE_INPUT_METHOD -> "keyboard"
+                    AccessibilityWindowInfo.TYPE_SYSTEM -> "system"
+                    AccessibilityWindowInfo.TYPE_ACCESSIBILITY_OVERLAY -> "accessibility overlay"
+                    AccessibilityWindowInfo.TYPE_SPLIT_SCREEN_DIVIDER -> "split-screen divider"
+                    else -> "type ${w.type}"
                 }
-                return "tapped \"$d\" at $b (clickable=${n.isClickable})"
+                val b = Rect().also { w.getBoundsInScreen(it) }
+                "$type \"${w.title}\" layer=${w.layer} package=${w.root?.packageName} bounds=${b.toShortString()} focused=${w.isFocused}"
+            }
+            // The node of the app's own screen described [d], read on the main thread (the form under the photo has no
+            // semantics while the photo is open: only the photo's own buttons are found then).
+            fun nodeInApp(root: android.view.View, d: String) = composeRoots(root)
+                .flatMap { it.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false) }
+                .firstOrNull { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.contains(d) == true }
+            // Where tapInApp taps [d], on the screen; with the app window's own view of the focus and the keyboard.
+            fun pointInApp(d: String): Pair<android.graphics.Point?, String> {
+                var point: android.graphics.Point? = null
+                var state = ""
+                scenario.onActivity { a ->
+                    val root = a.window.decorView
+                    val ime = if (android.os.Build.VERSION.SDK_INT >= 30) root.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) else null
+                    state = "app window: focused view=${a.currentFocus?.javaClass?.simpleName}, keyboard in its insets=$ime"
+                    val node = nodeInApp(root, d) ?: return@onActivity
+                    val at = IntArray(2).also { root.getLocationOnScreen(it) }
+                    val c = node.boundsInWindow.center
+                    point = android.graphics.Point(at[0] + c.x.toInt(), at[1] + c.y.toInt())
+                }
+                return point to state
             }
             // A finger's tap on a button of the app's own screen, handed to that screen's window (a tap sent to the screen
             // goes to whatever window is in front, which another app's refuses: CI 145), at the place Compose has
@@ -750,9 +767,7 @@ class ScreenshotTest {
                 var result = "no \"$d\" on the app's screen"
                 scenario.onActivity { a ->
                     val root = a.window.decorView
-                    val node = composeRoots(root).flatMap { it.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false) }
-                        .firstOrNull { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.contains(d) == true }
-                        ?: return@onActivity
+                    val node = nodeInApp(root, d) ?: return@onActivity
                     val pt = node.boundsInWindow.center
                     var handled = false
                     val down = SystemClock.uptimeMillis()
@@ -781,10 +796,20 @@ class ScreenshotTest {
             assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", waitFor(zoomIn, true))
             assertTrue("a keyboard is on screen over the photo. On screen: ${everyWindow()}", !keyboardShown())
             shot("40-photo-viewer")
-            tap(zoomIn)
+            // Nothing sits over the photo's buttons (what the operator sees): at the centre of the zoom button, where it
+            // is tapped, the window on top is the app's. Logged with every window on screen and the tap point.
+            val (zoomAt, appState) = pointInApp(zoomIn)
+            val onScreen = ua.windows
+            val onTop = zoomAt?.let { p -> onScreen.filter { w -> Rect().also { w.getBoundsInScreen(it) }.contains(p.x, p.y) }.maxByOrNull { it.layer } }
+            val windows = "tap point on screen $zoomAt; on top there: \"${onTop?.title}\" (package ${onTop?.root?.packageName}); " +
+                "$appState; windows, top first: ${windowDump(onScreen)}"
+            android.util.Log.i("ScreenshotTest", "photo viewer, before its first tap: $windows")
+            assertTrue("something sits over the photo's zoom button: $windows", onTop?.root?.packageName == app.packageName)
+            // The photo's buttons are part of the app's screen (no dialog): tapped there, as the form's are.
+            tapInApp(zoomIn)
             shot("41-photo-viewer-zoomed")
-            tap(close)
-            assertTrue("the photo did not close. On screen: ${everyWindow()}", waitFor(zoomIn, false))
+            val closed = tapInApp(close)
+            assertTrue("the photo did not close ($closed). On screen: ${everyWindow()}", waitFor(zoomIn, false))
             // Closed, no field is being edited: the keyboard does not come back over the form (it did, and its window
             // or the form moving under it took the next tap: CI 145, 149). Back closes it too: opened again exactly as
             // the first time.

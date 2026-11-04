@@ -150,6 +150,7 @@ import com.kitchenreceipts.core.needsLook
 import com.kitchenreceipts.core.nextToCheck
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withTimeoutOrNull
 import java.time.Instant
 import java.time.ZoneOffset
 
@@ -299,15 +300,16 @@ fun ReviewScreen(
 
     val title = stringResource(if (state.isNew) R.string.review_title else R.string.edit_title)
     // Asked from a field being edited: the field gives up its focus first (after the tap, which would take it back:
-    // the photo button is inside the field), and the photo is shown only once the keyboard is gone. A keyboard still
-    // up over the viewer took its taps and its first Back.
+    // the photo button is inside the field), and the photo is shown once the keyboard is gone, or after
+    // KEYBOARD_CLOSE_MS at most, so the photo button never does nothing. A keyboard still up over the viewer took its
+    // taps and its first Back.
     var asked by remember { mutableStateOf<PeekRequest?>(null) }
     val onPeek: (PeekRequest) -> Unit = remember { { r -> asked = r } }
     val imeUp by rememberUpdatedState(WindowInsets.isImeVisible)
     LaunchedEffect(asked) {
         val r = asked ?: return@LaunchedEffect
         focusManager.clearFocus()
-        snapshotFlow { imeUp }.first { !it }
+        withTimeoutOrNull(KEYBOARD_CLOSE_MS) { snapshotFlow { imeUp }.first { !it } }
         viewingPage = null
         viewing = r
         asked = null
@@ -657,6 +659,9 @@ fun ReviewScreen(
 
 /** The pause after "Saved ✓ · next: …" before the next invoice of the chain opens. */
 private const val CHAIN_PAUSE_MS = 2_000L
+
+/** The longest a field's photo waits for the keyboard to close before it opens anyway. */
+private const val KEYBOARD_CLOSE_MS = 300L
 
 /** How long "Back to where you were" stays after a jump (longer when the accessibility settings ask for it). */
 private const val BACK_OFFER_MS = 5_000L

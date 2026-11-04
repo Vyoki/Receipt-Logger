@@ -114,8 +114,9 @@ fun PeekIconButton(onClick: () -> Unit) {
  *
  * Drawn over the screen in the screen's own window (the caller puts it last, above the form), not in a dialog: a
  * dialog is a second window, and the field being edited kept its focus and the keyboard in the first one, which took
- * the first Back (the viewer stayed open). The caller shows it only once no field is being edited and the keyboard is
- * gone; it then holds the focus itself while open. Back closes it; taps never reach the form under it.
+ * the first Back (the viewer stayed open). The caller shows it once no field is being edited and the keyboard is gone
+ * (waiting a moment at most); it then holds the focus itself while open. Back closes it; taps never reach the form
+ * under it.
  */
 @Composable
 fun FieldPhotoViewer(
