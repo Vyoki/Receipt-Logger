@@ -661,7 +661,7 @@ fun ReviewScreen(
 private const val CHAIN_PAUSE_MS = 2_000L
 
 /** The longest a field's photo waits for the keyboard to close before it opens anyway. */
-private const val KEYBOARD_CLOSE_MS = 300L
+private const val KEYBOARD_CLOSE_MS = 1_500L
 
 /** How long "Back to where you were" stays after a jump (longer when the accessibility settings ask for it). */
 private const val BACK_OFFER_MS = 5_000L

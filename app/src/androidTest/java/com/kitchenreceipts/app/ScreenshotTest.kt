@@ -725,6 +725,12 @@ class ScreenshotTest {
             }
             // A keyboard window on screen (it would sit over the photo and take its taps and its first Back).
             fun keyboardShown() = ua.windows.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
+            // Until no keyboard window is on screen, as waitFor waits for a button (same deadline).
+            fun waitForNoKeyboard(): Boolean {
+                val deadline = SystemClock.uptimeMillis() + 10_000
+                while (keyboardShown() && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
+                return !keyboardShown()
+            }
             // Every window on screen, top first: what it is, its layer, its app, where it is, and whether it has the focus.
             fun windowDump(ws: List<AccessibilityWindowInfo>) = ws.sortedByDescending { it.layer }.joinToString(" | ") { w ->
                 val type = when (w.type) {
@@ -794,15 +800,19 @@ class ScreenshotTest {
             assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
             val tapped = tapInApp(photo)
             assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", waitFor(zoomIn, true))
-            assertTrue("a keyboard is on screen over the photo. On screen: ${everyWindow()}", !keyboardShown())
+            // No keyboard over the photo (waited for as for a button; the windows are read after the wait).
+            val shown = SystemClock.uptimeMillis()
+            val noKeyboard = waitForNoKeyboard()
+            val keyboardGoneMs = SystemClock.uptimeMillis() - shown
+            assertTrue("a keyboard is still on screen over the photo 10 s after it showed. Windows, top first: ${windowDump(ua.windows)}. On screen: ${everyWindow()}", noKeyboard)
             shot("40-photo-viewer")
             // Nothing sits over the photo's buttons (what the operator sees): at the centre of the zoom button, where it
             // is tapped, the window on top is the app's. Logged with every window on screen and the tap point.
             val (zoomAt, appState) = pointInApp(zoomIn)
             val onScreen = ua.windows
             val onTop = zoomAt?.let { p -> onScreen.filter { w -> Rect().also { w.getBoundsInScreen(it) }.contains(p.x, p.y) }.maxByOrNull { it.layer } }
-            val windows = "tap point on screen $zoomAt; on top there: \"${onTop?.title}\" (package ${onTop?.root?.packageName}); " +
-                "$appState; windows, top first: ${windowDump(onScreen)}"
+            val windows = "no keyboard window $keyboardGoneMs ms after the photo showed; tap point on screen $zoomAt; " +
+                "on top there: \"${onTop?.title}\" (package ${onTop?.root?.packageName}); $appState; windows, top first: ${windowDump(onScreen)}"
             android.util.Log.i("ScreenshotTest", "photo viewer, before its first tap: $windows")
             assertTrue("something sits over the photo's zoom button: $windows", onTop?.root?.packageName == app.packageName)
             // The photo's buttons are part of the app's screen (no dialog): tapped there, as the form's are.
@@ -818,7 +828,8 @@ class ScreenshotTest {
             assertTrue("no photo icon in the field being edited again. On screen: ${screenDump()}", waitFor(photo, true))
             val tappedAgain = tapInApp(photo)
             assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", waitFor(zoomIn, true))
-            assertTrue("a keyboard is on screen over the photo opened again. On screen: ${everyWindow()}", !keyboardShown())
+            val noKeyboardAgain = waitForNoKeyboard()
+            assertTrue("a keyboard is still on screen over the photo opened again 10 s after it showed. Windows, top first: ${windowDump(ua.windows)}. On screen: ${everyWindow()}", noKeyboardAgain)
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
             // Closed by Back as by Close: no field is being edited, and the form under it works again: the date field
