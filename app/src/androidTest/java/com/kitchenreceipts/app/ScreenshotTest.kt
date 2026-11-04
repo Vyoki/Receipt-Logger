@@ -757,6 +757,33 @@ class ScreenshotTest {
                 }
                 return result
             }
+            // TEMPORARY diagnostics (item q): appended to files/peek-diag.txt at each step of the second open and Back.
+            val diagFile = File(app.filesDir, "peek-diag.txt")
+            fun diag(stage: String) {
+                val sb = StringBuilder("[${SystemClock.uptimeMillis()}] $stage\n")
+                runCatching {
+                    ua.windows.forEach { w ->
+                        sb.append("  window type=${w.type} layer=${w.layer} focused=${w.isFocused} active=${w.isActive} title=${w.title} root=${w.root?.packageName}\n")
+                    }
+                    sb.append("  ime window on screen=${ua.windows.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }}\n")
+                }.onFailure { sb.append("  windows failed: $it\n") }
+                scenario.onActivity { a ->
+                    val imm = a.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+                    val decor = a.window.decorView
+                    val cur = a.currentFocus
+                    sb.append("  activity: hasWindowFocus=${decor.hasWindowFocus()} currentFocus=${cur?.javaClass?.simpleName}\n")
+                    sb.append("  imm: isActive()=${imm.isActive} isActive(currentFocus)=${cur?.let { imm.isActive(it) }} isAcceptingText=${imm.isAcceptingText}\n")
+                    sb.append("  activity insets ime visible=${decor.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime())}\n")
+                    sb.append("  back dispatcher enabled callbacks=${(a as androidx.activity.ComponentActivity).onBackPressedDispatcher.hasEnabledCallbacks()}\n")
+                    val focusedNodes = composeRoots(decor).flatMap { it.semanticsOwner.getAllSemanticsNodes(mergingEnabled = false) }
+                        .filter { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused) == true }
+                        .map { n -> (n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.text ?: n.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Text)?.joinToString() ?: "?") }
+                    sb.append("  compose focused nodes in activity window=$focusedNodes\n")
+                }
+                sb.append("  viewer onDismiss calls so far=${com.kitchenreceipts.app.ui.review.PeekDiag.dismissed}\n")
+                diagFile.appendText(sb.toString())
+            }
+            diagFile.appendText("=== photoViewerOnRequest start ${java.util.Date()}\n")
             fun everyWindow() = roots().joinToString(" || ") { r ->
                 collectNodes(r) { it.text != null || it.contentDescription != null }.take(30)
                     .joinToString(" | ") { n -> (n.text ?: "").toString().ifEmpty { "[" + n.contentDescription + "]" }.take(40) }
@@ -781,10 +808,17 @@ class ScreenshotTest {
             assertTrue("a field is still being edited after the photo closed. On screen: ${screenDump()}", waitFor(photo, false))
             assertTrue("the date field could not be tapped again. On screen: ${screenDump()}", clickTextIn(PEEK_DATE))
             assertTrue("no photo icon in the field being edited again. On screen: ${screenDump()}", waitFor(photo, true))
+            diag("before second tap on the photo icon")
             val tappedAgain = tapInApp(photo)
-            assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", waitFor(zoomIn, true))
-            inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
-            assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
+            diag("right after second tap ($tappedAgain)")
+            val openedAgain = waitFor(zoomIn, true)
+            diag("viewer open again=$openedAgain, before Back")
+            assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", openedAgain)
+            val backResult = inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
+            diag("right after Back (performGlobalAction=$backResult)")
+            val closedByBack = waitFor(zoomIn, false)
+            diag("after waiting: closed by Back=$closedByBack")
+            assertTrue("Back did not close the photo. On screen: ${everyWindow()}", closedByBack)
         }
     }
 
