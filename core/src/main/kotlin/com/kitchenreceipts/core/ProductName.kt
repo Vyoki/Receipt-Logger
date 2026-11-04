@@ -36,7 +36,15 @@ object ProductName {
     /** A count glued to a word ("12TAPPI", "G200AGAR"): digits, then four letters or more to the end. No code. */
     private val COUNT_AND_WORD = Regex("^[A-Za-z]*\\d+[A-Za-z]{4,}$")
 
-    private class Size(val start: Int, val end: Int, val measure: String?, val pack: String?)
+    private data class Size(val start: Int, val end: Int, val measure: String?, val pack: String?)
+
+    /** "X" or "x" alone: joins two numbers (a dimension, "40CM X 50M") or a measure and its pack ("CC.180 X 4"). */
+    private fun isX(w: String?) = w == "X" || w == "x"
+    private val WHOLE_NUMBER = Regex("^\\d+$")
+    /** A unit after these is what a price is per ("AL KG.61025"), not a size. */
+    private val PER_UNIT = setOf("al", "per", "a")
+    /** A word that only leads into the size ("x 125 gr", "DA 5 KG"): it goes out with the size. */
+    private val CONNECTORS = setOf("x", "da")
 
     fun split(raw: String): Parts {
         val words = raw.trim().split(Regex("\\s+")).filter { it.isNotEmpty() }
@@ -59,7 +67,8 @@ object ProductName {
                     sizes += Size(i, i, "$n ${UNITS.getValue(unit.lowercase())}", pack.ifEmpty { null }); i++
                 }
                 numberUnit != null -> {
-                    if (numberBefore(i)) ambiguous = true
+                    // "3G 2,5": a measure next to a second bare number is a guess.
+                    if (numberBefore(i) || numberAt(i + 1)) ambiguous = true
                     val (n, unit, pack) = numberUnit.destructured
                     sizes += Size(i, i, "$n ${UNITS.getValue(unit.lowercase())}", pack.ifEmpty { null }); i++
                 }
@@ -75,6 +84,22 @@ object ProductName {
                 else -> i++
             }
         }
+        // What stands around a measure: an X joining it to another number makes it a dimension ("16.5 X 7.7 X 2.8CM",
+        // "40CM X 50M"): no size. A lone X and a bare whole number after it is its pack ("CC.180 X 4" -> 180 cc x 4).
+        // After a per-unit word it is a price basis ("AL KG.61025"): left whole.
+        val placed = mutableListOf<Size>()
+        for (c in sizes) {
+            if (c.measure == null) { placed += c; continue }
+            if (words.getOrNull(c.start - 1)?.lowercase() in PER_UNIT) continue
+            if (isX(words.getOrNull(c.start - 1)) && words.getOrNull(c.start - 2)?.any(Char::isDigit) == true) { ambiguous = true; continue }
+            val after = words.getOrNull(c.end + 2)
+            if (isX(words.getOrNull(c.end + 1)) && after != null) {
+                if (WHOLE_NUMBER.matches(after) && c.pack == null) { placed += c.copy(end = c.end + 2, pack = after); continue }
+                if (after.any(Char::isDigit)) { ambiguous = true; continue }
+            }
+            placed += c
+        }
+        sizes.clear(); sizes += placed
         // One measure at most (two would be a guess), and one pack at most: either may stand alone.
         val measures = sizes.filter { it.measure != null }
         val packs = sizes.filter { it.measure == null }
@@ -84,7 +109,11 @@ object ProductName {
             val pack = t.firstNotNullOfOrNull { it.pack }
             listOfNotNull(measure, pack?.let { "x $it" }).joinToString(" ")
         }
-        val takenIndexes = taken.flatMap { (it.start..it.end).toList() }.toSet()
+        // A lone connector right before a taken measure ("x 125 gr", "da 0.75 l") goes out with it.
+        val takenIndexes = taken.flatMap { t ->
+            val from = if (t.measure != null && words.getOrNull(t.start - 1)?.lowercase() in CONNECTORS) t.start - 1 else t.start
+            (from..t.end).toList()
+        }.toSet()
         var rest = words.filterIndexed { k, _ -> k !in takenIndexes }
         // The code: the first word only, when unmistakable and not the whole name.
         val first = rest.firstOrNull()

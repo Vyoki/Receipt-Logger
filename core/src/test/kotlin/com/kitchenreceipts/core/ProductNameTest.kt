@@ -69,6 +69,26 @@ class ProductNameTest {
         check("G200AGAR PROVA", "G200AGAR PROVA", null)
     }
 
+    @Test fun whatStandsAroundAMeasure() {
+        // (1) Joined to another number by an X word: a dimension, no size, the whole run left in the name.
+        check("SCOLAPASTA PROVA 12.5 X 6.5 X 3.5CM", "SCOLAPASTA PROVA 12.5 X 6.5 X 3.5CM", null)
+        check("ROTOLO PROVA 30CM X 20M C/", "ROTOLO PROVA 30CM X 20M C/", null)
+        check("BORSA PROVA 2 4 X 3 1 X 6 CM", "BORSA PROVA 2 4 X 3 1 X 6 CM", null)
+        // (2) A lone X and a bare whole number after the measure: its pack.
+        check("TONICA PROVA CC.200 X 6", "TONICA PROVA", "200 cc x 6")
+        check("PANINI PROVA 80 GR X 24", "PANINI PROVA", "80 g x 24")
+        // (3) After a per-unit word the unit is what the price is per, not a size.
+        check("COSCE DI PROVA AL KG.12500", "COSCE DI PROVA AL KG.12500", null)
+        check("OLIO PROVA PER LT 1", "OLIO PROVA PER LT 1", null)
+        // (4) A measure next to a second bare number is a guess.
+        check("CAVO PROVA 3G 1,5 CAVO", "CAVO PROVA 3G 1,5 CAVO", null)
+        // (5) A lone connector right before the size goes out with it.
+        check("Mozzarella prova x 250 gr", "Mozzarella prova", "250 g")
+        check("AMARO PROVA X LT 1", "AMARO PROVA", "1 l")
+        check("CASSETTA PROVA DA 5 KG", "CASSETTA PROVA", "5 kg")
+        check("Bott. da 0.75 l di vino di prova", "Bott. di vino di prova", "0.75 l")
+    }
+
     @Test fun spacingCleanedCaseKept() {
         check("  Sale  marino   grosso - GR.1000 ", "Sale marino grosso", "1000 g")
         check("CC.700", "CC.700", null)
