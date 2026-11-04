@@ -13,9 +13,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
 import com.kitchenreceipts.app.ui.components.FieldPhotoViewer
-import com.kitchenreceipts.app.ui.components.KrIme
-import androidx.compose.ui.semantics.getAllSemanticsNodes
-import androidx.compose.ui.semantics.getOrNull
 import com.kitchenreceipts.app.ui.components.LocalFieldPeek
 import com.kitchenreceipts.app.ui.components.PeekImage
 import com.kitchenreceipts.app.ui.components.PeekRequest
@@ -255,10 +252,7 @@ fun ReviewScreen(
         viewerFailed = false
         if (r == null) return@LaunchedEffect
         val page = viewingPage
-        KrIme.log("photo image: drawing starts") // TEMPORARY (item q2)
-        val krImg = runCatching { if (page == null) vm.peek(r) else vm.peekPage(page) } // TEMPORARY (item q2): result logged
-        KrIme.log("photo image: " + (krImg.exceptionOrNull()?.let { "failed: $it" } ?: if (krImg.getOrNull() != null) "drawn" else "none")) // TEMPORARY (item q2)
-        val img = krImg.getOrNull()
+        val img = runCatching { if (page == null) vm.peek(r) else vm.peekPage(page) }.getOrNull()
         viewerImage = img
         viewerFailed = img == null
     }
@@ -310,71 +304,12 @@ fun ReviewScreen(
     // KEYBOARD_CLOSE_MS at most, so the photo button never does nothing. A keyboard still up over the viewer took its
     // taps and its first Back.
     var asked by remember { mutableStateOf<PeekRequest?>(null) }
-    // TEMPORARY (item q2): the KR-IME log starts with this screen's first photo tap (written by the app, see KrIme).
-    var krGo by remember { mutableStateOf(false) }
-    val krFiles = androidx.compose.ui.platform.LocalContext.current.filesDir
-    val onPeek: (PeekRequest) -> Unit = remember {
-        { r ->
-            if (!krGo) { KrIme.start(krFiles); krGo = true }
-            KrIme.log("photo asked (${r.label})")
-            asked = r
-        }
-    }
+    val onPeek: (PeekRequest) -> Unit = remember { { r -> asked = r } }
     val imeUp by rememberUpdatedState(WindowInsets.isImeVisible)
-    // TEMPORARY (item q2): what the app sees, sampled on every drawn frame and every 50 ms (no frame is forced), logged
-    // when it changes.
-    val krView = androidx.compose.ui.platform.LocalView.current
-    val krInput = androidx.compose.ui.platform.LocalInputModeManager.current
-    val krSample: () -> String = {
-        val imm = krView.context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
-        val focused = (krView as? androidx.compose.ui.platform.ViewRootForTest)?.semanticsOwner
-            ?.getAllSemanticsNodes(mergingEnabled = false)
-            ?.filter { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused) == true }
-            ?.joinToString { n ->
-                val c = n.config
-                val what = c.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.let { "text field \"$it\"" }
-                    ?: c.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.firstOrNull()?.let { "[$it]" }
-                    ?: "node ${n.id}"
-                "$what at y=${n.boundsInRoot.top.toInt()}"
-            }?.ifEmpty { "none" } ?: "?"
-        val insetsIme = if (android.os.Build.VERSION.SDK_INT >= 30) krView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) else null
-        "compose focus=[$focused] isImeVisible=$imeUp insetsIme=$insetsIme isAcceptingText=${imm?.isAcceptingText} " +
-            "isActive(view)=${imm?.isActive(krView)} viewFocused=${krView.isFocused} windowFocus=${krView.hasWindowFocus()} " +
-            "touchMode=${krView.isInTouchMode} inputMode=${krInput.inputMode}"
-    }
-    androidx.compose.runtime.DisposableEffect(krGo) {
-        if (!krGo) return@DisposableEffect onDispose { }
-        var last = ""
-        val sample = { why: String ->
-            if (KrIme.on()) {
-                val now = krSample()
-                if (now != last) { KrIme.log("$why: $now"); last = now }
-            }
-        }
-        val preDraw = android.view.ViewTreeObserver.OnPreDrawListener { sample("frame"); true }
-        val handler = android.os.Handler(android.os.Looper.getMainLooper())
-        val tick = object : Runnable {
-            override fun run() {
-                sample("tick")
-                if (KrIme.on()) handler.postDelayed(this, 50) else KrIme.end()
-            }
-        }
-        krView.viewTreeObserver.addOnPreDrawListener(preDraw)
-        handler.post(tick)
-        onDispose {
-            KrIme.log("screen left")
-            krView.viewTreeObserver.removeOnPreDrawListener(preDraw)
-            handler.removeCallbacks(tick)
-            KrIme.end()
-        }
-    }
     LaunchedEffect(asked) {
         val r = asked ?: return@LaunchedEffect
         focusManager.clearFocus()
-        KrIme.log("clearFocus returned: ${krSample()}") // TEMPORARY (item q2)
-        val krWait = android.os.SystemClock.uptimeMillis() // TEMPORARY (item q2)
-        val closed = withTimeoutOrNull(KEYBOARD_CLOSE_MS) { snapshotFlow { imeUp }.first { !it } }
-        KrIme.log("wait ended after ${android.os.SystemClock.uptimeMillis() - krWait} ms: " + if (closed != null) "isImeVisible false" else "cap reached") // TEMPORARY (item q2)
+        withTimeoutOrNull(KEYBOARD_CLOSE_MS) { snapshotFlow { imeUp }.first { !it } }
         viewingPage = null
         viewing = r
         asked = null
@@ -613,7 +548,7 @@ fun ReviewScreen(
             failed = viewerFailed,
             onPage = { viewingPage = it },
             onOpenOriginal = { viewing = null; onViewOriginal() },
-            // Closed, no field is left being edited (the viewer held the focus while open): the keyboard stays down.
+            // Closed, no field is being edited (nothing has the focus while it is open): the keyboard stays down.
             onDismiss = { focusManager.clearFocus(); viewing = null },
         )
     }

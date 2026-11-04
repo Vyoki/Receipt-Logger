@@ -4,7 +4,6 @@ import android.graphics.Bitmap
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -35,7 +34,6 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -43,8 +41,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.FilterQuality
@@ -88,38 +84,6 @@ class PeekImage(
     val exact: Boolean,
 )
 
-/**
- * TEMPORARY (item q2): the KR-IME log, written by the app itself to screens/kr-ime.txt (next to the test's screenshots),
- * from a review screen's first photo tap until 2 s after its photo is closed the second time (60 s at most).
- */
-object KrIme {
-    @Volatile private var file: java.io.File? = null
-    @Volatile private var stopAt = 0L
-    @Volatile private var ended = false
-    @Volatile var opens = 0
-    @Volatile private var closes = 0
-    fun start(filesDir: java.io.File) {
-        file = java.io.File(filesDir, "screens/kr-ime.txt").apply { parentFile?.mkdirs(); delete() }
-        opens = 0
-        closes = 0
-        ended = false
-        stopAt = android.os.SystemClock.uptimeMillis() + 60_000
-        log("log starts")
-    }
-    fun on() = file != null && android.os.SystemClock.uptimeMillis() < stopAt
-    fun closed() { if (++closes >= 2) stopAt = minOf(stopAt, android.os.SystemClock.uptimeMillis() + 2_000) }
-    fun log(s: String) {
-        if (on()) write("${android.os.SystemClock.uptimeMillis()} $s")
-    }
-    fun end() {
-        if (file != null && !ended) { ended = true; write("${android.os.SystemClock.uptimeMillis()} log ends") }
-    }
-    private fun write(line: String) {
-        android.util.Log.i("KR-IME", line)
-        runCatching { file?.appendText(line + "\n") }
-    }
-}
-
 /** "See on the photo": under a value to check (the replacements' row), and in a field being edited (its icon). */
 @Composable
 fun PeekChip(onClick: () -> Unit) {
@@ -147,7 +111,8 @@ fun PeekIconButton(onClick: () -> Unit) {
  * Drawn over the screen in the screen's own window (the caller puts it last, above the form), not in a dialog: a
  * dialog is a second window, and the field being edited kept its focus and the keyboard in the first one, which took
  * the first Back (the viewer stayed open). The caller shows it once no field is being edited and the keyboard is gone
- * (waiting a moment at most); it then holds the focus itself while open. Back closes it; taps never reach the form
+ * (waiting a moment at most). It takes no focus itself: asking for it gave the screen's view the focus back, and the
+ * keyboard came up over the photo with no field being edited (CI 189). Back closes it; taps never reach the form
  * under it.
  */
 @Composable
@@ -159,21 +124,10 @@ fun FieldPhotoViewer(
     onOpenOriginal: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    val focus = remember { FocusRequester() }
     // Registered after the screen's own Back: while the viewer is open, Back closes it.
-    BackHandler(onBack = { KrIme.log("viewer: Back"); KrIme.closed(); onDismiss() }) // TEMPORARY log (item q2)
-    LaunchedEffect(Unit) {
-        KrIme.opens++ // TEMPORARY (item q2)
-        KrIme.log("viewer shown (open ${KrIme.opens}): requestFocus") // TEMPORARY (item q2)
-        focus.requestFocus()
-        KrIme.log("viewer requestFocus returned") // TEMPORARY (item q2)
-    }
-    androidx.compose.runtime.DisposableEffect(Unit) { onDispose { KrIme.log("viewer gone") } } // TEMPORARY (item q2)
+    BackHandler(onBack = onDismiss)
     Surface(
-        Modifier.fillMaxSize()
-            // The viewer holds the focus while open: no field under it is being edited.
-            .focusRequester(focus)
-            .focusable(),
+        Modifier.fillMaxSize(),
         // A Surface takes every touch on it: nothing reaches the form under the viewer.
         color = Palette.Black,
     ) {
@@ -188,7 +142,7 @@ fun FieldPhotoViewer(
                     title, style = MaterialTheme.typography.titleMedium, maxLines = 2, overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.weight(1f).semantics { heading() },
                 )
-                IconButton(onClick = { KrIme.log("viewer: Close tapped"); KrIme.closed(); onDismiss() }, modifier = Modifier.size(56.dp)) { // TEMPORARY log (item q2)
+                IconButton(onClick = onDismiss, modifier = Modifier.size(56.dp)) {
                     Icon(Icons.Filled.Close, contentDescription = stringResource(R.string.close))
                 }
             }
@@ -265,10 +219,10 @@ private fun PageView(label: String, img: PeekImage, onPage: (Int) -> Unit, modif
                         Icon(Icons.AutoMirrored.Filled.KeyboardArrowRight, contentDescription = stringResource(R.string.viewer_next))
                     }
                 }
-                IconButton(onClick = { KrIme.log("viewer: zoom out tapped"); view = PeekView.zoom(view, 1f / ZOOM_STEP, cx, cy, frame) }, modifier = Modifier.size(56.dp)) { // TEMPORARY log (item q2)
+                IconButton(onClick = { view = PeekView.zoom(view, 1f / ZOOM_STEP, cx, cy, frame) }, modifier = Modifier.size(56.dp)) {
                     Icon(Icons.Outlined.ZoomOut, contentDescription = stringResource(R.string.peek_zoom_out))
                 }
-                IconButton(onClick = { KrIme.log("viewer: zoom in tapped"); view = PeekView.zoom(view, ZOOM_STEP, cx, cy, frame) }, modifier = Modifier.size(56.dp)) { // TEMPORARY log (item q2)
+                IconButton(onClick = { view = PeekView.zoom(view, ZOOM_STEP, cx, cy, frame) }, modifier = Modifier.size(56.dp)) {
                     Icon(Icons.Outlined.ZoomIn, contentDescription = stringResource(R.string.peek_zoom_in))
                 }
                 if (img.mark != null) {
