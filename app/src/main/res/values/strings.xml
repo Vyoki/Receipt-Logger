@@ -581,6 +581,9 @@
     <string name="reason_unusual_price">A price is 30% or more away from what you paid before: worth a look.</string>
     <string name="warn_duplicate_page">The same page was photographed twice: it was read once. If a page of the document is missing, add its photo.</string>
     <string name="reason_duplicate_page">The same page was photographed twice (a page may be missing).</string>
+    <string name="same_page_question">Same page twice?</string>
+    <string name="same_page_yes">Yes, read it once</string>
+    <string name="same_page_no">No, a page is missing</string>
     <string name="doc_number_short">no. %1$s</string>
     <string name="next_to_check">Next to check · %1$d</string>
     <string name="lines_all_fine">Every line checks out.</string>

@@ -249,6 +249,29 @@ class FileStore(private val context: Context) {
         }
     }
 
+    /**
+     * The stored PDF without the pages [drop] (0-based): a photo the operator said was the same page twice. A new file
+     * is written (the original stays, the import still refers to it); nothing is changed when a page is out of range.
+     */
+    suspend fun withoutPages(stored: StoredFile, drop: Set<Int>): StoredFile = withContext(Dispatchers.IO) {
+        val memory = MemoryUsageSetting.setupTempFileOnly().setTempDir(pdfboxTempDir())
+        PDDocument.load(file(stored.relativePath), memory).use { doc ->
+            require(drop.isNotEmpty() && drop.all { it in 0 until doc.numberOfPages } && drop.size < doc.numberOfPages) { "pages $drop of ${doc.numberOfPages}" }
+            drop.sortedDescending().forEach { doc.removePage(it) }
+            val tmp = File(documentsDir, "import_${UUID.randomUUID()}.tmp")
+            try {
+                doc.save(tmp)
+                val target = File(documentsDir, "${UUID.randomUUID()}.pdf")
+                if (!tmp.renameTo(target)) throw IOException("The file could not be put in place")
+                val pages = pdfPageCount(target)
+                if (pages != stored.pageCount - drop.size) { target.delete(); throw IOException("The file has the wrong number of pages") }
+                StoredFile("$DOCUMENTS_DIR/${target.name}", MIME_PDF, pages, target.inputStream().use { sha256(it) })
+            } finally {
+                tmp.delete()
+            }
+        }
+    }
+
     private fun splitFailure(e: Throwable): SplitFailure {
         val messages = generateSequence(e) { it.cause }.take(8).mapNotNull { it.message }.joinToString(" ")
         return when {

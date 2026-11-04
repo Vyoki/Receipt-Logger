@@ -682,12 +682,22 @@ private fun ChainBar(chain: Chain, canPutOff: Boolean, onCheckLater: () -> Unit)
 }
 
 @Composable
-private fun ReasonsCard(state: ReviewState) {
+private fun ReasonsCard(state: ReviewState, onSamePage: (Boolean) -> Unit) {
     val status = LocalStatusColors.current
     Surface(color = status.uncertainContainer, contentColor = status.onUncertain, shape = MaterialTheme.shapes.medium, border = androidx.compose.foundation.BorderStroke(1.dp, com.kitchenreceipts.app.ui.theme.Palette.OrangeDim)) {
         Column(Modifier.fillMaxWidth().padding(12.dp)) {
             Text(stringResource(R.string.reasons_title), fontWeight = FontWeight.SemiBold)
             state.reviewReasons.forEach { Text("• " + reviewReasonText(it), style = MaterialTheme.typography.bodyMedium) }
+            // A photo that repeats a page: the operator says whether it is the same page twice or a page is missing.
+            if (state.isNew && com.kitchenreceipts.core.ReviewReason.DUPLICATE_PAGE in state.reviewReasons) when (state.samePage) {
+                null -> Column(Modifier.padding(top = 8.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text(stringResource(R.string.same_page_question), fontWeight = FontWeight.SemiBold)
+                    Button(onClick = { onSamePage(true) }, enabled = !state.saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.same_page_yes)) }
+                    OutlinedButton(onClick = { onSamePage(false) }, enabled = !state.saving, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text(stringResource(R.string.same_page_no)) }
+                }
+                false -> Text(stringResource(R.string.warn_duplicate_page), style = MaterialTheme.typography.bodyMedium, modifier = Modifier.padding(top = 8.dp))
+                true -> {}
+            }
             state.draft.aiCheck?.takeIf { it.disagreements.isNotEmpty() }?.let { c ->
                 Text(stringResource(R.string.ai_check_disagree, c.disagreements.size, c.checked), style = MaterialTheme.typography.bodyMedium)
                 // Worded in the operator's language (older readings without details keep the log's wording).
@@ -1024,7 +1034,7 @@ private fun TopPart(
         "aiCheck" -> state.draft.aiCheck?.let { c ->
             Text(pluralStringResource(R.plurals.ai_check_ok, c.checked, c.checked), color = LocalStatusColors.current.ok, style = MaterialTheme.typography.bodyMedium)
         }
-        "reasons" -> ReasonsCard(state)
+        "reasons" -> ReasonsCard(state) { same -> if (same) vm.samePageYes() else vm.samePageNo() }
         "checks" -> state.draft.checks?.let { ChecksPanel(it) }
         "errors" -> WarningCard(listOf(stringResource(R.string.fix_errors, state.errors.size)))
         "saveError" -> state.saveError?.let { err -> WarningCard(listOf(stringResource(R.string.save_failed, err))) }

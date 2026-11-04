@@ -204,6 +204,13 @@ object AutoAccept {
      * What arithmetic cannot prove (the supplier, the date, the number, a lot) is not part of it: those still go to
      * the operator when doubtful. Used to spare the slow AI double-check on a PDF's exact text (see ImportProcessor).
      */
+    /**
+     * The operator said the repeated photo is the same page twice ("Same page twice?" - "Yes"): the page was read once
+     * already (see DuplicatePages), so only that doubt goes. Every other check still decides: a page really missing
+     * leaves the lines short of the totals and the document held.
+     */
+    fun samePageTwice(d: DocumentDraft): DocumentDraft = d.copy(warnings = d.warnings - ParseWarning.DUPLICATE_PAGE)
+
     fun moneyProven(d: DocumentDraft): Boolean {
         if (d.items.isEmpty() || !sumMatches(d) || d.vatGroupProblems.isNotEmpty()) return false
         if (d.warnings.any { it in MONEY_DOUBTS }) return false

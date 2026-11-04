@@ -305,6 +305,55 @@ class ScreenshotTest {
     }
 
     /** Runs a shell command (as the test's shell user) and waits until it is done. */
+    /**
+     * Two photos of one invented page (the same picture twice, as when the operator shoots a page again to be safe):
+     * the queue reads it, the review holds it for the repeated page and asks "Same page twice?" in its reasons; "Yes,
+     * read it once" takes the question away and drops the second photo. ABC S.r.l., dates in 2031; put away after.
+     */
+    @Test fun samePageTwiceAsks() {
+        val c = app.container
+        val settings = c.settings
+        val autoSave = settings.autoSave
+        var jobId: String? = null
+        try {
+            settings.autoSave = false
+            val page = Bitmap.createBitmap(1240, 1754, Bitmap.Config.ARGB_8888)
+            android.graphics.Canvas(page).apply {
+                drawColor(android.graphics.Color.WHITE)
+                val p = android.graphics.Paint().apply { textSize = 34f; color = android.graphics.Color.BLACK; isAntiAlias = true }
+                listOf(
+                    "ABC S.r.l.", "P.IVA 01234567897", "FATTURA N. 61/2031 DEL 03/02/2031", "DESCRIZIONE QUANTITA PREZZO IMPORTO",
+                    "PATATE GIALLE KG 10,000 0,90 9,00", "CIPOLLE DORATE KG 5,000 1,20 6,00", "CAROTE NOVELLE KG 4,000 1,10 4,40",
+                    "ZUCCHINE VERDI KG 3,000 2,10 6,30", "LIMONI SFUSI KG 2,000 2,50 5,00", "INSALATA MISTA PZ 6 1,15 6,90",
+                    "TOTALE IMPONIBILE 37,60", "IVA 4% 1,50", "TOTALE DOCUMENTO 39,10",
+                ).forEachIndexed { i, t -> drawText(t, 60f, 140f + i * 90f, p) }
+            }
+            val photo = File(app.cacheDir, "same-page.jpg")
+            photo.outputStream().use { page.compress(Bitmap.CompressFormat.JPEG, 95, it) }
+            val stored = runBlocking { c.fileStore.storePhotos(listOf(photo, photo)) { android.graphics.BitmapFactory.decodeFile(it.absolutePath) } }
+            val job = runBlocking { c.importQueue.enqueue(stored, "test") }
+            jobId = job.id
+            val ended = setOf(com.kitchenreceipts.app.jobs.JobStatus.READY, com.kitchenreceipts.app.jobs.JobStatus.SAVED, com.kitchenreceipts.app.jobs.JobStatus.FAILED)
+            val done = runBlocking { withTimeoutOrNull(180_000) { c.importQueue.jobs.first { l -> l.any { it.id == job.id && it.status in ended } }.first { it.id == job.id } } }
+            assertTrue("job ${done?.status} ${done?.error}", done?.status == com.kitchenreceipts.app.jobs.JobStatus.READY)
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                var question = ""
+                var yes = ""
+                scenario.onActivity { question = it.getString(R.string.same_page_question); yes = it.getString(R.string.same_page_yes) }
+                app.container.pendingRoute.value = "review/${job.id}"
+                assertTrue("no \"$question\". On screen: ${screenDump()}", scrollUntilText(question))
+                shot("46-same-page-asks")
+                assertTrue("\"$yes\" could not be tapped", clickTextIn(yes))
+                val gone = (1..30).any { Thread.sleep(300); InstrumentationRegistry.getInstrumentation().uiAutomation.rootInActiveWindow?.let { r -> findNode(r) { n -> n.text?.toString() == question } } == null }
+                assertTrue("the question is still shown after \"$yes\". On screen: ${screenDump()}", gone)
+                shot("47-same-page-yes")
+            }
+        } finally {
+            settings.autoSave = autoSave
+            jobId?.let { c.importQueue.discard(it) }
+        }
+    }
+
     private fun shell(cmd: String) {
         val out = InstrumentationRegistry.getInstrumentation().uiAutomation.executeShellCommand(cmd)
         android.os.ParcelFileDescriptor.AutoCloseInputStream(out).use { it.readBytes() }

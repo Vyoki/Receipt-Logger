@@ -88,6 +88,22 @@ class CashCarryRepeatsTest {
     }
 
     @Test
+    fun samePageTwiceTakesOnlyTheRepeatsDoubtAway() {
+        fun draft(pages: List<List<OcrLine>>) = AutoAccept.settleProven(DocumentDraft.fromParsed(ReceiptParser.parsePages(pages, options)))
+        // Page 1 twice and the totals page: "Yes" takes DUPLICATE_PAGE away, and nothing else changes.
+        val twice = draft(listOf(page1("1x14"), page2, page1("Ix14")))
+        assertTrue(ReviewReason.DUPLICATE_PAGE in AutoAccept.reasons(twice))
+        val yes = AutoAccept.samePageTwice(twice)
+        assertFalse(ParseWarning.DUPLICATE_PAGE in yes.warnings)
+        assertEquals(AutoAccept.reasons(twice) - ReviewReason.DUPLICATE_PAGE, AutoAccept.reasons(yes))
+        assertEquals(twice.items, yes.items)
+        // Page 1 taken again instead of the totals page: "Yes" does not make it whole; it stays held.
+        val missing = AutoAccept.samePageTwice(draft(listOf(page1("1x14"), page1("Ix14"))))
+        assertTrue(AutoAccept.reasons(missing).isNotEmpty())
+        assertFalse(ReviewReason.DUPLICATE_PAGE in AutoAccept.reasons(missing))
+    }
+
+    @Test
     fun aTiltedPageGivesEachNameItsOwnNumbersAndAsks() {
         val d = read()
         assertTrue(d.lineItems.none { it.originalDescription.startsWith("PROV", ignoreCase = true) })

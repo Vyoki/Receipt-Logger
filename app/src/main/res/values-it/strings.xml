@@ -569,6 +569,9 @@
     <string name="reason_unusual_price">Un prezzo si discosta del 30% o più da quanto pagato prima: da controllare.</string>
     <string name="warn_duplicate_page">La stessa pagina è stata fotografata due volte: è stata letta una volta sola. Se manca una pagina del documento, aggiungi la sua foto.</string>
     <string name="reason_duplicate_page">La stessa pagina è stata fotografata due volte (potrebbe mancare una pagina).</string>
+    <string name="same_page_question">Stessa pagina due volte?</string>
+    <string name="same_page_yes">Sì, leggila una volta</string>
+    <string name="same_page_no">No, manca una pagina</string>
     <string name="doc_number_short">n. %1$s</string>
     <string name="next_to_check">Prossimo da controllare · %1$d</string>
     <string name="lines_all_fine">Tutte le righe tornano.</string>
