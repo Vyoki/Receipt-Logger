@@ -302,7 +302,7 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
             ProductNameText(it.originalDescription)
             val pid = it.productId
             if (pid != null && row.productName != null) {
-                AssistChip(onClick = { onOpenProduct(pid) }, label = { Text(stringResource(R.string.product_is, row.productName)) })
+                AssistChip(onClick = { onOpenProduct(pid) }, label = { Text(stringResource(R.string.product_is, com.kitchenreceipts.core.ProductName.split(row.productName).name)) })
             } else {
                 Text(stringResource(R.string.no_product_assigned), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
