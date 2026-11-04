@@ -148,6 +148,14 @@ class ScreenshotTest {
                 app.container.pendingRoute.value = "home"
                 Thread.sleep(500)
             }
+            // The invoice whose lines print a size ("PASSATA DI POMODORO 700G"): listed as the name, the size grey under it.
+            val sized = runBlocking { app.container.repository.searchDocuments("", null, null, null).first().first { it.sellerName == "Alfa Ingrosso S.r.l." }.id }
+            app.container.pendingRoute.value = "document/$sized"
+            Thread.sleep(1500)
+            assertTrue("the line's name without its size is not listed: ${screenDump()}", scrollUntilText("PASSATA DI POMODORO"))
+            shot("12b-document-lines")
+            app.container.pendingRoute.value = "home"
+            Thread.sleep(500)
             val dish = runBlocking { app.container.food.recipeCosts(BigDecimal.ZERO).first().first().recipe.id }
             app.container.pendingRoute.value = "recipe/$dish"
             shot("13-dish")

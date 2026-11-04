@@ -62,6 +62,7 @@ import com.kitchenreceipts.app.files.FileStore
 import com.kitchenreceipts.app.ui.appContainer
 import com.kitchenreceipts.app.ui.appViewModel
 import com.kitchenreceipts.app.ui.components.AppScaffold
+import com.kitchenreceipts.app.ui.components.ProductNameText
 import com.kitchenreceipts.app.ui.components.ConfirmDialog
 import com.kitchenreceipts.app.ui.components.DocumentPages
 import com.kitchenreceipts.app.ui.components.EmptyState
@@ -298,7 +299,7 @@ private fun SavedItemCard(row: LineItemRow, currency: String?, onOpenProduct: (L
     val it = row.item
     Panel {
         Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(it.originalDescription, style = MaterialTheme.typography.titleMedium)
+            ProductNameText(it.originalDescription)
             val pid = it.productId
             if (pid != null && row.productName != null) {
                 AssistChip(onClick = { onOpenProduct(pid) }, label = { Text(stringResource(R.string.product_is, row.productName)) })

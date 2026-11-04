@@ -59,6 +59,7 @@ import com.kitchenreceipts.app.data.ReceiptRepository
 import com.kitchenreceipts.app.data.UnitConversionEntity
 import com.kitchenreceipts.app.ui.appViewModel
 import com.kitchenreceipts.app.ui.components.AppScaffold
+import com.kitchenreceipts.app.ui.components.ProductNameText
 import com.kitchenreceipts.app.ui.components.ClickCard
 import com.kitchenreceipts.app.ui.components.ConfirmDialog
 import com.kitchenreceipts.app.ui.components.EmptyState
@@ -443,7 +444,7 @@ private fun PurchaseCard(p: PurchaseRow, onClick: () -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
-            Text("\"${p.originalDescription}\"", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            ProductNameText(p.originalDescription, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
 }

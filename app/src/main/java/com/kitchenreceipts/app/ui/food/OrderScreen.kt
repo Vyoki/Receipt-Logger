@@ -33,6 +33,7 @@ import androidx.compose.ui.unit.dp
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.appContainer
 import com.kitchenreceipts.app.ui.components.AppScaffold
+import com.kitchenreceipts.app.ui.components.ProductNameText
 import com.kitchenreceipts.app.ui.components.BigButton
 import com.kitchenreceipts.app.ui.components.ClickCard
 import com.kitchenreceipts.app.ui.components.EmptyState
@@ -104,7 +105,7 @@ private fun OrderForSupplier(sellerId: Long, sellerName: String, onBack: () -> U
                     Panel {
                         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                             Column(Modifier.weight(1f)) {
-                                Text(o.name, style = MaterialTheme.typography.titleMedium)
+                                ProductNameText(o.name)
                                 val usual = fmtDecimal(o.usualQuantity) + " " + o.unit
                                 val every = o.everyDays
                                 Text(

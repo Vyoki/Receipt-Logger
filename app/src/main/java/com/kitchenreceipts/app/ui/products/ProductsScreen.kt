@@ -57,6 +57,7 @@ import com.kitchenreceipts.app.data.UnassignedGroup
 import com.kitchenreceipts.app.ui.appViewModel
 import com.kitchenreceipts.app.ui.components.Annotation
 import com.kitchenreceipts.app.ui.components.AppScaffold
+import com.kitchenreceipts.app.ui.components.ProductNameText
 import com.kitchenreceipts.app.ui.components.ClickCard
 import com.kitchenreceipts.app.ui.components.EmptyState
 import com.kitchenreceipts.app.ui.components.Panel
@@ -142,7 +143,7 @@ fun ProductsScreen(onBack: () -> Unit, onOpen: (Long) -> Unit, onOpenFamily: (Lo
                         modifier = Modifier.fillMaxWidth(),
                     ) {
                         Column(Modifier.padding(16.dp)) {
-                            Text(g.description, style = MaterialTheme.typography.titleMedium)
+                            ProductNameText(g.description)
                             Text(g.sellerName + " · " + pluralStringResource(R.plurals.lines_count, g.lineItemIds.size, g.lineItemIds.size), style = MaterialTheme.typography.bodyMedium)
                         }
                     }
@@ -234,7 +235,7 @@ private fun ProductCard(p: ProductWithSummary, families: List<ProductFamilyEntit
             Row(verticalAlignment = Alignment.CenterVertically) {
                 CategoryIcon(Category.fromKey(p.product.category) ?: Categories.guess(p.product.name))
                 Spacer(Modifier.width(8.dp))
-                Text(p.product.name, style = MaterialTheme.typography.titleMedium)
+                ProductNameText(p.product.name)
             }
             p.product.familyId?.let { fid -> families.firstOrNull { it.id == fid } }?.let { f ->
                 Text(stringResource(R.string.family_value, f.name), style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.primary)

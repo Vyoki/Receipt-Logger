@@ -30,6 +30,7 @@ import com.kitchenreceipts.app.data.TidyRow
 import com.kitchenreceipts.app.ui.appContainer
 import com.kitchenreceipts.app.ui.appViewModel
 import com.kitchenreceipts.app.ui.components.AppScaffold
+import com.kitchenreceipts.app.ui.components.ProductNameText
 import com.kitchenreceipts.app.ui.components.ClickCard
 import com.kitchenreceipts.app.ui.components.EmptyState
 import com.kitchenreceipts.app.ui.fmtDate
@@ -70,7 +71,7 @@ fun TidyScreen(onBack: () -> Unit, onEdit: (Long) -> Unit) {
                 Box(Modifier.animateItem(placementSpec = com.kitchenreceipts.app.ui.theme.Motion.place)) {
                     ClickCard(onClick = { onEdit(r.documentId) }) {
                         Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            Text(r.description, style = MaterialTheme.typography.titleMedium)
+                            ProductNameText(r.description)
                             Text(
                                 listOfNotNull(r.sellerName, r.documentDate?.let { fmtDate(it) }, r.documentNumber?.let { "n. $it" }).joinToString(" · "),
                                 style = MaterialTheme.typography.bodySmall, color = Palette.TextDim,

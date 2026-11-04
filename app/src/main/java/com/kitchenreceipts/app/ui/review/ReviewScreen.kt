@@ -76,6 +76,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.kitchenreceipts.app.R
 import com.kitchenreceipts.app.ui.appViewModel
 import com.kitchenreceipts.app.ui.components.AppScaffold
+import com.kitchenreceipts.app.ui.components.ProductNameText
 import com.kitchenreceipts.app.ui.components.ConfirmDialog
 import com.kitchenreceipts.app.ui.components.DocumentPages
 import com.kitchenreceipts.app.ui.components.EmptyState
@@ -1134,7 +1135,7 @@ private fun CompactLine(item: LineItemDraft, onOpen: () -> Unit, modifier: Modif
     ) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             Column(Modifier.weight(1f)) {
-                Text(item.description.text, maxLines = 1, overflow = TextOverflow.Ellipsis, style = MaterialTheme.typography.bodyLarge)
+                ProductNameText(item.description.text, style = MaterialTheme.typography.bodyLarge, maxLines = 1)
                 val detail = listOfNotNull(
                     listOf(item.quantity.text, item.unit.text).filter { it.isNotBlank() }.joinToString(" ").takeIf { it.isNotBlank() }
                         ?.let { q -> item.unitPrice.text.takeIf { it.isNotBlank() }?.let { "$q × $it" } ?: q },
