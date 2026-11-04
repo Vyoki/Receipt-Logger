@@ -44,6 +44,11 @@ object ProductNames {
         "selv" to "selvaggina", "verd" to "verdure", "fil" to "filetto", "spagh" to "spaghetti", "mezz" to "mezze",
         "farf" to "farfalle", "cav" to "cavolo", "fin" to "finocchi", "fagiol" to "fagioli",
         "cont/ali" to "contatto alimenti", "u/g" to "usa e getta", "p/c" to "precotto", "s/g" to "senza glutine",
+        // frequent on real invoices, one clear meaning in a kitchen
+        "spum" to "spumante", "ex" to "extra", "bicch" to "bicchieri", "pecor" to "pecorino", "sus" to "susine",
+        "polv" to "polvere", "confet" to "confettura", "nett" to "nettarine", "univ" to "universale", "gua" to "guanti",
+        "nitr" to "nitrile", "capp" to "cappuccio", "montef" to "Montefalco", "mol" to "molino", "pomod" to "pomodoro",
+        "det" to "detergente",
     )
 
     /** Packaging words: about the box, not the product ("CRT" carton, "PT" pallet tag). Dropped from the name. */

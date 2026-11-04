@@ -55,6 +55,14 @@ class ProductNamesTest {
         assertEquals("Biscotti M.B. Molinetti", c("BISC.M.B. MOLINETTI G.800").name)
     }
 
+    @Test fun frequentInvoiceAbbreviationsAreWrittenOut() {
+        val wine = c("SPUM.BABULLE EX.DRY MILL.75").name
+        assertTrue(wine, wine.startsWith("Spumante Babulle Extra Dry"))
+        assertTrue(c("GUA.NITR.VANTO NERI X100 PIC").name.startsWith("Guanti Nitrile Vanto Neri"))
+        assertTrue(c("PECOR.ROMANO DOP 1/16 PETRUC").name.startsWith("Pecorino Romano DOP"))
+        assertTrue(c("SUS.NERE IT.CRT").name.startsWith("Susine Nere"))
+    }
+
     @Test fun aNumberOrASizeNeverJoinsTheAbbreviationBeforeIt() {
         val cups = c("50 COPPE COMP.450ML MP")
         assertEquals("50 Coppe Comp. 450ML Mp", cups.name)
