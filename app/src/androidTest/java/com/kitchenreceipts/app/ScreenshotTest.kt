@@ -344,7 +344,31 @@ class ScreenshotTest {
             ActivityScenario.launch(MainActivity::class.java).use { scenario ->
                 var question = ""
                 var yes = ""
-                scenario.onActivity { question = it.getString(R.string.same_page_question); yes = it.getString(R.string.same_page_yes) }
+                var warning = ""
+                scenario.onActivity {
+                    question = it.getString(R.string.same_page_question); yes = it.getString(R.string.same_page_yes)
+                    warning = it.getString(R.string.warn_duplicate_page)
+                }
+                app.container.pendingRoute.value = "review/${job.id}"
+                // The repeated page is said once: while the question is asked, the warnings card does not repeat it.
+                // The whole review, top to bottom.
+                val inst = InstrumentationRegistry.getInstrumentation()
+                var asked = false
+                var warned = false
+                Thread.sleep(1500)
+                for (page in 0 until 25) {
+                    val root = inst.uiAutomation.rootInActiveWindow ?: run { Thread.sleep(300); null } ?: continue
+                    if (findNode(root) { it.text?.toString() == question } != null) asked = true
+                    if (findNode(root) { n -> n.text?.toString()?.contains(warning) == true } != null) warned = true
+                    val list = collectNodes(root) { it.isScrollable }.maxByOrNull { n -> Rect().also { n.getBoundsInScreen(it) }.height() } ?: break
+                    if (!list.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) break
+                    Thread.sleep(400)
+                }
+                assertTrue("the question was not asked. On screen: ${screenDump()}", asked)
+                assertTrue("the repeated page is also in the warnings card while the question is asked", !warned)
+                // From the top again for the pictures.
+                app.container.pendingRoute.value = "home"
+                Thread.sleep(500)
                 app.container.pendingRoute.value = "review/${job.id}"
                 assertTrue("no \"$question\". On screen: ${screenDump()}", scrollUntilText(question))
                 shot("46-same-page-asks")

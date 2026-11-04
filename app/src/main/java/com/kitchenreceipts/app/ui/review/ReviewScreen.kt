@@ -42,6 +42,7 @@ import androidx.compose.material.icons.filled.OpenInFull
 import androidx.compose.material.icons.filled.Save
 import androidx.compose.material3.AssistChip
 import com.kitchenreceipts.app.ui.components.Button
+import com.kitchenreceipts.core.ParseWarning
 import com.kitchenreceipts.core.ReviewReason
 import androidx.compose.material3.Card
 import androidx.compose.material3.DatePicker
@@ -199,7 +200,7 @@ fun ReviewScreen(
         if (s.reviewReasons.isNotEmpty()) add(TopRow("reasons"))
         if (s.errors.isNotEmpty()) add(TopRow("errors"))
         if (s.saveError != null) add(TopRow("saveError"))
-        if (s.draft.warnings.isNotEmpty()) add(TopRow("warnings"))
+        if (shownWarnings(s).isNotEmpty()) add(TopRow("warnings"))
         add(TopRow(HEADER))
         if (s.isNew) add(TopRow("kind"))
         add(TopRow(CATEGORY))
@@ -682,6 +683,10 @@ private fun ChainBar(chain: Chain, canPutOff: Boolean, onCheckLater: () -> Unit)
     }
 }
 
+/** The reading's warnings, but not the repeated page where the reasons card already asks about it (a new document). */
+private fun shownWarnings(s: ReviewState) =
+    if (s.isNew && ReviewReason.DUPLICATE_PAGE in s.reviewReasons) s.draft.warnings - ParseWarning.DUPLICATE_PAGE else s.draft.warnings
+
 @Composable
 private fun ReasonsCard(state: ReviewState, onSamePage: (Boolean) -> Unit) {
     val status = LocalStatusColors.current
@@ -1040,7 +1045,7 @@ private fun TopPart(
         "checks" -> state.draft.checks?.let { ChecksPanel(it) }
         "errors" -> WarningCard(listOf(stringResource(R.string.fix_errors, state.errors.size)))
         "saveError" -> state.saveError?.let { err -> WarningCard(listOf(stringResource(R.string.save_failed, err))) }
-        "warnings" -> WarningCard(state.draft.warnings.map { warningText(it) })
+        "warnings" -> WarningCard(shownWarnings(state).map { warningText(it) })
         HEADER -> FlashPanel(flash = flash, needsLook = state.draft.headerNeedsLook(state.errors)) {
             Box(Modifier.padding(12.dp)) { HeaderSection(state.draft, state.errors, sellerNames, vm, onPickDate) }
         }
