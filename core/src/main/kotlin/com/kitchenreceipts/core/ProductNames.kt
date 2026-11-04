@@ -74,6 +74,8 @@ object ProductNames {
         // (with the index of their last piece).
         var lastKept = -2
         val joined = mutableMapOf<Int, Int>()
+        // The pieces written out as words (an abbreviation of the list, the brand).
+        val writtenOut = mutableSetOf<Int>()
         var skip = 0
         for ((idx, piece) in ps.withIndex()) {
             if (skip > 0) { skip--; continue }
@@ -85,7 +87,7 @@ object ProductNames {
             if (next != null) {
                 val pair = k + key(next)
                 val two = ABBREVIATIONS[pair]
-                if (two != null && raw.endsWith('.')) { out += two; skip = 1; continue }
+                if (two != null && raw.endsWith('.')) { out += two; writtenOut += idx; skip = 1; continue }
                 val unit = Units.normalizeKnown(k)
                 val n = ItalianNumbers.parse(next) ?: next.replace(',', '.').toBigDecimalOrNull()
                 if ((unit != null && Units.dimension(unit) != null || k == "cc") && n != null && n.signum() > 0) {
@@ -116,10 +118,11 @@ object ProductNames {
             // The brand, abbreviated ("BARI." for Barilla, "LIEVITAL" for Lievitalia) or repeated ("DALLABONA").
             if (brandKey != null && k.length >= 3 && (brandKey.startsWith(k) || k == brandKey)) {
                 if (out.none { key(it) == brandKey }) out += brand!!
+                writtenOut += idx
                 continue
             }
             val known = ABBREVIATIONS[k]
-            if (known != null) { out += known; continue }
+            if (known != null) { out += known; writtenOut += idx; continue }
             // Not written out: kept as printed, an abbreviation with its dot ("TR." -> "Tr."), and a letter piece joined
             // to the letter piece of the same printed word kept just before it ("M." "B." "GIROTONDI" -> "M.B.GIROTONDI").
             // A number or a size stays its own word ("COMP." "450ML" -> "Comp. 450ML"), so the size is still found.
@@ -132,9 +135,13 @@ object ProductNames {
             }
             lastKept = idx
         }
-        // A joined name's last dot, when more of its printed word follows, only parted it from the next piece
-        // ("S.BENE.NAT." -> "S.Bene Naturale"); at the end of the printed word it stays ("M.B." -> "M.B.").
-        for ((i, last) in joined) if (ps.getOrNull(last + 1)?.word == ps[last].word) out[i] = out[i].trimEnd('.')
+        // A joined name's last dot only parted it from a next letter piece of its printed word that was written out
+        // ("S.BENE.NAT." -> "S.Bene Naturale"). Before a number or a size ("PLAST.TR.490ML" -> "Plast.Tr. 490ML"), or at
+        // the end of the printed word ("M.B." -> "M.B."), it is the abbreviation's own dot and stays.
+        for ((i, last) in joined) {
+            val next = ps.getOrNull(last + 1)
+            if (next != null && next.word == ps[last].word && last + 1 in writtenOut && next.text.first().isLetter()) out[i] = out[i].trimEnd('.')
+        }
         val name = titleCase(out.joinToString(" ").replace(rx("\\s+"), " ").trim())
         return Clean(name.ifBlank { titleCase(text) }, brand?.let { b -> if (b.count(Char::isLetter) <= 3) b.uppercase() else titleCase(b) }, if (packSizeHint != null && (Units.dimension(packSizeHint.unit) != null || size == null)) packSizeHint else size ?: packSizeHint, unknown)
     }

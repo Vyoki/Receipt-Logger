@@ -61,6 +61,11 @@ class ProductNamesTest {
         assertEquals("450 ml", ProductName.split(cups.name).size) // the size is still found
         val beer = c("BIRRA BIONDA COT.21 M/B/UMB.50").name
         assertEquals("Birra Bionda Cot. 21 M/B/UMB. 50", beer)
+        // A joined abbreviation keeps its own dot before a number or a size, like a single one ("Comp.").
+        val dispenser = c("6DISPENSER PLAST.TR.490ML MP")
+        assertEquals("6DISPENSER Plast.Tr. 490ML Mp", dispenser.name)
+        assertEquals("490 ml", ProductName.split(dispenser.name).size)
+        assertTrue(c("CIP.CANN.TREC.D.G500CR").name.contains("Trec.D. "))
         // A decimal number is not cut at its dot.
         assertEquals("0.75 l", ProductName.split(c("Bott. da 0.75 l di Sangiovese IGP Umbria").name).size)
     }
