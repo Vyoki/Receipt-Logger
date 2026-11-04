@@ -96,6 +96,7 @@ import com.kitchenreceipts.app.ui.components.JumpChip
 import com.kitchenreceipts.app.ui.components.JumpChips
 import androidx.compose.foundation.gestures.animateScrollBy
 import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.foundation.clickable
 import com.kitchenreceipts.app.ui.components.PriceChangesCard
 import com.kitchenreceipts.app.ui.categoryLabel
@@ -385,6 +386,8 @@ fun ReviewScreen(
     var dragFrom by remember { mutableStateOf<Pair<Int, Int>?>(null) }
     CompositionLocalProvider(LocalFieldPeek provides onPeek.takeIf { state.filePath != null }, LocalReplacements provides replacements) {
     Box(Modifier.fillMaxSize()) {
+    // The form; hidden from TalkBack while the photo viewer is open over it.
+    Box(if (viewing != null) Modifier.fillMaxSize().clearAndSetSemantics { } else Modifier.fillMaxSize()) {
     AppScaffold(
         title = title,
         onBack = leave,
@@ -516,7 +519,7 @@ fun ReviewScreen(
         }
     }
     }
-    }
+    // Last in the box: drawn over the form, in the same window (see FieldPhotoViewer).
     viewing?.let { r ->
         FieldPhotoViewer(
             label = r.label,
@@ -524,10 +527,11 @@ fun ReviewScreen(
             failed = viewerFailed,
             onPage = { viewingPage = it },
             onOpenOriginal = { viewing = null; onViewOriginal() },
-            // Closed, no field is left being edited: the field whose photo button opened the viewer takes its focus back as
-            // the viewer opens, and the keyboard then came back over the form when the viewer closed.
-            onDismiss = { PeekDiag.dismissed++; focusManager.clearFocus(); viewing = null },
+            // Closed, no field is left being edited (the viewer held the focus while open): the keyboard stays down.
+            onDismiss = { focusManager.clearFocus(); viewing = null },
         )
+    }
+    }
     }
 
     // ---------------------------------------------------------------- dialogs & sheets
@@ -1428,6 +1432,3 @@ internal fun marksLine(all: List<com.kitchenreceipts.core.ItemMark>): String {
     val kinds = mapOf("storage" to stringResource(R.string.mark_storage), "group" to stringResource(R.string.mark_group), "code" to stringResource(R.string.mark_code))
     return marks.joinToString(" · ") { m -> (kinds[m.kind] ?: m.kind.replaceFirstChar { it.uppercase() }) + ": " + (m.code?.let { "$it (${m.meaning})" } ?: m.meaning) }
 }
-
-/** TEMPORARY diagnostics (item q): how many times the photo viewer's onDismiss ran. */
-object PeekDiag { @Volatile @JvmField var dismissed = 0 }
