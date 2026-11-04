@@ -54,4 +54,14 @@ class ProductNamesTest {
         // At the end of the printed word the last dot stays.
         assertEquals("Biscotti M.B. Molinetti", c("BISC.M.B. MOLINETTI G.800").name)
     }
+
+    @Test fun aNumberOrASizeNeverJoinsTheAbbreviationBeforeIt() {
+        val cups = c("50 COPPE COMP.450ML MP")
+        assertEquals("50 Coppe Comp. 450ML Mp", cups.name)
+        assertEquals("450 ml", ProductName.split(cups.name).size) // the size is still found
+        val beer = c("BIRRA BIONDA COT.21 M/B/UMB.50").name
+        assertEquals("Birra Bionda Cot. 21 M/B/UMB. 50", beer)
+        // A decimal number is not cut at its dot.
+        assertEquals("0.75 l", ProductName.split(c("Bott. da 0.75 l di Sangiovese IGP Umbria").name).size)
+    }
 }

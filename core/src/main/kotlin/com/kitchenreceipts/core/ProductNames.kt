@@ -120,10 +120,11 @@ object ProductNames {
             }
             val known = ABBREVIATIONS[k]
             if (known != null) { out += known; continue }
-            // Not written out: kept as printed, an abbreviation with its dot ("TR." -> "Tr."), and joined to the piece
-            // of the same printed word kept just before it ("M." "B." "GIROTONDI" -> "M.B.GIROTONDI").
+            // Not written out: kept as printed, an abbreviation with its dot ("TR." -> "Tr."), and a letter piece joined
+            // to the letter piece of the same printed word kept just before it ("M." "B." "GIROTONDI" -> "M.B.GIROTONDI").
+            // A number or a size stays its own word ("COMP." "450ML" -> "Comp. 450ML"), so the size is still found.
             if (isAbbreviation(raw)) unknown += raw
-            if (lastKept == idx - 1 && ps[lastKept].word == piece.word) {
+            if (lastKept == idx - 1 && ps[lastKept].word == piece.word && joins(ps[lastKept].text) && joins(raw)) {
                 out[out.lastIndex] = out.last() + raw
                 joined[out.lastIndex] = idx
             } else {
@@ -141,15 +142,28 @@ object ProductNames {
     /** A piece of the name and the printed word it was cut from. */
     private data class Piece(val text: String, val word: Int)
 
+    /** A piece that may join its neighbour: letters, no digit (not "450ML", "CM150", "21"). */
+    private fun joins(piece: String): Boolean = piece.first().isLetter() && piece.none(Char::isDigit)
+
     /** Words of the name; "BARI.PIPETTE" and "FORM.STAG.ITA" are several words, "S/V" and "A/TERRA" one. */
     private fun pieces(text: String): List<Piece> =
         text.split(' ').filter { it.isNotBlank() }.flatMapIndexed { i, w ->
             val cut = if (SIZE.matches(w.trimEnd('.')) || CUT_NUMBER.matches(w) || w.count { it == '.' } == 0) listOf(w)
             else if (rx("^(?i)[a-z]\\.[a-z]{1,2}\\.?$").matches(w)) listOf(w) // "B.AD.", "P.S" written as one
-            else rx("[^.]+\\.?").findAll(w).map { it.value }.toList()
+            else decimals(rx("[^.]+\\.?").findAll(w).map { it.value }.toList())
             cut.flatMap { p -> if (rx("^(?i)(rig)(\\d+)$").matches(p)) listOf(p.substring(0, 3), p.substring(3)) else listOf(p) }
                 .map { Piece(it, i) }
         }
+
+    /** A number is not cut at its decimal dot: "16." "5" -> "16.5", "0." "75" -> "0.75", "2." "8CM" -> "2.8CM". */
+    private fun decimals(cut: List<String>): List<String> {
+        val out = mutableListOf<String>()
+        for (p in cut) {
+            val last = out.lastOrNull()
+            if (last != null && rx("^\\d+\\.$").matches(last) && p.first().isDigit()) out[out.lastIndex] = last + p else out += p
+        }
+        return out
+    }
 
     /** Lower case, accents and dots removed: "B.AD." -> "bad", "S/V" -> "s/v". */
     private fun key(s: String): String =
