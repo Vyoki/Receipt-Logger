@@ -725,11 +725,11 @@ class ScreenshotTest {
             }
             // A keyboard window on screen (it would sit over the photo and take its taps and its first Back).
             fun keyboardShown() = ua.windows.any { it.type == android.view.accessibility.AccessibilityWindowInfo.TYPE_INPUT_METHOD }
-            // Until no keyboard window is on screen, as waitFor waits for a button (same deadline).
-            fun waitForNoKeyboard(): Boolean {
+            // Until a keyboard window is on screen ([shown]) or none is, as waitFor waits for a button (same deadline).
+            fun waitForKeyboard(shown: Boolean): Boolean {
                 val deadline = SystemClock.uptimeMillis() + 10_000
-                while (keyboardShown() && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
-                return !keyboardShown()
+                while (keyboardShown() != shown && SystemClock.uptimeMillis() < deadline) Thread.sleep(150)
+                return keyboardShown() == shown
             }
             // Every window on screen, top first: what it is, its layer, its app, where it is, and whether it has the focus.
             fun windowDump(ws: List<AccessibilityWindowInfo>) = ws.sortedByDescending { it.layer }.joinToString(" | ") { w ->
@@ -798,11 +798,14 @@ class ScreenshotTest {
             // The date field (at the top of the form, under the page picture).
             assertTrue("no date field. On screen: ${screenDump()}", scrollUntilText(PEEK_DATE) && clickTextIn(PEEK_DATE))
             assertTrue("no photo icon in the field being edited. On screen: ${screenDump()}", waitFor(photo, true))
+            // The keyboard is up while the date field is edited, and the check sees its window: the check can fail.
+            val keyboardUp = waitForKeyboard(true)
+            assertTrue("no keyboard window while the date field is edited. Windows, top first: ${windowDump(ua.windows)}. On screen: ${everyWindow()}", keyboardUp)
             val tapped = tapInApp(photo)
             assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", waitFor(zoomIn, true))
             // No keyboard over the photo (waited for as for a button; the windows are read after the wait).
             val shown = SystemClock.uptimeMillis()
-            val noKeyboard = waitForNoKeyboard()
+            val noKeyboard = waitForKeyboard(false)
             val keyboardGoneMs = SystemClock.uptimeMillis() - shown
             assertTrue("a keyboard is still on screen over the photo 10 s after it showed. Windows, top first: ${windowDump(ua.windows)}. On screen: ${everyWindow()}", noKeyboard)
             shot("40-photo-viewer")
@@ -828,7 +831,7 @@ class ScreenshotTest {
             assertTrue("no photo icon in the field being edited again. On screen: ${screenDump()}", waitFor(photo, true))
             val tappedAgain = tapInApp(photo)
             assertTrue("the photo did not open again ($tappedAgain). On screen: ${everyWindow()}", waitFor(zoomIn, true))
-            val noKeyboardAgain = waitForNoKeyboard()
+            val noKeyboardAgain = waitForKeyboard(false)
             assertTrue("a keyboard is still on screen over the photo opened again 10 s after it showed. Windows, top first: ${windowDump(ua.windows)}. On screen: ${everyWindow()}", noKeyboardAgain)
             inst.uiAutomation.performGlobalAction(AccessibilityService.GLOBAL_ACTION_BACK)
             assertTrue("Back did not close the photo. On screen: ${everyWindow()}", waitFor(zoomIn, false))
