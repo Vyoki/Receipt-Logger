@@ -88,6 +88,18 @@ class PeekImage(
     val exact: Boolean,
 )
 
+/** TEMPORARY (item q2): the KR-IME log, from the first photo tap until 2 s after the viewer shows. */
+object KrIme {
+    val lines: MutableList<String> = java.util.Collections.synchronizedList(mutableListOf())
+    @Volatile var askedAt = 0L
+    @Volatile var shownAt = 0L
+    fun log(who: String, s: String) {
+        val line = "${android.os.SystemClock.uptimeMillis()} $who $s"
+        lines += line
+        android.util.Log.i("KR-IME", line)
+    }
+}
+
 /** "See on the photo": under a value to check (the replacements' row), and in a field being edited (its icon). */
 @Composable
 fun PeekChip(onClick: () -> Unit) {
@@ -130,7 +142,12 @@ fun FieldPhotoViewer(
     val focus = remember { FocusRequester() }
     // Registered after the screen's own Back: while the viewer is open, Back closes it.
     BackHandler(onBack = onDismiss)
-    LaunchedEffect(Unit) { focus.requestFocus() }
+    LaunchedEffect(Unit) {
+        if (KrIme.shownAt == 0L) KrIme.shownAt = android.os.SystemClock.uptimeMillis() // TEMPORARY (item q2)
+        KrIme.log("app", "viewer shown: requestFocus") // TEMPORARY (item q2)
+        focus.requestFocus()
+        KrIme.log("app", "viewer requestFocus returned") // TEMPORARY (item q2)
+    }
     Surface(
         Modifier.fillMaxSize()
             // The viewer holds the focus while open: no field under it is being edited.

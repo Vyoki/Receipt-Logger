@@ -13,6 +13,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.runtime.CompositionLocalProvider
 import com.kitchenreceipts.app.ui.components.FieldPhotoViewer
+import com.kitchenreceipts.app.ui.components.KrIme
+import androidx.compose.ui.semantics.getAllSemanticsNodes
+import androidx.compose.ui.semantics.getOrNull
 import com.kitchenreceipts.app.ui.components.LocalFieldPeek
 import com.kitchenreceipts.app.ui.components.PeekImage
 import com.kitchenreceipts.app.ui.components.PeekRequest
@@ -304,12 +307,57 @@ fun ReviewScreen(
     // KEYBOARD_CLOSE_MS at most, so the photo button never does nothing. A keyboard still up over the viewer took its
     // taps and its first Back.
     var asked by remember { mutableStateOf<PeekRequest?>(null) }
-    val onPeek: (PeekRequest) -> Unit = remember { { r -> asked = r } }
+    // TEMPORARY (item q2): the KR-IME log starts with the first photo tap.
+    var krGo by remember { mutableStateOf(false) }
+    val onPeek: (PeekRequest) -> Unit = remember {
+        { r ->
+            if (KrIme.askedAt == 0L) {
+                KrIme.askedAt = android.os.SystemClock.uptimeMillis()
+                KrIme.log("app", "photo asked (${r.label})")
+                krGo = true
+            }
+            asked = r
+        }
+    }
     val imeUp by rememberUpdatedState(WindowInsets.isImeVisible)
+    // TEMPORARY (item q2): what the app sees, logged on every frame where it changes.
+    val krView = androidx.compose.ui.platform.LocalView.current
+    val krInput = androidx.compose.ui.platform.LocalInputModeManager.current
+    val krSample: () -> String = {
+        val imm = krView.context.getSystemService(android.view.inputmethod.InputMethodManager::class.java)
+        val focused = (krView as? androidx.compose.ui.platform.ViewRootForTest)?.semanticsOwner
+            ?.getAllSemanticsNodes(mergingEnabled = false)
+            ?.filter { it.config.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.Focused) == true }
+            ?.joinToString { n ->
+                val c = n.config
+                val what = c.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.EditableText)?.let { "text field \"$it\"" }
+                    ?: c.getOrNull(androidx.compose.ui.semantics.SemanticsProperties.ContentDescription)?.firstOrNull()?.let { "[$it]" }
+                    ?: "node ${n.id}"
+                "$what at y=${n.boundsInRoot.top.toInt()}"
+            }?.ifEmpty { "none" } ?: "?"
+        val insetsIme = if (android.os.Build.VERSION.SDK_INT >= 30) krView.rootWindowInsets?.isVisible(android.view.WindowInsets.Type.ime()) else null
+        "compose focus=[$focused] isImeVisible=$imeUp insetsIme=$insetsIme isAcceptingText=${imm?.isAcceptingText} " +
+            "isActive(view)=${imm?.isActive(krView)} viewFocused=${krView.isFocused} touchMode=${krView.isInTouchMode} inputMode=${krInput.inputMode}"
+    }
+    LaunchedEffect(krGo) {
+        if (!krGo) return@LaunchedEffect
+        var last = ""
+        while (true) {
+            val s = krSample()
+            if (s != last) { KrIme.log("app", s); last = s }
+            val now = android.os.SystemClock.uptimeMillis()
+            if ((KrIme.shownAt != 0L && now > KrIme.shownAt + 2_000) || now > KrIme.askedAt + 15_000) break
+            androidx.compose.runtime.withFrameNanos { }
+        }
+        KrIme.log("app", "log ends")
+    }
     LaunchedEffect(asked) {
         val r = asked ?: return@LaunchedEffect
         focusManager.clearFocus()
-        withTimeoutOrNull(KEYBOARD_CLOSE_MS) { snapshotFlow { imeUp }.first { !it } }
+        KrIme.log("app", "clearFocus returned: ${krSample()}") // TEMPORARY (item q2)
+        val krWait = android.os.SystemClock.uptimeMillis() // TEMPORARY (item q2)
+        val closed = withTimeoutOrNull(KEYBOARD_CLOSE_MS) { snapshotFlow { imeUp }.first { !it } }
+        KrIme.log("app", "wait ended after ${android.os.SystemClock.uptimeMillis() - krWait} ms: " + if (closed != null) "isImeVisible false" else "cap reached") // TEMPORARY (item q2)
         viewingPage = null
         viewing = r
         asked = null

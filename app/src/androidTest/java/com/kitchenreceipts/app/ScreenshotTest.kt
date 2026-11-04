@@ -801,7 +801,26 @@ class ScreenshotTest {
             // The keyboard is up while the date field is edited, and the check sees its window: the check can fail.
             val keyboardUp = waitForKeyboard(true)
             assertTrue("no keyboard window while the date field is edited. Windows, top first: ${windowDump(ua.windows)}. On screen: ${everyWindow()}", keyboardUp)
+            // TEMPORARY (item q2): the KR-IME log, from the photo tap until 2 s after the viewer shows: the test's window
+            // list (once a frame, logged when it changes) with the app's own lines, in kr-ime.txt next to the screenshots.
+            val kr = com.kitchenreceipts.app.ui.components.KrIme
+            kr.askedAt = 0L
+            kr.shownAt = 0L
+            kr.lines.clear()
+            val krTap = SystemClock.uptimeMillis()
             val tapped = tapInApp(photo)
+            kr.log("test", "photo tap sent: $tapped")
+            var krLast = ""
+            while (true) {
+                val w = ua.windows.sortedByDescending { it.layer }.joinToString(" | ") { x ->
+                    "type=${x.type} \"${x.title}\" layer=${x.layer} bounds=${Rect().also { x.getBoundsInScreen(it) }.toShortString()} focused=${x.isFocused}"
+                }
+                if (w != krLast) { kr.log("test", "windows: $w"); krLast = w }
+                val now = SystemClock.uptimeMillis()
+                if ((kr.shownAt != 0L && now > kr.shownAt + 2_000) || now > krTap + 15_000) break
+                SystemClock.sleep(16)
+            }
+            File(out, "kr-ime.txt").writeText(kr.lines.toList().sortedBy { it.substringBefore(' ').toLongOrNull() ?: 0L }.joinToString("\n") + "\n")
             assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", waitFor(zoomIn, true))
             // No keyboard over the photo (waited for as for a button; the windows are read after the wait).
             val shown = SystemClock.uptimeMillis()
