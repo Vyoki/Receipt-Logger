@@ -456,8 +456,9 @@ class ScreenshotTest {
 
     /**
      * Nothing floats over the form: the bottom bar's count is the one tap to the next thing to check. An invented page
-     * read by the app's own queue; scrolled to the Date field and to the last field, the jump control (found by what
-     * its tap does) never overlaps a field; and no OCR engine is named on the screen. ABC S.r.l., 2031; put away after.
+     * read by the app's own queue; scrolled step by step to the end, the jump control (found by what its tap does) never
+     * overlaps an editable field and the bottom-most field reached sits fully above the bar; scrolled to the Date field,
+     * the jump control is not over it; no OCR engine is named on the screen. ABC S.r.l., 2031; put away after.
      */
     @Test fun nothingHidesUnderTheJumpAndNoEngineIsNamed() {
         val c = app.container
@@ -494,21 +495,40 @@ class ScreenshotTest {
                 fun root() = inst.uiAutomation.rootInActiveWindow
                 fun bounds(n: AccessibilityNodeInfo) = Rect().also { n.getBoundsInScreen(it) }
                 // The jump control: the one thing on screen whose tap is "Next to check".
-                fun jump(): Rect? = root()?.let { r ->
-                    collectNodes(r) { n -> n.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK && it.label?.toString() == next } }.firstOrNull()?.let(::bounds)
+                fun jumpNode(r: AccessibilityNodeInfo): AccessibilityNodeInfo? =
+                    collectNodes(r) { n -> n.actionList.any { it.id == AccessibilityNodeInfo.ACTION_CLICK && it.label?.toString() == next } }.firstOrNull()
+                fun jump(): Rect? = root()?.let(::jumpNode)?.let(::bounds)
+                // The bar's top: the jump control's first ancestor as wide as the screen (the bar itself).
+                fun barTop(r: AccessibilityNodeInfo, j: AccessibilityNodeInfo): Int {
+                    val width = bounds(r).width()
+                    var n: AccessibilityNodeInfo? = j
+                    while (n != null && bounds(n).width() < width * 9 / 10) n = n.parent
+                    return (n ?: j).let(::bounds).top
                 }
-                fun fields(): List<Rect> = root()?.let { r -> collectNodes(r) { it.isEditable }.map(::bounds).filter { !it.isEmpty } }.orEmpty()
-                // No engine named anywhere on the review, top to bottom.
+                fun fields(r: AccessibilityNodeInfo): List<Rect> = collectNodes(r) { it.isEditable }.map(::bounds).filter { !it.isEmpty }
+                // Top to bottom, a step at a time: no editable field ever under the jump control, the bottom-most field
+                // reached fully above the bar, and no engine named anywhere.
                 val engines = listOf("ML Kit", "MLKit", "Tesseract")
                 val named = mutableListOf<String>()
-                for (step in 0 until 25) {
+                var lowest: Pair<Rect, Int>? = null
+                for (step in 0 until 30) {
                     val r = root() ?: run { Thread.sleep(300); null } ?: continue
                     collectNodes(r) { it.text != null }.map { it.text.toString() }.filter { t -> engines.any { t.contains(it, ignoreCase = true) } }.let { named += it }
+                    val jn = jumpNode(r)
+                    assertNotNull("no control whose tap is \"$next\" at step $step. On screen: ${screenDump()}", jn)
+                    val j = bounds(jn!!)
+                    val visible = fields(r)
+                    visible.forEach { f -> assertTrue("step $step: the jump control $j covers a field $f", !Rect.intersects(j, f)) }
+                    visible.maxByOrNull { it.bottom }?.let { lowest = it to barTop(r, jn) }
                     val list = collectNodes(r) { it.isScrollable }.maxByOrNull { n -> bounds(n).height() } ?: break
                     if (!list.performAction(AccessibilityNodeInfo.ACTION_SCROLL_FORWARD)) break
                     Thread.sleep(400)
                 }
                 assertTrue("an OCR engine is named on screen: ${named.distinct()}", named.isEmpty())
+                val (lastField, top) = lowest ?: error("no editable field on the review at all")
+                assertTrue("the bottom-most field $lastField is not fully above the bar (top $top)", lastField.bottom <= top)
+                // The real end of the review.
+                shot("50-review-bottom-clear")
                 // Scrolled to the Date field: in full view, and the jump control is not over it.
                 app.container.pendingRoute.value = "home"
                 Thread.sleep(500)
@@ -521,20 +541,10 @@ class ScreenshotTest {
                     var e: AccessibilityNodeInfo? = n
                     while (e != null && !e.isEditable) e = e.parent
                     e?.let(::bounds)
-                } ?: fields().firstOrNull()
+                }
                 assertNotNull("the Date field was not found. On screen: ${screenDump()}", dateField)
                 assertTrue("the jump control $j1 covers the Date field $dateField", !Rect.intersects(j1!!, dateField!!))
                 shot("49-review-date-clear")
-                // Scrolled to the end: the last field on screen is not under the jump control either.
-                scrollToEnd()
-                Thread.sleep(500)
-                val j2 = jump()
-                assertNotNull("no control whose tap is \"$next\" at the end. On screen: ${screenDump()}", j2)
-                val last = fields().maxByOrNull { it.bottom }
-                assertNotNull("no field at the end. On screen: ${screenDump()}", last)
-                assertTrue("the jump control $j2 covers the last field $last", !Rect.intersects(j2!!, last!!))
-                fields().forEach { f -> assertTrue("the jump control $j2 covers a field $f", !Rect.intersects(j2, f)) }
-                shot("50-review-bottom-clear")
             }
         } finally {
             settings.autoSave = autoSave
