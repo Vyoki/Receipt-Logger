@@ -1,0 +1,21 @@
+185834 review screen with a photo: focus=[none] isImeVisible=false insetsIme=false acceptingText=false active=false viewFocused=false asked=null viewing=null
+187089 view focus: null -> AndroidComposeView
+187943 keyboard isImeVisible=true: focus=[text field "03/02/2031"] isImeVisible=true insetsIme=true acceptingText=true active=true viewFocused=true asked=null viewing=null
+188199 photo button tapped, onPeek (Date): focus=[text field "03/02/2031"] isImeVisible=true insetsIme=true acceptingText=true active=true viewFocused=true asked=null viewing=null
+188201 asked=Date
+188213 view focus: AndroidComposeView -> null
+188214 clearFocus returned: focus=[none] isImeVisible=true insetsIme=true acceptingText=true active=true viewFocused=false asked=Date viewing=null
+188346 keyboard isImeVisible=false: focus=[none] isImeVisible=false insetsIme=false acceptingText=false active=true viewFocused=false asked=Date viewing=null
+188350 keyboard wait ended after 136 ms: isImeVisible false
+188351 viewing set: focus=[none] isImeVisible=false insetsIme=false acceptingText=false active=true viewFocused=false asked=Date viewing=Date
+188351 asked=null
+188352 viewing=Date image=false failed=false
+188373 viewer shown
+188378 photo image: drawing starts (Date, page=null)
+188416 photo image after 38 ms: drawn
+188417 viewing=Date image=true failed=false
+198529 viewer gone
+198543 screen left
+210972 keyboard isImeVisible=false: focus=[none] isImeVisible=false insetsIme=false acceptingText=false active=false viewFocused=false asked=null viewing=null
+210972 asked=null
+210972 viewing=null image=false failed=false
