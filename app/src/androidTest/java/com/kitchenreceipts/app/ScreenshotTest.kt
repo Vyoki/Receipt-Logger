@@ -802,7 +802,29 @@ class ScreenshotTest {
             val keyboardUp = waitForKeyboard(true)
             assertTrue("no keyboard window while the date field is edited. Windows, top first: ${windowDump(ua.windows)}. On screen: ${everyWindow()}", keyboardUp)
             val tapped = tapInApp(photo)
-            assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", waitFor(zoomIn, true))
+            // TEMPORARY (item q2c): the same wait as waitFor(zoomIn, true) (same check, 150 ms apart, 10 s), with each poll
+            // logged to kr-a11y.txt next to the screenshots: whether accessibility shows Zoom in, whether the app's Compose
+            // semantics has it (as nodeInApp reads it), the windows, and the first nodes of each window.
+            fun krA11yWait(): Boolean {
+                val log = File(out, "kr-a11y.txt")
+                val deadline = SystemClock.uptimeMillis() + 10_000
+                while (true) {
+                    val found = described(zoomIn) != null
+                    var inCompose = false
+                    scenario.onActivity { a -> inCompose = nodeInApp(a.window.decorView, zoomIn) != null }
+                    val sample = roots().joinToString(" || ") { r ->
+                        collectNodes(r) { it.text != null || it.contentDescription != null }.take(15)
+                            .joinToString(" | ") { n -> (n.text ?: "").toString().ifEmpty { "[" + n.contentDescription + "]" }.take(40) }
+                    }
+                    log.appendText(
+                        "${SystemClock.uptimeMillis()} described(zoomIn)=${if (found) "yes" else "no"} compose(zoomIn)=${if (inCompose) "yes" else "no"} " +
+                            "windows: ${windowDump(ua.windows)} sample: $sample\n",
+                    )
+                    if (found || SystemClock.uptimeMillis() >= deadline) return found
+                    Thread.sleep(150)
+                }
+            }
+            assertTrue("the photo did not open ($tapped). On screen: ${everyWindow()}", krA11yWait())
             // No keyboard over the photo (waited for as for a button; the windows are read after the wait).
             val shown = SystemClock.uptimeMillis()
             val noKeyboard = waitForKeyboard(false)
